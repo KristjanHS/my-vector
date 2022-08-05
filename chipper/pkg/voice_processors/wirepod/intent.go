@@ -16,7 +16,7 @@ func (s *Server) ProcessIntent(req *vtt.IntentRequest) (*vtt.IntentResponse, err
 	}
 	if isRhino {
 		successMatched = true
-		paramCheckerSlots(req, transcribedText, transcribedSlots, isOpus, justThisBotNum)
+		paramCheckerSlots(req, transcribedText, transcribedSlots, isOpus, justThisBotNum, req.Device)
 	} else {
 		successMatched = processTextAll(req, transcribedText, matchListList, intentsList, isOpus, justThisBotNum)
 	}
