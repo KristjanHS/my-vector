@@ -5,7 +5,7 @@ import (
 
 	pb "github.com/digital-dream-labs/api/go/chipperpb"
 	"github.com/digital-dream-labs/chipper/pkg/server"
-	"github.com/digital-dream-labs/chipper/pkg/voice_processors/wirepod"
+	"github.com/digital-dream-labs/chipper/pkg/voice_processors/wirepod-coqui"
 
 	//	grpclog "github.com/digital-dream-labs/hugh/grpc/interceptors/log"
 	warnlog "log"
