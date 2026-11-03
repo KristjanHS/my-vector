@@ -3,7 +3,7 @@
 **Goal**: Vector lives on the charger, still answers "Hey Vector", and the server holds nothing
 (`AUTO_HOLD=off`). The way there: unlock the production bot, install WireOS, then patch the firmware's
 own stay-on-charger behavior.
-**Status**: slice 0 PC steps done; every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
+**Status**: slice 0 done; slice 1 Phase A started 2026-11-03 21:15 (download 91% at 21:18); every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
 **Rulings (2026-11-03)**: all slices covered · a failed power stress test means proceed with the extra guards,
 not stop · the dock stays on a wall adapter on a guarded strip (no UPS).
 **Rulings (slice 3)**: docked, he never leaves on his own (not for battery full, timeout or a voice command) ·
@@ -69,11 +69,12 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 - [x] `robot/unlock/power-stress.sh 25` → `PASS: no reboot`. **If he reboots**, the guards above become mandatory; proceed (ruling) — stopped after 3 clean cycles (2026-11-03); non-gating per the ruling.
 
 ### Slice 1: unlock (Phase A can be retried; Phase B can't be undone)
-- [ ] Recovery: on the dock, hold the button about 15 s until the backpack lights turn dark blue, then
+- [x] Recovery: on the dock, hold the button about 15 s until the backpack lights turn dark blue, then
       double-press to show the pairing key.
-- [ ] websetup.skittle.dev → pair → Wi-Fi (the WPA2 network).
-- [ ] With `serve-ota.sh` running, enter in websetup's terminal
-      `ota-start http://<pc-ip>:8123/unlock-prod/Unlock-Prod.ota`. Fallback: Utility → Unlock-Prod.ota.
+- [x] websetup.skittle.dev → stack **utility** → pair → Wi-Fi `Linwifi2_2k`. At "Choose the image" click nothing
+      (a row installs websetup's own copy at once); **Alt+2** opens the terminal.
+- [x] With `serve-ota.sh` running, enter in websetup's terminal
+      `ota-start http://192.0.2.249:8123/unlock-prod/Unlock-Prod.ota` (sent 2026-11-03 21:15). Fallback: Utility → Unlock-Prod.ota.
 - [ ] Phase A ends when he reboots by himself. Retry (back into recovery) **only** if websetup shows an error
       **and** he has not rebooted. Once he has rebooted, treat it as Phase B, even if it looks stalled.
 - [ ] **Phase B, from that reboot onward: hands off.** No button, no lifting, nobody near the strip.
