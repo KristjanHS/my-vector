@@ -1,4 +1,4 @@
-package sdkapp
+package autohold
 
 import (
 	"errors"
@@ -60,11 +60,11 @@ func reservedLost() recvResult {
 }
 
 // opener hands out the given streams in order, then returns errors; each open is reported on opened.
-func opener(streams ...*fakeStream) (holdOpener, chan string) {
+func opener(streams ...*fakeStream) (Opener, chan string) {
 	opened := make(chan string, 64)
 	var mu sync.Mutex
 	next := 0
-	return func(esn string) (holdStream, func(), error) {
+	return func(esn string) (Stream, func(), error) {
 		mu.Lock()
 		defer mu.Unlock()
 		opened <- esn
@@ -100,7 +100,7 @@ func recvWithin[T any](t *testing.T, c <-chan T, what string) T {
 	return zero
 }
 
-func TestAutoHoldPriority(t *testing.T) {
+func TestParseMode(t *testing.T) {
 	cases := map[string]struct {
 		prio vectorpb.ControlRequest_Priority
 		ok   bool
@@ -112,9 +112,9 @@ func TestAutoHoldPriority(t *testing.T) {
 		"high":     {0, false},
 	}
 	for mode, want := range cases {
-		prio, ok := autoHoldPriority(mode)
+		prio, ok := parseMode(mode)
 		if ok != want.ok || (ok && prio != want.prio) {
-			t.Errorf("autoHoldPriority(%q) = %v,%v; want %v,%v", mode, prio, ok, want.prio, want.ok)
+			t.Errorf("parseMode(%q) = %v,%v; want %v,%v", mode, prio, ok, want.prio, want.ok)
 		}
 	}
 }
@@ -122,7 +122,7 @@ func TestAutoHoldPriority(t *testing.T) {
 func TestAutoHoldRequestsPriorityAndMarksGranted(t *testing.T) {
 	s := newFakeStream()
 	open, _ := opener(s)
-	h := newAutoHolder(vectorpb.ControlRequest_RESERVE_CONTROL, time.Millisecond, time.Millisecond, open, func(string) {})
+	h := newHolder(vectorpb.ControlRequest_RESERVE_CONTROL, time.Millisecond, time.Millisecond, open, func(string) {})
 	defer close(h.quit)
 
 	h.scan([]string{"00e20145"})
@@ -140,7 +140,7 @@ func TestAutoHoldRequestsPriorityAndMarksGranted(t *testing.T) {
 func TestAutoHoldReassumesAndClosesAfterStreamErrorAndControlLost(t *testing.T) {
 	streams := []*fakeStream{newFakeStream(), newFakeStream(), newFakeStream(), newFakeStream()}
 	open, opened := opener(streams...)
-	h := newAutoHolder(vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, time.Millisecond, time.Millisecond, open, func(string) {})
+	h := newHolder(vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, time.Millisecond, time.Millisecond, open, func(string) {})
 	defer close(h.quit)
 
 	h.scan([]string{"00e20145"})
@@ -163,7 +163,7 @@ func TestAutoHoldReassumesAndClosesAfterStreamErrorAndControlLost(t *testing.T) 
 
 func TestAutoHoldBacksOffWhileOpenFails(t *testing.T) {
 	open, opened := opener() // every open fails
-	h := newAutoHolder(vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, 10*time.Millisecond, 40*time.Millisecond, open, func(string) {})
+	h := newHolder(vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, 10*time.Millisecond, 40*time.Millisecond, open, func(string) {})
 	defer close(h.quit)
 
 	h.scan([]string{"00e20145"})
@@ -179,7 +179,7 @@ func TestAutoHoldScanStartsOneLoopPerRobotAndTouchesHeld(t *testing.T) {
 	open, opened := opener(s)
 	var mu sync.Mutex
 	touched := map[string]int{}
-	h := newAutoHolder(vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, time.Hour, time.Hour, open, func(esn string) {
+	h := newHolder(vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, time.Hour, time.Hour, open, func(esn string) {
 		mu.Lock()
 		touched[esn]++
 		mu.Unlock()

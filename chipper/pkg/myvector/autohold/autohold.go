@@ -1,34 +1,54 @@
-package sdkapp
-
-// AUTO_HOLD=override|reserve|off (unset = off): hold behavior control of every configured robot,
-// re-assuming whenever the stream drops. The web UI's Release does not affect it.
+// Package autohold holds behavior control of every configured robot, re-assuming whenever the stream drops.
+// Mode comes from AUTO_HOLD=override|reserve|off (unset = off); the web UI's Release does not affect it.
+package autohold
 
 import (
-	"context"
-	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
-	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
-type holdStream interface {
+// Stream is the robot's BehaviorControl stream.
+type Stream interface {
 	Send(*vectorpb.BehaviorControlRequest) error
 	Recv() (*vectorpb.BehaviorControlResponse, error)
 }
 
-// holdOpener returns a stream plus the func that closes it.
-type holdOpener func(esn string) (holdStream, func(), error)
+// Opener returns a stream plus the func that closes it.
+type Opener func(esn string) (Stream, func(), error)
 
-type autoHolder struct {
+// Deps are the wire-pod internals autohold needs; sdkapp's fork_autohold.go supplies them.
+type Deps struct {
+	Open  Opener
+	Touch func(esn string) // keeps a held robot from timing out of the SDK list
+	ESNs  func() []string  // configured robots
+}
+
+// Start does nothing unless mode is override or reserve.
+func Start(mode string, d Deps) {
+	priority, ok := parseMode(mode)
+	if !ok {
+		logger.Println("Auto-hold is off (AUTO_HOLD=" + mode + ")")
+		return
+	}
+	logger.Println("Auto-hold is on: " + priority.String())
+	h := newHolder(priority, 5*time.Second, time.Minute, d.Open, d.Touch)
+	go func() {
+		for {
+			h.scan(d.ESNs())
+			time.Sleep(h.interval)
+		}
+	}()
+}
+
+type holder struct {
 	priority   vectorpb.ControlRequest_Priority
 	interval   time.Duration
 	maxBackoff time.Duration
-	open       holdOpener
+	open       Opener
 	touch      func(esn string)
 	quit       chan struct{}
 
@@ -37,7 +57,7 @@ type autoHolder struct {
 	granted map[string]bool
 }
 
-func autoHoldPriority(mode string) (vectorpb.ControlRequest_Priority, bool) {
+func parseMode(mode string) (vectorpb.ControlRequest_Priority, bool) {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "override":
 		return vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, true
@@ -47,30 +67,9 @@ func autoHoldPriority(mode string) (vectorpb.ControlRequest_Priority, bool) {
 	return 0, false
 }
 
-func InitAutoHold() {
-	mode := os.Getenv("AUTO_HOLD")
-	priority, ok := autoHoldPriority(mode)
-	if !ok {
-		logger.Println("Auto-hold is off (AUTO_HOLD=" + mode + ")")
-		return
-	}
-	logger.Println("Auto-hold is on: " + priority.String())
-	h := newAutoHolder(priority, 5*time.Second, time.Minute, openRobotHoldStream, resetConnTimer)
-	go func() {
-		for {
-			var esns []string
-			for _, bot := range vars.BotInfo.Robots {
-				esns = append(esns, bot.Esn)
-			}
-			h.scan(esns)
-			time.Sleep(h.interval)
-		}
-	}()
-}
-
-func newAutoHolder(priority vectorpb.ControlRequest_Priority, interval, maxBackoff time.Duration,
-	open holdOpener, touch func(string)) *autoHolder {
-	return &autoHolder{
+func newHolder(priority vectorpb.ControlRequest_Priority, interval, maxBackoff time.Duration,
+	open Opener, touch func(string)) *holder {
+	return &holder{
 		priority:   priority,
 		interval:   interval,
 		maxBackoff: maxBackoff,
@@ -83,7 +82,7 @@ func newAutoHolder(priority vectorpb.ControlRequest_Priority, interval, maxBacko
 }
 
 // scan starts a hold loop for each new robot and keeps held robots from timing out of the SDK list.
-func (h *autoHolder) scan(esns []string) {
+func (h *holder) scan(esns []string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, esn := range esns {
@@ -102,7 +101,7 @@ func (h *autoHolder) scan(esns []string) {
 }
 
 // holdLoop retries every interval after a held stream ends; attempts that never get control back off to maxBackoff.
-func (h *autoHolder) holdLoop(esn string) {
+func (h *holder) holdLoop(esn string) {
 	lastErr := ""
 	wait := h.interval
 	for {
@@ -130,7 +129,7 @@ func (h *autoHolder) holdLoop(esn string) {
 }
 
 // holdOnce requests control and blocks until the stream errors or control is lost.
-func (h *autoHolder) holdOnce(esn string) (wasGranted bool, err error) {
+func (h *holder) holdOnce(esn string) (wasGranted bool, err error) {
 	defer h.setGranted(esn, false)
 	s, closeStream, err := h.open(esn)
 	if err != nil {
@@ -161,53 +160,20 @@ func (h *autoHolder) holdOnce(esn string) (wasGranted bool, err error) {
 	}
 }
 
-type autoHoldError string
+type holdError string
 
-func (e autoHoldError) Error() string { return string(e) }
+func (e holdError) Error() string { return string(e) }
 
-const errControlLost = autoHoldError("control lost")
+const errControlLost = holdError("control lost")
 
-func (h *autoHolder) setGranted(esn string, v bool) {
+func (h *holder) setGranted(esn string, v bool) {
 	h.mu.Lock()
 	h.granted[esn] = v
 	h.mu.Unlock()
 }
 
-func (h *autoHolder) isGranted(esn string) bool {
+func (h *holder) isGranted(esn string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.granted[esn]
-}
-
-// openRobotHoldStream probes :443 first so an offline robot never reaches newRobot, which leaks a conn per failure.
-func openRobotHoldStream(esn string) (holdStream, func(), error) {
-	for _, bot := range vars.BotInfo.Robots {
-		if strings.EqualFold(bot.Esn, esn) && bot.IPAddress != "" {
-			c, err := net.DialTimeout("tcp", bot.IPAddress+":443", 3*time.Second)
-			if err != nil {
-				return nil, nil, err
-			}
-			c.Close()
-		}
-	}
-	robot, _, err := getRobot(esn)
-	if err != nil {
-		return nil, nil, err
-	}
-	ctx, cancel := context.WithCancel(robot.Ctx)
-	s, err := robot.Vector.Conn.BehaviorControl(ctx)
-	if err != nil {
-		cancel()
-		return nil, nil, err
-	}
-	return s, cancel, nil
-}
-
-func resetConnTimer(esn string) {
-	rs := robots // removeRobot may swap in a shorter slice mid-loop
-	for i := range rs {
-		if strings.EqualFold(rs[i].ESN, esn) {
-			rs[i].ConnTimer = 0
-		}
-	}
 }
