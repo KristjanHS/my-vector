@@ -3,7 +3,7 @@
 **Goal**: Vector lives on the charger, still answers "Hey Vector", and the server holds nothing
 (`AUTO_HOLD=off`). The way there: unlock the production bot, install WireOS, then patch the firmware's
 own stay-on-charger behavior.
-**Status**: slice 0 done; slices 0–2 done 2026-11-03 (WireOS `3.0.2.36d` / compat 209 on 192.168.1.76, voice via the fork); slice 3 next; every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
+**Status**: slice 0 done; slices 0–2 done 2026-11-03 (WireOS `3.0.2.36d` / compat 209 on 192.168.1.76, voice via the fork); slice 3a + `/anki` backup done; 3b build next; every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
 **Rulings (2026-11-03)**: all slices covered · a failed power stress test means proceed with the extra guards,
 not stop · the dock stays on a wall adapter on a guarded strip (no UPS).
 **Rulings (slice 3)**: docked, he never leaves on his own (not for battery full, timeout or a voice command) ·
@@ -44,7 +44,7 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 |---|---|---|
 | Q1 | The unlock runs from the factory recovery; the OS being `ep` doesn't matter (inferred from `ankidev=0`) | slice 1 |
 | Q2 | WireOS points at its author's cloud. Re-run the fork's SSH setup (`setup/ssh.go`) to point it back at the fork | slice 2 |
-| Q3 | `kSafeguardTimeout_s` can be set at runtime via `:8888/consolevarset`. It is probably lost on reboot (unconfirmed) | slice 3a |
+| Q3 | `SafeguardTimeout_s` (source symbol `kSafeguardTimeout_s`) can be set at runtime via `:8888/consolevarset`. It is probably lost on reboot (unconfirmed) | slice 3a |
 | Q4 | `ddn on` lasts across reboots but probably stops wake-word replies (inferred), so skip it | slice 3a |
 | Q5 | `/data` survived the unlock + WireOS, but `persistent/token/` is empty, so he re-activates over BLE (wp.pvic.xyz) | slice 2 |
 | Q6 | Only intents handled under HighLevelAI (explore) are blocked; voice behaviors above it still run, and one that drives off ends the stay | slice 3b done |
@@ -93,10 +93,10 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 - [x] Done when `:8080` (`wired`) loads and the voice answer comes from the fork.
 
 ### Slice 3: stay on the charger without a hold (3a is the stopgap, 3b the fix)
-- [ ] a. Stopgap: `curl 'http://<vector-ip>:8888/consolevarset?key=kSafeguardTimeout_s&value=86400'`. Check that
+- [x] a. Stopgap (set 2026-11-03, 1800 → 86400): `curl 'http://<vector-ip>:8888/consolevarset?key=SafeguardTimeout_s&value=86400'`. Check that
       `features.json` has `StayOnChargerUntilCharged` enabled. He still leaves when the battery reads full (3.57 V once), and the setting is probably lost on reboot (Q3). Skip `ddn` (Q4).
 - [x] b. `robot/stay-on-charger/apply.sh` → `OK: patched …/robot/work/wire-os-victor` (PC side, done).
-- [ ] Back up first: `ssh root@<vector-ip> tar -C / -czf - anki > robot/backup/anki-$(date +%F).tgz`.
+- [x] Back up first (`robot/backup/anki-2026-11-03.tgz`): `ssh root@<vector-ip> tar -C / -czf - anki > robot/backup/anki-$(date +%F).tgz`.
 - [ ] In `robot/work/wire-os-victor`, overwrite the bundled `robot_sshkey` with the robot's key, then run
       `./build/build-v.sh` and `./build/deploy-v.sh` (needs Docker; the first build is slow).
 - [ ] Done when a full day on the dock passes with no drive-off, the battery voltage rises (Q7), one voice command
