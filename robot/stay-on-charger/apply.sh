@@ -5,7 +5,10 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 src=$(cd "$here/../work" && pwd)/wire-os-victor
 url=https://github.com/os-vector/wire-os-victor
-pin=505eb84cfaa6ec01c075730f4be855e93713bb59 # main on 2026-11-03; the patch was written against this
+# The anki/victor submodule of wire-os ab4b32daf9 (2026-10-25), the base dev.ota 3.0.2.36d was built from.
+# It must match: deploy.sh refuses /anki whose VICTOR_COMPAT_VERSION (209 here) differs from the robot's.
+# Newer main (505eb84, compat 210) is refused. The patched file is identical in both commits.
+pin=ebf38c2871a0a69b3ac1a6fd592bb597b8e57724
 
 [[ -d $src/.git ]] || git clone --recurse-submodules "$url" "$src"
 git -C "$src" cat-file -e "$pin^{commit}" 2>/dev/null || git -C "$src" fetch origin "$pin"

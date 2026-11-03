@@ -49,7 +49,7 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 | Q5 | Does `/data` (user data) survive the unlock? Unknown, so back up the server side | slice 0 |
 | Q6 | Only intents handled under HighLevelAI (explore) are blocked; voice behaviors above it still run, and one that drives off ends the stay | slice 3b done |
 | Q7 | On the platform but off the contacts he stays put and doesn't charge (the patch checks the platform, not the contacts) | slice 3b done |
-| Q8 | Does the pinned engine match the installed `dev.ota` base? Unchecked; the wire-os-victor README requires a matching base OTA | slice 3b |
+| Q8 | Pin = the `anki/victor` submodule of the wire-os build `dev.ota` came from (compat 209); `deploy.sh` refuses a mismatch. Check: `cat robot/work/wire-os-victor/VICTOR_COMPAT_VERSION` → `209` | slice 3b done |
 
 ## Checklist
 
@@ -95,10 +95,10 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 ### Slice 3: stay on the charger without a hold (3a is the stopgap, 3b the fix)
 - [ ] a. Stopgap: `curl 'http://<vector-ip>:8888/consolevarset?key=kSafeguardTimeout_s&value=86400'`. Check that
       `features.json` has `StayOnChargerUntilCharged` enabled. He still leaves when the battery reads full (3.57 V once), and the setting is probably lost on reboot (Q3). Skip `ddn` (Q4).
-- [ ] b. `robot/stay-on-charger/apply.sh` → `OK: patched …/robot/work/wire-os-victor`. Back up first:
-      `ssh root@<vector-ip> tar -C / -czf - anki > robot/backup/anki-$(date +%F).tgz`.
+- [x] b. `robot/stay-on-charger/apply.sh` → `OK: patched …/robot/work/wire-os-victor` (PC side, done).
+- [ ] Back up first: `ssh root@<vector-ip> tar -C / -czf - anki > robot/backup/anki-$(date +%F).tgz`.
 - [ ] In `robot/work/wire-os-victor`, overwrite the bundled `robot_sshkey` with the robot's key, then run
-      `./build/build-v.sh` and `./build/deploy-v.sh` (needs Docker; the first build is slow). Check Q8 first.
+      `./build/build-v.sh` and `./build/deploy-v.sh` (needs Docker; the first build is slow).
 - [ ] Done when a full day on the dock passes with no drive-off, the battery voltage rises (Q7), one voice command
       that moves him is tried (Q6), and "Hey Vector" works throughout, with
       `AUTO_HOLD=off`.
