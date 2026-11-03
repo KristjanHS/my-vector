@@ -24,7 +24,7 @@ blacks out within seconds off it); a stock `ep` robot's firmware can't be change
    `sudo STT=vosk ./setup.sh`; `sudo ./chipper/start.sh`; open the web UI; re-run Bot Setup → Authenticate
    if Vector doesn't reconnect by itself. Done when "Hey Vector, what time is it?" works and the request
    shows in the fork's log.
-   Ruling: Hyper-V inbound stays default-Block; one allow rule `wirepod-vector-only` for Vector's IP only
+   Ruling: Hyper-V inbound stays default-Block; allow rules `wirepod-vector-*` for Vector's IP only
    (TCP 80/443/8084, UDP 5353). Falsifier: `sudo tcpdump -ni any host <vector-ip>` shows Vector's :443 SYNs.
 2. **Fix the busy spin.** In `assumeBehaviorControl`, block on `<-stop` instead of `select … default`.
    Falsifier: chipper CPU while held drops from ~100% of a core to ~0 (`top`).
