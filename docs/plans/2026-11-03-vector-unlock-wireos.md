@@ -47,14 +47,16 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 | Q3 | `kSafeguardTimeout_s` can be set at runtime via `:8888/consolevarset`. It is probably lost on reboot (unconfirmed) | slice 3a |
 | Q4 | `ddn on` lasts across reboots but probably stops wake-word replies (inferred), so skip it | slice 3a |
 | Q5 | Does `/data` (user data) survive the unlock? Unknown, so back up the server side | slice 0 |
-| Q6 | The patch removes this behavior's exits only; other drive-off paths in the behavior tree are unchecked, and the full-day test decides | slice 3b |
+| Q6 | Only intents handled under HighLevelAI (explore) are blocked; voice behaviors above it still run, and one that drives off ends the stay | slice 3b done |
+| Q7 | On the platform but off the contacts he stays put and doesn't charge (the patch checks the platform, not the contacts) | slice 3b done |
+| Q8 | Does the pinned engine match the installed `dev.ota` base? Unchecked; the wire-os-victor README requires a matching base OTA | slice 3b |
 
 ## Checklist
 
 ### Slice 0: prepare (nothing on the robot changes)
 - [x] `robot/unlock/backup-server-state.sh` → `OK: robot/backup/server-state-*.tgz`.
 - [x] ESN and IP saved in `robot/backup/robot-id-*.txt`; confirm the firmware line there against the web UI.
-- [ ] `robot/unlock/verify-ota.sh unlock` → `OK unlock … 0765574a…`, and `verify-ota.sh wireos` → `OK wireos`.
+- [x] `robot/unlock/verify-ota.sh unlock` → `OK unlock … 0765574a…`, and `verify-ota.sh wireos` → `OK wireos`.
 - [ ] Have a 2.4 GHz **WPA2** network ready (not WPA3) that reaches this PC. Use Chrome on Windows with
       Bluetooth on; WSL has no Bluetooth.
 - [ ] `robot/unlock/serve-ota.sh`, then open `http://<pc-ip>:8123/` from your phone on the same Wi-Fi.
@@ -90,12 +92,15 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 - [ ] Re-run the fork's bot setup over SSH (Q2), then check that "Hey Vector, what time is it?" is answered.
 - [ ] Done when `:8080` (`wired`) loads and the voice answer comes from the fork.
 
-### Slice 3: stay on the charger without a hold (stop at the first that works)
+### Slice 3: stay on the charger without a hold (3a is the stopgap, 3b the fix)
 - [ ] a. Stopgap: `curl 'http://<vector-ip>:8888/consolevarset?key=kSafeguardTimeout_s&value=86400'`. Check that
       `features.json` has `StayOnChargerUntilCharged` enabled. He still leaves when the battery reads full (3.57 V once), and the setting is probably lost on reboot (Q3). Skip `ddn` (Q4).
-- [ ] b. `robot/stay-on-charger/apply.sh` → `OK: patched robot/work/wire-os-victor`. Copy the robot's SSH key there
-      as `robot_sshkey`, then run `./deploy-v.sh` in that folder (needs Docker; the first build is slow).
-- [ ] Done when a full day on the dock passes with no drive-off and "Hey Vector" works throughout, with
+- [ ] b. `robot/stay-on-charger/apply.sh` → `OK: patched …/robot/work/wire-os-victor`. Back up first:
+      `ssh root@<vector-ip> tar -C / -czf - anki > robot/backup/anki-$(date +%F).tgz`.
+- [ ] In `robot/work/wire-os-victor`, overwrite the bundled `robot_sshkey` with the robot's key, then run
+      `./build/build-v.sh` and `./build/deploy-v.sh` (needs Docker; the first build is slow). Check Q8 first.
+- [ ] Done when a full day on the dock passes with no drive-off, the battery voltage rises (Q7), one voice command
+      that moves him is tried (Q6), and "Hey Vector" works throughout, with
       `AUTO_HOLD=off`.
 
 ### Slice 4: retire the server hold
@@ -106,7 +111,8 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 - Slice 0, or a Phase A failure: nothing has changed, so retry from recovery.
 - Phase B cut off: probably a permanent brick, with hardware repair (CPU swap + EDL) the only known route.
 - After slice 1: there is no OS until slice 2. A bad WireOS OTA falls back to the unlocked recovery, so reinstall.
-- Slice 3: if the patched engine misbehaves, reinstall `dev.ota` from the unlocked recovery. If he still won't stay put, set `AUTO_HOLD=override` again.
+- Slice 3: if the patched engine misbehaves, restore the `/anki` backup over SSH after `mount -o rw,remount /`;
+  the fallback is reinstalling `dev.ota` from recovery. If he still won't stay put, set `AUTO_HOLD=override` again.
 
 ## Alternative that makes this plan optional
 
