@@ -20,18 +20,15 @@ blacks out within seconds off it); a stock `ep` robot's firmware can't be change
 
 ## Slices (each one visible and committable)
 
-1. **Run the fork in WSL2, no code change.** Quit Windows WirePod (and disable its autostart);
-   `sudo STT=vosk ./setup.sh`; `sudo ./chipper/start.sh`; open the web UI; re-run Bot Setup → Authenticate
-   if Vector doesn't reconnect by itself. Done when "Hey Vector, what time is it?" works and the request
-   shows in the fork's log.
-   Ruling: Hyper-V inbound stays default-Block; allow rules `wirepod-vector-*` for Vector's IP only
-   (TCP 80/443/8084, UDP 5353). Falsifier: `sudo tcpdump -ni any host <vector-ip>` shows Vector's :443 SYNs.
+1. ✅ **Run the fork in WSL2** — user-verified 2026-11-03 ("what time is it" answered by the fork).
 2. **Fix the busy spin.** In `assumeBehaviorControl`, block on `<-stop` instead of `select … default`.
    Falsifier: chipper CPU while held drops from ~100% of a core to ~0 (`top`).
 3. **Auto-hold.** New file `chipper/pkg/wirepod/sdkapp/autohold.go` (keeps upstream diff small): when a robot
    connects, assume control; a watchdog re-assumes when the stream drops; toggled by an env var in
    `chipper/source.sh` (e.g. `AUTO_HOLD=override|reserve|off`). Done when a server restart and a robot
    reboot both end with Vector held and still on the charger, with no button click.
+   Rulings: `AUTO_HOLD=override|reserve|off` (unset = off) · UI Release ignored (re-grab ≤5 s) · self-poll
+   BotInfo every 5 s, own stream loop blocking on `Recv`, reset `ConnTimer` while held · `go test` fake stream.
 
 ## Backlog (unordered — re-pick after each slice)
 
