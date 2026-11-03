@@ -10,8 +10,10 @@ import (
 )
 
 type fakeStream struct {
-	sent  chan *vectorpb.BehaviorControlRequest
-	recvs chan recvResult
+	sent      chan *vectorpb.BehaviorControlRequest
+	recvs     chan recvResult
+	closed    chan struct{}
+	closeOnce sync.Once
 }
 
 type recvResult struct {
@@ -20,7 +22,11 @@ type recvResult struct {
 }
 
 func newFakeStream() *fakeStream {
-	return &fakeStream{sent: make(chan *vectorpb.BehaviorControlRequest, 4), recvs: make(chan recvResult, 4)}
+	return &fakeStream{
+		sent:   make(chan *vectorpb.BehaviorControlRequest, 4),
+		recvs:  make(chan recvResult, 4),
+		closed: make(chan struct{}),
+	}
 }
 
 func (f *fakeStream) Send(r *vectorpb.BehaviorControlRequest) error { f.sent <- r; return nil }
@@ -45,21 +51,29 @@ func lost() recvResult {
 	}}
 }
 
-// opener hands out the given streams in order, then blocks until the test ends.
-func opener(t *testing.T, streams ...*fakeStream) (func(string) (holdStream, error), chan string) {
-	opened := make(chan string, 8)
+func reservedLost() recvResult {
+	return recvResult{resp: &vectorpb.BehaviorControlResponse{
+		ResponseType: &vectorpb.BehaviorControlResponse_ReservedControlLostEvent{
+			ReservedControlLostEvent: &vectorpb.ReservedControlLostResponse{},
+		},
+	}}
+}
+
+// opener hands out the given streams in order, then returns errors; each open is reported on opened.
+func opener(streams ...*fakeStream) (holdOpener, chan string) {
+	opened := make(chan string, 64)
 	var mu sync.Mutex
 	next := 0
-	return func(esn string) (holdStream, error) {
+	return func(esn string) (holdStream, func(), error) {
 		mu.Lock()
 		defer mu.Unlock()
 		opened <- esn
 		if next >= len(streams) {
-			return nil, errors.New("no more streams")
+			return nil, nil, errors.New("no more streams")
 		}
 		s := streams[next]
 		next++
-		return s, nil
+		return s, func() { s.closeOnce.Do(func() { close(s.closed) }) }, nil
 	}, opened
 }
 
@@ -72,6 +86,18 @@ func waitFor(t *testing.T, cond func() bool) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+}
+
+func recvWithin[T any](t *testing.T, c <-chan T, what string) T {
+	t.Helper()
+	select {
+	case v := <-c:
+		return v
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s did not happen within 2s", what)
+	}
+	var zero T
+	return zero
 }
 
 func TestAutoHoldPriority(t *testing.T) {
@@ -95,12 +121,12 @@ func TestAutoHoldPriority(t *testing.T) {
 
 func TestAutoHoldRequestsPriorityAndMarksGranted(t *testing.T) {
 	s := newFakeStream()
-	open, _ := opener(t, s)
-	h := newAutoHolder(vectorpb.ControlRequest_RESERVE_CONTROL, time.Millisecond, open, func(string) {})
+	open, _ := opener(s)
+	h := newAutoHolder(vectorpb.ControlRequest_RESERVE_CONTROL, time.Millisecond, time.Millisecond, open, func(string) {})
 	defer close(h.quit)
 
 	h.scan([]string{"00e20145"})
-	req := <-s.sent
+	req := recvWithin(t, s.sent, "control request")
 	if got := req.GetControlRequest().GetPriority(); got != vectorpb.ControlRequest_RESERVE_CONTROL {
 		t.Fatalf("requested priority %v, want RESERVE_CONTROL", got)
 	}
@@ -111,35 +137,49 @@ func TestAutoHoldRequestsPriorityAndMarksGranted(t *testing.T) {
 	waitFor(t, func() bool { return h.isGranted("00e20145") })
 }
 
-func TestAutoHoldReassumesAfterStreamErrorAndControlLost(t *testing.T) {
-	first, second, third := newFakeStream(), newFakeStream(), newFakeStream()
-	open, opened := opener(t, first, second, third)
-	h := newAutoHolder(vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, time.Millisecond, open, func(string) {})
+func TestAutoHoldReassumesAndClosesAfterStreamErrorAndControlLost(t *testing.T) {
+	streams := []*fakeStream{newFakeStream(), newFakeStream(), newFakeStream(), newFakeStream()}
+	open, opened := opener(streams...)
+	h := newAutoHolder(vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, time.Millisecond, time.Millisecond, open, func(string) {})
 	defer close(h.quit)
 
 	h.scan([]string{"00e20145"})
-	<-opened
-	first.recvs <- granted()
-	waitFor(t, func() bool { return h.isGranted("00e20145") })
-	first.recvs <- recvResult{err: errors.New("stream reset")}
+	endings := []recvResult{{err: errors.New("stream reset")}, lost(), reservedLost()}
+	for i, end := range endings {
+		recvWithin(t, opened, "open")
+		recvWithin(t, streams[i].sent, "control request")
+		streams[i].recvs <- granted()
+		waitFor(t, func() bool { return h.isGranted("00e20145") })
+		streams[i].recvs <- end
+		recvWithin(t, streams[i].closed, "stream close")
+		recvWithin(t, opened, "re-open")
+		if h.isGranted("00e20145") {
+			t.Fatalf("ending %d: still marked granted after the stream ended", i)
+		}
+		// hand the re-open back to the next iteration's wait
+		opened <- "00e20145"
+	}
+}
 
-	<-opened
-	<-second.sent
-	second.recvs <- granted()
-	waitFor(t, func() bool { return h.isGranted("00e20145") })
-	second.recvs <- lost()
+func TestAutoHoldBacksOffWhileOpenFails(t *testing.T) {
+	open, opened := opener() // every open fails
+	h := newAutoHolder(vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, 10*time.Millisecond, 40*time.Millisecond, open, func(string) {})
+	defer close(h.quit)
 
-	<-opened
-	third.recvs <- granted()
-	waitFor(t, func() bool { return h.isGranted("00e20145") })
+	h.scan([]string{"00e20145"})
+	time.Sleep(300 * time.Millisecond)
+	// fixed 10ms retries would open ~30 times; 10,20,40,40,... backoff opens ~8
+	if n := len(opened); n > 12 {
+		t.Fatalf("opened %d times in 300ms; want backoff to cap retries near 8", n)
+	}
 }
 
 func TestAutoHoldScanStartsOneLoopPerRobotAndTouchesHeld(t *testing.T) {
 	s := newFakeStream()
-	open, opened := opener(t, s)
+	open, opened := opener(s)
 	var mu sync.Mutex
 	touched := map[string]int{}
-	h := newAutoHolder(vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, time.Hour, open, func(esn string) {
+	h := newAutoHolder(vectorpb.ControlRequest_OVERRIDE_BEHAVIORS, time.Hour, time.Hour, open, func(esn string) {
 		mu.Lock()
 		touched[esn]++
 		mu.Unlock()
@@ -147,7 +187,7 @@ func TestAutoHoldScanStartsOneLoopPerRobotAndTouchesHeld(t *testing.T) {
 	defer close(h.quit)
 
 	h.scan([]string{"00E20145"})
-	if got := <-opened; got != "00e20145" {
+	if got := recvWithin(t, opened, "open"); got != "00e20145" {
 		t.Fatalf("opened %q, want lower-cased esn", got)
 	}
 	h.scan([]string{"00e20145"})

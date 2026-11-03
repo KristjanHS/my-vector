@@ -4,6 +4,8 @@ package sdkapp
 // re-assuming whenever the stream drops. The web UI's Release does not affect it.
 
 import (
+	"context"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -19,12 +21,16 @@ type holdStream interface {
 	Recv() (*vectorpb.BehaviorControlResponse, error)
 }
 
+// holdOpener returns a stream plus the func that closes it.
+type holdOpener func(esn string) (holdStream, func(), error)
+
 type autoHolder struct {
-	priority vectorpb.ControlRequest_Priority
-	interval time.Duration
-	open     func(esn string) (holdStream, error)
-	touch    func(esn string)
-	quit     chan struct{}
+	priority   vectorpb.ControlRequest_Priority
+	interval   time.Duration
+	maxBackoff time.Duration
+	open       holdOpener
+	touch      func(esn string)
+	quit       chan struct{}
 
 	mu      sync.Mutex
 	running map[string]bool
@@ -49,7 +55,7 @@ func InitAutoHold() {
 		return
 	}
 	logger.Println("Auto-hold is on: " + priority.String())
-	h := newAutoHolder(priority, 5*time.Second, openRobotHoldStream, resetConnTimer)
+	h := newAutoHolder(priority, 5*time.Second, time.Minute, openRobotHoldStream, resetConnTimer)
 	go func() {
 		for {
 			var esns []string
@@ -62,16 +68,17 @@ func InitAutoHold() {
 	}()
 }
 
-func newAutoHolder(priority vectorpb.ControlRequest_Priority, interval time.Duration,
-	open func(string) (holdStream, error), touch func(string)) *autoHolder {
+func newAutoHolder(priority vectorpb.ControlRequest_Priority, interval, maxBackoff time.Duration,
+	open holdOpener, touch func(string)) *autoHolder {
 	return &autoHolder{
-		priority: priority,
-		interval: interval,
-		open:     open,
-		touch:    touch,
-		quit:     make(chan struct{}),
-		running:  map[string]bool{},
-		granted:  map[string]bool{},
+		priority:   priority,
+		interval:   interval,
+		maxBackoff: maxBackoff,
+		open:       open,
+		touch:      touch,
+		quit:       make(chan struct{}),
+		running:    map[string]bool{},
+		granted:    map[string]bool{},
 	}
 }
 
@@ -94,10 +101,16 @@ func (h *autoHolder) scan(esns []string) {
 	}
 }
 
+// holdLoop retries every interval after a held stream ends; attempts that never get control back off to maxBackoff.
 func (h *autoHolder) holdLoop(esn string) {
 	lastErr := ""
+	wait := h.interval
 	for {
-		err := h.holdOnce(esn)
+		wasGranted, err := h.holdOnce(esn)
+		if wasGranted {
+			lastErr = ""
+			wait = h.interval
+		}
 		if err != nil && err.Error() != lastErr {
 			logger.Println("Auto-hold for " + esn + " ended, retrying: " + err.Error())
 			lastErr = err.Error()
@@ -105,37 +118,45 @@ func (h *autoHolder) holdLoop(esn string) {
 		select {
 		case <-h.quit:
 			return
-		case <-time.After(h.interval):
+		case <-time.After(wait):
+		}
+		if !wasGranted && wait < h.maxBackoff {
+			wait *= 2
+			if wait > h.maxBackoff {
+				wait = h.maxBackoff
+			}
 		}
 	}
 }
 
 // holdOnce requests control and blocks until the stream errors or control is lost.
-func (h *autoHolder) holdOnce(esn string) error {
+func (h *autoHolder) holdOnce(esn string) (wasGranted bool, err error) {
 	defer h.setGranted(esn, false)
-	s, err := h.open(esn)
+	s, closeStream, err := h.open(esn)
 	if err != nil {
-		return err
+		return false, err
 	}
+	defer closeStream()
 	err = s.Send(&vectorpb.BehaviorControlRequest{
 		RequestType: &vectorpb.BehaviorControlRequest_ControlRequest{
 			ControlRequest: &vectorpb.ControlRequest{Priority: h.priority},
 		},
 	})
 	if err != nil {
-		return err
+		return false, err
 	}
 	for {
 		resp, err := s.Recv()
 		if err != nil {
-			return err
+			return wasGranted, err
 		}
 		switch {
 		case resp.GetControlGrantedResponse() != nil:
 			logger.Println("Auto-hold: control granted for " + esn)
+			wasGranted = true
 			h.setGranted(esn, true)
 		case resp.GetControlLostEvent() != nil, resp.GetReservedControlLostEvent() != nil:
-			return errControlLost
+			return wasGranted, errControlLost
 		}
 	}
 }
@@ -158,18 +179,35 @@ func (h *autoHolder) isGranted(esn string) bool {
 	return h.granted[esn]
 }
 
-func openRobotHoldStream(esn string) (holdStream, error) {
+// openRobotHoldStream probes :443 first so an offline robot never reaches newRobot, which leaks a conn per failure.
+func openRobotHoldStream(esn string) (holdStream, func(), error) {
+	for _, bot := range vars.BotInfo.Robots {
+		if strings.EqualFold(bot.Esn, esn) && bot.IPAddress != "" {
+			c, err := net.DialTimeout("tcp", bot.IPAddress+":443", 3*time.Second)
+			if err != nil {
+				return nil, nil, err
+			}
+			c.Close()
+		}
+	}
 	robot, _, err := getRobot(esn)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return robot.Vector.Conn.BehaviorControl(robot.Ctx)
+	ctx, cancel := context.WithCancel(robot.Ctx)
+	s, err := robot.Vector.Conn.BehaviorControl(ctx)
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	return s, cancel, nil
 }
 
 func resetConnTimer(esn string) {
-	for i := range robots {
-		if strings.EqualFold(robots[i].ESN, esn) {
-			robots[i].ConnTimer = 0
+	rs := robots // removeRobot may swap in a shorter slice mid-loop
+	for i := range rs {
+		if strings.EqualFold(rs[i].ESN, esn) {
+			rs[i].ConnTimer = 0
 		}
 	}
 }
