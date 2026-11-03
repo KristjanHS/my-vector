@@ -1,6 +1,5 @@
 # origin is public: firmware images and anything pulled off the robot stay local.
 *.ota
 *.img
-backup/
 *.key
 id_*
