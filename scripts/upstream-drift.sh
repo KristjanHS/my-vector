@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Fails when the fork touches an upstream wire-pod path that is not listed below.
 # Fork code goes in chipper/pkg/myvector/; glue into an upstream package is a fork_*.go file.
+# Untracked files are not checked: `git add` them first.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -15,22 +16,30 @@ git rev-parse -q --verify "$ref^{commit}" >/dev/null || { echo "missing $ref: gi
 base=$(git merge-base HEAD "$ref")
 roots=$(git ls-tree --name-only "$base")
 
+is_allowed() {
+  local a
+  for a in "${allowed_edits[@]}"; do [[ $1 == "$a" ]] && return 0; done
+  return 1
+}
+
+# Working tree vs the merge-base, so uncommitted edits count too. --no-renames splits a rename into a
+# delete (of the upstream path) plus an add, so both halves are checked. A failed diff aborts via set -e.
+changes=$(mktemp)
+trap 'rm -f "$changes"' EXIT
+git diff -z --no-renames --name-status "$base" >"$changes"
+
 bad=0
-# Working tree vs the merge-base, so uncommitted edits count too.
-while IFS=$'\t' read -r status path rest; do
-  [[ $status == R* ]] && path=$rest # renames: check the new path
-  top=${path%%/*}
-  grep -qxF "$top" <<<"$roots" || continue # fork-only top level (docs/, .claude/, scripts/, ...)
-  case $status in
-    A* | R*)
-      [[ $path == chipper/pkg/myvector/* || $(basename "$path") == fork_*.go ]] && continue
-      echo "new fork file inside the upstream tree: $path (move it to chipper/pkg/myvector/ or name it fork_*.go)" ;;
-    *)
-      printf '%s\n' "${allowed_edits[@]}" | grep -qxF "$path" && continue
-      echo "unlisted upstream edit ($status): $path (add it to allowed_edits or revert it)" ;;
-  esac
+while IFS= read -r -d '' status && IFS= read -r -d '' path; do
+  grep -qxF -- "${path%%/*}" <<<"$roots" || continue # fork-only top level (docs/, robot/, scripts/, ...)
+  if [[ $status == A ]]; then
+    [[ $path == chipper/pkg/myvector/* || $(basename "$path") == fork_*.go ]] && continue
+    echo "new fork file inside the upstream tree: $path (move it to chipper/pkg/myvector/ or name it fork_*.go)"
+  else
+    is_allowed "$path" && continue
+    echo "unlisted upstream edit ($status): $path (add it to allowed_edits or revert it)"
+  fi
   bad=1
-done < <(git diff --name-status -M "$base")
+done <"$changes"
 
 if ((bad)); then exit 1; fi
 echo "upstream drift OK: ${#allowed_edits[@]} allowed edits vs $(git rev-parse --short "$base")"
