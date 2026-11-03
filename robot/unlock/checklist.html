@@ -61,23 +61,24 @@ code{font-family:var(--mono);font-size:.84em;background:var(--code);border-radiu
 const S=[
  {id:"s0",risk:"safe",tag:"No change to the robot",title:"Slice 0 · Prepare",items:[
   ["Back up the fork's bot state.","robot/unlock/backup-server-state.sh"],
-  ["Note the ESN and firmware from the fork's web UI into robot/backup/."],
+  ["Save the ESN and IP in robot/backup/robot-id-*.txt; confirm the firmware line there against the web UI."],
   ["Verify the unlock image. Expect OK unlock … 0765574a.","robot/unlock/verify-ota.sh unlock"],
   ["Verify the WireOS image (two downloads must match).","robot/unlock/verify-ota.sh wireos"],
-  ["Use a 2.4 GHz WPA2 network (not WPA3). Use Chrome on Windows with Bluetooth on."],
-  ["Start the local server, then open http://<pc-ip>:8123/ from your phone. It must list unlock-prod/. If it doesn't, allow inbound TCP 8123 in the Windows and Hyper-V firewalls. Fix it now, because the Utility fallback skips your verified copy.","robot/unlock/serve-ota.sh"],
-  ["Power: the dock adapter is the only load on the strip, nothing on it switches (heater, kettle), the switch is taped, and there's no storm. Pick a quiet hour."],
-  ["Dock: clean the contacts and seat him firmly. The web UI should show \"on charger\". Nobody touches him until slice 2 is done."],
-  ["Stress test, 20–30 min on the dock (AUTO_HOLD=override): play animations or say-text every minute and watch the chipper log for reconnects. If he reboots, note it and keep every guard above."]]},
+  ["Use the 2.4 GHz network Linwifi2_2k (WPA2/WPA3 mixed is OK; not WPA3-only). If websetup won't join, set the router to WPA2-only. Use Chrome on Windows with Bluetooth on; WSL has no Bluetooth."],
+  ["Run robot/unlock/serve-ota.sh, then open http://<pc-ip>:8123/ from your phone (not the Windows browser). It must list unlock-prod/. Firewall: run both commands in an admin PowerShell. Fix it now, because the Utility fallback skips your verified copy.","New-NetFirewallHyperVRule -Name VectorOTA8123 -DisplayName \"Vector OTA 8123\" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 8123 -Action Allow\nNew-NetFirewallRule -DisplayName \"Vector OTA 8123\" -Direction Inbound -Protocol TCP -LocalPort 8123 -Action Allow"],
+  ["Power: the dock adapter is the only load on the strip, nothing on it switches (heater, kettle), the switch is taped, and there's no storm or planned power work. Pick a quiet hour."],
+  ["Remove anything touching his lift (a blocker): a lift move against it pries him off the contacts."],
+  ["Dock: wipe the contacts and seat him firmly; get_battery shows is_on_charger_platform:true. Off the dock he goes dark at once (dead battery), so nobody moves him, presses the button or touches the strip until slice 2 is done."],
+  ["Stress test: expect PASS: no reboot. If he reboots, the guards above become mandatory; proceed (ruling). Stopped after 3 clean cycles (2026-11-03); non-gating per the ruling.","robot/unlock/power-stress.sh 25"]]},
  {id:"s1a",risk:"warn",tag:"Phase A · safe to retry",title:"Slice 1 · Unlock, Phase A",items:[
   ["Recovery: on the dock, hold the button about 15 s until the backpack lights turn dark blue, then double-press for the pairing key."],
-  ["Go to websetup.skittle.dev, pair, then join the WPA2 Wi-Fi."],
+  ["Go to websetup.skittle.dev, pair, then join Linwifi2_2k (the WPA2 network)."],
   ["With serve-ota.sh running, start the OTA from websetup's terminal (fallback: Utility → Unlock-Prod.ota).","ota-start http://<pc-ip>:8123/unlock-prod/Unlock-Prod.ota"],
   ["Phase A ends when he reboots by himself. Retry only if websetup shows an error AND he has not rebooted. After any reboot, treat it as Phase B."]]},
  {id:"s1b",risk:"danger",tag:"Phase B · no fallback",title:"Slice 1 · Unlock, Phase B",items:[
   ["From the first reboot: hands off. No button, no lifting, nobody near the strip."],
-  ["The screen shows Writing ABOOT / Recovery / RecoveryFS. If \"Put Vector on Charger!\" appears before any Writing line, reseat him gently. Once any Writing line has shown, touch nothing, even if that message appears."],
-  ["Wait until he reboots into the new recovery by himself. Wait at least 15 min before calling it stuck."],
+  ["The screen shows Writing ABOOT / Recovery / RecoveryFS. If \"Put Vector on Charger!\" appears before any Writing line, reseat him gently (he may go dark; that is a Phase A retry). Once any Writing line has shown, touch nothing, even if that message appears."],
+  ["Wait until he reboots into the new recovery by himself. If it seems slow, keep waiting at least 15 min before calling it stuck."],
   ["Stop serve-ota.sh. He has no OS now, so go straight to slice 2."]]},
  {id:"s2",risk:"warn",tag:"A/B slot · recovery is the fallback",title:"Slice 2 · Install WireOS",items:[
   ["From the unlocked recovery: websetup, pair, Wi-Fi, then serve-ota.sh and start the OTA (fallback: Custom Firmware).","ota-start http://<pc-ip>:8123/wireos-dev/dev.ota"],
