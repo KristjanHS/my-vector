@@ -57,18 +57,16 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 - [x] `robot/unlock/backup-server-state.sh` → `OK: robot/backup/server-state-*.tgz`.
 - [x] ESN and IP saved in `robot/backup/robot-id-*.txt`; confirm the firmware line there against the web UI.
 - [x] `robot/unlock/verify-ota.sh unlock` → `OK unlock … 0765574a…`, and `verify-ota.sh wireos` → `OK wireos`.
-- [ ] Have a 2.4 GHz **WPA2** network ready (not WPA3) that reaches this PC. Use Chrome on Windows with
-      Bluetooth on; WSL has no Bluetooth.
-- [ ] `robot/unlock/serve-ota.sh`, then open `http://<pc-ip>:8123/` from your phone on the same Wi-Fi.
-      It must list `unlock-prod/`. If it doesn't, allow inbound TCP 8123 in the Windows **and** Hyper-V
-      firewalls (WSL mirrored mode). Fix this here; the Utility fallback skips your verified copy.
-- [ ] Power: the dock's adapter is the only load on the strip, nothing on it switches (heater, kettle), the
+- [x] 2.4 GHz network `Linwifi2_2k` (WPA2/WPA3 mixed; not WPA3-only). If websetup won't join, set the router
+      to WPA2-only. Use Chrome on Windows with Bluetooth on; WSL has no Bluetooth.
+- [x] `robot/unlock/serve-ota.sh`; the phone (not the Windows browser) must list `unlock-prod/` at `http://<pc-ip>:8123/`.
+      Firewall, admin PowerShell: `New-NetFirewallHyperVRule -Name VectorOTA8123 -DisplayName "Vector OTA 8123" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 8123 -Action Allow` + `New-NetFirewallRule -DisplayName "Vector OTA 8123" -Direction Inbound -Protocol TCP -LocalPort 8123 -Action Allow`.
+- [x] Power: the dock's adapter is the only load on the strip, nothing on it switches (heater, kettle), the
       strip switch is taped, and there's no storm or planned power work. Pick a quiet hour.
-- [ ] Dock: wipe the contacts and seat him firmly. The fork's web UI should show "on charger". Nobody may
-      move him, press the button or touch the strip until slice 2 is done.
-- [ ] Power stress test, 20–30 min on the dock with `AUTO_HOLD=override` keeping him put: play animations
-      or say-text from the SDK web UI every minute, and watch the chipper log for robot reconnects.
-      **If he reboots**, the risk is recorded and the guards above become mandatory; proceed (ruling).
+- [x] Dock: wipe the contacts and seat him firmly; `get_battery` shows `is_on_charger_platform:true`. Off the dock
+      he goes dark at once (dead battery), so nobody moves him, presses the button or touches the strip until slice 2 is done.
+- [ ] `robot/unlock/power-stress.sh 25` → `PASS: no reboot`. **If he reboots**, the guards above become mandatory; proceed (ruling).
+- [ ] Remove anything touching his lift (a blocker): a lift move against it pries him off the contacts.
 
 ### Slice 1: unlock (Phase A can be retried; Phase B can't be undone)
 - [ ] Recovery: on the dock, hold the button about 15 s until the backpack lights turn dark blue, then
@@ -80,7 +78,8 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
       **and** he has not rebooted. Once he has rebooted, treat it as Phase B, even if it looks stalled.
 - [ ] **Phase B, from that reboot onward: hands off.** No button, no lifting, nobody near the strip.
       The screen shows Writing ABOOT / Recovery / RecoveryFS.
-- [ ] If "Put Vector on Charger!" appears **before any Writing line**, reseat him gently. Once any Writing
+- [ ] If "Put Vector on Charger!" appears **before any Writing line**, reseat him gently (he may go dark; that
+      is a Phase A retry). Once any Writing
       line has shown, touch nothing, even if that message appears. The write order is unknown.
 - [ ] Wait until he reboots into the new recovery by himself. If it seems slow, keep waiting at least
       15 min before calling it stuck. Then stop `serve-ota.sh`. He has no OS now, so go straight to slice 2.
