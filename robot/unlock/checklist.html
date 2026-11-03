@@ -85,10 +85,8 @@ const S=[
   ["Re-run the fork's bot setup over SSH, then ask \"Hey Vector, what time is it?\""],
   ["Done when :8080 (wired) loads and the fork answers by voice."]]},
  {id:"s3",risk:"safe",tag:"Reversible",title:"Slice 3 · Stay on the charger without a hold",items:[
-  ["a. Raise the safeguard timeout (probably lost on reboot). Check features.json has StayOnChargerUntilCharged enabled. Skip ddn.","curl 'http://<vector-ip>:8888/consolevarset?key=kSafeguardTimeout_s&value=86400'"],
-  ["b. Remount the filesystem read-write and back up the behavior JSON into robot/backup/ first.","mount -o rw,remount /"],
-  ["Edit the copy in robot/work/, check it parses, upload it, remount read-only and reboot. If he crash-loops, restore the backup over SSH.","python3 -m json.tool stayOnChargerUntilCharged.json"],
-  ["c. Last resort: rebuild wire-os-victor in robot/work/ and deploy with deploy-v.sh (needs Docker)."],
+  ["a. Stopgap: raise the safeguard timeout (probably lost on reboot; he still leaves when the battery reads full). Check features.json has StayOnChargerUntilCharged enabled. Skip ddn.","curl 'http://<vector-ip>:8888/consolevarset?key=kSafeguardTimeout_s&value=86400'"],
+  ["b. Patch and rebuild the engine so he never leaves the dock on his own. Then copy the robot's SSH key into robot/work/wire-os-victor as robot_sshkey and run ./deploy-v.sh there (needs Docker). If it misbehaves, reinstall dev.ota from recovery.","robot/stay-on-charger/apply.sh"],
   ["Done when a full day on the dock passes with no drive-off and \"Hey Vector\" works, with AUTO_HOLD=off."]]},
  {id:"s4",risk:"safe",tag:"Server",title:"Slice 4 · Retire the server hold",items:[
   ["Set AUTO_HOLD=off in chipper/source.sh and restart chipper."]]}
