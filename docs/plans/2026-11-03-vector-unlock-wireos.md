@@ -3,7 +3,7 @@
 **Goal**: Vector lives on the charger, still answers "Hey Vector", and the server holds nothing
 (`AUTO_HOLD=off`). The way there: unlock the production bot, install WireOS, then patch the firmware's
 own stay-on-charger behavior.
-**Status**: slice 0 done; slices 0–1 done; slice 2 at BLE activation (WireOS `3.0.2.36d` / compat 209 on 192.0.2.76); every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
+**Status**: slice 0 done; slices 0–2 done 2026-11-03 (WireOS `3.0.2.36d` / compat 209 on 192.0.2.76, voice via the fork); slice 3 next; every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
 **Rulings (2026-11-03)**: all slices covered · a failed power stress test means proceed with the extra guards,
 not stop · the dock stays on a wall adapter on a guarded strip (no UPS).
 **Rulings (slice 3)**: docked, he never leaves on his own (not for battery full, timeout or a voice command) ·
@@ -89,8 +89,8 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 - [x] From the unlocked recovery: websetup → pair → Wi-Fi → `serve-ota.sh` →
       `ota-start http://<pc-ip>:8123/wireos-dev/dev.ota`. Fallback: Custom Firmware.
 - [x] First thing after it boots: `ssh root@<vector-ip>`, run `touch /data/data/user-do-not-auto-update`, then log out.
-- [ ] Re-run the fork's bot setup over SSH (Q2; key `robot/work/wire-os-victor/robot_sshkey`), activate at wp.pvic.xyz (Q5), then check that "Hey Vector, what time is it?" is answered.
-- [ ] Done when `:8080` (`wired`) loads and the voice answer comes from the fork.
+- [x] Re-run the fork's bot setup over SSH (Q2; key `robot/work/wire-os-victor/robot_sshkey`), activate at wp.pvic.xyz (Q5), then check that "Hey Vector, what time is it?" is answered.
+- [x] Done when `:8080` (`wired`) loads and the voice answer comes from the fork.
 
 ### Slice 3: stay on the charger without a hold (3a is the stopgap, 3b the fix)
 - [ ] a. Stopgap: `curl 'http://<vector-ip>:8888/consolevarset?key=kSafeguardTimeout_s&value=86400'`. Check that
