@@ -8,6 +8,7 @@ ota=$(cd "$(dirname "$0")/../ota" && pwd)
 unlock_url=http://websetup.skittle.dev:8000/static/firmware/utility/Unlock-Prod.ota
 unlock_sha=0765574a6f3a9b65ff2d3d4181f9fc0eea800c810468f480e8b822b73d38110b # 175349760 bytes, 2026-11-03
 wireos_url=http://ota.pvic.xyz/vic/latest/dev.ota
+wireos_size=163686400 # 2026-11-03; a new "latest" fails here on purpose: review it, then update the pin
 
 fetch() { # url dest
   mkdir -p "$(dirname "$2")"
@@ -37,8 +38,10 @@ case ${1:-} in
     rm -f "$f.check"
     [[ $a == "$b" ]] || { echo "FAIL: two downloads differ ($a vs $b); delete $f and re-run" >&2; exit 1; }
     check_tar "$f"
-    grep -x 'update_version=.*' <(tar -xOf "$f" manifest.ini) || true
-    echo "OK wireos: $f sha256 $a" ;;
+    size=$(stat -c %s "$f")
+    [[ $size == "$wireos_size" ]] || { echo "FAIL: $f is $size bytes, pinned $wireos_size (new release?)" >&2; exit 1; }
+    tar -xOf "$f" manifest.ini | grep -qx 'ankidev=1' || { echo "FAIL: $f manifest is not ankidev=1" >&2; exit 1; }
+    echo "OK wireos: $f sha256 $a, $size bytes, ankidev=1" ;;
   *)
     echo "usage: $0 unlock|wireos" >&2; exit 2 ;;
 esac
