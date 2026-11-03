@@ -1,5 +1,7 @@
 # Vector auto-hold: keep a worn-battery Vector on the charger
 
+**Status**: ✅ SHIPPED 2026-11-03 — live check owed → `docs/backlog.md` §OWED[USER].
+
 **Goal**: the my-vector server holds behavior control of Vector automatically, so he never drives off the
 charger — and the hold survives server restarts and robot reconnects. Battery is worn (~3.57 V on charger,
 blacks out within seconds off it); a stock `ep` robot's firmware can't be changed, so the server must do it.
@@ -36,3 +38,4 @@ blacks out within seconds off it); a stock `ep` robot's firmware can't be change
 - Auto-start: WSL VM + `setup.sh daemon-enable` at Windows logon (Task Scheduler running `wsl`).
 - Show "held / not held" in the web UI next to the Assume/Release buttons.
 - Battery replacement — the real fix; makes the hold optional.
+- Firmware route (hold-free, keeps "Hey Vector") → plan: 2026-11-03-vector-unlock-wireos.md (docs/plans/).
