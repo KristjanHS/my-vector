@@ -24,9 +24,8 @@ blacks out within seconds off it); a stock `ep` robot's firmware can't be change
    `sudo STT=vosk ./setup.sh`; `sudo ./chipper/start.sh`; open the web UI; re-run Bot Setup → Authenticate
    if Vector doesn't reconnect by itself. Done when "Hey Vector, what time is it?" works and the request
    shows in the fork's log.
-   Open risk: Vector must resolve `escapepod.local` → the WSL mDNS announcement must reach the LAN, and
-   inbound :443 must pass the Hyper-V firewall. Falsifier: from another LAN device, `escapepod.local`
-   resolves to the PC and `https://escapepod.local/ok` answers.
+   Ruling: Hyper-V inbound stays default-Block; one allow rule `wirepod-vector-only` for Vector's IP only
+   (TCP 80/443/8084, UDP 5353). Falsifier: `sudo tcpdump -ni any host <vector-ip>` shows Vector's :443 SYNs.
 2. **Fix the busy spin.** In `assumeBehaviorControl`, block on `<-stop` instead of `select … default`.
    Falsifier: chipper CPU while held drops from ~100% of a core to ~0 (`top`).
 3. **Auto-hold.** New file `chipper/pkg/wirepod/sdkapp/autohold.go` (keeps upstream diff small): when a robot
