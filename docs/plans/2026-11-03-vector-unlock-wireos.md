@@ -3,7 +3,7 @@
 **Goal**: Vector lives on the charger, still answers "Hey Vector", and the server holds nothing
 (`AUTO_HOLD=off`). The way there: unlock the production bot, install WireOS, then patch the firmware's
 own stay-on-charger behavior.
-**Status**: slice 0 done; slice 1 done 2026-11-03 (Phase B 21:18 → new recovery "install firmware" by ~21:23); slice 2 next; every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
+**Status**: slice 0 done; slices 0–1 done; slice 2 at BLE activation (WireOS `3.0.2.36d` / compat 209 on 192.0.2.76); every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
 **Rulings (2026-11-03)**: all slices covered · a failed power stress test means proceed with the extra guards,
 not stop · the dock stays on a wall adapter on a guarded strip (no UPS).
 **Rulings (slice 3)**: docked, he never leaves on his own (not for battery full, timeout or a voice command) ·
@@ -46,7 +46,7 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 | Q2 | WireOS points at its author's cloud. Re-run the fork's SSH setup (`setup/ssh.go`) to point it back at the fork | slice 2 |
 | Q3 | `kSafeguardTimeout_s` can be set at runtime via `:8888/consolevarset`. It is probably lost on reboot (unconfirmed) | slice 3a |
 | Q4 | `ddn on` lasts across reboots but probably stops wake-word replies (inferred), so skip it | slice 3a |
-| Q5 | Does `/data` (user data) survive the unlock? Unknown, so back up the server side | slice 0 |
+| Q5 | `/data` survived the unlock + WireOS, but `persistent/token/` is empty, so he re-activates over BLE (wp.pvic.xyz) | slice 2 |
 | Q6 | Only intents handled under HighLevelAI (explore) are blocked; voice behaviors above it still run, and one that drives off ends the stay | slice 3b done |
 | Q7 | On the platform but off the contacts he stays put and doesn't charge (the patch checks the platform, not the contacts) | slice 3b done |
 | Q8 | Pin = the `anki/victor` submodule of the wire-os build `dev.ota` came from (compat 209); `deploy.sh` refuses a mismatch. Before building: `ssh root@<vector-ip> cat /etc/os-version /etc/victor-compat-version` → `3.0.2.36d`, `209` | slice 3b |
@@ -86,10 +86,10 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
       15 min before calling it stuck. Then stop `serve-ota.sh`. He has no OS now, so go straight to slice 2.
 
 ### Slice 2: install WireOS (A/B slots, recovery stays as the fallback)
-- [ ] From the unlocked recovery: websetup → pair → Wi-Fi → `serve-ota.sh` →
+- [x] From the unlocked recovery: websetup → pair → Wi-Fi → `serve-ota.sh` →
       `ota-start http://<pc-ip>:8123/wireos-dev/dev.ota`. Fallback: Custom Firmware.
-- [ ] First thing after it boots: `ssh root@<vector-ip>`, run `touch /data/data/user-do-not-auto-update`, then log out.
-- [ ] Re-run the fork's bot setup over SSH (Q2), then check that "Hey Vector, what time is it?" is answered.
+- [x] First thing after it boots: `ssh root@<vector-ip>`, run `touch /data/data/user-do-not-auto-update`, then log out.
+- [ ] Re-run the fork's bot setup over SSH (Q2; key `robot/work/wire-os-victor/robot_sshkey`), activate at wp.pvic.xyz (Q5), then check that "Hey Vector, what time is it?" is answered.
 - [ ] Done when `:8080` (`wired`) loads and the voice answer comes from the fork.
 
 ### Slice 3: stay on the charger without a hold (3a is the stopgap, 3b the fix)
