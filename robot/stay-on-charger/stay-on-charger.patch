@@ -1,7 +1,16 @@
 diff --git a/engine/aiComponent/behaviorComponent/behaviors/behaviorStayOnChargerUntilCharged.cpp b/engine/aiComponent/behaviorComponent/behaviors/behaviorStayOnChargerUntilCharged.cpp
-index 6775421..b86f790 100644
+index 6775421..ac07b05 100644
 --- a/engine/aiComponent/behaviorComponent/behaviors/behaviorStayOnChargerUntilCharged.cpp
 +++ b/engine/aiComponent/behaviorComponent/behaviors/behaviorStayOnChargerUntilCharged.cpp
+@@ -4,7 +4,7 @@
+  * Author: Andrew Stout
+  * Created: 2019-01-31
+  *
+- * Description: WantsToBeActivated if on the charger and battery is not full; delegates to a parameterized behavior in the meantime.
++ * Description: my-vector: WantsToBeActivated whenever on the charger platform; delegates to a parameterized behavior in the meantime.
+  *
+  * Copyright: Anki, Inc. 2019
+  *
 @@ -71,32 +71,8 @@ BehaviorStayOnChargerUntilCharged::~BehaviorStayOnChargerUntilCharged()
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  bool BehaviorStayOnChargerUntilCharged::WantsToBeActivatedBehavior() const
