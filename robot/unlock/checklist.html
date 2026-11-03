@@ -1,0 +1,127 @@
+<title>Vector Unlock Checklist</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one narrow column of slice cards; each item is a big tap target; risk shown as a stripe */
+:root{
+  --bg:#f3f5f7;--panel:#ffffff;--fg:#17202a;--muted:#5b6876;--line:#d7dde3;
+  --safe:#1f7a4d;--warn:#a35d00;--danger:#b3261e;--accent:#2f5d8a;--code:#eaeef2;
+  --body:"Atkinson Hyperlegible",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#11161c;--panel:#1a2129;--fg:#e6ebf0;--muted:#97a4b1;--line:#2c3743;
+  --safe:#4cc38a;--warn:#f0a84a;--danger:#ff7a70;--accent:#7fb0e0;--code:#232c36;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11161c;--panel:#1a2129;--fg:#e6ebf0;--muted:#97a4b1;--line:#2c3743;
+  --safe:#4cc38a;--warn:#f0a84a;--danger:#ff7a70;--accent:#7fb0e0;--code:#232c36;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--body)}
+main{max-width:44rem;margin:0 auto;padding-block:20px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:grid;gap:18px}
+h1{font-size:1.6rem;line-height:1.2;margin:0;text-wrap:balance}
+h2{font-size:1.15rem;margin:0;text-wrap:balance}
+.lede{color:var(--muted);margin:4px 0 0}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.progress{font-family:var(--mono);font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+button.reset{font:inherit;font-size:.85rem;background:none;border:1px solid var(--line);color:var(--muted);border-radius:6px;padding:4px 10px;cursor:pointer}
+button.reset[data-armed]{border-color:var(--danger);color:var(--danger)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 14px 6px;border-left:6px solid var(--risk);display:grid;gap:6px}
+section[data-risk=safe]{--risk:var(--safe)}section[data-risk=warn]{--risk:var(--warn)}section[data-risk=danger]{--risk:var(--danger)}
+.tag{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--risk)}
+.head{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+ul{list-style:none;margin:0;padding:0}
+li{border-top:1px solid var(--line)}
+label{display:grid;grid-template-columns:28px 1fr;gap:10px;padding:10px 0;cursor:pointer;min-width:0}
+input[type=checkbox]{width:22px;height:22px;margin:2px 0 0;accent-color:var(--accent)}
+input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.txt{min-width:0}
+li.done .txt{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
+code{font-family:var(--mono);font-size:.84em;background:var(--code);border-radius:4px;padding:1px 5px;overflow-wrap:anywhere}
+.cmd{display:flex;gap:6px;align-items:flex-start;margin-top:6px}
+.cmd code{flex:1;display:block;padding:6px 8px;white-space:pre-wrap}
+.cmd button{font:inherit;font-size:.8rem;border:1px solid var(--line);background:var(--panel);color:var(--accent);border-radius:6px;padding:5px 8px;cursor:pointer}
+.stop{border:2px solid var(--danger);border-radius:10px;padding:12px 14px;background:var(--panel)}
+.stop strong{color:var(--danger)}
+.note{font-size:.9rem;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){li .txt{transition:color .15s}}
+</style>
+
+<main>
+  <header>
+    <h1>Vector Unlock Checklist</h1>
+    <p class="lede">Unlock-Prod → WireOS → stay on the charger. Source of truth: <code>docs/plans/2026-11-03-vector-unlock-wireos.md</code>. Ticks are saved in this browser only.</p>
+  </header>
+  <div class="stop"><strong>Phase B can't be undone.</strong> After the first reboot in slice 1, for about 1–2 minutes the bootloader and recovery are being rewritten. Don't touch the button, the robot or the power strip until he's back in recovery by himself.</div>
+  <div class="bar"><span class="progress" id="progress">0 / 0 done</span><button class="reset" id="reset" type="button">Clear ticks</button></div>
+  <div id="slices"></div>
+  <p class="note">Unlock-Prod.ota sha256 <code>0765574a6f3a9b65ff2d3d4181f9fc0eea800c810468f480e8b822b73d38110b</code> · 175,349,760 bytes</p>
+</main>
+
+<script>
+const S=[
+ {id:"s0",risk:"safe",tag:"No change to the robot",title:"Slice 0 · Prepare",items:[
+  ["Back up the fork's bot state.","robot/unlock/backup-server-state.sh"],
+  ["Note the ESN and firmware from the fork's web UI into robot/backup/."],
+  ["Verify the unlock image. Expect OK unlock … 0765574a.","robot/unlock/verify-ota.sh unlock"],
+  ["Verify the WireOS image (two downloads must match).","robot/unlock/verify-ota.sh wireos"],
+  ["Use a 2.4 GHz WPA2 network (not WPA3). Use Chrome on Windows with Bluetooth on."],
+  ["Start the local server, then open http://<pc-ip>:8123/ from your phone. It must list unlock-prod/.","robot/unlock/serve-ota.sh"],
+  ["Power: the dock adapter is the only load on the strip, the switch is taped, and there's no storm. Pick a quiet hour."],
+  ["Dock: clean the contacts and seat him firmly. The web UI should show \"on charger\". Nobody touches him until slice 2 is done."],
+  ["Stress test, 20–30 min on the dock (AUTO_HOLD=override): play animations or say-text every minute and watch the chipper log for reconnects. If he reboots, note it and keep every guard above."]]},
+ {id:"s1a",risk:"warn",tag:"Phase A · safe to retry",title:"Slice 1 · Unlock, Phase A",items:[
+  ["Recovery: on the dock, hold the button about 15 s until the backpack lights turn dark blue, then double-press for the pairing key."],
+  ["Go to websetup.skittle.dev, pair, then join the WPA2 Wi-Fi."],
+  ["In websetup's terminal, start the OTA from your PC (fallback: Utility → Unlock-Prod.ota).","ota-start http://<pc-ip>:8123/unlock-prod/Unlock-Prod.ota"],
+  ["An error or Wi-Fi drop now is safe. Go back into recovery and retry."]]},
+ {id:"s1b",risk:"danger",tag:"Phase B · no fallback",title:"Slice 1 · Unlock, Phase B",items:[
+  ["From the first reboot: hands off. No button, no lifting, nobody near the strip."],
+  ["The screen shows Writing ABOOT / Recovery / RecoveryFS. If it says \"Put Vector on Charger!\", reseat him gently. That check runs before any write."],
+  ["Wait until he reboots into the new recovery by himself. Wait at least 15 min before calling it stuck."],
+  ["Stop serve-ota.sh. He has no OS now, so go straight to slice 2."]]},
+ {id:"s2",risk:"warn",tag:"A/B slot · recovery is the fallback",title:"Slice 2 · Install WireOS",items:[
+  ["From the unlocked recovery: websetup, pair, Wi-Fi, then serve-ota.sh and start the OTA (fallback: Custom Firmware).","ota-start http://<pc-ip>:8123/wireos-dev/dev.ota"],
+  ["Over SSH, turn off unattended OTAs.","ssh root@<vector-ip> touch /data/data/user-do-not-auto-update"],
+  ["Re-run the fork's bot setup over SSH, then ask \"Hey Vector, what time is it?\""],
+  ["Done when :8080 (wired) loads and the fork answers by voice."]]},
+ {id:"s3",risk:"safe",tag:"Reversible",title:"Slice 3 · Stay on the charger without a hold",items:[
+  ["a. Raise the safeguard timeout (probably lost on reboot). Check features.json has StayOnChargerUntilCharged enabled. Skip ddn.","curl 'http://<vector-ip>:8888/consolevarset?key=kSafeguardTimeout_s&value=86400'"],
+  ["b. Remount the filesystem read-write and back up the behavior JSON into robot/backup/ first.","mount -o rw,remount /"],
+  ["Edit the copy in robot/work/, check it parses, upload it, remount read-only and reboot. If he crash-loops, restore the backup over SSH.","python3 -m json.tool stayOnChargerUntilCharged.json"],
+  ["c. Last resort: rebuild wire-os-victor in robot/work/ and deploy with deploy-v.sh (needs Docker)."],
+  ["Done when a full day on the dock passes with no drive-off and \"Hey Vector\" works, with AUTO_HOLD=off."]]},
+ {id:"s4",risk:"safe",tag:"Server",title:"Slice 4 · Retire the server hold",items:[
+  ["Set AUTO_HOLD=off in chipper/source.sh and restart chipper."]]}
+];
+const KEY="vector-unlock-ticks";
+let ticks={};try{ticks=JSON.parse(localStorage.getItem(KEY))||{}}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(ticks))}catch(e){}};
+const root=document.getElementById("slices");root.style.display="grid";root.style.gap="18px";
+let total=0;
+for(const s of S){
+  const sec=document.createElement("section");sec.dataset.risk=s.risk;
+  sec.innerHTML=`<div class="head"><h2></h2><span class="tag"></span></div><ul></ul>`;
+  sec.querySelector("h2").textContent=s.title;sec.querySelector(".tag").textContent=s.tag;
+  const ul=sec.querySelector("ul");
+  s.items.forEach(([t,cmd],i)=>{
+    const id=`${s.id}-${i}`;total++;
+    const li=document.createElement("li");
+    li.innerHTML=`<label for="${id}"><input type="checkbox" id="${id}"><span class="txt"></span></label>`;
+    li.querySelector(".txt").textContent=t;
+    if(cmd){const c=document.createElement("div");c.className="cmd";
+      c.innerHTML=`<code></code><button type="button">Copy</button>`;c.querySelector("code").textContent=cmd;
+      c.querySelector("button").onclick=async e=>{const b=e.currentTarget;
+        try{await navigator.clipboard.writeText(cmd);b.textContent="Copied"}catch(_){const r=document.createRange();r.selectNodeContents(c.querySelector("code"));const sel=getSelection();sel.removeAllRanges();sel.addRange(r);b.textContent="Selected"}
+        setTimeout(()=>b.textContent="Copy",1500)};
+      li.querySelector(".txt").appendChild(c)}
+    const box=li.querySelector("input");box.checked=!!ticks[id];li.classList.toggle("done",box.checked);
+    box.onchange=()=>{ticks[id]=box.checked;li.classList.toggle("done",box.checked);save();count()};
+    ul.appendChild(li)});
+  root.appendChild(sec)}
+function count(){const n=Object.values(ticks).filter(Boolean).length;document.getElementById("progress").textContent=`${n} / ${total} done`}
+count();
+const reset=document.getElementById("reset");
+reset.onclick=()=>{if(!reset.dataset.armed){reset.dataset.armed="1";reset.textContent="Tap again to clear";setTimeout(()=>{delete reset.dataset.armed;reset.textContent="Clear ticks"},3000);return}
+  ticks={};save();document.querySelectorAll("input[type=checkbox]").forEach(b=>{b.checked=false;b.closest("li").classList.remove("done")});
+  delete reset.dataset.armed;reset.textContent="Clear ticks";count()};
+</script>
