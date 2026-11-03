@@ -49,7 +49,7 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 | Q5 | Does `/data` (user data) survive the unlock? Unknown, so back up the server side | slice 0 |
 | Q6 | Only intents handled under HighLevelAI (explore) are blocked; voice behaviors above it still run, and one that drives off ends the stay | slice 3b done |
 | Q7 | On the platform but off the contacts he stays put and doesn't charge (the patch checks the platform, not the contacts) | slice 3b done |
-| Q8 | Pin = the `anki/victor` submodule of the wire-os build `dev.ota` came from (compat 209); `deploy.sh` refuses a mismatch. Check: `cat robot/work/wire-os-victor/VICTOR_COMPAT_VERSION` → `209` | slice 3b done |
+| Q8 | Pin = the `anki/victor` submodule of the wire-os build `dev.ota` came from (compat 209); `deploy.sh` refuses a mismatch. Before building: `ssh root@<vector-ip> cat /etc/os-version /etc/victor-compat-version` → `3.0.2.36d`, `209` | slice 3b |
 
 ## Checklist
 
