@@ -3,7 +3,7 @@
 **Goal**: Vector lives on the charger, still answers "Hey Vector", and the server holds nothing
 (`AUTO_HOLD=off`). The way there: unlock the production bot, install WireOS, then patch the firmware's
 own stay-on-charger behavior.
-**Status**: slice 0 done; slice 1 Phase A started 2026-11-03 21:15 (download 91% at 21:18); every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
+**Status**: slice 0 done; slice 1 done 2026-11-03 (Phase B 21:18 → new recovery "install firmware" by ~21:23); slice 2 next; every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
 **Rulings (2026-11-03)**: all slices covered · a failed power stress test means proceed with the extra guards,
 not stop · the dock stays on a wall adapter on a guarded strip (no UPS).
 **Rulings (slice 3)**: docked, he never leaves on his own (not for battery full, timeout or a voice command) ·
@@ -75,14 +75,14 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
       (a row installs websetup's own copy at once); **Alt+2** opens the terminal.
 - [x] With `serve-ota.sh` running, enter in websetup's terminal
       `ota-start http://192.0.2.249:8123/unlock-prod/Unlock-Prod.ota` (sent 2026-11-03 21:15). Fallback: Utility → Unlock-Prod.ota.
-- [ ] Phase A ends when he reboots by himself. Retry (back into recovery) **only** if websetup shows an error
+- [x] Phase A ends when he reboots by himself. Retry (back into recovery) **only** if websetup shows an error
       **and** he has not rebooted. Once he has rebooted, treat it as Phase B, even if it looks stalled.
-- [ ] **Phase B, from that reboot onward: hands off.** No button, no lifting, nobody near the strip.
+- [x] **Phase B, from that reboot onward: hands off.** No button, no lifting, nobody near the strip.
       The screen shows Writing ABOOT / Recovery / RecoveryFS.
-- [ ] If "Put Vector on Charger!" appears **before any Writing line**, reseat him gently (he may go dark; that
+- [x] If "Put Vector on Charger!" appears **before any Writing line**, reseat him gently (he may go dark; that
       is a Phase A retry). Once any Writing
       line has shown, touch nothing, even if that message appears. The write order is unknown.
-- [ ] Wait until he reboots into the new recovery by himself. If it seems slow, keep waiting at least
+- [x] Wait until he reboots into the new recovery by himself. If it seems slow, keep waiting at least
       15 min before calling it stuck. Then stop `serve-ota.sh`. He has no OS now, so go straight to slice 2.
 
 ### Slice 2: install WireOS (A/B slots, recovery stays as the fallback)
