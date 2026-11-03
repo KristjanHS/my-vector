@@ -3,9 +3,11 @@
 **Goal**: Vector lives on the charger, still answers "Hey Vector", and the server holds nothing
 (`AUTO_HOLD=off`). The way there: unlock the production bot, install WireOS, then patch the firmware's
 own stay-on-charger behavior.
-**Status**: checklist ready, not started. Every step on the robot is `[USER]`. Scripts: `robot/unlock/`.
+**Status**: slice 0 PC steps done; every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
 **Rulings (2026-11-03)**: all slices covered · a failed power stress test means proceed with the extra guards,
 not stop · the dock stays on a wall adapter on a guarded strip (no UPS).
+**Rulings (slice 3)**: docked, he never leaves on his own (not for battery full, timeout or a voice command) ·
+the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 
 ## Facts (research 2026-11-03; VERIFIED from source or the OTA file itself unless marked inferred)
 
@@ -45,12 +47,13 @@ not stop · the dock stays on a wall adapter on a guarded strip (no UPS).
 | Q3 | `kSafeguardTimeout_s` can be set at runtime via `:8888/consolevarset`. It is probably lost on reboot (unconfirmed) | slice 3a |
 | Q4 | `ddn on` lasts across reboots but probably stops wake-word replies (inferred), so skip it | slice 3a |
 | Q5 | Does `/data` (user data) survive the unlock? Unknown, so back up the server side | slice 0 |
+| Q6 | The patch removes this behavior's exits only; other drive-off paths in the behavior tree are unchecked, and the full-day test decides | slice 3b |
 
 ## Checklist
 
 ### Slice 0: prepare (nothing on the robot changes)
-- [ ] `robot/unlock/backup-server-state.sh` → `OK: robot/backup/server-state-*.tgz`.
-- [ ] Write down the ESN and current firmware from the fork's web UI, keeping the note in `robot/backup/`.
+- [x] `robot/unlock/backup-server-state.sh` → `OK: robot/backup/server-state-*.tgz`.
+- [x] ESN and IP saved in `robot/backup/robot-id-*.txt`; confirm the firmware line there against the web UI.
 - [ ] `robot/unlock/verify-ota.sh unlock` → `OK unlock … 0765574a…`, and `verify-ota.sh wireos` → `OK wireos`.
 - [ ] Have a 2.4 GHz **WPA2** network ready (not WPA3) that reaches this PC. Use Chrome on Windows with
       Bluetooth on; WSL has no Bluetooth.
@@ -88,15 +91,10 @@ not stop · the dock stays on a wall adapter on a guarded strip (no UPS).
 - [ ] Done when `:8080` (`wired`) loads and the voice answer comes from the fork.
 
 ### Slice 3: stay on the charger without a hold (stop at the first that works)
-- [ ] a. `curl 'http://<vector-ip>:8888/consolevarset?key=kSafeguardTimeout_s&value=86400'`. Check that
-      `features.json` has `StayOnChargerUntilCharged` enabled. The behavior ends when the battery reads full
-      (it once read "full" at 3.57 V), and the setting is probably lost on reboot (Q3). Skip `ddn` (Q4).
-- [ ] b. Edit the JSON over SSH: `mount -o rw,remount /` and copy
-      `/anki/data/assets/cozmo_resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/stayOnChargerUntilCharged.json`
-      into `robot/backup/`.
-- [ ] Edit the copy in `robot/work/`, gate it with `python3 -m json.tool <file>`, upload it, then run
-      `mount -o ro,remount /` and reboot. Bad JSON crash-loops the engine but SSH keeps working: restore the backup.
-- [ ] c. Rebuild: clone `wire-os-victor` into `robot/work/`, apply the C++ patch, then `deploy-v.sh` (needs Docker).
+- [ ] a. Stopgap: `curl 'http://<vector-ip>:8888/consolevarset?key=kSafeguardTimeout_s&value=86400'`. Check that
+      `features.json` has `StayOnChargerUntilCharged` enabled. He still leaves when the battery reads full (3.57 V once), and the setting is probably lost on reboot (Q3). Skip `ddn` (Q4).
+- [ ] b. `robot/stay-on-charger/apply.sh` → `OK: patched robot/work/wire-os-victor`. Copy the robot's SSH key there
+      as `robot_sshkey`, then run `./deploy-v.sh` in that folder (needs Docker; the first build is slow).
 - [ ] Done when a full day on the dock passes with no drive-off and "Hey Vector" works throughout, with
       `AUTO_HOLD=off`.
 
@@ -108,7 +106,7 @@ not stop · the dock stays on a wall adapter on a guarded strip (no UPS).
 - Slice 0, or a Phase A failure: nothing has changed, so retry from recovery.
 - Phase B cut off: probably a permanent brick, with hardware repair (CPU swap + EDL) the only known route.
 - After slice 1: there is no OS until slice 2. A bad WireOS OTA falls back to the unlocked recovery, so reinstall.
-- Slice 3: restore the saved JSON over SSH. If he still won't stay put, set `AUTO_HOLD=override` again.
+- Slice 3: if the patched engine misbehaves, reinstall `dev.ota` from the unlocked recovery. If he still won't stay put, set `AUTO_HOLD=override` again.
 
 ## Alternative that makes this plan optional
 
