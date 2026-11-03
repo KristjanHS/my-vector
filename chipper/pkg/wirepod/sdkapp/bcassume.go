@@ -57,24 +57,17 @@ func assumeBehaviorControl(robot Robot, robotIndex int, priority string) {
 				}
 			}
 
-			for {
-				select {
-				case <-stop:
-					if err := r.Send(
-						&vectorpb.BehaviorControlRequest{
-							RequestType: &vectorpb.BehaviorControlRequest_ControlRelease{
-								ControlRelease: &vectorpb.ControlRelease{},
-							},
-						},
-					); err != nil {
-						log.Println(err)
-						return
-					}
-					return
-				default:
-					continue
-				}
+			<-stop
+			if err := r.Send(
+				&vectorpb.BehaviorControlRequest{
+					RequestType: &vectorpb.BehaviorControlRequest_ControlRelease{
+						ControlRelease: &vectorpb.ControlRelease{},
+					},
+				},
+			); err != nil {
+				log.Println(err)
 			}
+			return
 			// * end - modified from official vector-go-sdk
 		}()
 		for range start {
