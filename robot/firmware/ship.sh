@@ -76,7 +76,7 @@ VICTOR_SRC=$src "$pd/check-static.sh" --built || die "built firmware lacks a pat
 tree_is_patches
 echo "built firmware matches the tree"
 
-((deploy)) || { echo; echo "built, not deployed (--no-deploy). log: $SHIP_LOG"; exit 0; }
+((deploy)) || { echo; echo "built, not deployed (--no-deploy) at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z"). log: $SHIP_LOG"; exit 0; }
 
 step "deploy: ./build/deploy-v.sh to $ip"
 (cd "$src" && script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
@@ -96,4 +96,4 @@ step "push: $sha to origin main"
 git -C "$repo" push origin "$full:refs/heads/main" ||
   die "git push failed — the robot is ALREADY running $sha; push it by hand so origin == robot (rejected? origin may already have it, git fetch to check)"
 echo
-echo "shipped $sha (log: $SHIP_LOG). Restart the soak: setsid nohup $here/soak.sh >$repo/robot/work/soak.out 2>&1 </dev/null &"
+echo "shipped $sha at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z") (log: $SHIP_LOG). Restart the soak: setsid nohup $here/soak.sh >$repo/robot/work/soak.out 2>&1 </dev/null &"
