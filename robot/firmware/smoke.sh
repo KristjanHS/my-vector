@@ -28,7 +28,8 @@ pids() { ssh_ "for u in ${units[*]}; do systemctl is-active -q \$u || exit 1; pi
 docked() {
   local b; b=$(curl -s -m 20 "$server/api-sdk/get_battery?serial=$esn" || true)
   [[ $b == *'"is_on_charger_platform":true'* ]] || die "docked ($1): not on the charger platform: ${b:0:200}"
-  [[ $b == *'"is_charging":true'* ]] && ok "docked ($1), charging" || echo "WARN: docked ($1), not charging"
+  local bat; bat=$(jq -r '"level \(["UNKNOWN","LOW","NOMINAL","FULL"][.battery_level // 0] // .battery_level), \((.battery_volts // 0) * 100 | round / 100) V"' <<<"$b" 2>/dev/null || true)
+  [[ $b == *'"is_charging":true'* ]] && ok "docked ($1), charging ($bat)" || echo "WARN: docked ($1), not charging ($bat)"
 }
 
 step "units up and stable (up to 195 s)"
