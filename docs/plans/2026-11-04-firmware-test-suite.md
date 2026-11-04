@@ -1,7 +1,7 @@
 # Firmware test suite: static checks in `make check`, on-robot smoke after deploy
 
 **Goal**: a firmware change that breaks a patch or a main function fails a command — static in seconds (`make check`), live in ~30 s (`make robot-test`, and `make ship` before its push).
-**Status**: staged 2026-11-04 — Stage 2 next. Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
+**Status**: staged 2026-11-04 — Stage 3.1 next. Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
 
 ## Refactor first
 
@@ -48,7 +48,7 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 ### Stage 2: static (`make check`)
 - [x] 2.1 `markers.tsv` + `check-static.sh` S1, S5, S-src; W1; red demo S1 (extra series line) + S5 (`move_wheels` in a smoke comment).
 - [x] 2.2 RF1 `apply.sh --check` + S2, S3; `make check` stays under 10 s; red demos: a patch's `index` line hash edited (S2), a marker typo (S3 hit), a marker present at pin e.g. `#include` (S3 miss).
-- [ ] 2.3 S4 `--built` + RF2 in ship's built-assets step; red demo: a `bin` marker typo against the current `_build`.
+- [x] 2.3 S4 `--built` + RF2 in ship's built-assets step; red demo: a `bin` marker typo against the current `_build`.
 
 ### Stage 3: smoke (`make robot-test`)
 - [ ] 3.1 `smoke.sh` P1, P2, X + `make robot-test`; red demos: `vic-bogus` in units, Fatal pattern `LiftController`, P2 expects `false`.

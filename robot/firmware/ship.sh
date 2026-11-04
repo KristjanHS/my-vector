@@ -71,12 +71,10 @@ echo "$(echo "$json" | grep -c . || true) JSON files OK"
 step "build: ./build/build-v.sh"
 (cd "$src" && script -qec ./build/build-v.sh /dev/null) || die "build"
 
-step "built assets carry the patched config; tree unchanged during the build"
-for f in $json; do
-  cmp -s "$src/$f" "$src/_build/vicos/Release/data/assets/cozmo_$f" || die "stale in _build: $f"
-done
+step "built = patched (bin markers, built JSON); tree unchanged during the build"
+VICTOR_SRC=$src "$pd/check-static.sh" --built || die "built firmware lacks a patch (check-static.sh --built)"
 tree_is_patches
-echo "built config matches the tree"
+echo "built firmware matches the tree"
 
 ((deploy)) || { echo; echo "built, not deployed (--no-deploy). log: $SHIP_LOG"; exit 0; }
 

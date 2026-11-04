@@ -40,7 +40,10 @@ echo "smoke motion-free OK (${#smoke[@]} files)"
 # S-src: S2/S3 need the victor clone; never clone from a check.
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$repo/.git")")
 src=${VICTOR_SRC:-$main/robot/work/wire-os-victor}
-if [[ ! -d $src/.git ]]; then echo "SKIP: no victor clone at $src (patch re-export, src markers)"; exit 0; fi
+if [[ ! -d $src/.git ]]; then
+  ((!built)) || die "--built needs the victor clone at $src"
+  echo "SKIP: no victor clone at $src (patch re-export, src markers)"; exit 0
+fi
 
 # S2: *.patch + series are a byte-identical re-export of pin + series.
 tip=$(VICTOR_SRC=$src "$here/apply.sh" --check) || die "apply.sh --check"
@@ -57,3 +60,22 @@ for r in "${rows[@]}"; do
   n=$((n + 1))
 done
 echo "src markers OK ($n)"
+((built)) || exit 0
+
+# S4: each bin marker is in the built file, and every patched JSON is copied into _build unchanged.
+build=$src/_build/vicos/Release
+n=0
+for r in "${rows[@]}"; do
+  IFS=$'\t' read -r p kind path marker <<<"$r"
+  [[ $kind == bin ]] || continue
+  [[ -f $build/$path ]] || die "$p: not built: $build/$path"
+  grep -qF -- "$marker" <(strings -a "$build/$path") || die "$p: bin marker not in $path: $marker"
+  n=$((n + 1))
+done
+m=0
+while read -r f; do
+  [[ $f == *.json ]] || continue
+  cmp -s <(git -C "$src" show "$tip:$f") "$build/data/assets/cozmo_$f" || die "stale in _build: $f"
+  m=$((m + 1))
+done < <(git -C "$src" diff --name-only "$pin" "$tip")
+echo "built markers OK ($n), built JSON = patched ($m)"
