@@ -1,7 +1,7 @@
 # Firmware test suite: static checks in `make check`, on-robot smoke after deploy
 
 **Goal**: a firmware change that breaks a patch or a main function fails a command — static in seconds (`make check`), live in ~30 s (`make robot-test`, and `make ship` before its push).
-**Status**: staged 2026-11-04 — 3.2 gate next. Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
+**Status**: staged 2026-11-04 — 3.2 next (gate ruled). Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
 
 ## Refactor first
 
@@ -30,7 +30,6 @@
 | P2 | Docked: `get_battery` has `"is_on_charger_platform":true` and `"is_charging":true` (false booleans are omitted) before and after; `is_charging` absent at rest (Q1) → WARN, never FAIL | `smoke.sh` |
 | A1 | Under `assume_behavior_control` (default priority, settle 2 s, `release` in an EXIT trap): `move_head speed=1` 2 s, `speed=0`, read ≥ `MAX_HEAD_ANGLE` − 0.1 rad; `speed=-1` 2 s, `speed=0`, read ≤ `MIN_HEAD_ANGLE` + 0.1 rad | `smoke.sh` |
 | A2 | `fork_face` → `ok`; `fork_say text=smoke test` → `FINISHED` (`SayTextResponse_FINISHED`) within 20 s | `smoke.sh` |
-| A3 | After release: `cloud_intent intent=<Q2 pick>` → its log line in `/var/log/messages` within 10 s | `smoke.sh` |
 | A4 | Wheels put: `fork_robot_state` pose Δx, Δy ≤ 5 mm start → end (pick a default; Stage 3.2's rest sample validates) and `RobotStatus_ROBOT_STATUS_ARE_WHEELS_MOVING` clear in both samples | `smoke.sh` |
 | X | Exit 0 PASS, 1 FAIL (first failing check named), 2 setup (no ESN/key/wire-pod), like `quiet-count.sh`; `set -euo pipefail`, `die()`, curl `-m 20` | `smoke.sh` |
 | W2 | `make robot-test` → `smoke.sh`; ship: after deploy, `smoke.sh` replaces the units step (RF3) → non-zero = `die` before push, message names the sha the robot now runs | `Makefile`, `ship.sh` |
@@ -41,7 +40,7 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 
 ### Stage 1: live probes (read-only: GETs, SSH `cat`/`grep`/`systemctl`; no SDK control, no motion)
 - [x] Q1: at rest 3.57 V → `is_on_charger_platform:true`, `is_charging` absent.
-- [x] Q2: no INFO line for an app intent; the signal is DAS `@behavior.feature.start\037<Feature>\037`. quiet → `BeQuiet` (1800 s quiet mode), names_ask → `WhatsMyName` (face search turns the body), test_wire → no associated feature → 3.2 gate.
+- [x] Q2: no clean motion-free intent signal (LOG_DEBUG compiled out) → A3 dropped at the 3.2 gate.
 - [x] Q3: 0 Fatal-pattern hits at rest; `LiftController.Calibrated … reason Startup` once under the vic-robot PID.
 - [x] Q4: `:8888/consolevars` → 200; `conn_test` body = `success`.
 
@@ -52,8 +51,8 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 
 ### Stage 3: smoke (`make robot-test`)
 - [x] 3.1 `smoke.sh` P1, P2, X + `make robot-test`; red demos: `vic-bogus` in units, Fatal pattern `LiftController`, P2 expects `false`.
-- [ ] `[USER DECISION]` before 3.2: `cloud_intent` skips wire-pod's speech matcher — enough? · new fork file `fork_smoke.go` OK? · A3 signal (Q2): DAS feature line, or raise engine log level for the run (user idea; runtime console var unverified)?
-- [ ] 3.2 F1 `fork_smoke.go` + A1–A4; `go vet` sdkapp green; two `fork_robot_state` reads 10 s apart at rest before A4's bound lands; red demos: head bound 2.0 rad, say expects `XFINISHED`, bogus intent log pattern, pose bound −1 mm.
+- [x] `[USER DECISION]` ruled 2026-11-04: A3 dropped · `fork_smoke.go` OK · `is_charging` absent → WARN (built in 3.1).
+- [ ] 3.2 F1 `fork_smoke.go` + A1, A2, A4; `go vet` sdkapp green; two `fork_robot_state` reads 10 s apart at rest before A4's bound lands; red demos: head bound 2.0 rad, say expects `XFINISHED`, pose bound −1 mm.
 - [ ] 3.3 W2 ship gate + RF3 delete; `total` step count updated; `NO_DEPLOY=1 make ship` still stops after the build.
 
 ### Stage 4: full verify
