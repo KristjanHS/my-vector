@@ -33,7 +33,7 @@ deploy as 2026-11-04-vector-lift-lock.md (docs/plans/); robot steps are `[USER]`
 
 ### Stage 4: deploy + listen `[USER]` — today, with lift-lock; restarts the 24 h soak
 - [ ] User: `make syncwt`, then `make ship` in the main checkout; rerun the Stage 1 count over awake + a sleep window: `RTS_OnCharger_*` and `ListeningForBeats` = 0, chime and answer still play.
-- [ ] Restart `robot/stay-on-charger/soak.sh` and repoint the soak line in `docs/backlog.md` §OWED[USER].
+- [x] Restart `robot/stay-on-charger/soak.sh` and repoint the soak line in `docs/backlog.md` §OWED[USER].
 
 ## Rollback
 
