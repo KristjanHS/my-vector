@@ -1,7 +1,7 @@
 # Vector speech volume: loud answers, quiet idle
 
 **Goal**: "Hey Vector, what time is it?" clearly audible; the rare idle sounds on the dock stay quiet.
-**Status**: open — follows S8 of 2026-11-04-vector-quiet-idle.md (docs/plans/); interim `master_volume=2`.
+**Status**: ✅ SHIPPED (committed as `0008-speech-volume.patch`) — ship + listen check in `docs/backlog.md` §OWED[USER].
 
 ## Rulings
 
