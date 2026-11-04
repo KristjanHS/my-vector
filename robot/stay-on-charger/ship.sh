@@ -7,7 +7,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 src=$repo/robot/work/wire-os-victor
-patches=(stay-on-charger.patch lift-lock.patch quiet-idle.patch)
+patches=(stay-on-charger.patch lift-lock.patch quiet-idle.patch quiet-winsock.patch)
 units=(vic-engine vic-anim vic-robot)
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; exit 1; }
 case ${1:-} in '') deploy=1 ;; --no-deploy) deploy=0 ;; *) die "unknown arg: $1 (only --no-deploy)" ;; esac

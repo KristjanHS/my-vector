@@ -1,0 +1,21 @@
+diff --git a/lib/util/source/3rd/civetweb/src/CMakeLists.txt b/lib/util/source/3rd/civetweb/src/CMakeLists.txt
+index 9e74f34d..204c720d 100644
+--- a/lib/util/source/3rd/civetweb/src/CMakeLists.txt
++++ b/lib/util/source/3rd/civetweb/src/CMakeLists.txt
+@@ -25,10 +25,12 @@ target_include_directories(
+ #  DESTINATION include
+ #  COMPONENT c-library)
+ 
+-# Need Windows sockets if available
+-find_package(WinSock)
+-if (WINSOCK_FOUND)
+-  target_link_libraries(c-library WINSOCK::WINSOCK)
++# Need Windows sockets if available (Windows only: elsewhere the lookup just logs "Could NOT find WinSock")
++if (WIN32)
++  find_package(WinSock)
++  if (WINSOCK_FOUND)
++    target_link_libraries(c-library WINSOCK::WINSOCK)
++  endif()
+ endif()
+ 
+ # We need threading
