@@ -19,10 +19,13 @@ if grep -q d_keep $c; then echo "syslog-ng: d_keep already in $c"; else
 destination d_keep { file("/data/log/keep/messages" template(t_common) logrotate(enable(yes) size(10MB) rotations(1))); };
 log { source(s_src); destination(d_keep); };
 CONF
-  syslog-ng --syntax-only -f $c 2>/dev/null || { cp $c.orig $c; echo "FAIL: syntax; restored $c"; exit 1; }
+  syslog-ng --syntax-only -f $c || { cp $c.orig $c; echo "FAIL: syntax; restored $c"; exit 1; }
+  trap - EXIT; mount -o remount,ro /
   echo "syslog-ng: d_keep added to $c"
 fi
+awk '$2 == "/" && $4 ~ /^ro(,|$)/ { ro = 1 } END { exit !ro }' /proc/mounts || { echo "FAIL: / is not read-only"; exit 1; }
+syslog-ng --syntax-only -f $c || { echo "FAIL: $c syntax"; exit 1; }
 systemctl restart syslog-ng@default
-tag="my-vector logkeep $$"; logger "$tag"; sleep 2
-grep -q "$tag" /data/log/keep/messages && echo "PASS: $tag in /data/log/keep/messages" || { echo "FAIL: $tag not in /data/log/keep/messages"; exit 1; }
+tag="my-vector logkeep $(date +%s)-$$"; logger "$tag"; sleep 2
+grep -q "$tag\$" /data/log/keep/messages && echo "PASS: $tag in /data/log/keep/messages" || { echo "FAIL: $tag not in /data/log/keep/messages"; exit 1; }
 EOF
