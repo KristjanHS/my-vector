@@ -1,7 +1,7 @@
 # Vector stay docked: wheels and lift can't move him off the charger
 
 **Goal**: no voice intent, behavior or SDK call moves Vector off the charger (wheels locked on contacts; lift already 0 via `lift-lock`); "Hey Vector, fist bump" leaves him docked.
-**Status**: open — Stage 4 (user ship + live check).
+**Status**: ✅ SHIPPED (code) — Stage 4 user ship + live check owed via `docs/backlog.md` §OWED[USER].
 
 ## Rulings
 
