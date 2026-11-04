@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# Slice 0 power stress: holds Vector on the dock (AUTO_HOLD=override), tilts his head and talks every minute;
+# Slice 0 power stress: holds Vector on the dock (assume_behavior_control priority=high), tilts his head and talks every minute;
 # a ping-reply gap >= 20 s counts as one reboot. Needs chipper. Usage: power-stress.sh [minutes] (default 25)
 set -uo pipefail
 mins=${1:-25}
-ids=("$(dirname "$0")"/../backup/robot-id-*.txt); id=${ids[-1]}
-[[ -f $id ]] ||{ echo "FAIL: no robot/backup/robot-id-*.txt" >&2; exit 1; }
-esn=$(awk '/^esn:/{print $2}' "$id"); ip=$(awk '/^ip:/{print $2}' "$id")
-[[ -n $esn && -n $ip ]] || { echo "FAIL: esn or ip missing in $id" >&2; exit 1; }
+# shellcheck source=robot/env.sh
+. "$(dirname "$0")/../env.sh"
 ping -c1 -W2 "$ip" >/dev/null 2>&1 || { echo "FAIL: $ip doesn't answer ping; is he on and on Wi-Fi?" >&2; exit 1; }
-api="http://localhost:8080/api-sdk"
+api="$server/api-sdk"
 sdk() { curl -s -m 20 -G "$api/$1" --data-urlencode "serial=$esn" ${2:+--data-urlencode "$2"}; } # encodes spaces in say_text
 # assume_behavior_control answers success before doing anything; chipper's log is the only confirmation.
 hold() { sdk assume_behavior_control priority=high >/dev/null; }

@@ -633,7 +633,6 @@ func BeginServer() {
 	http.HandleFunc("/ok:80", connCheck)
 	http.HandleFunc("/ok", connCheck)
 	InitJdocsPinger()
-	InitAutoHold()
 	// camstream
 	http.HandleFunc("/cam-stream", camStreamHandler)
 	logger.Println("Starting SDK app")

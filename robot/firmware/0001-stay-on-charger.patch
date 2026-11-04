@@ -1,5 +1,14 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Tue, 3 Nov 2026 20:01:10 +0200
+Subject: [PATCH] stay-on-charger
+
+---
+ .../behaviorStayOnChargerUntilCharged.cpp     | 74 ++-----------------
+ 1 file changed, 7 insertions(+), 67 deletions(-)
+
 diff --git a/engine/aiComponent/behaviorComponent/behaviors/behaviorStayOnChargerUntilCharged.cpp b/engine/aiComponent/behaviorComponent/behaviors/behaviorStayOnChargerUntilCharged.cpp
-index 6775421..ac07b05 100644
+index 67754214..ac07b05d 100644
 --- a/engine/aiComponent/behaviorComponent/behaviors/behaviorStayOnChargerUntilCharged.cpp
 +++ b/engine/aiComponent/behaviorComponent/behaviors/behaviorStayOnChargerUntilCharged.cpp
 @@ -4,7 +4,7 @@
