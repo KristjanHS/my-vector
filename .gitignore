@@ -41,3 +41,9 @@
 /whisper.cpp
 .DS_Store
 /chipper/openaiChats.json
+
+# my-vector fork: secrets `make commit` (git add -A) must never sweep into the public origin
+*.key
+/chipper/*.bak
+/chipper/session-certs/*
+!/chipper/session-certs/placeholder
