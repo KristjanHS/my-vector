@@ -3,7 +3,7 @@
 **Goal**: Vector lives on the charger, still answers "Hey Vector", and the server holds nothing
 (`AUTO_HOLD=off`). The way there: unlock the production bot, install WireOS, then patch the firmware's
 own stay-on-charger behavior.
-**Status**: slice 0 done; slices 0–2 done 2026-11-03 (WireOS `3.0.2.36d` / compat 209 on 192.168.1.76, voice via the fork); slice 3a + `/anki` backup done; 3b deployed 2026-11-04, 24 h soak next; every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
+**Status**: ✅ SHIPPED 2026-11-04 (24 h soak verdict owed → `docs/backlog.md` §OWED[USER]); slices 0–2 done 2026-11-03 (WireOS `3.0.2.36d` / compat 209 on 192.168.1.76, voice via the fork); slice 3a + `/anki` backup done; 3b deployed 2026-11-04, 24 h soak next; every step on the robot is `[USER]`. Scripts: `robot/unlock/`, `robot/stay-on-charger/`.
 **Rulings (2026-11-03)**: all slices covered · a failed power stress test means proceed with the extra guards,
 not stop · the dock stays on a wall adapter on a guarded strip (no UPS).
 **Rulings (slice 3)**: docked, he never leaves on his own (not for battery full, timeout or a voice command) ·
