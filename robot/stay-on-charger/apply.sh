@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clones wire-os-victor into the gitignored robot/work/ at the pinned commit and applies the stay-docked patch.
+# Clones wire-os-victor into the gitignored robot/work/ at the pinned commit and applies the stay-docked and lift-lock patches.
 # Then build + deploy from that checkout: ./build/build-v.sh, then ./build/deploy-v.sh (needs Docker).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -13,11 +13,14 @@ pin=ebf38c2871a0a69b3ac1a6fd592bb597b8e57724
 git -C "$src" cat-file -e "$pin^{commit}" 2>/dev/null || git -C "$src" fetch origin "$pin"
 git -C "$src" checkout -q "$pin"
 git -C "$src" submodule update -q --init --recursive
-if git -C "$src" apply --reverse --check "$here/stay-on-charger.patch" 2>/dev/null; then
-  echo "OK: already applied in $src"
-  exit 0
-fi
-git -C "$src" apply --check "$here/stay-on-charger.patch" ||
-  { echo "FAIL: patch does not apply; the file has other edits, or HEAD isn't $pin" >&2; exit 1; }
-git -C "$src" apply "$here/stay-on-charger.patch"
-echo "OK: patched $src; next: ./build/build-v.sh then ./build/deploy-v.sh in that folder"
+for patch in stay-on-charger.patch lift-lock.patch; do
+  if git -C "$src" apply --reverse --check "$here/$patch" 2>/dev/null; then
+    echo "OK: $patch already applied in $src"
+    continue
+  fi
+  git -C "$src" apply --check "$here/$patch" ||
+    { echo "FAIL: $patch does not apply; the file has other edits, or HEAD isn't $pin" >&2; exit 1; }
+  git -C "$src" apply "$here/$patch"
+  echo "OK: applied $patch in $src"
+done
+echo "next: ./build/build-v.sh then ./build/deploy-v.sh in $src"
