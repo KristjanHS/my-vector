@@ -8,12 +8,12 @@
 |---|---|---|
 | E1 | Mute, never lower: Behavior RTPC 0.1 quietened the chimes live, but they came back loud after "what time is it?" | — |
 | E2 | Source: the audio track of `anim_keepalive_eyesonly_loop_01` (ObservingOnCharger); the `kEnableKeepAliveEye*AudioEvents` vars are already false | `cozmoAudioController.cpp` |
-| E3 | First pin which events it posts (event IDs in the anim `.bin` → `GenericEvent` enum, or webviz `audioevents`); candidates `Play__Robot_Vic_Sfx__Scrn_*_Short`, `Play__Robot_Vic_Sfx__Blink` (`kQuietEventPatterns`) | — |
-| E4 | Drop those events at post time by `fnmatch` pattern, never `Wake_Word_*` or TTS; ship as `0009-eye-chimes-off.patch` | `cozmoAudioController.cpp` |
+| E3 | The eyesonly `.bin` posts `Scrn_Curious_Short`, `Scrn_Curious`, `Blink` (IDs from `Victor_SFX.txt`) | — |
+| E4 | User scope: mute ALL `Play__Robot_Vic_Sfx__Scrn_*` + `Play__Robot_Vic_Sfx__Blink` everywhere at post time (`kMuteEyeChimes`), never `Wake_Word_*` or TTS → `0009-eye-chimes-off.patch` | `cozmoAudioController.cpp` |
 
 ## Checklist
 
-- [ ] E3: name the eye events; mute them live if a console path exists, user ear confirms.
+- [x] E3: eye events named.
 - [ ] E4: patch + marker in `robot/firmware/markers.tsv`; `build-v.sh` green, `check-static.sh --built` OK.
 - [ ] `[USER]` after `make ship`: no eye chimes before and after "what time is it?"; chime + answer loud.
 - [ ] Falsifier: `SECS=30 RESET=Procedural robot/volume-probe/idle.sh base:1.0` spanning an eyesonly loop → `ticks>-45 0`.

@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Wed, 4 Nov 2026 15:31:32 +0200
+Subject: [PATCH] eye-chimes-off
+
+vic-anim: CozmoAudioController drops Play__Robot_Vic_Sfx__Scrn_* and Play__Robot_Vic_Sfx__Blink at post time
+(both PostAudioEvent overloads), so eye/screen chimes stay silent in every animation and the procedural
+keep-alive path. Wake word, TTS and other SFX are untouched. Console var Audio.Controller MuteEyeChimes
+(default true) restores them live. Logs my-vector.EyeChimes.
+---
+ .../cozmoAnim/audio/cozmoAudioController.cpp  | 30 +++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp b/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
+index 40919980..9e35b495 100644
+--- a/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
++++ b/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
+@@ -72,6 +72,26 @@ const char* const kQuietEventPatterns[] = {
+   "Play__Robot_Vic_Sfx__Blink",
+ };
+ 
++// my-vector eye-chimes-off E4: eye/screen chimes are dropped at post time; never Wake_Word_* or TTS
++CONSOLE_VAR( bool, kMuteEyeChimes, "Audio.Controller", true );
++const char* const kEyeChimePatterns[] = {
++  "Play__Robot_Vic_Sfx__Scrn_*",
++  "Play__Robot_Vic_Sfx__Blink",
++};
++
++bool IsMutedEyeChime( const char* eventName )
++{
++  if ( !kMuteEyeChimes || nullptr == eventName ) {
++    return false;
++  }
++  for ( const char* pattern : kEyeChimePatterns ) {
++    if ( 0 == fnmatch( pattern, eventName, 0 ) ) {
++      return true;
++    }
++  }
++  return false;
++}
++
+ // Null-safe wrapper for Anki::AudioMetaData::EnumToString()
+ std::string ToString(Anki::AudioMetaData::GameObjectType v)
+ {
+@@ -396,6 +416,7 @@ CozmoAudioController::CozmoAudioController( const Anim::AnimContext* context )
+     // my-vector speech-volume V6: idle animation sounds at 0.1; wake chime and TTS ride other buses
+     SetParameter( ToAudioParameterId( APT::Robot_Vic_Volume_Animation ), 0.1f, kInvalidAudioGameObject );
+     PRINT_NAMED_WARNING("my-vector.SpeechVolume", "Robot_Vic_Volume_Animation=0.1");
++    PRINT_NAMED_WARNING("my-vector.EyeChimes", "MuteEyeChimes=%d", kMuteEyeChimes ? 1 : 0);
+   }
+   if (sThis == nullptr) {
+     sThis = this;
+@@ -606,6 +627,10 @@ AudioPlayingId CozmoAudioController::PostAudioEvent( const std::string& eventNam
+                                                      AudioGameObject gameObjectId,
+                                                      AudioCallbackContext* callbackContext )
+ {
++  if ( IsMutedEyeChime( eventName.c_str() ) ) {
++    Util::SafeDelete( callbackContext );
++    return kInvalidAudioPlayingId;
++  }
+   AudioPlayingId ret = AudioEngineController::PostAudioEvent( eventName, gameObjectId, callbackContext );
+ 
+   if( ANKI_DEV_CHEATS ) {
+@@ -633,6 +658,11 @@ AudioPlayingId CozmoAudioController::PostAudioEvent( AudioEventId eventId,
+                                                      AudioGameObject gameObjectId,
+                                                      AudioCallbackContext* callbackContext )
+ {
++  using GenericEvent = AudioMetaData::GameEvent::GenericEvent;
++  if ( IsMutedEyeChime( AudioMetaData::GameEvent::EnumToString( static_cast<GenericEvent>( eventId ) ) ) ) {
++    Util::SafeDelete( callbackContext );
++    return kInvalidAudioPlayingId;
++  }
+   AudioPlayingId ret = AudioEngineController::PostAudioEvent( eventId, gameObjectId, callbackContext );
+ 
+   if( ANKI_DEV_CHEATS ) {
