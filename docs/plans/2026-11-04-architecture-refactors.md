@@ -2,7 +2,7 @@
 
 **Goal**: pay down the fork's structural debt before the next feature lands on top of it. **Scope**: fork-owned code
 only (`chipper/pkg/myvector/`, `fork_*.go`, the allowed upstream edits, `scripts/`, `robot/`, `Makefile`); upstream
-wire-pod internals stay as they are. **Status**: audit 2026-11-04 at `709ba96`; R2 + R3 + R8 shipped (patch `series`, `my-vector` commits, `robot/firmware/`). Ranked by
+wire-pod internals stay as they are. **Status**: audit 2026-11-04 at `709ba96`; R2 + R3 + R8 + K4 shipped (patch `series`, `my-vector` commits, `robot/firmware/`, `settings.sh`). Ranked by
 risk removed per hour of work.
 
 ## Recommendations
@@ -25,10 +25,6 @@ risk removed per hour of work.
 Value-add ≈ 10–55 min; the rest waits on user hand-offs (ship, live checks). No soak: a drive-off death is seen at once and
 read from `/data/log/keep/messages*` (`robot/logkeep/apply.sh`).
 
-| id | ruling | edit site | falsifier |
-|---|---|---|---|
-| K4 | Runtime robot settings live only on the robot: volume LOW=1 (quiet-idle S2, set by a one-off `curl`), the no-auto-update setting, SSH setup. A re-onboard or factory reset loses them silently. Add an idempotent `robot/firmware/settings.sh` that `ship.sh` runs after deploy | `robot/firmware/settings.sh` (new), `ship.sh` | set the volume to 4 by hand → the next `make ship` puts it back to 1 and logs it |
-
 ## Order
 
-K4 → R6 → R7.
+R6 → R7.
