@@ -1,7 +1,7 @@
 # Firmware test suite: static checks in `make check`, on-robot smoke after deploy
 
 **Goal**: a firmware change that breaks a patch or a main function fails a command — static in seconds (`make check`), live in ~30 s (`make robot-test`, and `make ship` before its push).
-**Status**: staged 2026-11-04 — Stage 1 next. Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
+**Status**: staged 2026-11-04 — Stage 2 next. Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
 
 ## Refactor first
 
@@ -26,8 +26,8 @@
 | S-src | Victor clone = `VICTOR_SRC`, else `<main checkout>/robot/work/wire-os-victor` via git-common-dir; no clone → S2/S3 print `SKIP: no victor clone` and S1/S5 still run; never clone from check | `check-static.sh` |
 | W1 | `check.sh` runs `$dir/robot/firmware/check-static.sh` after the shell-syntax loop (so `--head` checks the shipped HEAD's manifest) | `scripts/check.sh` |
 | F1 | Fork endpoints registered in `init()` (exact patterns win over `/api-sdk/`; no upstream edit), robot via `getRobot(serial)`: `fork_robot_state` = first `EventStream` robot_state as JSON (head_angle_rad, pose, status); `fork_face` = `DisplayFaceImageRGB` solid 184×96 for 2000 ms → `ok` or the error; `fork_say` = `SayText` → its final state name | `chipper/pkg/wirepod/sdkapp/fork_smoke.go` (new) |
-| P1 | Passive: `conn_test` answers within 20 s (exit 2 if not); `vic-engine vic-anim vic-robot` active within 180 s, PIDs unchanged 15 s later AND at the end of the run; `/var/log/messages` since the current vic-robot PID's first line has `LiftController.Calibrated` and 0 lines matching `Fatal\|SIGSEGV\|SIGABRT\|terminate called\|Backtrace` (pick a default; Stage 1 Q3 validates); `curl -s -m 5 $ip:8888<path>` answers (path from Q4) | `robot/firmware/smoke.sh` (new) |
-| P2 | Docked: `get_battery` has `"is_on_charger_platform":true` and `"is_charging":true` (false booleans are omitted) before and after; `is_charging` demotes to WARN only if Q1 sees it false at rest | `smoke.sh` |
+| P1 | Passive: `conn_test` answers within 20 s (exit 2 if not); `vic-engine vic-anim vic-robot` active within 180 s, PIDs unchanged 15 s later AND at the end of the run; `/var/log/messages` since the current vic-robot PID's first line has `LiftController.Calibrated` and 0 lines matching `Fatal\|SIGSEGV\|SIGABRT\|terminate called\|Backtrace`; `curl -s -m 5 $ip:8888/consolevars` answers 200 | `robot/firmware/smoke.sh` (new) |
+| P2 | Docked: `get_battery` has `"is_on_charger_platform":true` and `"is_charging":true` (false booleans are omitted) before and after; `is_charging` absent at rest (Q1) → WARN, never FAIL | `smoke.sh` |
 | A1 | Under `assume_behavior_control` (default priority, settle 2 s, `release` in an EXIT trap): `move_head speed=1` 2 s, `speed=0`, read ≥ `MAX_HEAD_ANGLE` − 0.1 rad; `speed=-1` 2 s, `speed=0`, read ≤ `MIN_HEAD_ANGLE` + 0.1 rad | `smoke.sh` |
 | A2 | `fork_face` → `ok`; `fork_say text=smoke test` → `FINISHED` (`SayTextResponse_FINISHED`) within 20 s | `smoke.sh` |
 | A3 | After release: `cloud_intent intent=<Q2 pick>` → its log line in `/var/log/messages` within 10 s | `smoke.sh` |
@@ -40,10 +40,10 @@
 Every check gets a red demo: mutate → command exits non-zero → restore by retyping (never `git checkout`).
 
 ### Stage 1: live probes (read-only: GETs, SSH `cat`/`grep`/`systemctl`; no SDK control, no motion)
-- [ ] Q1: `get_battery` JSON at rest on the charger — `is_on_charger_platform` and `is_charging` present?
-- [ ] Q2: which app intent in `user_intent_map.json` (`intent_imperative_quiet`, `intent_names_ask`, `intent_test_wire`) has no body motion on the charger, and its `/var/log/messages` line (read source + past voice-intent lines).
-- [ ] Q3: P1's Fatal pattern against the current log → 0 hits at rest; `LiftController.Calibrated` once per vic-robot start, not per boot only.
-- [ ] Q4: a vic-engine `:8888` path that answers 200 (memory: `/consolevars`); `conn_test` response body.
+- [x] Q1: at rest 3.57 V → `is_on_charger_platform:true`, `is_charging` absent.
+- [x] Q2: no INFO line for an app intent; the signal is DAS `@behavior.feature.start\037<Feature>\037`. quiet → `BeQuiet` (1800 s quiet mode), names_ask → `WhatsMyName` (face search turns the body), test_wire → no associated feature → 3.2 gate.
+- [x] Q3: 0 Fatal-pattern hits at rest; `LiftController.Calibrated … reason Startup` once under the vic-robot PID.
+- [x] Q4: `:8888/consolevars` → 200; `conn_test` body = `success`.
 
 ### Stage 2: static (`make check`)
 - [ ] 2.1 `markers.tsv` + `check-static.sh` S1, S5, S-src; W1; red demo S1 (extra series line) + S5 (`move_wheels` in a smoke comment).
