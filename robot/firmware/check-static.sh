@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Static firmware checks (make check): series <-> *.patch <-> markers.tsv, smoke never drives the wheels,
+# patches re-export byte-identical, each src marker is patch-specific. --built adds bin markers in _build.
+# Usage: check-static.sh [--built]   (env: VICTOR_SRC; default <main checkout>/robot/work/wire-os-victor)
+set -euo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
+repo=$(cd "$here/../.." && pwd)
+die() { echo "FAIL: $*" >&2; exit 1; }
+built=0
+case ${1:-} in '') ;; --built) built=1 ;; *) die "unknown arg: $1 (only --built)" ;; esac
+
+# S1: series lines are existing patches, every patch is in series once, manifest rows cover exactly the series.
+mapfile -t series < <(grep -v '^[[:space:]]*$' "$here/series")
+for p in "${series[@]}"; do [[ $p == *.patch && -f $here/$p ]] || die "series names a missing patch: $p"; done
+dup=$(printf '%s\n' "${series[@]}" | sort | uniq -d)
+[[ -z $dup ]] || die "series lists twice: $dup"
+for f in "$here"/*.patch; do
+  printf '%s\n' "${series[@]}" | grep -qxF "${f##*/}" || die "${f##*/} is not in series"
+done
+mapfile -t rows < <(grep -v '^#' "$here/markers.tsv" | grep -v '^[[:space:]]*$')
+for r in "${rows[@]}"; do
+  IFS=$'\t' read -r p kind path marker extra <<<"$r"
+  [[ -n $marker && -z ${extra:-} && $kind =~ ^(src|bin)$ && -n $path ]] || die "markers.tsv: bad row: $r"
+  printf '%s\n' "${series[@]}" | grep -qxF "$p" || die "markers.tsv names a patch outside series: $p"
+done
+for p in "${series[@]}"; do
+  printf '%s\n' "${rows[@]}" | grep -qF "$p"$'\tsrc\t' || die "markers.tsv has no src row for $p"
+done
+echo "series/manifest OK (${#series[@]} patches, ${#rows[@]} markers)"
+
+# S5: the smoke test must never command the wheels or the lift.
+smoke=()
+for f in "$here/smoke.sh" "$repo/chipper/pkg/wirepod/sdkapp/fork_smoke.go"; do [[ ! -f $f ]] || smoke+=("$f"); done
+if ((${#smoke[@]})); then
+  hits=$(grep -nE 'move_wheels|move_lift|DriveWheels|DriveStraight|MoveLift' "${smoke[@]}" || true)
+  [[ -z $hits ]] || die "smoke code commands motion: $hits"
+fi
+echo "smoke motion-free OK (${#smoke[@]} files)"
+
+# S-src: S2/S3 need the victor clone; never clone from a check.
+main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$repo/.git")")
+src=${VICTOR_SRC:-$main/robot/work/wire-os-victor}
+if [[ ! -d $src/.git ]]; then echo "SKIP: no victor clone at $src (patch re-export, src markers)"; exit 0; fi

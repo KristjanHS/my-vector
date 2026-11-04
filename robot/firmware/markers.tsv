@@ -1,0 +1,12 @@
+# patch	kind	path	marker — kind src: path in the victor tree; bin: path under _build/vicos/Release/ (check-static.sh)
+0001-stay-on-charger.patch	src	engine/aiComponent/behaviorComponent/behaviors/behaviorStayOnChargerUntilCharged.cpp	StayOnChargerUntilCharged.BehaviorUpdate.OffCharger
+0001-stay-on-charger.patch	bin	lib/libcozmo_engine.so	StayOnChargerUntilCharged.BehaviorUpdate.OffCharger
+0002-lift-lock.patch	src	robot/supervisor/src/liftController.cpp	power_ = 0.f
+0002-lift-lock.patch	bin	lib/libcozmo_engine.so	my-vector-lift-lock
+0003-quiet-idle.patch	src	resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/danceToTheBeat/danceToTheBeatCoordinator.json	"not": { "conditionType": "OnChargerPlatform" }
+0003-quiet-idle.patch	bin	data/assets/cozmo_resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/globalInterruptions.json	outranks ReactToSoundAwake
+0004-quiet-winsock.patch	src	lib/util/source/3rd/civetweb/src/CMakeLists.txt	if (WIN32)
+0005-motor-lock.patch	src	robot/hal/src/hal_motors.cpp	my-vector.MotorLock
+0005-motor-lock.patch	bin	bin/vic-robot	my-vector.MotorLock
+0006-drive-guard.patch	src	engine/actions/basicActions.cpp	my-vector.DriveGuard
+0006-drive-guard.patch	bin	lib/libcozmo_engine.so	my-vector.DriveGuard
