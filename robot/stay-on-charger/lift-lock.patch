@@ -1,0 +1,60 @@
+diff --git a/engine/actions/basicActions.cpp b/engine/actions/basicActions.cpp
+index ee63e04b..e52972b1 100644
+--- a/engine/actions/basicActions.cpp
++++ b/engine/actions/basicActions.cpp
+@@ -879,7 +879,8 @@ namespace Anki {
+                                                const MotorCalibrationReason& reason)
+     : IAction("CalibrateMotor-" + std::string(calibrateHead ? "Head" : "") + std::string(calibrateLift ? "Lift" : ""),
+               RobotActionType::CALIBRATE_MOTORS,
+-              (calibrateHead ? (u8)AnimTrackFlag::HEAD_TRACK : 0) | (calibrateLift ? (u8)AnimTrackFlag::LIFT_TRACK : 0) )
++              // my-vector lift lock: LIFT_TRACK is locked for good, so calibration must not wait on it
++              (calibrateHead ? (u8)AnimTrackFlag::HEAD_TRACK : 0) )
+     , _calibHead(calibrateHead)
+     , _calibLift(calibrateLift)
+     , _calibReason(reason)
+diff --git a/engine/components/movementComponent.cpp b/engine/components/movementComponent.cpp
+index 57a66a7a..7b96f1a3 100644
+--- a/engine/components/movementComponent.cpp
++++ b/engine/components/movementComponent.cpp
+@@ -62,6 +62,7 @@ void MovementComponent::InitDependent(Vector::Robot* robot, const RobotCompMap&
+ {
+   _robot = robot;
+   _animComponent = dependentComps.GetComponentPtr<AnimationComponent>();
++  LockTracks((u8)AnimTrackFlag::LIFT_TRACK, kLiftLockOwner, kLiftLockOwner);
+   if (_robot->HasExternalInterface())
+   {
+     InitEventHandlers(*(_robot->GetExternalInterface()));
+@@ -957,6 +958,7 @@ void MovementComponent::UnlockAllTracks()
+     }
+   }
+ 
++  LockTracks((u8)AnimTrackFlag::LIFT_TRACK, kLiftLockOwner, kLiftLockOwner);
+   _robot->SendRobotMessage<RobotInterface::SetFullAnimTrackLockState>(GetLockedTracks());
+ }
+ 
+diff --git a/engine/components/movementComponent.h b/engine/components/movementComponent.h
+index 66bb96d5..b4651e5f 100644
+--- a/engine/components/movementComponent.h
++++ b/engine/components/movementComponent.h
+@@ -388,6 +388,7 @@ private:
+   const char* kDrivingWheelsStr  = "DirectDriveWheels";
+   const char* kDrivingHeadStr    = "DirectDriveHead";
+   const char* kDrivingLiftStr    = "DirectDriveLift";
++  const char* kLiftLockOwner     = "my-vector-lift-lock";
+   const char* kDrivingArcStr     = "DirectDriveArc";
+   const char* kDrivingTurnStr    = "DirectDriveTurnInPlace";
+   const char* kOnChargerInSdkStr = "OnChargerInSDK";
+diff --git a/robot/supervisor/src/liftController.cpp b/robot/supervisor/src/liftController.cpp
+index 6349dae6..02328981 100644
+--- a/robot/supervisor/src/liftController.cpp
++++ b/robot/supervisor/src/liftController.cpp
+@@ -226,7 +226,8 @@ namespace Anki {
+ 
+       void SetPower(f32 power)
+       {
+-        power_ = power;
++        // my-vector lift lock: the lift motor never gets power
++        power_ = 0.f;
+         HAL::MotorSetPower(MotorID::MOTOR_LIFT, power_);
+       }
+ 

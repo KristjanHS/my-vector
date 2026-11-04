@@ -2,7 +2,7 @@
 
 **Goal**: no lift motor movement ever (a lift move pried him off the contacts on 2026-11-04 and he lost power);
 face/eye animation, head, voice and the stay-docked patch keep working.
-**Status**: planned 2026-11-04; nothing built. Same checkout, build and deploy as slice 3b of
+**Status**: Stage 1 built 2026-11-04; Stage 2 (deploy + live check) owed. Same checkout, build and deploy as slice 3b of
 2026-11-03-vector-unlock-wireos.md (docs/plans/archive/); the robot step is `[USER]`.
 
 ## Rulings
@@ -10,15 +10,15 @@ face/eye animation, head, voice and the stay-docked patch keep working.
 | id | ruling | edit site |
 |---|---|---|
 | L1 | Clamp in `LiftController::SetPower`: always sends `HAL::MotorSetPower(MotorID::MOTOR_LIFT, 0)`; head, wheels and `testModeController` direct writes untouched | `robot/supervisor/src/liftController.cpp` |
-| L2 | Calibration runs unpowered (completes at rest after `LIFT_STOP_TIME_MS`); `CalibrateMotorAction` calls `ShouldSuppressTrackLocking(true)` so L3 can't fail it into a `ReactToUncalibratedHeadAndLift` loop | `engine/actions/basicActions.cpp` |
-| L3 | Hold `LIFT_TRACK` locked for good from engine start so animation lift keyframes are dropped (eyes = face track, unaffected) | `MovementComponent::LockTracks`, owner `"my-vector-lift-lock"` |
+| L2 | Calibration runs unpowered (completes at rest after `LIFT_STOP_TIME_MS`); `CalibrateMotorAction` drops `LIFT_TRACK` from its tracks so L3 can't fail it into a `ReactToUncalibratedHeadAndLift` loop | `engine/actions/basicActions.cpp` |
+| L3 | Hold `LIFT_TRACK` locked for good from `MovementComponent::InitDependent`, re-taken in `UnlockAllTracks` (SDK behavior); eyes = face track, unaffected | `engine/components/movementComponent.{h,cpp}`, `kLiftLockOwner` |
 | L4 | Accepted breakage: charger mount (raises lift to 45 mm), pick-up, fist bump, cliff recovery lift moves fail or time out | — |
 | L5 | Ship as `robot/stay-on-charger/lift-lock.patch`; `apply.sh` applies both patches | `robot/stay-on-charger/apply.sh` |
 
 ## Checklist
 
 ### Stage 1: patch (PC side)
-- [ ] L1 + L2 + L3 in `robot/work/wire-os-victor`, export `lift-lock.patch`, extend `apply.sh` (L5); `./build/build-v.sh` is green.
+- [x] L1 + L2 + L3 in `robot/work/wire-os-victor`, export `lift-lock.patch`, extend `apply.sh` (L5); `./build/build-v.sh` is green.
 
 ### Stage 2: deploy + live check `[USER]`
 - [ ] `./build/deploy-v.sh`; check `md5sum /anki/bin/vic-robot /anki/lib/libcozmo_engine.so` on the robot matches `_build/vicos/Release/{bin,dist/lib}/`.
