@@ -2,7 +2,7 @@
 
 **Goal**: pay down the fork's structural debt before the next feature lands on top of it. **Scope**: fork-owned code
 only (`chipper/pkg/myvector/`, `fork_*.go`, the allowed upstream edits, `scripts/`, `robot/`, `Makefile`); upstream
-wire-pod internals stay as they are. **Status**: audit 2026-11-04 at `709ba96`; R2 + R3 + R8 + K4 + R6 shipped (patch `series`, `my-vector` commits, `robot/firmware/`, `settings.sh`, `robot/env.sh`). Ranked by
+wire-pod internals stay as they are. **Status**: ✅ SHIPPED 2026-11-04 — R2 + R3 + R8 + K4 + R6 + R7 (patch `series`, `my-vector` commits, `robot/firmware/`, `settings.sh`, `robot/env.sh`, `compat.sh`). Ranked by
 risk removed per hour of work.
 
 ## Recommendations
@@ -24,7 +24,3 @@ risk removed per hour of work.
 
 Value-add ≈ 10–55 min; the rest waits on user hand-offs (ship, live checks). No soak: a drive-off death is seen at once and
 read from `/data/log/keep/messages*` (`robot/logkeep/apply.sh`).
-
-## Order
-
-R7.
