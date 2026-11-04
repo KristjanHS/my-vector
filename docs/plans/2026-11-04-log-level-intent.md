@@ -1,7 +1,7 @@
 # Log-level intent: motion-free app intent that turns on vic-engine debug logging
 
 **Goal**: `cloud_intent intent=my_vector_log_debug` → vic-engine DEBUG lines (all channels) in `/var/log/messages` for 10 min, no behavior runs; `my_vector_log_info` reverts early. Its marker line is A3 for `2026-11-04-firmware-test-suite.md (docs/plans/)`.
-**Status**: staged 2026-11-04 — Stage 1 next. Scope: vic-engine only; all-channels DEBUG on/off, no per-channel choice.
+**Status**: staged 2026-11-04 — Stage 1 next; Stage 3 runs before Stage 2 (A3 static + red demos only until 0007 is live). Scope: vic-engine only; all-channels DEBUG on/off, no per-channel choice.
 
 ## Refactor first
 
@@ -15,7 +15,7 @@ VT = `robot/work/wire-os-victor`.
 |---|---|---|
 | L1 | Two intent names, no param (wire-pod `cloud_intent` forwards none → no Go change): `my_vector_log_debug`, `my_vector_log_info`. Intercept at the top of `OnAppIntent`, before `GetUserIntentFromAppIntent`; `return` without `DevSetUserIntentPending` → no behavior, no motion | `VT/engine/aiComponent/behaviorComponent/userIntentComponent.cpp` |
 | L2 | Marker `LOG_WARNING("my-vector.LogLevel", …)`: `debug on for %d s` / `info (app)` / `info (timeout)` — WARNING skips the channel filter | same |
-| L3 | Gate `std::atomic<bool> gMyVectorDebugLog{false}` (decl `logging.h`, def `logging.cpp`); `sChanneledDebugF`/`sChanneledDebugV`/`sChanneledDebug` drop their `#if ALLOW_DEBUG_LOGGING` and return first when the gate is false, before `vsnprintf` | `VT/lib/util/source/anki/util/logging/logging.{h,cpp}` |
+| L3 | Gate `std::atomic<bool> gMyVectorDebugLog{false}` (decl `logging.h`, def `logging.cpp`); `sChanneledDebugF`/`sChanneledDebugV`/`sChanneledDebug` drop their `#if ALLOW_DEBUG_LOGGING` and return first when the gate is false, before `vsnprintf`; every `#if ALLOW_DEBUG_LOGGING` macro branch also wraps its `sChanneledDebug*` call in `if (gMyVectorDebugLog)` → args not evaluated while off | `VT/lib/util/source/anki/util/logging/logging.{h,cpp}` |
 | L4 | `ALLOW_DEBUG_LOGGING=1` in `target_compile_definitions(cozmo_engine PRIVATE …)` only — not util, not coretech (root CMake drops non-`ANKI_` `-D` args) | `VT/engine/CMakeLists.txt` |
 | L5 | On debug: `ChannelFilter::EnableChannel("*")`, prior state saved; on info/timeout restore it. **[AUDIT]** 1.1: how the engine reaches the filter `cozmoEngineMain.cpp` builds; fallback = the `"*"` `ChannelVar` by console-var name | `userIntentComponent.cpp` (+ getter if needed) |
 | L6 | Revert deadline now + 600 s, checked in `UserIntentComponent::UpdateDependent` via `BaseStationTimer`; boot = gate off, channels as configured | `userIntentComponent.cpp` |
