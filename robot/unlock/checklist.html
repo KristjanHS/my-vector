@@ -86,12 +86,12 @@ const S=[
   ["Re-run the fork's bot setup over SSH, then ask \"Hey Vector, what time is it?\""],
   ["Done when :8080 (wired) loads and the fork answers by voice."]]},
  {id:"s3",risk:"safe",tag:"Reversible",title:"Slice 3 · Stay on the charger without a hold",items:[
-  ["a. Stopgap: raise the safeguard timeout (probably lost on reboot; he still leaves when the battery reads full). Check features.json has StayOnChargerUntilCharged enabled. Skip ddn.","curl 'http://<vector-ip>:8888/consolevarset?key=kSafeguardTimeout_s&value=86400'"],
+  ["a. Stopgap: raise the safeguard timeout (lost on reboot; he still leaves when the battery reads full). Check features.json has StayOnChargerUntilCharged enabled. Skip ddn.","curl 'http://<vector-ip>:8888/consolevarset?key=SafeguardTimeout_s&value=86400'"],
   ["b. Patch the engine so he never leaves the dock on his own. Back up /anki over SSH into robot/backup/ first.","robot/stay-on-charger/apply.sh"],
-  ["In robot/work/wire-os-victor, overwrite the bundled robot_sshkey with the robot's key, then build and deploy (needs Docker; first build is slow). First check the robot's base: ssh root@<vector-ip> cat /etc/os-version /etc/victor-compat-version must print 3.0.2.36d and 209 (plan Q8). If it misbehaves, restore the /anki backup over SSH, or reinstall dev.ota from recovery.","./build/build-v.sh && ./build/deploy-v.sh"],
-  ["Done when a full day on the dock passes with no drive-off, the battery voltage rises, one voice command that moves him is tried, and \"Hey Vector\" works, with AUTO_HOLD=off."]]},
+  ["In robot/work/wire-os-victor, build and deploy (needs Docker; first build is slow; the bundled robot_sshkey works as is). First check the robot's base: ssh root@<vector-ip> cat /etc/os-version /etc/victor-compat-version must print 3.0.2.36d and 209 (plan Q8). If it misbehaves, restore the /anki backup over SSH, or reinstall dev.ota from recovery.","./build/build-v.sh && ./build/deploy-v.sh"],
+  ["Done when the 24 h soak ends PASS (no off-dock reading, voltage rises), one voice command that moves him is tried, and \"Hey Vector\" works throughout.","robot/stay-on-charger/soak.sh"]]},
  {id:"s4",risk:"safe",tag:"Server",title:"Slice 4 · Retire the server hold",items:[
-  ["Set AUTO_HOLD=off in chipper/source.sh and restart chipper."]]}
+  ["AUTO_HOLD is unset in chipper/source.sh (unset = off); nothing to change."]]}
 ];
 const KEY="vector-unlock-ticks";
 let ticks={};try{ticks=JSON.parse(localStorage.getItem(KEY))||{}}catch(e){}
