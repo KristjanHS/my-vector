@@ -78,7 +78,10 @@ until all_up; do ((SECONDS < end)) || die "services not all active within 3 min"
 sleep 15; all_up || die "a service dropped within 15 s (crash loop?)"
 echo "services up"
 
+# Push the pinned sha, not the branch tip: a parallel session may have committed during the build,
+# and pushing the tip would publish commits the robot is not running. Keeps origin == robot.
 step "push: $sha to origin main"
-git -C "$repo" push origin "$full:refs/heads/main" || die "push (robot already runs $sha; push by hand)"
+git -C "$repo" push origin "$full:refs/heads/main" ||
+  die "git push failed — the robot is ALREADY running $sha; push it by hand so origin == robot"
 echo
 echo "shipped $sha. Restart the soak: setsid nohup $here/soak.sh >$repo/robot/work/soak.out 2>&1 </dev/null &"
