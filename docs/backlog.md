@@ -7,7 +7,7 @@
 - Judge the stay-docked soak (all three patches, auto-hold removed) after 2026-11-05 08:12: `robot/stay-on-charger/soak.sh --summary` → `PASS`; keep the PC awake until then.
   also try one voice command that moves him (Q6) and confirm "Hey Vector" answers. FAIL → `git checkout 18541df^ -- chipper/pkg/myvector chipper/pkg/wirepod/sdkapp/fork_autohold.go chipper/pkg/wirepod/sdkapp/server.go scripts/upstream-drift.sh`, `export AUTO_HOLD=override` in `chipper/source.sh`, restart chipper (A1–A5 at `18541df^`); then Rollback in 2026-11-03-vector-unlock-wireos.md (docs/plans/).
 - Restart chipper (`make start`) to drop auto-hold: log has no `Auto-hold` line; "Hey Vector" answers; web-UI Assume/Release still work.
-- Quiet idle at volume 1: "Hey Vector, what time is it?" → chime + answer clearly audible (too quiet → S8 in 2026-11-04-vector-quiet-idle.md (docs/plans/));
-  at the soak verdict `robot/stay-on-charger/quiet-count.sh` → `PASS`. FAIL → plan a ruling for the behavior its `hit:` lines name.
+- Volume 2 (interim): "Hey Vector, what time is it?" → answer clearly audible; then Stage 1 of 2026-11-04-vector-speech-volume.md (docs/plans/).
+- Quiet idle: at the soak verdict `robot/stay-on-charger/quiet-count.sh` → `PASS`. FAIL → plan a ruling for the behavior its `hit:` lines name.
 - Live-check lift-lock after the deploy: "Hey Vector, fist bump" → lift still, eyes animate, stays docked; after 10 min `logcat -d | grep -c IActionRunner.Update.TracksLocked`
   and `logcat -d | grep -ci calibrat` are not rising. FAIL → Rollback in 2026-11-04-vector-lift-lock.md (docs/plans/).
