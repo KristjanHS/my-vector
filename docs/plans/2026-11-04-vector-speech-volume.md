@@ -10,14 +10,15 @@
 | V1 | Interim `master_volume=2` (MEDIUM_LOW): volume 1 was too quiet for answers (listen check, 2026-11-04) | `/api-sdk/volume` — done |
 | V2 | Target: master back to 4; idle quietness comes from a per-bus RTPC (`Robot_Vic_Volume_Animation` / `_Behavior` / `_Procedural`), never from master | `audioParameterTypes.clad` (no setter exists yet) |
 | V3 | Probe with no build: `:8889/consolefunccall?func=SetAudioParameter&args=<rtpc>+0.3`, all three RTPCs first, then one at a time; keep the RTPC that softens idle gestures but leaves the answer and `Play__Robot_Vic_Sfx__Wake_Word_On` loud | `cozmoAudioController.cpp` |
-| V5 | Probe sounds are fired from the console (engine `:8888` `SayText` / `PlayAnimationByName`, anim `PostAudioEvent`); one real "what time is it?" confirms the winner | — |
+| V5 | Probe sounds by voice, never console: console `SayText` is silent and `PlayAnimationByName` is cut by ObservingOnCharger; "fist bump" waits on 2026-11-04-vector-stay-docked-motor.md (docs/plans/) | — |
 | V4 | No RTPC passes V3 → close at master 2 and archive | — |
 
 ## Checklist
 
 ### Stage 1: probe (no build)
 - [x] vic-anim web console live on the robot (port 8889), `SetAudioParameter` registered.
-- [ ] Master 4; RTPCs per V3/V5. `[USER]` listens: answer/chime loud, gesture sound soft?
+- [x] Round A (master 4, all RTPCs 1.0): "what time is it?" answered at full volume.
+- [ ] Round B: `setbus` all 0.3, `[USER]` "what time is it?" → answer/chime still loud? Then one RTPC at a time.
 
 ### Stage 2: firmware (only if a V3 RTPC passes)
 - [ ] Post it at engine start as a commit on the clone's `my-vector` after `quiet-idle`, exported by `robot/firmware/apply.sh --export`; `./build/build-v.sh` green.
