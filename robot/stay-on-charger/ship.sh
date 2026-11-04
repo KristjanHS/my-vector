@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # Ship the patched firmware: tests, patches, build (live progress), built-asset check, deploy, robot smoke check.
-# Usage: ship.sh [--no-deploy]   (env: VICTOR_SRC, default = the main checkout's robot/work/wire-os-victor)
+# Usage: ship.sh [--no-deploy]   Runs only in the main checkout on main (make syncwt first), never in a worktree.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
-main=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")
-export VICTOR_SRC=${VICTOR_SRC:-$main/robot/work/wire-os-victor}
-src=$VICTOR_SRC
+src=$repo/robot/work/wire-os-victor
 patches=(stay-on-charger.patch lift-lock.patch quiet-idle.patch)
 deploy=1; [[ ${1:-} == --no-deploy ]] && deploy=0
 total=$((5 + deploy * 2)); i=0
 step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s\033[0m\n' "$i" "$total" "$*"; }
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; exit 1; }
+[[ $(git -C "$repo" rev-parse --absolute-git-dir) == "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)" ]] ||
+  die "run from the main checkout, not a worktree: make syncwt, then make -C ~/projects/my-vector ship"
+[[ $(git -C "$repo" branch --show-current) == main ]] || die "main checkout is not on main"
 
 step "tests: upstream drift, shell syntax, chipper Go tests"
 "$repo/scripts/upstream-drift.sh"

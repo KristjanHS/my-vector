@@ -32,7 +32,7 @@ deploy as 2026-11-04-vector-lift-lock.md (docs/plans/); robot steps are `[USER]`
 - [x] S3 + S4 + S7 in `robot/work/wire-os-victor`, export `quiet-idle.patch`, extend `apply.sh`; `./build/build-v.sh` is green.
 
 ### Stage 4: deploy + listen `[USER]` — today, with lift-lock; restarts the 24 h soak
-- [ ] `make ship`; rerun the Stage 1 count over awake + a sleep window: `RTS_OnCharger_*` and `ListeningForBeats` = 0, chime and answer still play.
+- [ ] User: `make syncwt`, then `make ship` in the main checkout; rerun the Stage 1 count over awake + a sleep window: `RTS_OnCharger_*` and `ListeningForBeats` = 0, chime and answer still play.
 - [ ] Restart `robot/stay-on-charger/soak.sh` and repoint the soak line in `docs/backlog.md` §OWED[USER].
 
 ## Rollback
