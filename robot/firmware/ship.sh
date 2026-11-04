@@ -8,7 +8,6 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 src=$repo/robot/work/wire-os-victor
-units=(vic-engine vic-anim vic-robot)
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; [[ -z ${SHIP_LOG:-} ]] || echo "log: $SHIP_LOG" >&2; exit 1; }
 case ${1:-} in '') deploy=1 ;; --no-deploy) deploy=0 ;; *) die "unknown arg: $1 (only --no-deploy)" ;; esac
 total=$((5 + deploy * 3)); i=0
@@ -82,14 +81,8 @@ echo "built firmware matches the tree"
 step "deploy: ./build/deploy-v.sh to $ip"
 (cd "$src" && script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
 
-step "robot: ${units[*]} active, still active 15 s later"
-ssh_() { ssh -i "$src/robot_sshkey" -o BatchMode=yes -o ConnectTimeout=8 -o PubkeyAcceptedAlgorithms=+ssh-rsa \
-  -o HostKeyAlgorithms=+ssh-rsa "root@$ip" "$@"; }
-all_up() { ssh_ "for u in ${units[*]}; do systemctl is-active -q \$u || exit 1; done" 2>/dev/null; }
-end=$((SECONDS + 180))
-until all_up; do ((SECONDS < end)) || die "services not all active within 3 min"; sleep 5; done
-sleep 15; all_up || die "a service dropped within 15 s (crash loop?)"
-echo "services up"
+step "robot smoke test: smoke.sh (units up + stable, log, head, face, speech, base still)"
+"$pd/smoke.sh" || die "robot smoke test failed — the robot is ALREADY running $sha, NOT pushed; fix and ship again, or ship the previous sha"
 
 # Push the pinned sha, not the branch tip: a parallel session may have committed during the build,
 # and pushing the tip would publish commits the robot is not running. Keeps origin == robot.

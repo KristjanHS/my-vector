@@ -54,7 +54,7 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 - [x] `[USER DECISION]` ruled 2026-11-04: A3 dropped · `fork_smoke.go` OK · `is_charging` absent → WARN (built in 3.1).
 - [x] 3.2 F1 `fork_smoke.go` + A1, A2, A4 + P1 loop bound; `go vet` green; A1, A2 PASS live; P1 bound red-demoed on the saved loop log.
 - [x] 3.2b after the loop fix + a wire-pod restart: two rest `fork_robot_state` reads 10 s apart (nonzero `q0` = real pose) set A4's bound; red demos: head bound 2.0 rad, say expects `XFINISHED`, pose bound −1 mm; `make robot-test` PASS. Done: rest drift 0 mm → bound 5 mm; all 3 red demos FAIL as expected; PASS in 44 s.
-- [ ] 3.3 W2 ship gate + RF3 delete; `total` step count updated; `NO_DEPLOY=1 make ship` still stops after the build.
+- [x] 3.3 W2 ship gate + RF3 delete; `total` step count updated; `NO_DEPLOY=1 make ship` still stops after the build. Done: smoke step replaces the units step 1:1, so `total` stays 5 + 3; the `--no-deploy` exit sits before the edit (unchanged; ship is user-run). Snapshot copy of smoke.sh resolves the main checkout (checked).
 
 ### Stage 4: full verify
 - [ ] `make check` green; code review in a fresh sub-agent.
