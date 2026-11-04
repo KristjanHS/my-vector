@@ -1,7 +1,7 @@
 # Log-level intent: motion-free app intent that turns on vic-engine debug logging
 
 **Goal**: `cloud_intent intent=my_vector_log_debug` → vic-engine DEBUG lines (all channels) in `/var/log/messages` for 10 min, no behavior runs; `my_vector_log_info` reverts early. Its marker line is A3 for `2026-11-04-firmware-test-suite.md (docs/plans/archive/)`.
-**Status**: staged 2026-11-04 — Stage 1 next; Stage 3 runs before Stage 2 (A3 static + red demos only until 0007 is live). Scope: vic-engine only; all-channels DEBUG on/off, no per-channel choice.
+**Status**: ✅ SHIPPED 2026-11-04 — 0007 live, A3 green in `make robot-test`. Scope: vic-engine only; all-channels DEBUG on/off, no per-channel choice.
 
 ## Refactor first
 
@@ -33,14 +33,14 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 - [x] 1.3 `build/build-v.sh` (background); `-Werror` clean; `check-static.sh --built` green; red demo: a bin marker typo.
 
 ### Stage 2: live (USER: `make syncwt` + `make ship`)
-- [ ] 2.1 At rest after ship: 0 `my-vector.LogLevel` lines; `quiet-count.sh` rate ≈ pre-ship.
-- [ ] 2.2 `my_vector_log_debug` → marker + `BehaviorSystem` lines, pose Δ ≤ 5 mm; `my_vector_log_info` → marker, rate back to rest; one run left to `info (timeout)` at 10 min; record its `/var/log/messages` growth (MB) vs the 40 MB cap.
+- [x] 2.1 At rest after ship: 0 `my-vector.LogLevel` lines; `quiet-count.sh` rate ≈ pre-ship.
+- [x] 2.2 `my_vector_log_debug` → marker + `BehaviorSystem` lines, pose Δ ≤ 5 mm; `my_vector_log_info` → marker, rate back to rest; one run left to `info (timeout)` at 10 min; record its `/var/log/messages` growth (MB) vs the 40 MB cap.
 
 ### Stage 3: A3 in the smoke test
 - [x] 3.1 L9 in `smoke.sh` (A3 FAILs without sending the intent until 0007 is on the robot); S5 green; offline matcher red demo done.
-- [ ] 3.1b After ship, live red demos: wrong intent name, marker expects `debug off`.
+- [x] 3.1b After ship, live red demos: wrong intent name, marker expects `debug off`.
 - [x] 3.2 Test-suite plan Q2 line → A3 owned here.
 
 ### Stage 4: full verify
-- [ ] `make check` green; code review in a fresh sub-agent over 0007 + the smoke diff.
-- [ ] User: `make robot-test` PASS with A3; robot still on the contacts.
+- [x] `make check` green; code review in a fresh sub-agent over 0007 + the smoke diff.
+- [x] User: `make robot-test` PASS with A3; robot still on the contacts.
