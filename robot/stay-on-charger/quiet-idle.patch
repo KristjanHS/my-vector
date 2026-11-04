@@ -1,0 +1,68 @@
+diff --git a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/danceToTheBeat/danceToTheBeatCoordinator.json b/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/danceToTheBeat/danceToTheBeatCoordinator.json
+index 406598f6..c48f7141 100644
+--- a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/danceToTheBeat/danceToTheBeatCoordinator.json
++++ b/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/danceToTheBeat/danceToTheBeatCoordinator.json
+@@ -14,6 +14,10 @@
+       {
+         "conditionType": "FeatureGate",
+         "feature" : "Dancing"
++      },
++      {
++        "conditionType": "Compound",
++        "not": { "conditionType": "OnCharger" }
+       }
+     ]
+   },
+diff --git a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/globalInterruptions.json b/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/globalInterruptions.json
+index 8e2e001a..f23c4f05 100644
+--- a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/globalInterruptions.json
++++ b/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/globalInterruptions.json
+@@ -25,7 +25,7 @@
+     "WhileInAirDispatcher",
+     "ReactToPutDown",
+     "OptionalReactions",
+-    "StayOnChargerUntilCharged", // delegate includes ReactToSoundAwake
++    "StayOnChargerUntilCharged", // outranks ReactToSoundAwake: no sound reactions on the charger
+     "ReactToSoundAwake",
+     "ConfirmHabitat",
+     "HighLevelAI"
+diff --git a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/highLevelDelegates/observing/observingOnChargerIdle.json b/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/highLevelDelegates/observing/observingOnChargerIdle.json
+index 5a81c497..d99e63c6 100644
+--- a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/highLevelDelegates/observing/observingOnChargerIdle.json
++++ b/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/highLevelDelegates/observing/observingOnChargerIdle.json
+@@ -14,19 +14,19 @@
+       // y = period between small motions, in seconds (may be longer due to waiting for another anim to finish)
+       {
+         "x": 0.0,
+-        "y": 0.5
++        "y": 300.0
+       },
+       {
+         "x": 5.0,
+-        "y": 2.0
++        "y": 300.0
+       },
+       {
+         "x": 30.0,
+-        "y": 10.0
++        "y": 300.0
+       },
+       {
+         "x": 60.0,
+-        "y": 30.0
++        "y": 300.0
+       }
+     ]
+   },
+diff --git a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/stayOnChargerUntilCharged.json b/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/stayOnChargerUntilCharged.json
+index c172c45e..d0253615 100644
+--- a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/stayOnChargerUntilCharged.json
++++ b/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/stayOnChargerUntilCharged.json
+@@ -18,7 +18,6 @@
+       "interruptActiveBehavior": true,
+ 
+       "behaviors": [
+-        "ReactToSoundAwake",
+         "ObservingOnCharger"
+       ]
+     }

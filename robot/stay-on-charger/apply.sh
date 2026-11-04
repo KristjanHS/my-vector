@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clones wire-os-victor into the gitignored robot/work/ at the pinned commit and applies the stay-docked and lift-lock patches.
+# Clones wire-os-victor into the gitignored robot/work/ at the pinned commit and applies the stay-docked, lift-lock and quiet-idle patches.
 # Then build + deploy from that checkout: ./build/build-v.sh, then ./build/deploy-v.sh (needs Docker).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -13,7 +13,7 @@ pin=ebf38c2871a0a69b3ac1a6fd592bb597b8e57724
 git -C "$src" cat-file -e "$pin^{commit}" 2>/dev/null || git -C "$src" fetch origin "$pin"
 git -C "$src" checkout -q "$pin"
 git -C "$src" submodule update -q --init --recursive
-for patch in stay-on-charger.patch lift-lock.patch; do
+for patch in stay-on-charger.patch lift-lock.patch quiet-idle.patch; do
   if git -C "$src" apply --reverse --check "$here/$patch" 2>/dev/null; then
     echo "OK: $patch already applied in $src"
     continue
