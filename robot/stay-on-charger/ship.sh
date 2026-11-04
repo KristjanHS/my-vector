@@ -16,11 +16,11 @@ step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s\033[0m\n' "$i" "$total
 [[ $(git -C "$repo" rev-parse --absolute-git-dir) == "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)" ]] ||
   die "run from the main checkout, not a worktree: make syncwt, then make -C ~/projects/my-vector ship"
 [[ $(git -C "$repo" branch --show-current) == main ]] || die "main checkout is not on main"
-full=$(git -C "$repo" rev-parse HEAD); sha=${full:0:7}
+full=$(git -C "$repo" rev-parse HEAD); sha=$(git -C "$repo" rev-parse --short "$full")
 dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
 trap 'rm -rf "$head"' EXIT
-git -C "$repo" archive "$sha" robot/stay-on-charger | tar -x -C "$head"
+git -C "$repo" archive "$full" robot/stay-on-charger | tar -x -C "$head"
 pd=$head/robot/stay-on-charger
 if ((deploy)); then
   [[ -s $src/robot_ip.txt && -f $src/robot_sshkey ]] || die "need $src/robot_ip.txt and robot_sshkey"
@@ -38,7 +38,7 @@ tree_is_patches() {
 }
 
 step "check HEAD $sha ($dirty uncommitted files ignored): drift, shell syntax, Go tests"
-"$repo/scripts/check.sh" --head || die "make check (HEAD)"
+"$repo/scripts/check.sh" --head "$full" || die "make check (HEAD)"
 
 step "patches: apply to $src, tree = HEAD + patches"
 VICTOR_SRC=$src "$pd/apply.sh"
@@ -82,6 +82,6 @@ echo "services up"
 # and pushing the tip would publish commits the robot is not running. Keeps origin == robot.
 step "push: $sha to origin main"
 git -C "$repo" push origin "$full:refs/heads/main" ||
-  die "git push failed — the robot is ALREADY running $sha; push it by hand so origin == robot"
+  die "git push failed — the robot is ALREADY running $sha; push it by hand so origin == robot (rejected? origin may already have it, git fetch to check)"
 echo
 echo "shipped $sha. Restart the soak: setsid nohup $here/soak.sh >$repo/robot/work/soak.out 2>&1 </dev/null &"
