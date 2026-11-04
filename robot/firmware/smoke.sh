@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # On-robot smoke test (make robot-test; make ship after deploy): units up and stable, clean vic-robot log, wire-pod link, docked,
 # head moves to both limits, face + speech work, log-level intent, wheels never moved.
-# Usage: smoke.sh   → PASS (exit 0); FAIL (1) names the first failing check; SETUP (2) = no ESN/key/wire-pod link.  (env: ESN, SERVER)
-# Moves only the head: check-static.sh S5 fails on any wheel/lift call in this file or in fork_smoke.go (the fork_* endpoints).
+# Usage: smoke.sh   → PASS (exit 0); FAIL (1) names the first failing check; SETUP (2) = no ESN/key/SSH/wire-pod link.  (env: ESN, SERVER)
+# Moves only the head: check-static.sh S5 fails on a wheel/lift name in this file or fork_smoke.go (denylist), on any `sdk`/api-sdk
+# endpoint here not in its allowlist or not literal (cloud_intent only via intent my_vector_log_*), and on any Conn method in fork_smoke.go
+# other than EventStream/DisplayFaceImageRGB/SayText.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")
@@ -24,7 +26,15 @@ esn=${ESN:-$(sed -n 's/^esn: *//p' "$main"/robot/backup/robot-id-*.txt 2>/dev/nu
 ip=$(<"$src/robot_ip.txt")
 ssh_() { ssh -i "$src/robot_sshkey" -o BatchMode=yes -o ConnectTimeout=8 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 -o PubkeyAcceptedAlgorithms=+ssh-rsa \
   -o HostKeyAlgorithms=+ssh-rsa "root@$ip" "$@"; }
-pids() { ssh_ "for u in ${units[*]}; do systemctl is-active -q \$u || exit 1; pidof -s \$u || exit 1; done" 2>/dev/null | tr '\n' ' '; }
+pids() { # the units' PIDs; status 1 = a unit is down, 255 = ssh transport failure (setup, not firmware)
+  local out; out=$(ssh_ "for u in ${units[*]}; do systemctl is-active -q \$u || exit 1; pidof -s \$u || exit 1; done" 2>/dev/null) || return $?
+  echo $out # unquoted: one line
+}
+same_pids() { # same_pids <when>: PIDs still $up, else die; lost SSH = setup
+  local now rc=0; now=$(pids) || rc=$?
+  ((rc != 255)) || setup "lost SSH to $ip"
+  [[ $now == "$up" ]] || die "units: a PID changed $1: $up → ${now:-a unit down}"
+}
 docked() {
   local b; b=$(curl -s -m 20 "$server/api-sdk/get_battery?serial=$esn" || true)
   [[ $b == *'"is_on_charger_platform":true'* ]] || die "docked ($1): not on the charger platform: ${b:0:200}"
@@ -32,12 +42,26 @@ docked() {
   [[ $b == *'"is_charging":true'* ]] && ok "docked ($1), charging ($bat)" || echo "WARN: docked ($1), not charging ($bat)"
 }
 
+# SSH first: no SSH is a setup failure (exit 2), not a firmware crash.
+for try in 1 2 3; do
+  ! ssh_ true 2>/dev/null || break
+  ((try < 3)) || setup "no SSH to $ip"; sleep 3
+done
+
 step "units up and stable (up to 195 s)"
 # P1: units active within 180 s, PIDs unchanged 15 s later (and at the end).
 end=$((SECONDS + 180))
-until up=$(pids); do ((SECONDS < end)) || die "units: ${units[*]} not all active within 180 s"; sleep 5; done
+while :; do
+  rc=0; up=$(pids) || rc=$?
+  ((rc)) || break
+  if ((SECONDS >= end)); then
+    ((rc != 255)) || setup "lost SSH to $ip"
+    die "units: ${units[*]} not all active within 180 s"
+  fi
+  sleep 5
+done
 sleep 15
-[[ $(pids || true) == "$up" ]] || die "units: a PID changed within 15 s (crash loop?): $up"
+same_pids "within 15 s (crash loop?)"
 ok "units active, stable 15 s: $up"
 
 step "wire-pod link"
@@ -100,6 +124,7 @@ ok "A4 start: wheels at rest, lift encoder bit clear"
 step "A1 head to both limits"
 # A1 + A2 under behavior control (default priority), released on exit.
 sdk assume_behavior_control >/dev/null # answers before the grant; A1's head reads are the check
+on_exit+=('sdk move_head speed=0 >/dev/null') # before release: a die inside head_to must not leave the head motor running
 on_exit+=('sdk release_behavior_control >/dev/null')
 sleep 2
 head_to() { # head_to <speed> <label> <jq test on .head_angle_rad>: re-sent each second (the control grant can override the first), 6 s max
@@ -124,7 +149,7 @@ sdk release_behavior_control >/dev/null
 
 step "A3 log-level intent"
 # A3: patch 0007's app intents turn vic-engine DEBUG on (marker + the DEBUG probe line, channel filtered at rest) and off.
-ssh_ "grep -qF my-vector.LogLevel /anki/lib/libcozmo_engine.so" || die "A3: firmware lacks patch 0007; intent not sent"
+ssh_ "grep -qF my-vector.LogLevel /anki/lib/libcozmo_engine.so" || die "A3: firmware lacks patch 0007; skipped the log-level intent"
 intent() { curl -s -m 10 "$server/api-sdk/cloud_intent?serial=$esn&intent=$1" >/dev/null || true; }
 seen() { # seen <ERE>...: every pattern appears in /var/log/messages after line $n0 within 10 s; $new = the lines seen
   local end=$((SECONDS + 10)) p miss
@@ -160,6 +185,6 @@ ok "A4 base still: moved $d mm (bound $pose_bound_mm)"
 docked after
 sleep 8 # a recalibration loop starts ~3 s after control is released and repeats ~1/s
 logcheck end
-[[ $(pids || true) == "$up" ]] || die "units: a PID changed during the run: $up"
+same_pids "during the run"
 ok "units unchanged at the end"
 echo "PASS"

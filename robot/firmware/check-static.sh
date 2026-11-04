@@ -36,7 +36,50 @@ if ((${#smoke[@]})); then
   hits=$(grep -nE 'move_wheels|move_lift|DriveWheels|DriveStraight|MoveLift' "${smoke[@]}" || true)
   [[ -z $hits ]] || die "smoke code commands motion: $hits"
 fi
-echo "smoke motion-free OK (${#smoke[@]} files)"
+if ((${#smoke[@]} == 2)); then
+  # S5 allowlist (comment lines skipped). smoke.sh: each `sdk <name>` and api-sdk/<name> names a listed endpoint
+  # literally; sdk()'s own api-sdk/$1 is the one non-literal; cloud_intent only in intent(), whose calls pass my_vector_log_*.
+  sdk_ok='conn_test|get_battery|assume_behavior_control|release_behavior_control|move_head|fork_robot_state|fork_face|fork_say'
+  tok='([^[:space:]);|&<>'\''`]*)' # one shell word, up to the next separator
+  url_re='api-sdk(/[^?"'\''[:space:]]*)?(.*)'
+  n=0
+  while IFS= read -r l; do
+    n=$((n + 1))
+    [[ ! $l =~ ^[[:space:]]*# ]] || continue
+    def=; [[ ! $l =~ ^[[:space:]]*(sdk|intent)\(\) ]] || def=${BASH_REMATCH[1]}
+    rest=$l
+    while [[ $rest =~ (^|[^[:alnum:]_.-])sdk[[:space:]]+$tok(.*) ]]; do
+      e=${BASH_REMATCH[2]} rest=${BASH_REMATCH[3]}
+      [[ $e =~ ^($sdk_ok)$ ]] || die "S5: smoke.sh:$n: sdk endpoint '$e' not a listed literal: $l"
+    done
+    rest=$l
+    while [[ $rest =~ (^|[^[:alnum:]_.-])intent[[:space:]]+$tok(.*) ]]; do
+      e=${BASH_REMATCH[2]} rest=${BASH_REMATCH[3]}
+      [[ $e =~ ^my_vector_log_[a-z_]+$ ]] || die "S5: smoke.sh:$n: intent '$e' is not my_vector_log_*: $l"
+    done
+    rest=$l
+    while [[ $rest =~ $url_re ]]; do
+      e=${BASH_REMATCH[1]#/} rest=${BASH_REMATCH[2]}
+      [[ $e =~ ^($sdk_ok)$ || ($def == sdk && $e == '$1') ||
+        ($def == intent && $e == cloud_intent && $l == *'api-sdk/cloud_intent?serial=$esn&intent=$1"'*) ]] ||
+        die "S5: smoke.sh:$n: api-sdk endpoint '$e' not allowed here: $l"
+    done
+    [[ $l != *cloud_intent* || $def == intent ]] || die "S5: smoke.sh:$n: cloud_intent outside intent(): $l"
+  done <"${smoke[0]}"
+  # fork_smoke.go: every Conn use is .EventStream / .DisplayFaceImageRGB / .SayText.
+  n=0
+  while IFS= read -r l; do
+    n=$((n + 1))
+    [[ ! $l =~ ^[[:space:]]*// ]] || continue
+    rest=$l
+    while [[ $rest =~ (^|[^[:alnum:]_])Conn(([^[:alnum:]_].*)?)$ ]]; do
+      rest=${BASH_REMATCH[2]}
+      [[ $rest =~ ^\.(EventStream|DisplayFaceImageRGB|SayText)([^[:alnum:]_]|$) ]] ||
+        die "S5: fork_smoke.go:$n: Conn use other than .EventStream/.DisplayFaceImageRGB/.SayText: $l"
+    done
+  done <"${smoke[1]}"
+fi
+echo "smoke motion-free OK (${#smoke[@]} files; denylist + endpoint/method allowlist)"
 
 # S-src: S2/S3 need the victor clone; never clone from a check.
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$repo/.git")")

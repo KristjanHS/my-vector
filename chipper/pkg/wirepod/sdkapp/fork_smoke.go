@@ -2,7 +2,9 @@ package sdkapp
 
 // Fork endpoints for robot/firmware/smoke.sh. Exact patterns win over the
 // upstream "/api-sdk/" catch-all, so no upstream file changes.
-// Never commands the wheels or lift: check-static.sh S5 greps this file.
+// Never commands the wheels or lift: check-static.sh S5 fails on a wheel/lift
+// name here (denylist) and on any Conn method but EventStream,
+// DisplayFaceImageRGB and SayText (allowlist).
 
 import (
 	"context"
