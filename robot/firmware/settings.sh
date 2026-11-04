@@ -19,6 +19,7 @@ esn=${ESN:-$(sed -n 's/^esn: *//p' "$main"/robot/backup/robot-id-*.txt 2>/dev/nu
 ip=$(<"$src/robot_ip.txt")
 ssh_() { ssh -i "$src/robot_sshkey" -o BatchMode=yes -o ConnectTimeout=8 -o PubkeyAcceptedAlgorithms=+ssh-rsa \
   -o HostKeyAlgorithms=+ssh-rsa "root@$ip" "$@"; }
+ssh_ true 2>/dev/null || { warn "settings: SSH to $ip failed; nothing checked"; exit 1; }
 
 # master_volume from the robot's own settings jdoc (wire-pod's chipper/jdocs copy goes stale: it missed a 4→1 set); empty if unreadable.
 robot_volume() { ssh_ "sed -n 's/.*\"master_volume\" *: *\([0-9]*\).*/\1/p' $settings" 2>/dev/null; }
@@ -35,7 +36,7 @@ else
   else warn "volume: set to $volume sent, robot still has ${now:-unknown} after 15 s"; fi
 fi
 
-case $(ssh_ "[ -e $flag ] && echo present || { touch $flag && echo created; }" 2>&1) in
+case $(ssh_ "[ -e $flag ] && echo present || { touch $flag && echo created; }" 2>/dev/null) in
   present) ok "no-auto-update: $flag present" ;;
   created) ok "no-auto-update: $flag created" ;;
   *) warn "no-auto-update: could not check or create $flag over SSH to $ip" ;;
