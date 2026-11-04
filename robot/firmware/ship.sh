@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Ship the patched firmware: tests, patches, build (live progress), built-asset check, deploy, robot smoke check, git push, soak restart.
-# Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no deploy, no push, the soak keeps running).
+# Ship the patched firmware: tests, patches, build (live progress), built-asset check, deploy, robot smoke check, git push.
+# Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no deploy, no push).
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
 # HEAD-only: checks, patches and apply.sh come from the committed HEAD; uncommitted fork files are ignored.
 # Log: every run is recorded to robot/work/ship-logs/ship-<time>-<sha>.log (latest.log = newest); the newest 20 are kept.
@@ -79,8 +79,6 @@ echo "built firmware matches the tree"
 ((deploy)) || { echo; echo "built, not deployed (--no-deploy) at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z"). log: $SHIP_LOG"; exit 0; }
 
 step "deploy: ./build/deploy-v.sh to $ip"
-# Written before deploy: a running soak (soak.sh) stops judging as soon as the robot may hold new firmware.
-{ echo "$full"; git -C "$repo" show "$full:robot/firmware/series" | paste -sd, -; } >"$repo/robot/work/shipped"
 (cd "$src" && script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
 
 step "robot smoke test: smoke.sh (units up + stable, log, head, face, speech, base still)"
@@ -93,4 +91,3 @@ git -C "$repo" push origin "$full:refs/heads/main" ||
   die "git push failed — the robot is ALREADY running $sha; push it by hand so origin == robot (rejected? origin may already have it, git fetch to check)"
 echo
 echo "shipped $sha at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z") (log: $SHIP_LOG)"
-"$here/soak.sh" --restart || echo "WARN: soak not restarted; run $here/soak.sh --restart"
