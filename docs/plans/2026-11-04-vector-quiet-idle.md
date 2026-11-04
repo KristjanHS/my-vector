@@ -14,7 +14,7 @@ deploy as 2026-11-04-vector-lift-lock.md (docs/plans/); robot steps are `[USER]`
 | S4 | Stretch idle gestures: every `small_motion_period_s` node floors at 300 s (stock ramps 0.5 → 30 s) | `observingOnChargerIdle.json` |
 | S5 | Eye-contact and motion reactions stay: 0 hits in S1 | — |
 | S6 | Ship S3, S4, S7 as `robot/stay-on-charger/quiet-idle.patch`, applied by `apply.sh` after `lift-lock.patch` | `robot/stay-on-charger/apply.sh` |
-| S7 | `DanceToTheBeatCoordinator` wakes only off the charger: add `not OnCharger` to its `wantsToBeActivatedCondition`; voice "dance" untouched | `danceToTheBeat/danceToTheBeatCoordinator.json` |
+| S7 | `DanceToTheBeatCoordinator` wakes only off the charger: add `not OnChargerPlatform` to its `wantsToBeActivatedCondition`; voice "dance" untouched | `danceToTheBeat/danceToTheBeatCoordinator.json` |
 
 ## Open questions
 
@@ -29,10 +29,10 @@ deploy as 2026-11-04-vector-lift-lock.md (docs/plans/); robot steps are `[USER]`
 - [ ] `curl "http://localhost:8080/api-sdk/volume?serial=0090927c&volume=1"`; "Hey Vector, what time is it?" is still clearly audible.
 
 ### Stage 3: quiet-idle patch (PC side)
-- [ ] S3 + S4 + S7 in `robot/work/wire-os-victor`, export `quiet-idle.patch`, extend `apply.sh`; `./build/build-v.sh` is green.
+- [x] S3 + S4 + S7 in `robot/work/wire-os-victor`, export `quiet-idle.patch`, extend `apply.sh`; `./build/build-v.sh` is green.
 
 ### Stage 4: deploy + listen `[USER]` — today, with lift-lock; restarts the 24 h soak
-- [ ] `./build/deploy-v.sh`; rerun the Stage 1 count over ~23 min idle: each S1 source ≤1, and the wake-word chime and answer still play.
+- [ ] `make ship`; rerun the Stage 1 count over awake + a sleep window: `RTS_OnCharger_*` and `ListeningForBeats` = 0, chime and answer still play.
 - [ ] Restart `robot/stay-on-charger/soak.sh` and repoint the soak line in `docs/backlog.md` §OWED[USER].
 
 ## Rollback
