@@ -36,12 +36,15 @@ dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
 trap 'rm -rf "$head"' EXIT
 # fork_smoke.go too: check-static.sh S5 reads it repo-relative and fails if smoke.sh is there without it.
-# robot/env.sh: settings.sh + smoke.sh source it from $pd/.. .
-git -C "$repo" archive "$full" robot/firmware robot/env.sh chipper/pkg/wirepod/sdkapp/fork_smoke.go | tar -x -C "$head"
+# robot/env.sh: settings.sh + smoke.sh source it from $pd/.. ; ls-tree drops it for a pre-R6 sha, which has none.
+# shellcheck disable=SC2046 # unquoted on purpose: empty for a pre-R6 sha
+git -C "$repo" archive "$full" robot/firmware chipper/pkg/wirepod/sdkapp/fork_smoke.go $(git -C "$repo" ls-tree --name-only "$full" robot/env.sh) |
+  tar -x -C "$head"
 pd=$head/robot/firmware
 if ((deploy)); then
+  envsh=$head/robot/env.sh; [[ -f $envsh ]] || envsh=$here/../env.sh
   # shellcheck source=robot/env.sh
-  . "$here/../env.sh"
+  . "$envsh"
   write_clone_ip "$src"
 fi
 
@@ -89,7 +92,7 @@ step "deploy: ./build/deploy-v.sh to $ip"
 step "robot settings: settings.sh (master_volume, no-auto-update)"
 out=$("$pd/settings.sh" 2>&1) || true
 echo "$out"
-warns=$(grep '^WARN' <<<"$out" || true)
+warns=$(grep '^WARN\|^SETUP' <<<"$out" || true)
 
 step "robot smoke test: smoke.sh (units up + stable, log, head, face, speech, base still)"
 "$pd/smoke.sh" || die "robot smoke test failed — the robot is ALREADY running $sha, NOT pushed; fix and ship again, or ship the previous sha"

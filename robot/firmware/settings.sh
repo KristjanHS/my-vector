@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy).
-# Usage: settings.sh   idempotent: reads first, sets only what differs. Exit 0 = all in place; 1 = a WARN line printed.  (env: ESN, SERVER)
+# Usage: settings.sh   idempotent: reads first, sets only what differs. Exit 0 = all in place; 1 = a WARN line printed; 2 = SETUP (robot/env.sh).  (env: ESN, SERVER)
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh

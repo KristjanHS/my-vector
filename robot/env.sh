@@ -13,4 +13,4 @@ esn=${ESN:-${ROBOT_ESN:-}} ip=${ROBOT_IP:-} server=${SERVER:-${ROBOT_SERVER:-}} 
 # shellcheck disable=SC2034 # read by the sourcing scripts
 ssh_opts=(-i "$key" -o BatchMode=yes -o ConnectTimeout=8 -o PubkeyAcceptedAlgorithms=+ssh-rsa -o HostKeyAlgorithms=+ssh-rsa)
 # The clone's build/deploy-v.sh reads the robot IP from <clone>/robot_ip.txt.
-write_clone_ip() { printf '%s\n' "$ip" >"$1/robot_ip.txt"; }
+write_clone_ip() { [[ -d $1 ]] || { echo "SETUP: no victor clone at $1" >&2; exit 2; }; printf '%s\n' "$ip" >"$1/robot_ip.txt"; }
