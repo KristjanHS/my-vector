@@ -13,7 +13,7 @@
 | V5 | Fire sounds from the console (`PostAudioEvent`; voice via SDK `say_text`), measure dB via `SetWriteAudioOutputCapture` + user ear per play; capture fails → ear only | — |
 | V4 | No RTPC passes V3 → close at master 2 and archive | — |
 | V6 | Round B pick: `Robot_Vic_Volume_Animation=0.1` (Behavior/Procedural leave idle near-unchanged); chime + `say_text` voice unchanged | Stage 2 |
-| V7 | `[USER DECISION]` eye-move ticks (`Scrn_Procedural_Blink/_Shift/_Squint`, ~-43 dBFS) ignore all three RTPCs and are audible at master 4: lower their `AddEvent` `1.0f` in firmware, or settle master at 3 | `audioLayerManager.cpp` |
+| V7 | Eye-move ticks muted: `kEnableKeepAliveEye{Blink,Dart,Squint}AudioEvents` default false (live: `:8889/consolevarset?key=EnableKeepAliveEyeBlinkAudioEvents&value=false`) | `audioLayerManager.cpp` |
 
 ## Checklist
 
@@ -23,9 +23,9 @@
 - [x] Round B: per RTPC × ladder, measured dB + `[USER]` ear; real "what time is it?" at Animation 0.1 → chime + answer loud (V6).
 
 ### Stage 2: firmware (only if a V3 RTPC passes)
-- [ ] After V7: post V6 in `CozmoAudioController` init (after the `SetSwitchState` block) as `0008-speech-volume` on the clone's `my-vector`, exported by `robot/firmware/apply.sh --export`; `./build/build-v.sh` green.
+- [x] Post V6 + V7 in `CozmoAudioController` init (after the `SetSwitchState` block) as `0008-speech-volume` on the clone's `my-vector`, exported by `robot/firmware/apply.sh --export`; `./build/build-v.sh` green.
 - [ ] User: `make syncwt`, `make ship` from main; `master_volume=4`; listen check `[USER]`; `quiet-count.sh` → PASS.
 
 ## Rollback
 
-`/api-sdk/volume` back to 2; redeploy without `speech-volume.patch`.
+`/api-sdk/volume` back to 2; redeploy without `0008-speech-volume.patch`.

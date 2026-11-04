@@ -15,3 +15,6 @@
 0007-log-level-intent.patch	src	lib/util/source/anki/util/logging/logging.cpp	gMyVectorDebugLog
 0007-log-level-intent.patch	bin	lib/libcozmo_engine.so	my-vector.LogLevel
 0007-log-level-intent.patch	bin	lib/libankiutil.so	gMyVectorDebugLog
+0008-speech-volume.patch	src	animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp	my-vector.SpeechVolume
+0008-speech-volume.patch	src	animProcess/src/cozmoAnim/animation/trackLayerManagers/audioLayerManager.cpp	kEnableKeepAliveEyeBlinkAudioEvents, CONSOLE_PATH, false
+0008-speech-volume.patch	bin	bin/vic-anim	my-vector.SpeechVolume
