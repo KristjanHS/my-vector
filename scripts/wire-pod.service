@@ -1,0 +1,18 @@
+# Template: `make daemon-enable` replaces @REPO@ and installs it as /etc/systemd/system/wire-pod.service.
+[Unit]
+Description=wire-pod server (my-vector fork)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/chipper/start.sh
+Environment=HOME=/root
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
