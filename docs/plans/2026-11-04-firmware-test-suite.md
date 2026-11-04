@@ -40,7 +40,7 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 
 ### Stage 1: live probes (read-only: GETs, SSH `cat`/`grep`/`systemctl`; no SDK control, no motion)
 - [x] Q1: at rest 3.57 V → `is_on_charger_platform:true`, `is_charging` absent.
-- [x] Q2: no clean motion-free intent signal (LOG_DEBUG compiled out) → A3 dropped at the 3.2 gate.
+- [x] Q2: no motion-free intent signal at ship (LOG_DEBUG compiled out) → A3 dropped here; re-added by `2026-11-04-log-level-intent.md (docs/plans/)`.
 - [x] Q3: 0 Fatal-pattern hits at rest; `LiftController.Calibrated … reason Startup` once under the vic-robot PID.
 - [x] Q4: `:8888/consolevars` → 200; `conn_test` body = `success`.
 
