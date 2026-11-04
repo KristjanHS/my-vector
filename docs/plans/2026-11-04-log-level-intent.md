@@ -1,6 +1,6 @@
 # Log-level intent: motion-free app intent that turns on vic-engine debug logging
 
-**Goal**: `cloud_intent intent=my_vector_log_debug` → vic-engine DEBUG lines (all channels) in `/var/log/messages` for 10 min, no behavior runs; `my_vector_log_info` reverts early. Its marker line is A3 for `2026-11-04-firmware-test-suite.md (docs/plans/)`.
+**Goal**: `cloud_intent intent=my_vector_log_debug` → vic-engine DEBUG lines (all channels) in `/var/log/messages` for 10 min, no behavior runs; `my_vector_log_info` reverts early. Its marker line is A3 for `2026-11-04-firmware-test-suite.md (docs/plans/archive/)`.
 **Status**: staged 2026-11-04 — Stage 1 next; Stage 3 runs before Stage 2 (A3 static + red demos only until 0007 is live). Scope: vic-engine only; all-channels DEBUG on/off, no per-channel choice.
 
 ## Refactor first

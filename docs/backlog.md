@@ -9,4 +9,4 @@
 - Restart chipper (`make start`) to drop auto-hold: log has no `Auto-hold` line; "Hey Vector" answers; web-UI Assume/Release still work.
 - Volume 2 (interim): "Hey Vector, what time is it?" → answer clearly audible; then Stage 1 of 2026-11-04-vector-speech-volume.md (docs/plans/).
 - Quiet idle: at the soak verdict `robot/firmware/quiet-count.sh` → `PASS`. FAIL → plan a ruling for the behavior its `hit:` lines name.
-- Next `make ship`: first on `robot/firmware/` + the clone's `my-vector` branch — step 2 prints `tree = pin + 7 patches`, build green; then `make robot-test` P1 + A4 lift bit PASS (lift loop gone); then Stage 2 of 2026-11-04-log-level-intent.md (docs/plans/).
+- Next `make ship`: step 7/8 runs `smoke.sh` → PASS before the push (FAIL = robot runs the new sha, not pushed); during its A2 step Vector shows a solid face. From 2026-11-04-firmware-test-suite.md (docs/plans/archive/).
