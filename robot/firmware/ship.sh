@@ -34,7 +34,8 @@ echo "log: $SHIP_LOG"
 dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
 trap 'rm -rf "$head"' EXIT
-git -C "$repo" archive "$full" robot/firmware | tar -x -C "$head"
+# fork_smoke.go too: check-static.sh S5 reads it repo-relative and fails if smoke.sh is there without it.
+git -C "$repo" archive "$full" robot/firmware chipper/pkg/wirepod/sdkapp/fork_smoke.go | tar -x -C "$head"
 pd=$head/robot/firmware
 if ((deploy)); then
   [[ -s $src/robot_ip.txt && -f $src/robot_sshkey ]] || die "need $src/robot_ip.txt and robot_sshkey"
