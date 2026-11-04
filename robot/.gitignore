@@ -3,3 +3,4 @@
 *.img
 *.key
 id_*
+robot.env

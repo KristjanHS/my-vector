@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Fails when the fork touches an upstream wire-pod path that is not listed below.
 # Fork code goes in chipper/pkg/myvector/; glue into an upstream package is a fork_*.go file.
-# Untracked files are not checked: `git add` them first.
+# Untracked files are not checked: `git add` them first. --head [rev] checks only that commit (default HEAD; make ship passes its pinned sha).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 # Upstream files the fork edits on purpose: the only places an upstream merge can conflict.
 allowed_edits=(
   chipper/pkg/wirepod/sdkapp/bcassume.go # busy-spin fix while behavior control is held
-  chipper/pkg/wirepod/sdkapp/server.go   # InitAutoHold() call
   .gitignore                             # fork block: *.key, chipper/*.bak, session-certs
 )
 
+to=(); [[ ${1:-} == --head ]] && to=("$(git rev-parse --verify "${2:-HEAD}^{commit}")")
 ref=${UPSTREAM_REF:-upstream/main}
 git rev-parse -q --verify "$ref^{commit}" >/dev/null || { echo "missing $ref: git fetch upstream" >&2; exit 2; }
-base=$(git merge-base HEAD "$ref")
+base=$(git merge-base "${to[0]:-HEAD}" "$ref")
 roots=$(git ls-tree --name-only "$base")
 
 is_allowed() {
@@ -27,7 +27,7 @@ is_allowed() {
 # delete (of the upstream path) plus an add, so both halves are checked. A failed diff aborts via set -e.
 changes=$(mktemp)
 trap 'rm -f "$changes"' EXIT
-git diff -z --no-renames --name-status "$base" >"$changes"
+git diff -z --no-renames --name-status "$base" "${to[@]}" >"$changes"
 
 bad=0
 while IFS= read -r -d '' status && IFS= read -r -d '' path; do

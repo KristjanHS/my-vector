@@ -4,8 +4,10 @@
 
 ## OWED[USER]
 
-- Live-check auto-hold: set `export AUTO_HOLD=override` in `chipper/source.sh` (later try `reserve`), restart chipper, reboot Vector → he ends up held on the charger; `top` shows chipper near 0% CPU.
-- Judge the stay-docked soak after 2026-11-05 07:21: `robot/stay-on-charger/soak.sh --summary robot/work/soak-2026-11-04-072053.log` → `PASS`;
-  also try one voice command that moves him (Q6) and confirm "Hey Vector" answers. FAIL → Rollback in 2026-11-03-vector-unlock-wireos.md (docs/plans/).
-- Live-check lift-lock after the deploy: "Hey Vector, fist bump" → lift still, eyes animate, stays docked; after 10 min `logcat -d | grep -c IActionRunner.Update.TracksLocked`
-  and `logcat -d | grep -ci calibrat` are not rising. FAIL → Rollback in 2026-11-04-vector-lift-lock.md (docs/plans/).
+- Stay-docked: if he leaves the dock and dies, read `/data/log/keep/messages*` on the robot (`robot/logkeep/apply.sh` keeps them);
+  also try one voice command that moves him (Q6) and confirm "Hey Vector" answers. FAIL → `git checkout 18541df^ -- chipper/pkg/myvector chipper/pkg/wirepod/sdkapp/fork_autohold.go chipper/pkg/wirepod/sdkapp/server.go scripts/upstream-drift.sh`, `export AUTO_HOLD=override` in `chipper/source.sh`, restart chipper (A1–A5 at `18541df^`); then Rollback in 2026-11-03-vector-unlock-wireos.md (docs/plans/).
+- Restart chipper (`make start`) to drop auto-hold: log has no `Auto-hold` line; "Hey Vector" answers; web-UI Assume/Release still work.
+- Quiet idle: after he has slept once, `robot/firmware/quiet-count.sh` → `PASS`. FAIL → plan a ruling for the behavior its `hit:` lines name.
+- Next `make ship`: step 7/9 `settings.sh` → only `ok:` lines; step 8/9 `smoke.sh` → PASS before the push (FAIL = robot runs the new sha, not pushed); during its A2 step Vector shows a solid face. From 2026-11-04-firmware-test-suite.md (docs/plans/archive/).
+- Speech volume (0008): after he has slept, `quiet-count.sh` → PASS.
+  FAIL → `volume=2` in `robot/firmware/settings.sh` (else the next ship resets 4); Rollback in 2026-11-04-vector-speech-volume.md (docs/plans/).

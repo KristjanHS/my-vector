@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Wed, 4 Nov 2026 14:55:39 +0200
+Subject: [PATCH] speech-volume
+
+vic-anim: Robot_Vic_Volume_Animation RTPC set to 0.1 at audio init (V6), so idle animation
+sounds stay quiet at master volume 4 while the wake chime and TTS stay loud. The keep-alive
+eye blink/dart/squint audio console vars default to false (V7): those ticks post on the
+Procedural object with their own Event_Volume and ignore every bus RTPC. Logs my-vector.SpeechVolume.
+---
+ .../animation/trackLayerManagers/audioLayerManager.cpp     | 7 ++++---
+ animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp   | 4 ++++
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/animProcess/src/cozmoAnim/animation/trackLayerManagers/audioLayerManager.cpp b/animProcess/src/cozmoAnim/animation/trackLayerManagers/audioLayerManager.cpp
+index 67fb861d..a23c91c1 100644
+--- a/animProcess/src/cozmoAnim/animation/trackLayerManagers/audioLayerManager.cpp
++++ b/animProcess/src/cozmoAnim/animation/trackLayerManagers/audioLayerManager.cpp
+@@ -24,9 +24,10 @@ namespace
+ {
+   const auto kProceduralGameObject = AudioMetaData::GameObjectType::Procedural;
+   #define CONSOLE_PATH "Audio.KeepAlive"
+-  CONSOLE_VAR(bool, kEnableKeepAliveEyeBlinkAudioEvents, CONSOLE_PATH, true);
+-  CONSOLE_VAR(bool, kEnableKeepAliveEyeDartAudioEvents, CONSOLE_PATH, true);
+-  CONSOLE_VAR(bool, kEnableKeepAliveEyeSquintAudioEvents, CONSOLE_PATH, true);
++  // my-vector speech-volume V7: eye-move ticks off (they ignore every volume RTPC)
++  CONSOLE_VAR(bool, kEnableKeepAliveEyeBlinkAudioEvents, CONSOLE_PATH, false);
++  CONSOLE_VAR(bool, kEnableKeepAliveEyeDartAudioEvents, CONSOLE_PATH, false);
++  CONSOLE_VAR(bool, kEnableKeepAliveEyeSquintAudioEvents, CONSOLE_PATH, false);
+ }
+ 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+diff --git a/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp b/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
+index 786557d1..40919980 100644
+--- a/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
++++ b/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
+@@ -392,6 +392,10 @@ CozmoAudioController::CozmoAudioController( const Anim::AnimContext* context )
+     SetSwitchState( ToAudioSwitchGroupId( SwitchGroupType::Robot_Vic_External_Input_Source ),
+                     ToAudioSwitchStateId( (GenericSwitch) Robot_Vic_External_Input_Source::Streaming_Wave_Portal ),
+                     ToAudioGameObject(AudioMetaData::GameObjectType::Animation) );
++
++    // my-vector speech-volume V6: idle animation sounds at 0.1; wake chime and TTS ride other buses
++    SetParameter( ToAudioParameterId( APT::Robot_Vic_Volume_Animation ), 0.1f, kInvalidAudioGameObject );
++    PRINT_NAMED_WARNING("my-vector.SpeechVolume", "Robot_Vic_Volume_Animation=0.1");
+   }
+   if (sThis == nullptr) {
+     sThis = this;
