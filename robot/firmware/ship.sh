@@ -8,7 +8,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 src=$repo/robot/work/wire-os-victor
-warns='' # compat.sh + settings.sh WARN/SETUP lines, repeated at the end of the run
+warns='' # compat.sh WARN + settings.sh WARN/SETUP lines, repeated at the end of the run
 add_warns() { local w; w=$(grep '^WARN\|^SETUP' <<<"$1" || true); [[ -z $w ]] || warns+=${warns:+$'\n'}$w; }
 show_warns() { [[ -z $warns ]] || printf '\033[1;33m%s\033[0m\n' "$warns" >&2; }
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; show_warns; [[ -z ${SHIP_LOG:-} ]] || echo "log: $SHIP_LOG" >&2; exit 1; }
