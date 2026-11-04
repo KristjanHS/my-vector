@@ -9,5 +9,5 @@
 - Restart chipper (`make start`) to drop auto-hold: log has no `Auto-hold` line; "Hey Vector" answers; web-UI Assume/Release still work.
 - Quiet idle: after he has slept once, `robot/firmware/quiet-count.sh` → `PASS`. FAIL → plan a ruling for the behavior its `hit:` lines name.
 - Next `make ship`: step 7/8 runs `smoke.sh` → PASS before the push (FAIL = robot runs the new sha, not pushed); during its A2 step Vector shows a solid face. From 2026-11-04-firmware-test-suite.md (docs/plans/archive/).
-- Speech volume (0008): "what time is it?" loud at `master_volume=4`; after he has slept, `quiet-count.sh` → PASS.
+- Speech volume (0008): after he has slept, `quiet-count.sh` → PASS.
   FAIL → `/api-sdk/volume` back to 2; Rollback in 2026-11-04-vector-speech-volume.md (docs/plans/).
