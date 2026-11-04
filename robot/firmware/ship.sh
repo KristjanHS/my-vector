@@ -41,10 +41,11 @@ if ((deploy)); then
   ip=$(<"$src/robot_ip.txt")
 fi
 
-# The source tree must be the tip apply.sh built (pin + series): no extra commits, hunks, staged edits or untracked files.
+# The source tree must be the tip apply.sh built: pin + exactly n commits, no hunks, staged edits or untracked files.
 tree_is_patches() {
-  local d; d=$(git -C "$src" status --porcelain)
-  [[ $(git -C "$src" rev-parse HEAD) == "$tip" && -z $d ]] || die "tree differs from pin + series (another session in flight?): $d"
+  local d; d=$(git -C "$src" status --porcelain --untracked-files=normal --ignore-submodules=none)
+  [[ $(git -C "$src" rev-parse HEAD) == "$tip" && $(git -C "$src" rev-list --count "$pin..$tip") == "$n" && -z $d ]] ||
+    die "tree differs from pin + $n series patches (another session in flight?): $d"
 }
 
 step "check HEAD $sha ($dirty uncommitted files ignored): drift, shell syntax, Go tests"
@@ -52,9 +53,11 @@ step "check HEAD $sha ($dirty uncommitted files ignored): drift, shell syntax, G
 
 step "patches: apply to $src, tree = pin + series"
 VICTOR_SRC=$src "$pd/apply.sh"
-tip=$(git -C "$src" rev-parse HEAD) n=$(grep -c . "$pd/series")
+tip=$(git -C "$src" rev-parse HEAD)
+pin=$(sed -n 's/^pin=//p' "$pd/apply.sh")
+n=$(grep -vc '^[[:space:]]*$' "$pd/series") || die "empty series"
 tree_is_patches
-want=$(git -C "$src" diff --name-only "$tip~$n" "$tip")
+want=$(git -C "$src" diff --name-only "$pin" "$tip")
 echo "tree = pin + $n patches ($(echo "$want" | wc -l) files)"
 
 json=$(echo "$want" | grep '\.json$' || true)
