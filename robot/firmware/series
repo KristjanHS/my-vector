@@ -2,3 +2,5 @@
 0002-lift-lock.patch
 0003-quiet-idle.patch
 0004-quiet-winsock.patch
+0005-motor-lock.patch
+0006-drive-guard.patch

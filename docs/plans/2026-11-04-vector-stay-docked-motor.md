@@ -1,7 +1,7 @@
 # Vector stay docked: wheels and lift can't move him off the charger
 
 **Goal**: no voice intent, behavior or SDK call moves Vector off the charger (wheels locked on contacts; lift already 0 via `lift-lock`); "Hey Vector, fist bump" leaves him docked.
-**Status**: open — Stage 3 implement.
+**Status**: open — Stage 4 (user ship + live check).
 
 ## Rulings
 
@@ -12,7 +12,7 @@ Stage 2 ruled 2026-11-04: M1 + M3; lift stays on `lift-lock` (always 0, boot cal
 | M1 | Wheel power forced to 0 while `HAL::BatteryIsOnCharger()`; released 1000 ms after contacts lost (fails open); head and lift untouched | top of `HAL::MotorSetPower` (`hal_motors.cpp`), predicate `HAL::MotorLockActive()` in `hal.h` |
 | M1-int | While `HAL::MotorLockActive()`, `WheelController::Run` calls `ResetIntegralGainSums()` so release can't lurch | `wheelController.cpp` |
 | M1-log | `AnkiInfo("my-vector.MotorLock", …)` once per lock episode, on the first non-zero wheel request zeroed | `hal_motors.cpp` |
-| M3 | Action whose `GetTracksToLock()` has `BODY_TRACK` while `IsOnChargerContacts()` → `SHOULDNT_DRIVE_ON_CHARGER` before the `_suppressTrackLocking` block of `NOT_STARTED` | `IActionRunner::Update` (`actionInterface.cpp`) |
+| M3 | On `IsOnChargerContacts()`, `DriveStraightAction::Init` ignores `SetCanMoveOnCharger(true)` → `SHOULDNT_DRIVE_ON_CHARGER`, log `my-vector.DriveGuard`; ⛔ a blanket `BODY_TRACK` guard in `IActionRunner::Update` — `TrackFaceAction` (HeadAndBody) locks `BODY_TRACK` | `basicActions.cpp` |
 | E1 | Escape: lift him off by hand (contacts lost → wheels free after the latch) | — |
 | F0 | Falsifier: `robot/firmware/soak.sh 1 30` while the user says "fist bump" ×3; judge `grep -c '^off-dock'` = 0, not the verdict (worn battery may fail the volts-rise check) | `soak.sh` |
 
@@ -35,8 +35,8 @@ Stage 2 ruled 2026-11-04: M1 + M3; lift stays on `lift-lock` (always 0, boot cal
 - [x] `[USER DECISION]` ruled M1 + M3, no M5 (§Rulings).
 
 ### Stage 3: implement
-- [ ] Commit `motor-lock` (M1, M1-int, M1-log) then `drive-guard` (M3) on the clone's `my-vector` after `quiet-winsock`.
-- [ ] `robot/firmware/apply.sh --export` → `0005-motor-lock.patch` + `0006-drive-guard.patch` in `series`; `./build/build-v.sh` green.
+- [x] Commit `motor-lock` (M1, M1-int, M1-log) then `drive-guard` (M3) on the clone's `my-vector` after `quiet-winsock`.
+- [x] `robot/firmware/apply.sh --export` → `0005-motor-lock.patch` + `0006-drive-guard.patch` in `series`; `./build/build-v.sh` green.
 
 ### Stage 4: ship + live check (user)
 - [ ] User: `make syncwt`, `make ship` from main — never Claude.

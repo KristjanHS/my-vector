@@ -10,4 +10,4 @@
 - Volume 2 (interim): "Hey Vector, what time is it?" → answer clearly audible; then Stage 1 of 2026-11-04-vector-speech-volume.md (docs/plans/).
 - Quiet idle: at the soak verdict `robot/firmware/quiet-count.sh` → `PASS`. FAIL → plan a ruling for the behavior its `hit:` lines name.
 - Fist-bump live check: Stage 4 of 2026-11-04-vector-stay-docked-motor.md (docs/plans/), after its `make ship`.
-- Next `make ship`: first on `robot/firmware/` + the clone's `my-vector` branch — step 2 prints `tree = pin + 4 patches`, build green.
+- Next `make ship`: first on `robot/firmware/` + the clone's `my-vector` branch — step 2 prints `tree = pin + 6 patches`, build green.
