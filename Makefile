@@ -11,7 +11,7 @@ start: ## Run the wire-pod server (needs the NOPASSWD sudoers rule)
 check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, chipper myvector Go tests
 	$(CURDIR)/scripts/check.sh
 
-ship: ## Ship committed HEAD: check, patch, build (live), deploy the robot firmware; NO_DEPLOY=1 stops after the build
+ship: ## Ship committed HEAD: check, patch, build (live), deploy the robot firmware, git push; NO_DEPLOY=1 stops after the build
 	$(CURDIR)/robot/stay-on-charger/ship.sh $(if $(NO_DEPLOY),--no-deploy)
 
 # Shared worktree/commit targets (syncwt, commit, commitwt) from dotfiles. At the bottom so

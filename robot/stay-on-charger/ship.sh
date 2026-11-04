@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Ship the patched firmware: tests, patches, build (live progress), built-asset check, deploy, robot smoke check.
-# Usage: ship.sh [--no-deploy]   Runs only in the main checkout on main (make syncwt first), never in a worktree.
+# Ship the patched firmware: tests, patches, build (live progress), built-asset check, deploy, robot smoke check, git push.
+# Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no deploy, no push).
+#   Runs only in the main checkout on main (make syncwt first), never in a worktree.
 # HEAD-only: checks, patches and apply.sh come from the committed HEAD; uncommitted fork files are ignored.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -10,12 +11,12 @@ patches=(stay-on-charger.patch lift-lock.patch quiet-idle.patch)
 units=(vic-engine vic-anim vic-robot)
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; exit 1; }
 case ${1:-} in '') deploy=1 ;; --no-deploy) deploy=0 ;; *) die "unknown arg: $1 (only --no-deploy)" ;; esac
-total=$((5 + deploy * 2)); i=0
+total=$((5 + deploy * 3)); i=0
 step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s\033[0m\n' "$i" "$total" "$*"; }
 [[ $(git -C "$repo" rev-parse --absolute-git-dir) == "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)" ]] ||
   die "run from the main checkout, not a worktree: make syncwt, then make -C ~/projects/my-vector ship"
 [[ $(git -C "$repo" branch --show-current) == main ]] || die "main checkout is not on main"
-sha=$(git -C "$repo" rev-parse --short HEAD)
+full=$(git -C "$repo" rev-parse HEAD); sha=${full:0:7}
 dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
 trap 'rm -rf "$head"' EXIT
@@ -76,5 +77,8 @@ end=$((SECONDS + 180))
 until all_up; do ((SECONDS < end)) || die "services not all active within 3 min"; sleep 5; done
 sleep 15; all_up || die "a service dropped within 15 s (crash loop?)"
 echo "services up"
+
+step "push: $sha to origin main"
+git -C "$repo" push origin "$full:refs/heads/main" || die "push (robot already runs $sha; push by hand)"
 echo
 echo "shipped $sha. Restart the soak: setsid nohup $here/soak.sh >$repo/robot/work/soak.out 2>&1 </dev/null &"
