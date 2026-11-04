@@ -12,15 +12,15 @@ is unaffected. Logs my-vector.DriveGuard.
  1 file changed, 5 insertions(+)
 
 diff --git a/engine/actions/basicActions.cpp b/engine/actions/basicActions.cpp
-index e52972b1..1372c0ca 100644
+index e52972b1..d1e3b98d 100644
 --- a/engine/actions/basicActions.cpp
 +++ b/engine/actions/basicActions.cpp
 @@ -800,6 +800,11 @@ namespace Anki {
        if(!_canMoveOnCharger && GetRobot().GetBatteryComponent().IsOnChargerPlatform() ) {
          return ActionResult::SHOULDNT_DRIVE_ON_CHARGER;
        }
-+      // my-vector drive guard: on contacts, SetCanMoveOnCharger(true) is ignored (wiggle-back runs off contacts, still allowed)
-+      if( GetRobot().GetBatteryComponent().IsOnChargerContacts() ) {
++      // my-vector drive guard: on contacts, forward drives ignore SetCanMoveOnCharger(true); reverse re-seating still runs
++      if( _dist_mm > 0.f && GetRobot().GetBatteryComponent().IsOnChargerContacts() ) {
 +        LOG_INFO("my-vector.DriveGuard", "DriveStraight [%d] refused on charger contacts", GetTag());
 +        return ActionResult::SHOULDNT_DRIVE_ON_CHARGER;
 +      }

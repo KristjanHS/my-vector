@@ -3,41 +3,41 @@ From: Kristjan Sillmann <kristjan.h.s@gmail.com>
 Date: Wed, 4 Nov 2026 09:17:15 +0200
 Subject: [PATCH] motor-lock
 
-vic-robot: HAL::MotorSetPower zeroes both wheels while on charger contacts and for
-1000 ms after they are lost (HAL::MotorLockActive); WheelController::Run resets its
-integral sums while locked so release can't lurch. Logs my-vector.MotorLock once per
+vic-robot: HAL::MotorSetPower zeroes both wheels when either asks forward, on charger contacts and for
+250 ms after they are lost (HAL::MotorLockActive); WheelController::Run resets its
+integral sums while a forward drive is locked so release can't lurch. Logs my-vector.MotorLock once per
 lock episode. Lift stays on lift-lock; head untouched.
 ---
  robot/hal/include/anki/cozmo/robot/hal.h |  3 +++
- robot/hal/src/hal_motors.cpp             | 25 ++++++++++++++++++++++++
+ robot/hal/src/hal_motors.cpp             | 28 ++++++++++++++++++++++++
  robot/supervisor/src/wheelController.cpp |  3 +++
- 3 files changed, 31 insertions(+)
+ 3 files changed, 34 insertions(+)
 
 diff --git a/robot/hal/include/anki/cozmo/robot/hal.h b/robot/hal/include/anki/cozmo/robot/hal.h
-index 57f5e820..91ce6d9b 100644
+index 57f5e820..ca84bf92 100644
 --- a/robot/hal/include/anki/cozmo/robot/hal.h
 +++ b/robot/hal/include/anki/cozmo/robot/hal.h
 @@ -225,6 +225,9 @@ bool BatteryIsCharging();
  /// Return whether or not the robot is connected to a charger
  bool BatteryIsOnCharger();
  
-+/// my-vector motor lock: true while on charger contacts and for 1000 ms after they are lost; MotorSetPower zeroes the wheels
++/// my-vector motor lock: true while on charger contacts and for 250 ms after; MotorSetPower zeroes both wheels if either asks forward
 +bool MotorLockActive();
 +
  /// Return whether or not the battery has been disconnected from the charging circuit
  /// after being on charge base for more than 30 min.
  bool BatteryIsDisconnected();
 diff --git a/robot/hal/src/hal_motors.cpp b/robot/hal/src/hal_motors.cpp
-index 8d020c36..3a73351b 100644
+index 8d020c36..d5460baa 100644
 --- a/robot/hal/src/hal_motors.cpp
 +++ b/robot/hal/src/hal_motors.cpp
-@@ -103,11 +103,36 @@ float HAL::MotorGetCalibPower(MotorID motor)
+@@ -103,11 +103,39 @@ float HAL::MotorGetCalibPower(MotorID motor)
    return power;
  }
  
 +bool HAL::MotorLockActive()
 +{
-+  static const TimeStamp_t kMotorLockRelease_ms = 1000;
++  static const TimeStamp_t kMotorLockRelease_ms = 250; // syscon debounces contacts ~25 ms; short so tilt escape still runs off contacts
 +  static bool seenCharger = false;
 +  static TimeStamp_t lastOnCharger_ms = 0;
 +  const TimeStamp_t now_ms = HAL::GetTimeStamp();
@@ -54,8 +54,11 @@ index 8d020c36..3a73351b 100644
    const auto m = EnumToUnderlyingType(motor);
    assert(m < MOTOR_COUNT);
 +  if (motor == MotorID::MOTOR_LEFT_WHEEL || motor == MotorID::MOTOR_RIGHT_WHEEL) {
++    // Lock only forward (off-charger) motion: pure reverse seats him deeper, so wiggle/settle backups pass.
++    static f32 requested[2] = {0.f, 0.f};
++    requested[motor == MotorID::MOTOR_LEFT_WHEEL ? 0 : 1] = power;
 +    static bool loggedThisLock = false;
-+    if (MotorLockActive()) {
++    if (MotorLockActive() && (requested[0] > 0.f || requested[1] > 0.f)) {
 +      if (power != 0.f && !loggedThisLock) {
 +        AnkiInfo("my-vector.MotorLock", "on charger: zeroing wheel %d power %.2f", m, power);
 +        loggedThisLock = true;
@@ -69,14 +72,14 @@ index 8d020c36..3a73351b 100644
    headData_.motorPower[m] = HAL_MOTOR_POWER_OFFSET + HAL_MOTOR_POWER_SCALE * power * HAL_MOTOR_DIRECTION[m];
  }
 diff --git a/robot/supervisor/src/wheelController.cpp b/robot/supervisor/src/wheelController.cpp
-index e64dc449..038689ee 100644
+index e64dc449..dac3b2a9 100644
 --- a/robot/supervisor/src/wheelController.cpp
 +++ b/robot/supervisor/src/wheelController.cpp
 @@ -118,6 +118,9 @@ namespace Anki {
      //Run the wheel controller
      void Run()
      {
-+      if (HAL::MotorLockActive()) {
++      if (HAL::MotorLockActive() && (desiredWheelSpeedL_ > 0.f || desiredWheelSpeedR_ > 0.f)) {
 +        ResetIntegralGainSums(); // my-vector motor lock: no error wind-up while HAL zeroes the wheels
 +      }
        const bool skipActiveControl = NEAR_ZERO(desiredWheelSpeedL_) &&

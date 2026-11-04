@@ -9,10 +9,10 @@ Stage 2 ruled 2026-11-04: M1 + M3; lift stays on `lift-lock` (always 0, boot cal
 
 | id | ruling | edit site |
 |---|---|---|
-| M1 | Wheel power forced to 0 while `HAL::BatteryIsOnCharger()`; released 1000 ms after contacts lost (fails open); head and lift untouched | top of `HAL::MotorSetPower` (`hal_motors.cpp`), predicate `HAL::MotorLockActive()` in `hal.h` |
-| M1-int | While `HAL::MotorLockActive()`, `WheelController::Run` calls `ResetIntegralGainSums()` so release can't lurch | `wheelController.cpp` |
+| M1 | Both wheels zeroed when either requests forward power while `HAL::BatteryIsOnCharger()` or within 250 ms after; reverse passes (wiggle settle, re-seat); head and lift untouched | top of `HAL::MotorSetPower` (`hal_motors.cpp`), predicate `HAL::MotorLockActive()` in `hal.h` |
+| M1-int | While `HAL::MotorLockActive()` and a desired wheel speed > 0, `WheelController::Run` calls `ResetIntegralGainSums()` | `wheelController.cpp` |
 | M1-log | `AnkiInfo("my-vector.MotorLock", …)` once per lock episode, on the first non-zero wheel request zeroed | `hal_motors.cpp` |
-| M3 | On `IsOnChargerContacts()`, `DriveStraightAction::Init` ignores `SetCanMoveOnCharger(true)` → `SHOULDNT_DRIVE_ON_CHARGER`, log `my-vector.DriveGuard`; ⛔ a blanket `BODY_TRACK` guard in `IActionRunner::Update` — `TrackFaceAction` (HeadAndBody) locks `BODY_TRACK` | `basicActions.cpp` |
+| M3 | On `IsOnChargerContacts()`, a forward (`_dist_mm > 0`) `DriveStraightAction::Init` ignores `SetCanMoveOnCharger(true)` → `SHOULDNT_DRIVE_ON_CHARGER`, log `my-vector.DriveGuard`; ⛔ a blanket `BODY_TRACK` guard in `IActionRunner::Update` — `TrackFaceAction` (HeadAndBody) locks `BODY_TRACK` | `basicActions.cpp` |
 | E1 | Escape: lift him off by hand (contacts lost → wheels free after the latch) | — |
 | F0 | Falsifier: `robot/firmware/soak.sh 1 30` while the user says "fist bump" ×3; judge `grep -c '^off-dock'` = 0, not the verdict (worn battery may fail the volts-rise check) | `soak.sh` |
 
@@ -41,6 +41,7 @@ Stage 2 ruled 2026-11-04: M1 + M3; lift stays on `lift-lock` (always 0, boot cal
 ### Stage 4: ship + live check (user)
 - [ ] User: `make syncwt`, `make ship` from main — never Claude.
 - [ ] User: "Hey Vector, fist bump" ×3 during F0; F0 off-dock count 0; `grep -c my-vector.MotorLock /var/log/messages` ≥1 on the robot (no logcat; exit 1 at 0).
+- [ ] 10 min docked idle: `grep -c my-vector.DriveGuard /var/log/messages` growth ≤ 10 (DriveOffCharger churn; FAIL → plan a cooldown)
 - [ ] 24 h `robot/firmware/soak.sh` → PASS; `robot/firmware/quiet-count.sh` → PASS (no regression from stalled-drive retries).
 
 ## Rollback
