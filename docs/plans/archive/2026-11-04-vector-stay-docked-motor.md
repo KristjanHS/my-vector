@@ -40,7 +40,7 @@ Stage 2 ruled 2026-11-04: M1 + M3; lift stays on `lift-lock` (always 0, boot cal
 
 ### Stage 4: ship + live check (user)
 - [ ] User: `make syncwt`, `make ship` from main — never Claude.
-- [ ] User: "Hey Vector, fist bump" ×3 during F0; F0 off-dock count 0; `grep -c my-vector.MotorLock /var/log/messages` ≥1 on the robot (no logcat; exit 1 at 0).
+- [x] User: "Hey Vector, fist bump" ×3 during F0; F0 off-dock count 0; `grep -c my-vector.MotorLock /var/log/messages` ≥1 on the robot (no logcat; exit 1 at 0). Done 2026-11-04: user saw him stay docked; robot log FistBump 14:02:09–14:02:18, MotorLock 9 hits.
 - [ ] 10 min docked idle: `grep -c my-vector.DriveGuard /var/log/messages` growth ≤ 10 (DriveOffCharger churn; FAIL → plan a cooldown)
 - [ ] 24 h `robot/firmware/soak.sh` → PASS; `robot/firmware/quiet-count.sh` → PASS (no regression from stalled-drive retries).
 
