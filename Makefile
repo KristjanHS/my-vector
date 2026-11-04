@@ -1,4 +1,4 @@
-.PHONY: help start ship
+.PHONY: help start check ship
 # Run from anywhere: make -C ~/projects/my-vector <target>
 
 help: ## List available targets (default)
@@ -8,7 +8,10 @@ help: ## List available targets (default)
 start: ## Run the wire-pod server (needs the NOPASSWD sudoers rule)
 	sudo -n $(CURDIR)/chipper/start.sh || { echo "no sudoers rule? see docs/run-without-sudo-password.md"; exit 1; }
 
-ship: ## Test, patch, build (live progress) and deploy the robot firmware; NO_DEPLOY=1 stops after the build
+check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, chipper myvector Go tests
+	$(CURDIR)/scripts/check.sh
+
+ship: ## Ship committed HEAD: check, patch, build (live), deploy the robot firmware; NO_DEPLOY=1 stops after the build
 	$(CURDIR)/robot/stay-on-charger/ship.sh $(if $(NO_DEPLOY),--no-deploy)
 
 # Shared worktree/commit targets (syncwt, commit, commitwt) from dotfiles. At the bottom so

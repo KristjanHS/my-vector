@@ -3,7 +3,7 @@
 # Then build + deploy from that checkout: ./build/build-v.sh, then ./build/deploy-v.sh (needs Docker).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-src=$(cd "$here/../work" && pwd)/wire-os-victor
+src=${VICTOR_SRC:-$(cd "$here/../work" && pwd)/wire-os-victor}
 url=https://github.com/os-vector/wire-os-victor
 # = anki/victor of wire-os tag 3.0.2.36 (dev.ota 3.0.2.36d, compat 209); bump it whenever dev.ota is bumped.
 # deploy.sh refuses a VICTOR_COMPAT_VERSION that differs from the robot's /etc/victor-compat-version.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fails when the fork touches an upstream wire-pod path that is not listed below.
 # Fork code goes in chipper/pkg/myvector/; glue into an upstream package is a fork_*.go file.
-# Untracked files are not checked: `git add` them first.
+# Untracked files are not checked: `git add` them first. --head checks the committed HEAD only (make ship).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -12,6 +12,7 @@ allowed_edits=(
   .gitignore                             # fork block: *.key, chipper/*.bak, session-certs
 )
 
+to=(); [[ ${1:-} == --head ]] && to=(HEAD)
 ref=${UPSTREAM_REF:-upstream/main}
 git rev-parse -q --verify "$ref^{commit}" >/dev/null || { echo "missing $ref: git fetch upstream" >&2; exit 2; }
 base=$(git merge-base HEAD "$ref")
@@ -27,7 +28,7 @@ is_allowed() {
 # delete (of the upstream path) plus an add, so both halves are checked. A failed diff aborts via set -e.
 changes=$(mktemp)
 trap 'rm -f "$changes"' EXIT
-git diff -z --no-renames --name-status "$base" >"$changes"
+git diff -z --no-renames --name-status "$base" "${to[@]}" >"$changes"
 
 bad=0
 while IFS= read -r -d '' status && IFS= read -r -d '' path; do
