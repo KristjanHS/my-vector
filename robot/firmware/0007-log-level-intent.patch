@@ -1,0 +1,193 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Wed, 4 Nov 2026 10:53:42 +0200
+Subject: [PATCH] log-level-intent
+
+vic-engine: app intent my_vector_log_debug turns DEBUG logging on for 600 s (all channels,
+no behavior runs); my_vector_log_info or the timeout turns it back off. libankiutil: the
+runtime gate gMyVectorDebugLog (off at boot) guards the DEBUG macros and sChanneledDebug*,
+and bypasses the channel filter for DEBUG while on. cozmo_engine builds ALLOW_DEBUG_LOGGING=1.
+Logs my-vector.LogLevel.
+---
+ engine/CMakeLists.txt                         |  1 +
+ .../behaviorComponent/userIntentComponent.cpp | 24 +++++++++++++++++++
+ .../anki/util/logging/iLoggerProvider.cpp     |  4 ++--
+ lib/util/source/anki/util/logging/logging.cpp |  9 ++++---
+ lib/util/source/anki/util/logging/logging.h   | 14 +++++++----
+ 5 files changed, 41 insertions(+), 11 deletions(-)
+
+diff --git a/engine/CMakeLists.txt b/engine/CMakeLists.txt
+index 8b6e3a22..203538b1 100644
+--- a/engine/CMakeLists.txt
++++ b/engine/CMakeLists.txt
+@@ -108,6 +108,7 @@ target_compile_definitions(cozmo_engine
+   ANKI_DISABLE_ALEXA=$<BOOL:${ANKI_DISABLE_ALEXA}>
+   PRIVATE
+   CORETECH_ENGINE
++  ALLOW_DEBUG_LOGGING=1
+   ${PLATFORM_COMPILE_DEFS}
+ )
+ 
+diff --git a/engine/aiComponent/behaviorComponent/userIntentComponent.cpp b/engine/aiComponent/behaviorComponent/userIntentComponent.cpp
+index 6456a0b3..aa490733 100644
+--- a/engine/aiComponent/behaviorComponent/userIntentComponent.cpp
++++ b/engine/aiComponent/behaviorComponent/userIntentComponent.cpp
+@@ -65,6 +65,11 @@ static const char* kAltParamsKey = "parameters"; // "params" is reserved in CLAD
+ static const float kDefaultIntentFeedbackShutoffTime     =  5.0f;
+ static const float kIntentFeedbackTransitionShutoffTime  =  2.0f;
+ 
++static const char* kMyVectorLogDebugIntent = "my_vector_log_debug";
++static const char* kMyVectorLogInfoIntent  = "my_vector_log_info";
++static const int   kMyVectorDebugLogDuration_s = 600;
++static double      sMyVectorDebugLogDeadline_s = 0.0;
++
+   CONSOLE_VAR(bool, kStreamAfterDevWakeWord, "UserIntentComponent", false);
+   CONSOLE_VAR(bool, kPlayGetInAfterDevWakeWord, "UserIntentComponent", false);
+ 
+@@ -791,6 +796,12 @@ bool UserIntentComponent::SetCloudIntentPendingFromString(const std::string& clo
+ 
+ void UserIntentComponent::UpdateDependent(const BCCompMap& dependentComps)
+ {
++  if( Util::gMyVectorDebugLog &&
++      BaseStationTimer::getInstance()->GetCurrentTimeInSeconds() >= sMyVectorDebugLogDeadline_s ) {
++    Util::gMyVectorDebugLog = false;
++    LOG_WARNING("my-vector.LogLevel", "info (timeout)");
++  }
++
+   {
+     std::lock_guard<std::mutex> lock{_mutex};
+     if (_pendingCloudIntent.GetTag() != CloudMic::MessageTag::INVALID) {
+@@ -1150,6 +1161,19 @@ void UserIntentComponent::OnCloudData(CloudMic::Message&& data)
+ 
+ void UserIntentComponent::OnAppIntent(const ExternalInterface::AppIntent& appIntent )
+ {
++  // my-vector: log-level intents switch the DEBUG gate and run no behavior (no DevSetUserIntentPending)
++  if( appIntent.intent == kMyVectorLogDebugIntent ) {
++    sMyVectorDebugLogDeadline_s = BaseStationTimer::getInstance()->GetCurrentTimeInSeconds() + kMyVectorDebugLogDuration_s;
++    Util::gMyVectorDebugLog = true;
++    LOG_WARNING("my-vector.LogLevel", "debug on for %d s", kMyVectorDebugLogDuration_s);
++    return;
++  }
++  if( appIntent.intent == kMyVectorLogInfoIntent ) {
++    Util::gMyVectorDebugLog = false;
++    LOG_WARNING("my-vector.LogLevel", "info (app)");
++    return;
++  }
++
+   UserIntentTag userIntentTag = _intentMap->GetUserIntentFromAppIntent( appIntent.intent );
+ 
+   Json::Value json;
+diff --git a/lib/util/source/anki/util/logging/iLoggerProvider.cpp b/lib/util/source/anki/util/logging/iLoggerProvider.cpp
+index 4342586b..34e2f5e0 100644
+--- a/lib/util/source/anki/util/logging/iLoggerProvider.cpp
++++ b/lib/util/source/anki/util/logging/iLoggerProvider.cpp
+@@ -41,8 +41,8 @@ void ILoggerProvider::PrintChanneledLogD(const char* channel,
+       const std::vector<std::pair<const char*, const char*>>& keyValues,
+       const char* eventValue)
+ {
+-  // if no filter is set or the channel is enabled
+-  if ( !_infoFilter || _infoFilter->IsChannelEnabled(channel) )
++  // if no filter is set or the channel is enabled (my-vector: the DEBUG gate enables all channels)
++  if ( !_infoFilter || MY_VECTOR_DEBUG_ON || _infoFilter->IsChannelEnabled(channel) )
+   {
+     // pass to subclass
+     PrintLogD(channel, eventName, keyValues, eventValue);
+diff --git a/lib/util/source/anki/util/logging/logging.cpp b/lib/util/source/anki/util/logging/logging.cpp
+index 61b35738..74605a91 100644
+--- a/lib/util/source/anki/util/logging/logging.cpp
++++ b/lib/util/source/anki/util/logging/logging.cpp
+@@ -62,6 +62,7 @@ std::string HexDump(const void *value, const size_t len, char delimiter)
+ ITickTimeProvider * gTickTimeProvider = nullptr;
+ ILoggerProvider * gLoggerProvider = nullptr;
+ IEventProvider * gEventProvider = nullptr;
++std::atomic<bool> gMyVectorDebugLog{false};
+ 
+ // Has an error been reported?
+ bool _errG = false;
+@@ -362,8 +363,7 @@ void sChanneledInfo(const char* channel, const char* name, const KVV& keyvals, c
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ void sChanneledDebugF(const char* channel, const char* name, const KVV& keyvals, const char* format, ...)
+ {
+-  #if ALLOW_DEBUG_LOGGING
+-  if (nullptr == gLoggerProvider) {
++  if (!MY_VECTOR_DEBUG_ON || nullptr == gLoggerProvider) {
+     return;
+   }
+ 
+@@ -376,13 +376,12 @@ void sChanneledDebugF(const char* channel, const char* name, const KVV& keyvals,
+ 
+   // log it
+   LogChannelDebug(channel, name, keyvals, logString);
+-  #endif
+ }
+ 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ void sChanneledDebugV(const char* channel, const char* name, const KVV& keyvals, const char* format, va_list args)
+ {
+-  if (nullptr == gLoggerProvider) {
++  if (!MY_VECTOR_DEBUG_ON || nullptr == gLoggerProvider) {
+     return;
+   }
+ 
+@@ -397,7 +396,7 @@ void sChanneledDebugV(const char* channel, const char* name, const KVV& keyvals,
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ void sChanneledDebug(const char* channel, const char* name, const KVV& keyvals, const char* strval)
+ {
+-  if (nullptr == gLoggerProvider) {
++  if (!MY_VECTOR_DEBUG_ON || nullptr == gLoggerProvider) {
+     return;
+   }
+ 
+diff --git a/lib/util/source/anki/util/logging/logging.h b/lib/util/source/anki/util/logging/logging.h
+index ea448ff5..f570b3e2 100644
+--- a/lib/util/source/anki/util/logging/logging.h
++++ b/lib/util/source/anki/util/logging/logging.h
+@@ -27,6 +27,7 @@
+ 
+ #include "platform/anki-trace/tracing.h"
+ 
++#include <atomic>
+ #include <string>
+ #include <vector>
+ #include <stdio.h>
+@@ -61,6 +62,10 @@ extern ITickTimeProvider* gTickTimeProvider;
+ extern ILoggerProvider* gLoggerProvider;
+ extern IEventProvider* gEventProvider;
+ 
++// my-vector: runtime DEBUG gate (off at boot) — set by the my_vector_log_* app intents in vic-engine.
++extern std::atomic<bool> gMyVectorDebugLog;
++#define MY_VECTOR_DEBUG_ON (::Anki::Util::gMyVectorDebugLog.load(std::memory_order_relaxed))
++
+ // Accessors for global error flag for unit testing
+ void sSetErrG();            // Sets errG to true
+ void sUnSetErrG();          // Sets errG to false
+@@ -233,8 +238,8 @@ __attribute__((noreturn)) void sAbort();
+     char PRINT_LOG_VAR_logString[MAX_LOG_STRING_LEN]; \
+     snprintf(PRINT_LOG_VAR_logString, MAX_LOG_STRING_LEN, format, ##__VA_ARGS__); \
+     tracelog(TRACE_DEBUG, "%s %s", name, PRINT_LOG_VAR_logString); \
+-    ::Anki::Util::sChanneledDebugF(name, name, {}, "%s", PRINT_LOG_VAR_logString); \
+-  } else { \
++    if(MY_VECTOR_DEBUG_ON) ::Anki::Util::sChanneledDebugF(name, name, {}, "%s", PRINT_LOG_VAR_logString); \
++  } else if(MY_VECTOR_DEBUG_ON) { \
+     ::Anki::Util::sChanneledDebugF(name, name, {}, format, ##__VA_ARGS__); \
+   } \
+   ::Anki::Util::DropBreadcrumb(false, __FILE__, __LINE__);              \
+@@ -314,8 +319,8 @@ __attribute__((noreturn)) void sAbort();
+     char PRINT_LOG_VAR_logString[MAX_LOG_STRING_LEN];                   \
+     snprintf(PRINT_LOG_VAR_logString, MAX_LOG_STRING_LEN, format, ##__VA_ARGS__); \
+     tracelog(TRACE_DEBUG, "%s %s %s", channel, name, PRINT_LOG_VAR_logString); \
+-    ::Anki::Util::sChanneledDebugF(channel, name, {}, "%s", PRINT_LOG_VAR_logString); \
+-  } else { \
++    if(MY_VECTOR_DEBUG_ON) ::Anki::Util::sChanneledDebugF(channel, name, {}, "%s", PRINT_LOG_VAR_logString); \
++  } else if(MY_VECTOR_DEBUG_ON) { \
+     ::Anki::Util::sChanneledDebugF(channel, name, {}, format, ##__VA_ARGS__); \
+   } \
+   ::Anki::Util::DropBreadcrumb(false, __FILE__, __LINE__); \
+@@ -390,6 +395,7 @@ __attribute__((noreturn)) void sAbort();
+ 
+ #if ALLOW_DEBUG_LOGGING
+ #define PRINT_STREAM_DEBUG(name, args) do {         \
++      if(!MY_VECTOR_DEBUG_ON) break;                    \
+       std::stringstream ss; ss<<args;                   \
+       tracelog(TRACE_DEBUG, "%s %s", name, ss.str().c_str());   \
+       ::Anki::Util::DropBreadcrumb(false, __FILE__, __LINE__); \

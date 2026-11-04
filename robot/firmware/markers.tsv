@@ -10,3 +10,7 @@
 0005-motor-lock.patch	bin	bin/vic-robot	my-vector.MotorLock
 0006-drive-guard.patch	src	engine/actions/basicActions.cpp	my-vector.DriveGuard
 0006-drive-guard.patch	bin	lib/libcozmo_engine.so	my-vector.DriveGuard
+0007-log-level-intent.patch	src	engine/aiComponent/behaviorComponent/userIntentComponent.cpp	my_vector_log_debug
+0007-log-level-intent.patch	src	lib/util/source/anki/util/logging/logging.cpp	gMyVectorDebugLog
+0007-log-level-intent.patch	bin	lib/libcozmo_engine.so	my-vector.LogLevel
+0007-log-level-intent.patch	bin	lib/libankiutil.so	gMyVectorDebugLog
