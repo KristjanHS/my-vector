@@ -1,7 +1,7 @@
 # Firmware test suite: static checks in `make check`, on-robot smoke after deploy
 
 **Goal**: a firmware change that breaks a patch or a main function fails a command — static in seconds (`make check`), live in ~30 s (`make robot-test`, and `make ship` before its push).
-**Status**: staged 2026-11-04 — Stage 3.1 next. Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
+**Status**: staged 2026-11-04 — 3.2 gate next. Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
 
 ## Refactor first
 
@@ -51,7 +51,7 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 - [x] 2.3 S4 `--built` + RF2 in ship's built-assets step; red demo: a `bin` marker typo against the current `_build`.
 
 ### Stage 3: smoke (`make robot-test`)
-- [ ] 3.1 `smoke.sh` P1, P2, X + `make robot-test`; red demos: `vic-bogus` in units, Fatal pattern `LiftController`, P2 expects `false`.
+- [x] 3.1 `smoke.sh` P1, P2, X + `make robot-test`; red demos: `vic-bogus` in units, Fatal pattern `LiftController`, P2 expects `false`.
 - [ ] `[USER DECISION]` before 3.2: `cloud_intent` skips wire-pod's speech matcher — enough? · new fork file `fork_smoke.go` OK? · A3 signal (Q2): DAS feature line, or raise engine log level for the run (user idea; runtime console var unverified)?
 - [ ] 3.2 F1 `fork_smoke.go` + A1–A4; `go vet` sdkapp green; two `fork_robot_state` reads 10 s apart at rest before A4's bound lands; red demos: head bound 2.0 rad, say expects `XFINISHED`, bogus intent log pattern, pose bound −1 mm.
 - [ ] 3.3 W2 ship gate + RF3 delete; `total` step count updated; `NO_DEPLOY=1 make ship` still stops after the build.
