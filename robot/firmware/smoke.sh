@@ -61,6 +61,27 @@ code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$ip:8888/consolevars"
 [[ $code == 200 ]] || die "vic-engine :8888/consolevars answered ${code:-nothing}"
 ok "vic-engine :8888 answers"
 
+# A3: patch 0007's app intents turn vic-engine DEBUG on (marker + a [@BehaviorSystem] line, filtered at rest) and off.
+ssh_ "grep -qF my-vector.LogLevel /anki/lib/libcozmo_engine.so" || die "A3: firmware lacks patch 0007; intent not sent"
+intent() { curl -s -m 10 "$server/api-sdk/cloud_intent?serial=$esn&intent=$1" >/dev/null || true; }
+seen() { # seen <ERE>...: every pattern appears in /var/log/messages after line $n0 within 10 s
+  local end=$((SECONDS + 10)) new p miss
+  while :; do
+    new=$(ssh_ "tail -n +$((n0 + 1)) /var/log/messages" 2>/dev/null || true) miss=
+    for p; do grep -qE -- "$p" <<<"$new" || miss=1; done
+    [[ -n $miss ]] || return 0
+    ((SECONDS < end)) || return 1; sleep 2
+  done
+}
+n0=$(ssh_ 'wc -l </var/log/messages') || die "A3: cannot read /var/log/messages"
+trap 'intent my_vector_log_info' EXIT
+intent my_vector_log_debug
+seen 'my-vector\.LogLevel.*debug on' 'vic-engine [0-9]+ \[@BehaviorSystem\]' ||
+  die "A3: no 'my-vector.LogLevel debug on' + vic-engine [@BehaviorSystem] line within 10 s"
+intent my_vector_log_info
+seen 'my-vector\.LogLevel.*info \(app\)' || die "A3: no 'my-vector.LogLevel info (app)' within 10 s"
+ok "A3 log-level intent: DEBUG on, back to info"
+
 # P2 + P1: still docked, and no unit restarted during the run.
 docked after
 [[ $(pids || true) == "$up" ]] || die "units: a PID changed during the run: $up"

@@ -17,7 +17,7 @@ VT = `robot/work/wire-os-victor`.
 | L2 | Marker `LOG_WARNING("my-vector.LogLevel", …)`: `debug on for %d s` / `info (app)` / `info (timeout)` — WARNING skips the channel filter | same |
 | L3 | Gate `std::atomic<bool> gMyVectorDebugLog{false}` (decl `logging.h`, def `logging.cpp`); `sChanneledDebugF`/`sChanneledDebugV`/`sChanneledDebug` drop their `#if ALLOW_DEBUG_LOGGING` and return first when the gate is false, before `vsnprintf`; every `#if ALLOW_DEBUG_LOGGING` macro branch also wraps its `sChanneledDebug*` call in `if (gMyVectorDebugLog)` → args not evaluated while off | `VT/lib/util/source/anki/util/logging/logging.{h,cpp}` |
 | L4 | `ALLOW_DEBUG_LOGGING=1` in `target_compile_definitions(cozmo_engine PRIVATE …)` only — not util, not coretech (root CMake drops non-`ANKI_` `-D` args) | `VT/engine/CMakeLists.txt` |
-| L5 | On debug: `ChannelFilter::EnableChannel("*")`, prior state saved; on info/timeout restore it. **[AUDIT]** 1.1: how the engine reaches the filter `cozmoEngineMain.cpp` builds; fallback = the `"*"` `ChannelVar` by console-var name | `userIntentComponent.cpp` (+ getter if needed) |
+| L5 | All channels while on: `ILoggerProvider::PrintChanneledLogD` skips the filter when `gMyVectorDebugLog` (engine can't reach its `ChannelFilter`); INFO stays filtered, nothing to restore | `VT/lib/util/source/anki/util/logging/iLoggerProvider.cpp` |
 | L6 | Revert deadline now + 600 s, checked in `UserIntentComponent::UpdateDependent` via `BaseStationTimer`; boot = gate off, channels as configured | `userIntentComponent.cpp` |
 | L7 | `0007-log-level-intent.patch`: authored in the clone, `apply.sh --export`; body names `vic-engine` + `libankiutil`, ends `Logs my-vector.LogLevel.`, no `---` line | `robot/firmware/{series,0007-log-level-intent.patch}` |
 | L8 | Rows: src `userIntentComponent.cpp` `my_vector_log_debug` · src `logging.cpp` `gMyVectorDebugLog` · bin `lib/libcozmo_engine.so` `my-vector.LogLevel` · bin `lib/libankiutil.so` `gMyVectorDebugLog` (drop if `strings` misses it) | `robot/firmware/markers.tsv` |
@@ -28,8 +28,8 @@ VT = `robot/work/wire-os-victor`.
 Every check gets a red demo: mutate → command exits non-zero → restore by retyping (never `git checkout`).
 
 ### Stage 1: patch 0007 in the clone
-- [ ] 1.1 L5 audit → answer written into L5.
-- [ ] 1.2 L1–L6 in the clone on `my-vector`, commit, `apply.sh --export` → 0007 + series line; L8 rows; `make check` green; red demo: an L8 src marker typo.
+- [x] 1.1 L5 audit → answer written into L5.
+- [x] 1.2 L1–L6 in the clone on `my-vector`, commit, `apply.sh --export` → 0007 + series line; L8 rows; `make check` green; red demo: an L8 src marker typo.
 - [ ] 1.3 `build/build-v.sh` (background); `-Werror` clean; `check-static.sh --built` green; red demo: a bin marker typo.
 
 ### Stage 2: live (USER: `make syncwt` + `make ship`)
@@ -37,8 +37,9 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 - [ ] 2.2 `my_vector_log_debug` → marker + `BehaviorSystem` lines, pose Δ ≤ 5 mm; `my_vector_log_info` → marker, rate back to rest; one run left to `info (timeout)` at 10 min.
 
 ### Stage 3: A3 in the smoke test
-- [ ] 3.1 L9 in `smoke.sh`; S5 green; red demos: wrong intent name, marker expects `debug off`.
-- [ ] 3.2 Test-suite plan Q2 line → A3 owned here.
+- [x] 3.1 L9 in `smoke.sh` (A3 FAILs without sending the intent until 0007 is on the robot); S5 green; offline matcher red demo done.
+- [ ] 3.1b After ship, live red demos: wrong intent name, marker expects `debug off`.
+- [x] 3.2 Test-suite plan Q2 line → A3 owned here.
 
 ### Stage 4: full verify
 - [ ] `make check` green; code review in a fresh sub-agent over 0007 + the smoke diff.
