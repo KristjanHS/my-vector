@@ -26,7 +26,7 @@
 | S-src | Victor clone = `VICTOR_SRC`, else `<main checkout>/robot/work/wire-os-victor` via git-common-dir; no clone → S2/S3 print `SKIP: no victor clone` and S1/S5 still run; never clone from check | `check-static.sh` |
 | W1 | `check.sh` runs `$dir/robot/firmware/check-static.sh` after the shell-syntax loop (so `--head` checks the shipped HEAD's manifest) | `scripts/check.sh` |
 | F1 | Fork endpoints registered in `init()` (exact patterns win over `/api-sdk/`; no upstream edit), robot via `getRobot(serial)`: `fork_robot_state` = first `EventStream` robot_state as JSON (head_angle_rad, pose, status); `fork_face` = `DisplayFaceImageRGB` solid 184×96 for 2000 ms → `ok` or the error; `fork_say` = `SayText` → its final state name | `chipper/pkg/wirepod/sdkapp/fork_smoke.go` (new) |
-| P1 | Passive: `conn_test` answers within 20 s (exit 2 if not); `vic-engine vic-anim vic-robot` active within 180 s, PIDs unchanged 15 s later AND at the end of the run; `/var/log/messages` since the current vic-robot PID's first line has 1–2 `LiftController.Calibrated` (more = recalibration loop) and 0 lines matching `Fatal\|SIGSEGV\|SIGABRT\|terminate called\|Backtrace`; `curl -s -m 5 $ip:8888/consolevars` answers 200 | `robot/firmware/smoke.sh` (new) |
+| P1 | Passive: `conn_test` answers within 20 s (exit 2 if not); `vic-engine vic-anim vic-robot` active within 180 s, PIDs unchanged 15 s later AND at the end of the run; `/var/log/messages` since the current vic-robot PID's last `LiftController.Calibrated … reason Startup` (required), at start and 8 s after A4: no 3 calibrations within 60 s (recalibration loop) and 0 lines matching `Fatal\|SIGSEGV\|SIGABRT\|terminate called\|Backtrace`; `curl -s -m 5 $ip:8888/consolevars` answers 200 | `robot/firmware/smoke.sh` (new) |
 | P2 | Docked: `get_battery` has `"is_on_charger_platform":true` and `"is_charging":true` (false booleans are omitted) before and after; `is_charging` absent at rest (Q1) → WARN, never FAIL | `smoke.sh` |
 | A1 | Under `assume_behavior_control` (default priority, settle 2 s, `release` in an EXIT trap): `move_head speed=1` re-sent each 1 s until read ≥ `MAX_HEAD_ANGLE` − 0.1 rad (6 s max; the control grant overrides the first), `speed=0`; same with `speed=-1` to ≤ `MIN_HEAD_ANGLE` + 0.1 rad | `smoke.sh` |
 | A2 | `fork_face` → `ok`; `fork_say text=smoke test` → `FINISHED` (`SayTextResponse_FINISHED`) within 20 s | `smoke.sh` |
@@ -58,5 +58,5 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 
 ### Stage 4: full verify
 - [ ] `make check` green; code review in a fresh sub-agent.
-- [ ] User (needs wire-pod + robot): `make robot-test` → PASS in ≤ 45 s; eyeball the solid face during `fork_face`; robot still on the contacts.
+- [ ] User (needs wire-pod + robot): `make robot-test` → PASS in ≤ 60 s; eyeball the solid face during `fork_face`; robot still on the contacts.
 - [ ] User: next `make ship` runs the smoke gate before the push.

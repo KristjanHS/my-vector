@@ -14,7 +14,7 @@ die() { echo "FAIL: $*" >&2; exit 1; }
 setup() { echo "SETUP: $*" >&2; exit 2; }
 ok() { echo "ok: $*"; }
 on_exit=() # cleanup commands, run in order by the EXIT trap
-trap 'for c in "${on_exit[@]}"; do eval "$c"; done' EXIT
+trap 'for c in "${on_exit[@]}"; do eval "$c" || true; done' EXIT
 
 esn=${ESN:-$(sed -n 's/^esn: *//p' "$main"/robot/backup/robot-id-*.txt 2>/dev/null | head -1 || true)}
 [[ -n $esn ]] || setup "no ESN; set ESN=<esn>"
@@ -46,18 +46,23 @@ ok "wire-pod conn_test"
 # P2: docked before the checks.
 docked before
 
-# P1: since the running vic-robot started: lift calibrated once or twice (not a recalibration loop), no crash lines.
-log=$(ssh_ "FATAL='$fatal' sh -s" <<'EOF'
+# P1: since the running vic-robot's last Startup lift calibration: no crash lines, no recalibration loop (3 within 60 s).
+logcheck() {
+  local log
+  log=$(ssh_ "FATAL='$fatal' sh -s" <<'EOF'
 pid=$(pidof -s vic-robot) || { echo "vic-robot not running"; exit 1; }
 awk -v tag="vic-robot $pid " '
-  !on && index($0, tag) { on = 1 }
+  index($0, tag) && /LiftController\.Calibrated.*reason Startup/ { on = 1; n = 0; loop = 0; bad = 0; msg = "" }
   !on { next }
-  /LiftController\.Calibrated/ { cal++ }
-  $0 ~ ENVIRON["FATAL"] { bad++; print "fatal: " substr($0, 1, 160) }
-  END { printf "lift calibrated %d (want 1-2; more = recalibration loop), crash lines %d", cal, bad; exit !(cal >= 1 && cal <= 2 && !bad) }' $(ls -tr /var/log/messages.* 2>/dev/null) /var/log/messages
+  /LiftController\.Calibrated/ { split($2, t, ":"); c[++n] = t[1] * 3600 + t[2] * 60 + t[3]
+    if (n >= 3 && (c[n] - c[n - 2] + 86400) % 86400 < 60) loop++ }
+  $0 ~ ENVIRON["FATAL"] { bad++; msg = msg "fatal: " substr($0, 1, 160) "\n" }
+  END { printf "%slift calibrated %d since Startup, loop hits %d, crash lines %d", msg, n, loop, bad; exit !(on && !loop && !bad) }' $(ls -tr /var/log/messages.* 2>/dev/null) /var/log/messages
 EOF
-) || die "log: $log"
-ok "log: $log"
+) || die "log ($1): $log"
+  ok "log ($1): $log"
+}
+logcheck start
 
 # P1: vic-engine's web server answers.
 code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$ip:8888/consolevars" || true)
@@ -67,7 +72,7 @@ ok "vic-engine :8888 answers"
 sdk() { curl -s -m 20 "$server/api-sdk/$1?serial=$esn${2:+&$2}" || true; }
 state() { # state <label>: one robot_state sample as JSON, or die
   local s; s=$(sdk fork_robot_state)
-  jq -e '.pose.x' <<<"$s" >/dev/null 2>&1 || die "robot state ($1): ${s:0:200} (wire-pod lacks fork_smoke.go? restart it)"
+  jq -e '.pose.x != null and .origin_id != null' <<<"$s" >/dev/null 2>&1 || die "robot state ($1): ${s:0:200} (wire-pod lacks fork_smoke.go? restart it)"
   echo "$s"
 }
 
@@ -77,7 +82,7 @@ s0=$(state start)
 [[ $(jq -r .wheels_moving <<<"$s0") == false ]] || die "A4: wheels moving at start: $s0"
 
 # A1 + A2 under behavior control (default priority), released on exit.
-[[ $(sdk assume_behavior_control) == success ]] || die "A1: assume_behavior_control refused"
+sdk assume_behavior_control >/dev/null # answers before the grant; A1's head reads are the check
 on_exit+=('sdk release_behavior_control >/dev/null')
 sleep 2
 head_to() { # head_to <speed> <label> <jq test on .head_angle_rad>: re-sent each second (the control grant can override the first), 6 s max
@@ -130,6 +135,8 @@ ok "A4 base still: moved $d mm (bound $pose_bound_mm)"
 
 # P2 + P1: still docked, and no unit restarted during the run.
 docked after
+sleep 8 # a recalibration loop starts ~3 s after control is released and repeats ~1/s
+logcheck end
 [[ $(pids || true) == "$up" ]] || die "units: a PID changed during the run: $up"
 ok "units unchanged at the end"
 echo "PASS"

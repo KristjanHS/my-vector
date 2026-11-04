@@ -31,6 +31,7 @@ echo "series/manifest OK (${#series[@]} patches, ${#rows[@]} markers)"
 # S5: the smoke test must never command the wheels or the lift.
 smoke=()
 for f in "$here/smoke.sh" "$repo/chipper/pkg/wirepod/sdkapp/fork_smoke.go"; do [[ ! -f $f ]] || smoke+=("$f"); done
+[[ ! -f $here/smoke.sh || ${#smoke[@]} == 2 ]] || die "smoke.sh present but fork_smoke.go missing (S5 would skip it)"
 if ((${#smoke[@]})); then
   hits=$(grep -nE 'move_wheels|move_lift|DriveWheels|DriveStraight|MoveLift' "${smoke[@]}" || true)
   [[ -z $hits ]] || die "smoke code commands motion: $hits"

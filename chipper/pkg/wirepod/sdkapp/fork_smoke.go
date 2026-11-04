@@ -116,7 +116,7 @@ func forkSay(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "error: text must be 1-599 characters")
 		return
 	}
-	ctx, cancel := context.WithTimeout(robot.Ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(robot.Ctx, 15*time.Second) // under smoke.sh's curl -m 20
 	defer cancel()
 	resp, err := robot.Vector.Conn.SayText(ctx, &vectorpb.SayTextRequest{
 		DurationScalar: 1,
