@@ -10,7 +10,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 src=${VICTOR_SRC:-$(cd "$here/../work" && pwd)/wire-os-victor}
 url=https://github.com/os-vector/wire-os-victor
 # = anki/victor of wire-os tag 3.0.2.36 (dev.ota 3.0.2.36d); bump it whenever dev.ota is bumped.
-# ship.sh refuses, before the build, a pin whose VICTOR_COMPAT_VERSION differs from the robot's (compat.sh).
+# ship.sh checks the tip's VICTOR_COMPAT_VERSION against the robot's before the build (compat.sh).
 pin=ebf38c2871a0a69b3ac1a6fd592bb597b8e57724
 br=my-vector
 die() { echo "FAIL: $*" >&2; exit 1; }
