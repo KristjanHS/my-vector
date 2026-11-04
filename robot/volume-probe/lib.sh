@@ -1,12 +1,12 @@
 # shellcheck shell=bash
 # Shared by the volume-probe scripts: robot ssh, vic-anim console, wire-pod SDK, output capture.
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck disable=SC2034 # read by the sourcing scripts
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")
-src=$main/robot/work/wire-os-victor
-[[ -s $src/robot_ip.txt && -f $src/robot_sshkey ]] || { echo "FAIL: need $src/robot_ip.txt and robot_sshkey" >&2; exit 2; }
-ip=$(<"$src/robot_ip.txt")
-so=(-i "$src/robot_sshkey" -o BatchMode=yes -o ConnectTimeout=8 -o PubkeyAcceptedAlgorithms=+ssh-rsa -o HostKeyAlgorithms=+ssh-rsa)
-C="http://$ip:8889/consolefunccall?func="; A=http://127.0.0.1:8080/api-sdk
+# shellcheck source=robot/env.sh
+. "$here/../env.sh"
+so=("${ssh_opts[@]}")
+C="http://$ip:8889/consolefunccall?func="; A=$server/api-sdk
 D=/data/data/com.anki.victor/cache/sound
 serial=$(curl -s "$A/get_sdk_info" | grep -o '"esn":"[^"]*"' | head -1 | cut -d'"' -f4)
 [[ -n $serial ]] || { echo "FAIL: wire-pod has no robot (is chipper running?)" >&2; exit 2; }

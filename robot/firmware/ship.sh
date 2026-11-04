@@ -36,11 +36,13 @@ dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
 trap 'rm -rf "$head"' EXIT
 # fork_smoke.go too: check-static.sh S5 reads it repo-relative and fails if smoke.sh is there without it.
-git -C "$repo" archive "$full" robot/firmware chipper/pkg/wirepod/sdkapp/fork_smoke.go | tar -x -C "$head"
+# robot/env.sh: settings.sh + smoke.sh source it from $pd/.. .
+git -C "$repo" archive "$full" robot/firmware robot/env.sh chipper/pkg/wirepod/sdkapp/fork_smoke.go | tar -x -C "$head"
 pd=$head/robot/firmware
 if ((deploy)); then
-  [[ -s $src/robot_ip.txt && -f $src/robot_sshkey ]] || die "need $src/robot_ip.txt and robot_sshkey"
-  ip=$(<"$src/robot_ip.txt")
+  # shellcheck source=robot/env.sh
+  . "$here/../env.sh"
+  write_clone_ip "$src"
 fi
 
 # The source tree must be the tip apply.sh built: pin + exactly n commits, no hunks, staged edits or untracked files.

@@ -2,12 +2,10 @@
 # Keep the robot's syslog across a battery death: syslog-ng also writes /data/log/keep/messages (flash, 10 MB + 1 rotation).
 # Usage: robot/logkeep/apply.sh   idempotent; re-run after a WireOS reflash. After a death: ssh … 'cat /data/log/keep/messages*'
 set -euo pipefail
-main=$(dirname "$(git -C "$(dirname "$0")" rev-parse --path-format=absolute --git-common-dir)")
-src=$main/robot/work/wire-os-victor
-[[ -s $src/robot_ip.txt && -f $src/robot_sshkey ]] || { echo "FAIL: need $src/robot_ip.txt and robot_sshkey" >&2; exit 2; }
+# shellcheck source=robot/env.sh
+. "$(dirname "$0")/../env.sh"
 
-ssh -i "$src/robot_sshkey" -o BatchMode=yes -o ConnectTimeout=8 -o PubkeyAcceptedAlgorithms=+ssh-rsa \
-  -o HostKeyAlgorithms=+ssh-rsa "root@$(<"$src/robot_ip.txt")" sh -s <<'EOF'
+ssh "${ssh_opts[@]}" "root@$ip" sh -s <<'EOF'
 set -e
 c=/etc/syslog-ng/syslog-ng.conf
 mkdir -p /data/log/keep

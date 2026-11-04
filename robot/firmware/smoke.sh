@@ -7,9 +7,8 @@
 # other than EventStream/DisplayFaceImageRGB/SayText.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")
-src=$main/robot/work/wire-os-victor
-server=${SERVER:-http://localhost:8080}
+# shellcheck source=robot/env.sh
+. "$here/../env.sh"
 units=(vic-engine vic-anim vic-robot)
 fatal='Fatal|SIGSEGV|SIGABRT|terminate called|Backtrace'
 die() { echo "FAIL: $*" >&2; exit 1; }
@@ -20,12 +19,7 @@ step() { echo "== [$((++step_n))/$steps] $*  (+${SECONDS} s)"; } # progress head
 on_exit=() # cleanup commands, run in order by the EXIT trap
 trap 'for c in "${on_exit[@]}"; do eval "$c" || true; done' EXIT
 
-esn=${ESN:-$(sed -n 's/^esn: *//p' "$main"/robot/backup/robot-id-*.txt 2>/dev/null | head -1 || true)}
-[[ -n $esn ]] || setup "no ESN; set ESN=<esn>"
-[[ -s $src/robot_ip.txt && -f $src/robot_sshkey ]] || setup "need $src/robot_ip.txt and robot_sshkey"
-ip=$(<"$src/robot_ip.txt")
-ssh_() { ssh -i "$src/robot_sshkey" -o BatchMode=yes -o ConnectTimeout=8 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 -o PubkeyAcceptedAlgorithms=+ssh-rsa \
-  -o HostKeyAlgorithms=+ssh-rsa "root@$ip" "$@"; }
+ssh_() { ssh "${ssh_opts[@]}" -o ServerAliveInterval=3 -o ServerAliveCountMax=2 "root@$ip" "$@"; }
 pids() { # the units' PIDs; status 1 = a unit is down, 255 = ssh transport failure (setup, not firmware)
   local out; out=$(ssh_ "for u in ${units[*]}; do systemctl is-active -q \$u || exit 1; pidof -s \$u || exit 1; done" 2>/dev/null) || return $?
   echo $out # unquoted: one line

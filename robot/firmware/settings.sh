@@ -3,9 +3,8 @@
 # Usage: settings.sh   idempotent: reads first, sets only what differs. Exit 0 = all in place; 1 = a WARN line printed.  (env: ESN, SERVER)
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")
-src=$main/robot/work/wire-os-victor
-server=${SERVER:-http://localhost:8080}
+# shellcheck source=robot/env.sh
+. "$here/../env.sh"
 settings=/data/data/com.anki.victor/persistent/jdocs/vic.RobotSettings.json
 volume=4 # master_volume: MUTE 0 … HIGH 5; quiet idle comes from the per-bus patches, not from this
 flag=/data/data/user-do-not-auto-update
@@ -13,12 +12,7 @@ rc=0
 ok() { echo "ok: $*"; }
 warn() { echo "WARN: $*"; rc=1; }
 
-esn=${ESN:-$(sed -n 's/^esn: *//p' "$main"/robot/backup/robot-id-*.txt 2>/dev/null | head -1 || true)}
-[[ -n $esn ]] || { warn "settings: no ESN; set ESN=<esn>"; exit 1; }
-[[ -s $src/robot_ip.txt && -f $src/robot_sshkey ]] || { warn "settings: need $src/robot_ip.txt and robot_sshkey"; exit 1; }
-ip=$(<"$src/robot_ip.txt")
-ssh_() { ssh -i "$src/robot_sshkey" -o BatchMode=yes -o ConnectTimeout=8 -o PubkeyAcceptedAlgorithms=+ssh-rsa \
-  -o HostKeyAlgorithms=+ssh-rsa "root@$ip" "$@"; }
+ssh_() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 ssh_ true 2>/dev/null || { warn "settings: SSH to $ip failed; nothing checked"; exit 1; }
 
 # master_volume from the robot's own settings jdoc (wire-pod's chipper/jdocs copy goes stale: it missed a 4→1 set); empty if unreadable.

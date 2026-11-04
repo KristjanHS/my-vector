@@ -3,12 +3,10 @@
 # Usage: quiet-count.sh   → PASS (exit 0) = 0 hits and a Sleeping start seen; FAIL (1) = hits; INCOMPLETE (3) = no sleep yet, or the log no longer reaches the engine start.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")
-src=$main/robot/work/wire-os-victor
-[[ -s $src/robot_ip.txt && -f $src/robot_sshkey ]] || { echo "FAIL: need $src/robot_ip.txt and robot_sshkey" >&2; exit 2; }
+# shellcheck source=robot/env.sh
+. "$here/../env.sh"
 
-ssh -i "$src/robot_sshkey" -o BatchMode=yes -o ConnectTimeout=8 -o PubkeyAcceptedAlgorithms=+ssh-rsa \
-  -o HostKeyAlgorithms=+ssh-rsa "root@$(<"$src/robot_ip.txt")" sh -s <<'EOF'
+ssh "${ssh_opts[@]}" "root@$ip" sh -s <<'EOF'
 pid=$(pidof -s vic-engine) || { echo "FAIL: vic-engine not running"; exit 2; }
 awk -v tag="vic-engine $pid " '
   index($0, tag) == 0 { next }
