@@ -139,6 +139,7 @@ on_exit+=('intent my_vector_log_info')
 intent my_vector_log_debug
 seen 'my-vector\.LogLevel.*debug on' 'vic-engine [0-9]+ \[@BehaviorSystem\] my-vector\.LogLevel\.Probe: (\(tc[0-9]+\) )?gate on' ||
   die "A3: no 'my-vector.LogLevel debug on' + DEBUG probe line within 10 s; saw: ${new:-nothing}"
+n0=$(ssh_ 'wc -l </var/log/messages') || die "A3: cannot read /var/log/messages"
 intent my_vector_log_info
 seen 'my-vector\.LogLevel.*info \(app\)' || die "A3: no 'my-vector.LogLevel info (app)' within 10 s; saw: ${new:-nothing}"
 ok "A3 log-level intent: DEBUG on, back to info"
