@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# On-robot smoke test (make robot-test; make ship after deploy): units up and stable, clean vic-robot log, wire-pod link, docked.
+# On-robot smoke test (make robot-test; make ship after deploy): units up and stable, clean vic-robot log, wire-pod link, docked,
+# head moves to both limits, face + speech work, log-level intent, wheels never moved.
 # Usage: smoke.sh   → PASS (exit 0); FAIL (1) names the first failing check; SETUP (2) = no ESN/key/wire-pod link.  (env: ESN, SERVER)
-# Never commands motion: check-static.sh S5 fails on any wheel/lift call in this file.
+# Moves only the head: check-static.sh S5 fails on any wheel/lift call in this file or in fork_smoke.go (the fork_* endpoints).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")
@@ -12,6 +13,8 @@ fatal='Fatal|SIGSEGV|SIGABRT|terminate called|Backtrace'
 die() { echo "FAIL: $*" >&2; exit 1; }
 setup() { echo "SETUP: $*" >&2; exit 2; }
 ok() { echo "ok: $*"; }
+on_exit=() # cleanup commands, run in order by the EXIT trap
+trap 'for c in "${on_exit[@]}"; do eval "$c"; done' EXIT
 
 esn=${ESN:-$(sed -n 's/^esn: *//p' "$main"/robot/backup/robot-id-*.txt 2>/dev/null | head -1 || true)}
 [[ -n $esn ]] || setup "no ESN; set ESN=<esn>"
@@ -43,7 +46,7 @@ ok "wire-pod conn_test"
 # P2: docked before the checks.
 docked before
 
-# P1: since the running vic-robot started: lift calibrated, no crash lines.
+# P1: since the running vic-robot started: lift calibrated once or twice (not a recalibration loop), no crash lines.
 log=$(ssh_ "FATAL='$fatal' sh -s" <<'EOF'
 pid=$(pidof -s vic-robot) || { echo "vic-robot not running"; exit 1; }
 awk -v tag="vic-robot $pid " '
@@ -51,7 +54,7 @@ awk -v tag="vic-robot $pid " '
   !on { next }
   /LiftController\.Calibrated/ { cal++ }
   $0 ~ ENVIRON["FATAL"] { bad++; print "fatal: " substr($0, 1, 160) }
-  END { printf "lift calibrated %d, crash lines %d", cal, bad; exit !(cal && !bad) }' $(ls -tr /var/log/messages.* 2>/dev/null) /var/log/messages
+  END { printf "lift calibrated %d (want 1-2; more = recalibration loop), crash lines %d", cal, bad; exit !(cal >= 1 && cal <= 2 && !bad) }' $(ls -tr /var/log/messages.* 2>/dev/null) /var/log/messages
 EOF
 ) || die "log: $log"
 ok "log: $log"
@@ -60,6 +63,41 @@ ok "log: $log"
 code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$ip:8888/consolevars" || true)
 [[ $code == 200 ]] || die "vic-engine :8888/consolevars answered ${code:-nothing}"
 ok "vic-engine :8888 answers"
+
+sdk() { curl -s -m 20 "$server/api-sdk/$1?serial=$esn${2:+&$2}" || true; }
+state() { # state <label>: one robot_state sample as JSON, or die
+  local s; s=$(sdk fork_robot_state)
+  jq -e '.pose.x' <<<"$s" >/dev/null 2>&1 || die "robot state ($1): ${s:0:200} (wire-pod lacks fork_smoke.go? restart it)"
+  echo "$s"
+}
+
+# A4 start: wheels at rest before anything moves.
+pose_bound_mm=5
+s0=$(state start)
+[[ $(jq -r .wheels_moving <<<"$s0") == false ]] || die "A4: wheels moving at start: $s0"
+
+# A1 + A2 under behavior control (default priority), released on exit.
+[[ $(sdk assume_behavior_control) == success ]] || die "A1: assume_behavior_control refused"
+on_exit+=('sdk release_behavior_control >/dev/null')
+sleep 2
+head_to() { # head_to <speed> <label> <jq test on .head_angle_rad>: re-sent each second (the control grant can override the first), 6 s max
+  local end=$((SECONDS + 6)) a
+  while :; do
+    sdk move_head "speed=$1" >/dev/null; sleep 1
+    a=$(state "head $2" | jq -r .head_angle_rad)
+    jq -en --argjson a "$a" "\$a $3" >/dev/null && break
+    ((SECONDS < end)) || { sdk move_head speed=0 >/dev/null; die "A1: head $2 reads $a rad after 6 s, want $3"; }
+  done
+  sdk move_head speed=0 >/dev/null
+  ok "A1 head $2: $a rad"
+}
+head_to 1 up '>= 0.7767 - 0.1'    # MAX_HEAD_ANGLE 44.5°
+head_to -1 down '<= -0.3840 + 0.1' # MIN_HEAD_ANGLE -22°
+r=$(sdk fork_face); [[ $r == ok ]] || die "A2: fork_face: ${r:0:200}"
+ok "A2 face shown"
+r=$(sdk fork_say 'text=smoke%20test'); [[ $r == FINISHED ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED"
+ok "A2 said 'smoke test'"
+sdk release_behavior_control >/dev/null
 
 # A3: patch 0007's app intents turn vic-engine DEBUG on (marker + the DEBUG probe line, channel filtered at rest) and off.
 ssh_ "grep -qF my-vector.LogLevel /anki/lib/libcozmo_engine.so" || die "A3: firmware lacks patch 0007; intent not sent"
@@ -74,13 +112,21 @@ seen() { # seen <ERE>...: every pattern appears in /var/log/messages after line 
   done
 }
 n0=$(ssh_ 'wc -l </var/log/messages') || die "A3: cannot read /var/log/messages"
-trap 'intent my_vector_log_info' EXIT
+on_exit+=('intent my_vector_log_info')
 intent my_vector_log_debug
 seen 'my-vector\.LogLevel.*debug on' 'vic-engine [0-9]+ \[@BehaviorSystem\] my-vector\.LogLevel\.Probe: gate on' ||
   die "A3: no 'my-vector.LogLevel debug on' + DEBUG probe line within 10 s"
 intent my_vector_log_info
 seen 'my-vector\.LogLevel.*info \(app\)' || die "A3: no 'my-vector.LogLevel info (app)' within 10 s"
 ok "A3 log-level intent: DEBUG on, back to info"
+
+# A4 end: the base did not move during the run (head and lift do not change the pose).
+s1=$(state end)
+[[ $(jq -r .wheels_moving <<<"$s1") == false ]] || die "A4: wheels moving at end: $s1"
+[[ $(jq -r .origin_id <<<"$s1") == $(jq -r .origin_id <<<"$s0") ]] || die "A4: pose origin changed (delocalized?): $s0 → $s1"
+d=$(jq -rn --argjson a "$s0" --argjson b "$s1" '[($b.pose.x - $a.pose.x), ($b.pose.y - $a.pose.y)] | map(fabs) | max')
+jq -en --argjson d "$d" "\$d <= $pose_bound_mm" >/dev/null || die "A4: base moved $d mm (bound $pose_bound_mm mm): $s0 → $s1"
+ok "A4 base still: moved $d mm (bound $pose_bound_mm)"
 
 # P2 + P1: still docked, and no unit restarted during the run.
 docked after

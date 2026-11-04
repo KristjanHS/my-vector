@@ -1,7 +1,7 @@
 # Firmware test suite: static checks in `make check`, on-robot smoke after deploy
 
 **Goal**: a firmware change that breaks a patch or a main function fails a command — static in seconds (`make check`), live in ~30 s (`make robot-test`, and `make ship` before its push).
-**Status**: staged 2026-11-04 — 3.2 next (gate ruled). Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
+**Status**: staged 2026-11-04 — 3.2 code done; its live red demos + A4 wait on `2026-11-04-lift-calibration-loop.md (docs/plans/)`. Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
 
 ## Refactor first
 
@@ -26,11 +26,11 @@
 | S-src | Victor clone = `VICTOR_SRC`, else `<main checkout>/robot/work/wire-os-victor` via git-common-dir; no clone → S2/S3 print `SKIP: no victor clone` and S1/S5 still run; never clone from check | `check-static.sh` |
 | W1 | `check.sh` runs `$dir/robot/firmware/check-static.sh` after the shell-syntax loop (so `--head` checks the shipped HEAD's manifest) | `scripts/check.sh` |
 | F1 | Fork endpoints registered in `init()` (exact patterns win over `/api-sdk/`; no upstream edit), robot via `getRobot(serial)`: `fork_robot_state` = first `EventStream` robot_state as JSON (head_angle_rad, pose, status); `fork_face` = `DisplayFaceImageRGB` solid 184×96 for 2000 ms → `ok` or the error; `fork_say` = `SayText` → its final state name | `chipper/pkg/wirepod/sdkapp/fork_smoke.go` (new) |
-| P1 | Passive: `conn_test` answers within 20 s (exit 2 if not); `vic-engine vic-anim vic-robot` active within 180 s, PIDs unchanged 15 s later AND at the end of the run; `/var/log/messages` since the current vic-robot PID's first line has `LiftController.Calibrated` and 0 lines matching `Fatal\|SIGSEGV\|SIGABRT\|terminate called\|Backtrace`; `curl -s -m 5 $ip:8888/consolevars` answers 200 | `robot/firmware/smoke.sh` (new) |
+| P1 | Passive: `conn_test` answers within 20 s (exit 2 if not); `vic-engine vic-anim vic-robot` active within 180 s, PIDs unchanged 15 s later AND at the end of the run; `/var/log/messages` since the current vic-robot PID's first line has 1–2 `LiftController.Calibrated` (more = recalibration loop) and 0 lines matching `Fatal\|SIGSEGV\|SIGABRT\|terminate called\|Backtrace`; `curl -s -m 5 $ip:8888/consolevars` answers 200 | `robot/firmware/smoke.sh` (new) |
 | P2 | Docked: `get_battery` has `"is_on_charger_platform":true` and `"is_charging":true` (false booleans are omitted) before and after; `is_charging` absent at rest (Q1) → WARN, never FAIL | `smoke.sh` |
-| A1 | Under `assume_behavior_control` (default priority, settle 2 s, `release` in an EXIT trap): `move_head speed=1` 2 s, `speed=0`, read ≥ `MAX_HEAD_ANGLE` − 0.1 rad; `speed=-1` 2 s, `speed=0`, read ≤ `MIN_HEAD_ANGLE` + 0.1 rad | `smoke.sh` |
+| A1 | Under `assume_behavior_control` (default priority, settle 2 s, `release` in an EXIT trap): `move_head speed=1` re-sent each 1 s until read ≥ `MAX_HEAD_ANGLE` − 0.1 rad (6 s max; the control grant overrides the first), `speed=0`; same with `speed=-1` to ≤ `MIN_HEAD_ANGLE` + 0.1 rad | `smoke.sh` |
 | A2 | `fork_face` → `ok`; `fork_say text=smoke test` → `FINISHED` (`SayTextResponse_FINISHED`) within 20 s | `smoke.sh` |
-| A4 | Wheels put: `fork_robot_state` pose Δx, Δy ≤ 5 mm start → end (pick a default; Stage 3.2's rest sample validates) and `RobotStatus_ROBOT_STATUS_ARE_WHEELS_MOVING` clear in both samples | `smoke.sh` |
+| A4 | Wheels put: pose Δx, Δy ≤ max(5 mm, 3× rest drift) start → end, same `origin_id`, `RobotStatus_ROBOT_STATUS_ARE_WHEELS_MOVING` clear in both; `fork_robot_state` errors on a nil pose (reads 0,0,0 otherwise) | `smoke.sh`, `fork_smoke.go` |
 | X | Exit 0 PASS, 1 FAIL (first failing check named), 2 setup (no ESN/key/wire-pod), like `quiet-count.sh`; `set -euo pipefail`, `die()`, curl `-m 20` | `smoke.sh` |
 | W2 | `make robot-test` → `smoke.sh`; ship: after deploy, `smoke.sh` replaces the units step (RF3) → non-zero = `die` before push, message names the sha the robot now runs | `Makefile`, `ship.sh` |
 
@@ -52,7 +52,8 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 ### Stage 3: smoke (`make robot-test`)
 - [x] 3.1 `smoke.sh` P1, P2, X + `make robot-test`; red demos: `vic-bogus` in units, Fatal pattern `LiftController`, P2 expects `false`.
 - [x] `[USER DECISION]` ruled 2026-11-04: A3 dropped · `fork_smoke.go` OK · `is_charging` absent → WARN (built in 3.1).
-- [ ] 3.2 F1 `fork_smoke.go` + A1, A2, A4; `go vet` sdkapp green; two `fork_robot_state` reads 10 s apart at rest before A4's bound lands; red demos: head bound 2.0 rad, say expects `XFINISHED`, pose bound −1 mm.
+- [x] 3.2 F1 `fork_smoke.go` + A1, A2, A4 + P1 loop bound; `go vet` green; A1, A2 PASS live; P1 bound red-demoed on the saved loop log.
+- [ ] 3.2b after the loop fix + a wire-pod restart: two rest `fork_robot_state` reads 10 s apart (nonzero `q0` = real pose) set A4's bound; red demos: head bound 2.0 rad, say expects `XFINISHED`, pose bound −1 mm; `make robot-test` PASS.
 - [ ] 3.3 W2 ship gate + RF3 delete; `total` step count updated; `NO_DEPLOY=1 make ship` still stops after the build.
 
 ### Stage 4: full verify
