@@ -10,7 +10,7 @@ risk removed per hour of work.
 | id | ruling | edit site | falsifier |
 |---|---|---|---|
 | R6 | ESN, IP, SERVER and key path live in gitignored `robot/robot.env` (template `robot.env.example`), read by `robot/env.sh`, which every robot script sources; a missing fact → SETUP exit 2; `ESN`/`SERVER` env vars override. The key stays the clone's tracked `robot_sshkey` (upstream `971632fc`); `ship.sh` writes the clone's `robot_ip.txt` from env.sh before deploy | `robot/{env.sh,robot.env.example,.gitignore}`, `robot/*/*.sh`, `scripts/check.sh` | `git check-ignore robot/robot.env` → ignored; `grep -rn '8080\|robot_ip.txt\|robot-id-\|robot_sshkey' robot/*/*.sh` → no hits |
-| R7 | The victor pin and the robot's compat version are tied only by a comment in `apply.sh`; `deploy-v.sh` refuses a mismatch only after the full build. Store the expected compat (209) next to `pin` and have `ship.sh` compare it to the robot's `/etc/victor-compat-version` over SSH before the build step | `robot/firmware/{apply.sh,ship.sh}` | set the expected compat to 999 → `make ship` dies before `build-v.sh` starts |
+| R7 | `compat.sh <src> <rev>` compares the clone's `VICTOR_COMPAT_VERSION` at `<rev>` (the file cmake reads; no stored copy) to the robot's `/etc/victor-compat-version`; `ship.sh` runs it on the tip before the build when deploying: mismatch → FAIL, SSH down → WARN and build | `robot/firmware/{compat.sh,ship.sh,apply.sh}` | `want=999` in compat.sh → exit 1 naming both values |
 
 ## Value stream: patch → live verdict (kaizen VSM, 2026-11-04)
 

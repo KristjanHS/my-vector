@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ship the patched firmware: tests, patches, build (live progress), built-asset check, deploy, robot settings, robot smoke check, git push.
+# Ship the patched firmware: tests, patches, robot compat check, build (live progress), built-asset check, deploy, robot settings, robot smoke check, git push.
 # Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no deploy, no push).
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
 # HEAD-only: checks, patches and apply.sh come from the committed HEAD; uncommitted fork files are ignored.
@@ -8,11 +8,12 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 src=$repo/robot/work/wire-os-victor
-warns='' # settings.sh WARN lines, repeated at the end of the run
+warns='' # compat.sh + settings.sh WARN/SETUP lines, repeated at the end of the run
+add_warns() { local w; w=$(grep '^WARN\|^SETUP' <<<"$1" || true); [[ -z $w ]] || warns+=${warns:+$'\n'}$w; }
 show_warns() { [[ -z $warns ]] || printf '\033[1;33m%s\033[0m\n' "$warns" >&2; }
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; show_warns; [[ -z ${SHIP_LOG:-} ]] || echo "log: $SHIP_LOG" >&2; exit 1; }
 case ${1:-} in '') deploy=1 ;; --no-deploy) deploy=0 ;; *) die "unknown arg: $1 (only --no-deploy)" ;; esac
-total=$((5 + deploy * 4)); i=0
+total=$((5 + deploy * 5)); i=0
 step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s\033[0m\n' "$i" "$total" "$*"; }
 [[ $(git -C "$repo" rev-parse --absolute-git-dir) == "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)" ]] ||
   die "run from the main checkout, not a worktree: make syncwt, then make -C ~/projects/my-vector ship"
@@ -67,6 +68,14 @@ tree_is_patches
 want=$(git -C "$src" diff --name-only "$pin" "$tip")
 echo "tree = pin + $n patches ($(echo "$want" | wc -l) files)"
 
+if ((deploy)); then
+  step "compat: tree VICTOR_COMPAT_VERSION = robot /etc/victor-compat-version"
+  cs=$pd/compat.sh; [[ -f $cs ]] || cs=$here/compat.sh # a pre-R7 sha has none
+  out=$("$cs" "$src" "$tip" 2>&1) || die "${out#FAIL: }"
+  echo "$out"
+  add_warns "$out"
+fi
+
 json=$(echo "$want" | grep '\.json$' || true)
 step "patched JSON parses"
 for f in $json; do
@@ -92,7 +101,7 @@ step "deploy: ./build/deploy-v.sh to $ip"
 step "robot settings: settings.sh (master_volume, no-auto-update)"
 out=$("$pd/settings.sh" 2>&1) || true
 echo "$out"
-warns=$(grep '^WARN\|^SETUP' <<<"$out" || true)
+add_warns "$out"
 
 step "robot smoke test: smoke.sh (units up + stable, log, head, face, speech, base still)"
 "$pd/smoke.sh" || die "robot smoke test failed — the robot is ALREADY running $sha, NOT pushed; fix and ship again, or ship the previous sha"
