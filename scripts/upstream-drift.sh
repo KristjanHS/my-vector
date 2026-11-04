@@ -9,6 +9,7 @@ cd "$(git rev-parse --show-toplevel)"
 allowed_edits=(
   chipper/pkg/wirepod/sdkapp/bcassume.go # busy-spin fix while behavior control is held
   chipper/pkg/wirepod/sdkapp/server.go   # InitAutoHold() call
+  .gitignore                             # fork block: *.key, chipper/*.bak, session-certs
 )
 
 ref=${UPSTREAM_REF:-upstream/main}
