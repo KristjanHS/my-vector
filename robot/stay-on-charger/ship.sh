@@ -3,13 +3,14 @@
 # Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no deploy, no push).
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
 # HEAD-only: checks, patches and apply.sh come from the committed HEAD; uncommitted fork files are ignored.
+# Log: every run is recorded to robot/work/ship-logs/ship-<time>-<sha>.log (latest.log = newest); the newest 20 are kept.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 src=$repo/robot/work/wire-os-victor
 patches=(stay-on-charger.patch lift-lock.patch quiet-idle.patch quiet-winsock.patch)
 units=(vic-engine vic-anim vic-robot)
-die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; exit 1; }
+die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; [[ -z ${SHIP_LOG:-} ]] || echo "log: $SHIP_LOG" >&2; exit 1; }
 case ${1:-} in '') deploy=1 ;; --no-deploy) deploy=0 ;; *) die "unknown arg: $1 (only --no-deploy)" ;; esac
 total=$((5 + deploy * 3)); i=0
 step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s\033[0m\n' "$i" "$total" "$*"; }
@@ -17,6 +18,19 @@ step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s\033[0m\n' "$i" "$total
   die "run from the main checkout, not a worktree: make syncwt, then make -C ~/projects/my-vector ship"
 [[ $(git -C "$repo" branch --show-current) == main ]] || die "main checkout is not on main"
 full=$(git -C "$repo" rev-parse HEAD); sha=$(git -C "$repo" rev-parse --short "$full")
+
+# Re-run this script under `script`, which records exactly what the terminal shows (live progress included)
+# and passes the exit code through (-e). Prune first so the new log makes the newest $keep.
+logs=$repo/robot/work/ship-logs keep=20
+if [[ -z ${SHIP_LOG:-} ]]; then
+  mkdir -p "$logs"
+  find "$logs" -maxdepth 1 -name 'ship-*.log' | sort -r | tail -n +"$keep" | xargs -r rm -f --
+  export SHIP_LOG=$logs/ship-$(date +%Y%m%d-%H%M%S)-$sha.log
+  ln -sfn "$(basename "$SHIP_LOG")" "$logs/latest.log"
+  exec script -qefc "$(printf '%q ' "$0" "$@")" "$SHIP_LOG"
+fi
+echo "log: $SHIP_LOG"
+
 dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
 trap 'rm -rf "$head"' EXIT
@@ -64,7 +78,7 @@ done
 tree_is_patches
 echo "built config matches the tree"
 
-((deploy)) || { echo; echo "built, not deployed (--no-deploy)"; exit 0; }
+((deploy)) || { echo; echo "built, not deployed (--no-deploy). log: $SHIP_LOG"; exit 0; }
 
 step "deploy: ./build/deploy-v.sh to $ip"
 (cd "$src" && script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
@@ -84,4 +98,4 @@ step "push: $sha to origin main"
 git -C "$repo" push origin "$full:refs/heads/main" ||
   die "git push failed — the robot is ALREADY running $sha; push it by hand so origin == robot (rejected? origin may already have it, git fetch to check)"
 echo
-echo "shipped $sha. Restart the soak: setsid nohup $here/soak.sh >$repo/robot/work/soak.out 2>&1 </dev/null &"
+echo "shipped $sha (log: $SHIP_LOG). Restart the soak: setsid nohup $here/soak.sh >$repo/robot/work/soak.out 2>&1 </dev/null &"
