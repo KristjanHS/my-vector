@@ -13,6 +13,8 @@ fatal='Fatal|SIGSEGV|SIGABRT|terminate called|Backtrace'
 die() { echo "FAIL: $*" >&2; exit 1; }
 setup() { echo "SETUP: $*" >&2; exit 2; }
 ok() { echo "ok: $*"; }
+steps=9 step_n=0
+step() { echo "== [$((++step_n))/$steps] $*  (+${SECONDS} s)"; } # progress header before each stage
 on_exit=() # cleanup commands, run in order by the EXIT trap
 trap 'for c in "${on_exit[@]}"; do eval "$c" || true; done' EXIT
 
@@ -29,6 +31,7 @@ docked() {
   [[ $b == *'"is_charging":true'* ]] && ok "docked ($1), charging" || echo "WARN: docked ($1), not charging"
 }
 
+step "units up and stable (up to 195 s)"
 # P1: units active within 180 s, PIDs unchanged 15 s later (and at the end).
 end=$((SECONDS + 180))
 until up=$(pids); do ((SECONDS < end)) || die "units: ${units[*]} not all active within 180 s"; sleep 5; done
@@ -36,6 +39,7 @@ sleep 15
 [[ $(pids || true) == "$up" ]] || die "units: a PID changed within 15 s (crash loop?): $up"
 ok "units active, stable 15 s: $up"
 
+step "wire-pod link"
 # P1: wire-pod reaches the robot within 20 s (else the setup, not the firmware, is broken).
 end=$((SECONDS + 20))
 until [[ $(curl -s -m 20 "$server/api-sdk/conn_test?serial=$esn" || true) == success ]]; do
@@ -43,6 +47,7 @@ until [[ $(curl -s -m 20 "$server/api-sdk/conn_test?serial=$esn" || true) == suc
 done
 ok "wire-pod conn_test"
 
+step "docked, clean vic-robot log"
 # P2: docked before the checks.
 docked before
 
@@ -64,6 +69,7 @@ EOF
 }
 logcheck start
 
+step "vic-engine web server"
 # P1: vic-engine's web server answers.
 code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$ip:8888/consolevars" || true)
 [[ $code == 200 ]] || die "vic-engine :8888/consolevars answered ${code:-nothing}"
@@ -76,6 +82,7 @@ state() { # state <label>: one robot_state sample as JSON, or die
   echo "$s"
 }
 
+step "A4 baseline: wheels, lift bit, pose"
 # A4 start: wheels at rest before anything moves.
 pose_bound_mm=5
 s0=$(state start)
@@ -87,7 +94,9 @@ lift_bit() {
   (((st & 0x400000) == 0)) || die "A4: ENCODER_LIFT_INVALID set at $1 (status $st): recalibration loop"
 }
 lift_bit start "$s0"
+ok "A4 start: wheels at rest, lift encoder bit clear"
 
+step "A1 head to both limits"
 # A1 + A2 under behavior control (default priority), released on exit.
 sdk assume_behavior_control >/dev/null # answers before the grant; A1's head reads are the check
 on_exit+=('sdk release_behavior_control >/dev/null')
@@ -105,17 +114,19 @@ head_to() { # head_to <speed> <label> <jq test on .head_angle_rad>: re-sent each
 }
 head_to 1 up '>= 0.7767 - 0.1'    # MAX_HEAD_ANGLE 44.5°
 head_to -1 down '<= -0.3840 + 0.1' # MIN_HEAD_ANGLE -22°
+step "A2 face + speech"
 r=$(sdk fork_face); [[ $r == ok ]] || die "A2: fork_face: ${r:0:200}"
 ok "A2 face shown"
 r=$(sdk fork_say 'text=smoke%20test'); [[ $r == FINISHED ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED"
 ok "A2 said 'smoke test'"
 sdk release_behavior_control >/dev/null
 
+step "A3 log-level intent"
 # A3: patch 0007's app intents turn vic-engine DEBUG on (marker + the DEBUG probe line, channel filtered at rest) and off.
 ssh_ "grep -qF my-vector.LogLevel /anki/lib/libcozmo_engine.so" || die "A3: firmware lacks patch 0007; intent not sent"
 intent() { curl -s -m 10 "$server/api-sdk/cloud_intent?serial=$esn&intent=$1" >/dev/null || true; }
-seen() { # seen <ERE>...: every pattern appears in /var/log/messages after line $n0 within 10 s
-  local end=$((SECONDS + 10)) new p miss
+seen() { # seen <ERE>...: every pattern appears in /var/log/messages after line $n0 within 10 s; $new = the lines seen
+  local end=$((SECONDS + 10)) p miss
   while :; do
     new=$(ssh_ "tail -n +$((n0 + 1)) /var/log/messages | grep -F my-vector.LogLevel" 2>/dev/null || true) miss=
     for p; do grep -qE -- "$p" <<<"$new" || miss=1; done
@@ -126,12 +137,13 @@ seen() { # seen <ERE>...: every pattern appears in /var/log/messages after line 
 n0=$(ssh_ 'wc -l </var/log/messages') || die "A3: cannot read /var/log/messages"
 on_exit+=('intent my_vector_log_info')
 intent my_vector_log_debug
-seen 'my-vector\.LogLevel.*debug on' 'vic-engine [0-9]+ \[@BehaviorSystem\] my-vector\.LogLevel\.Probe: gate on' ||
-  die "A3: no 'my-vector.LogLevel debug on' + DEBUG probe line within 10 s"
+seen 'my-vector\.LogLevel.*debug on' 'vic-engine [0-9]+ \[@BehaviorSystem\] my-vector\.LogLevel\.Probe: (\(tc[0-9]+\) )?gate on' ||
+  die "A3: no 'my-vector.LogLevel debug on' + DEBUG probe line within 10 s; saw: ${new:-nothing}"
 intent my_vector_log_info
-seen 'my-vector\.LogLevel.*info \(app\)' || die "A3: no 'my-vector.LogLevel info (app)' within 10 s"
+seen 'my-vector\.LogLevel.*info \(app\)' || die "A3: no 'my-vector.LogLevel info (app)' within 10 s; saw: ${new:-nothing}"
 ok "A3 log-level intent: DEBUG on, back to info"
 
+step "end checks: A4 base still, docked, log, units"
 # A4 end: the base did not move during the run (head and lift do not change the pose).
 s1=$(state end)
 [[ $(jq -r .wheels_moving <<<"$s1") == false ]] || die "A4: wheels moving at end: $s1"
