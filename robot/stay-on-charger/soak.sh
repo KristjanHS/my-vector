@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Slice 3b soak: log volts + on-dock from the fork every INTERVAL s for HOURS h, then judge the log.
-# Usage: soak.sh [hours=24] [interval_s=300] | soak.sh --summary <log>   (env: ESN, SERVER, LOG)
+# Usage: soak.sh [hours=24] [interval_s=300] | soak.sh --summary [log=newest robot/work/soak-*.log]   (env: ESN, SERVER, LOG)
 # Detach: setsid nohup robot/stay-on-charger/soak.sh >robot/work/soak.out 2>&1 </dev/null &
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -33,7 +33,11 @@ summary() {
     }' "$1"
 }
 
-if [[ ${1:-} == --summary ]]; then summary "${2:?log path}"; exit; fi
+if [[ ${1:-} == --summary ]]; then
+  log=${2:-$(ls -t "$here"/../work/soak-*.log 2>/dev/null | head -1 || true)}
+  [[ -f $log ]] || { echo "FAIL: no soak log found; pass one: soak.sh --summary <log>" >&2; exit 2; }
+  echo "$log"; summary "$log"; exit
+fi
 
 hours=${1:-24} interval=${2:-300}
 [[ $hours =~ ^[1-9][0-9]*$ && $interval =~ ^[1-9][0-9]*$ ]] || { echo "FAIL: hours and interval_s must be whole numbers" >&2; exit 2; }
