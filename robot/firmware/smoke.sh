@@ -85,7 +85,7 @@ state() { # state <label>: one robot_state sample as JSON, or die
 
 step "A4 baseline: wheels, lift bit, pose"
 # A4 start: wheels at rest before anything moves.
-pose_bound_mm=5
+pose_bound_mm=5 # max(5 mm, 3x rest drift); rest drift measured 0 mm over 10 s (2026-11-04)
 s0=$(state start)
 [[ $(jq -r .wheels_moving <<<"$s0") == false ]] || die "A4: wheels moving at start: $s0"
 # A4 lift bit: ENCODER_LIFT_INVALID (0x400000) set = the lift-lock recalibration loop is live (0002 must not latch syscon's lift_invalid).
