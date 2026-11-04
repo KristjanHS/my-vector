@@ -48,7 +48,7 @@ trap 'echo; summary "$log"; exit' INT TERM
 
 end=$(( $(date +%s) + hours * 3600 ))
 while (( $(date +%s) < end )); do
-  resp=$(curl -s -m 20"$server/api-sdk/get_battery?serial=$esn" || true)
+  resp=$(curl -s -m 20 "$server/api-sdk/get_battery?serial=$esn" || true)
   volts=$(sed -n 's/.*"battery_volts":\([0-9.]*\).*/\1/p' <<<"$resp")
   # The fork omits false booleans, so a valid reading without the true flag means off the dock.
   if [[ -z $volts ]]; then dock='?'
