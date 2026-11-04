@@ -30,7 +30,7 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 ### Stage 1: patch 0007 in the clone
 - [x] 1.1 L5 audit → answer written into L5.
 - [x] 1.2 L1–L6 in the clone on `my-vector`, commit, `apply.sh --export` → 0007 + series line; L8 rows; `make check` green; red demo: an L8 src marker typo.
-- [ ] 1.3 `build/build-v.sh` (background); `-Werror` clean; `check-static.sh --built` green; red demo: a bin marker typo.
+- [x] 1.3 `build/build-v.sh` (background); `-Werror` clean; `check-static.sh --built` green; red demo: a bin marker typo.
 
 ### Stage 2: live (USER: `make syncwt` + `make ship`)
 - [ ] 2.1 At rest after ship: 0 `my-vector.LogLevel` lines; `quiet-count.sh` rate ≈ pre-ship.
