@@ -11,3 +11,5 @@
 - Next `make ship`: step 7/8 runs `smoke.sh` → PASS before the push (FAIL = robot runs the new sha, not pushed); during its A2 step Vector shows a solid face. From 2026-11-04-firmware-test-suite.md (docs/plans/archive/).
 - Speech volume (0008): after he has slept, `quiet-count.sh` → PASS.
   FAIL → `/api-sdk/volume` back to 2; Rollback in 2026-11-04-vector-speech-volume.md (docs/plans/).
+- Eye chimes (0009): after `make ship`, no eye chimes idle or after "what time is it?"; chime + answer loud. Still chiming →
+  `Eye_Color_Change`/`Binary_Eyes_*` are unmuted; `:8889/consolevarset?key=MuteEyeChimes&value=false` restores all.

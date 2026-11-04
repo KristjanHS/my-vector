@@ -20,6 +20,6 @@
 0008-speech-volume.patch	bin	bin/vic-anim	my-vector.SpeechVolume
 0008-speech-volume.patch	src	animProcess/src/cozmoAnim/animation/trackLayerManagers/audioLayerManager.cpp	kEnableKeepAliveEyeDartAudioEvents, CONSOLE_PATH, false
 0008-speech-volume.patch	src	animProcess/src/cozmoAnim/animation/trackLayerManagers/audioLayerManager.cpp	kEnableKeepAliveEyeSquintAudioEvents, CONSOLE_PATH, false
-0009-eye-chimes-off.patch	src	animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp	"Play__Robot_Vic_Sfx__Scrn_*",
+0009-eye-chimes-off.patch	src	animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp	IsMutedEyeChime( AudioMetaData::GameEvent::EnumToString
 0009-eye-chimes-off.patch	src	animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp	CONSOLE_VAR( bool, kMuteEyeChimes, "Audio.Controller", true );
 0009-eye-chimes-off.patch	bin	bin/vic-anim	my-vector.EyeChimes

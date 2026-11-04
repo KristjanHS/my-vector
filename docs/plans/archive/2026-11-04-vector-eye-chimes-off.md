@@ -1,6 +1,7 @@
 # Vector eye-movement chimes off
 
 **Goal**: no chime when his eyes move while idle; the wake chime and spoken answers stay loud at `master_volume=4`.
+**Status**: ✅ SHIPPED (committed as `0009-eye-chimes-off.patch`) — ship + listen check in `docs/backlog.md` §OWED[USER].
 
 ## Rulings
 
@@ -14,6 +15,6 @@
 ## Checklist
 
 - [x] E3: eye events named.
-- [ ] E4: patch + marker in `robot/firmware/markers.tsv`; `build-v.sh` green, `check-static.sh --built` OK.
+- [x] E4: patch + marker in `robot/firmware/markers.tsv`; `build-v.sh` green, `check-static.sh --built` OK.
 - [ ] `[USER]` after `make ship`: no eye chimes before and after "what time is it?"; chime + answer loud.
 - [ ] Falsifier: `SECS=30 RESET=Procedural robot/volume-probe/idle.sh base:1.0` spanning an eyesonly loop → `ticks>-45 0`.
