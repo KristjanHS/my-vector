@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Slice 3b soak: log volts + on-dock from the fork every INTERVAL s for HOURS h, then judge the log.
 # Usage: soak.sh [hours=24] [interval_s=300] | soak.sh --summary [log=$LOG or newest robot/work/soak-*.log]   (env: ESN, SERVER, LOG)
-# Detach: setsid nohup robot/stay-on-charger/soak.sh >robot/work/soak.out 2>&1 </dev/null &
+# Detach: setsid nohup robot/firmware/soak.sh >robot/work/soak.out 2>&1 </dev/null &
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 

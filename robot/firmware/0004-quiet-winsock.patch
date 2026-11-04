@@ -1,3 +1,12 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Wed, 4 Nov 2026 08:09:43 +0200
+Subject: [PATCH] quiet-winsock
+
+---
+ lib/util/source/3rd/civetweb/src/CMakeLists.txt | 10 ++++++----
+ 1 file changed, 6 insertions(+), 4 deletions(-)
+
 diff --git a/lib/util/source/3rd/civetweb/src/CMakeLists.txt b/lib/util/source/3rd/civetweb/src/CMakeLists.txt
 index 9e74f34d..204c720d 100644
 --- a/lib/util/source/3rd/civetweb/src/CMakeLists.txt

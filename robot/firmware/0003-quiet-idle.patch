@@ -1,3 +1,15 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Wed, 4 Nov 2026 07:52:16 +0200
+Subject: [PATCH] quiet-idle
+
+---
+ .../danceToTheBeat/danceToTheBeatCoordinator.json         | 4 ++++
+ .../behaviors/victorBehaviorTree/globalInterruptions.json | 2 +-
+ .../observing/observingOnChargerIdle.json                 | 8 ++++----
+ .../victorBehaviorTree/stayOnChargerUntilCharged.json     | 1 -
+ 4 files changed, 9 insertions(+), 6 deletions(-)
+
 diff --git a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/danceToTheBeat/danceToTheBeatCoordinator.json b/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/danceToTheBeat/danceToTheBeatCoordinator.json
 index 406598f6..2c52c43c 100644
 --- a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/danceToTheBeat/danceToTheBeatCoordinator.json

@@ -8,7 +8,6 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 src=$repo/robot/work/wire-os-victor
-patches=(stay-on-charger.patch lift-lock.patch quiet-idle.patch quiet-winsock.patch)
 units=(vic-engine vic-anim vic-robot)
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; [[ -z ${SHIP_LOG:-} ]] || echo "log: $SHIP_LOG" >&2; exit 1; }
 case ${1:-} in '') deploy=1 ;; --no-deploy) deploy=0 ;; *) die "unknown arg: $1 (only --no-deploy)" ;; esac
@@ -35,31 +34,28 @@ echo "log: $SHIP_LOG"
 dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
 trap 'rm -rf "$head"' EXIT
-git -C "$repo" archive "$full" robot/stay-on-charger | tar -x -C "$head"
-pd=$head/robot/stay-on-charger
+git -C "$repo" archive "$full" robot/firmware | tar -x -C "$head"
+pd=$head/robot/firmware
 if ((deploy)); then
   [[ -s $src/robot_ip.txt && -f $src/robot_sshkey ]] || die "need $src/robot_ip.txt and robot_sshkey"
   ip=$(<"$src/robot_ip.txt")
 fi
 
-# The source tree must equal HEAD + exactly the patches: no extra hunks, staged edits or untracked files.
+# The source tree must be the tip apply.sh built (pin + series): no extra commits, hunks, staged edits or untracked files.
 tree_is_patches() {
-  local t; t=$(mktemp -u "$repo/robot/work/ship-index.XXXXXX")
-  GIT_INDEX_FILE=$t git -C "$src" read-tree HEAD
-  for p in "${patches[@]}"; do GIT_INDEX_FILE=$t git -C "$src" apply --cached "$pd/$p"; done
-  local d u; d=$(GIT_INDEX_FILE=$t git -C "$src" diff --name-only); rm -f "$t"
-  u=$(git -C "$src" ls-files --others --exclude-standard)
-  [[ -z $d$u ]] || die "tree differs from HEAD + patches (another session in flight?): $d $u"
+  local d; d=$(git -C "$src" status --porcelain)
+  [[ $(git -C "$src" rev-parse HEAD) == "$tip" && -z $d ]] || die "tree differs from pin + series (another session in flight?): $d"
 }
 
 step "check HEAD $sha ($dirty uncommitted files ignored): drift, shell syntax, Go tests"
 "$repo/scripts/check.sh" --head "$full" || die "make check (HEAD)"
 
-step "patches: apply to $src, tree = HEAD + patches"
+step "patches: apply to $src, tree = pin + series"
 VICTOR_SRC=$src "$pd/apply.sh"
+tip=$(git -C "$src" rev-parse HEAD) n=$(grep -c . "$pd/series")
 tree_is_patches
-want=$(for p in "${patches[@]}"; do sed -n 's#^diff --git a/\([^ ]*\) .*#\1#p' "$pd/$p"; done | sort -u)
-echo "tree = HEAD + ${#patches[@]} patches ($(echo "$want" | wc -l) files)"
+want=$(git -C "$src" diff --name-only "$tip~$n" "$tip")
+echo "tree = pin + $n patches ($(echo "$want" | wc -l) files)"
 
 json=$(echo "$want" | grep '\.json$' || true)
 step "patched JSON parses"

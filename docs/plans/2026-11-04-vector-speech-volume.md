@@ -19,7 +19,7 @@
 - [ ] Master 4; set each RTPC low in turn. `[USER]`: "what time is it?" + "fist bump" → answer/chime loud, gesture sound quiet?
 
 ### Stage 2: firmware (only if a V3 RTPC passes)
-- [ ] Post it at engine start as `robot/stay-on-charger/speech-volume.patch`, applied by `apply.sh` after `quiet-idle.patch`; `./build/build-v.sh` green.
+- [ ] Post it at engine start as a commit on the clone's `my-vector` after `quiet-idle`, exported by `robot/firmware/apply.sh --export`; `./build/build-v.sh` green.
 - [ ] User: `make syncwt`, `make ship` from main; `master_volume=4`; listen check `[USER]`; `quiet-count.sh` → PASS.
 
 ## Rollback

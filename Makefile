@@ -12,7 +12,7 @@ check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax,
 	$(CURDIR)/scripts/check.sh
 
 ship: ## Ship committed HEAD: check, patch, build (live), deploy the robot firmware, git push; NO_DEPLOY=1 stops after the build; log in robot/work/ship-logs/
-	$(CURDIR)/robot/stay-on-charger/ship.sh $(if $(NO_DEPLOY),--no-deploy)
+	$(CURDIR)/robot/firmware/ship.sh $(if $(NO_DEPLOY),--no-deploy)
 
 # Shared worktree/commit targets (syncwt, commit, commitwt) from dotfiles. At the bottom so
 # the include can't steal the default goal; `-include` so a clone without dotfiles still runs.
