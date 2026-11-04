@@ -2,7 +2,7 @@
 
 **Goal**: pay down the fork's structural debt before the next feature lands on top of it. **Scope**: fork-owned code
 only (`chipper/pkg/myvector/`, `fork_*.go`, the allowed upstream edits, `scripts/`, `robot/`, `Makefile`); upstream
-wire-pod internals stay as they are. **Status**: audit 2026-11-04 at `709ba96`; R2 + R3 + R8 shipped (patch `series`, `my-vector` commits, `robot/firmware/`). Ranked by
+wire-pod internals stay as they are. **Status**: audit 2026-11-04 at `709ba96`; R2 + R3 + R8 + K2 shipped (patch `series`, `my-vector` commits, `robot/firmware/`, `soak.sh --restart`). Ranked by
 risk removed per hour of work.
 
 ## Recommendations
@@ -20,7 +20,7 @@ risk removed per hour of work.
 | `make syncwt` + `make ship` | USER (hand-off) | waits for the user | `robot/firmware/ship.sh` |
 | build | ship | cold 21.5 min / incremental 1.5 min | `robot/work/build-v.log`, `build-lift-lock.log` |
 | deploy, services up, push | ship | ≤3 min wait | `ship.sh` `all_up` |
-| restart soak + repoint `docs/backlog.md` line | USER (hand-off) | manual | ship's last `echo` |
+| restart soak | ship (K2) | 0 | `soak.sh --restart` |
 | soak | waiting | 24 h | `soak.sh` default `hours` |
 | `soak.sh --summary` + voice/logcat live checks | USER (hand-off) | manual | `docs/backlog.md` §OWED[USER] |
 
@@ -30,9 +30,8 @@ lift-lock, quiet-idle) are queued behind one robot and one soak.
 | id | ruling | edit site | falsifier |
 |---|---|---|---|
 | K1 | A PC-side poller can lose a whole soak: `soak-2026-11-04-072053.log` has no lines from 07:25:52 to 07:55:49 while the poller stayed alive (cause unverified; host or WSL sleep would fit), so it was restarted at 08:12. Move the logger onto the robot so a PC sleep can't cost a day | `robot/firmware/soak.sh`; Windows power plan | `soak.sh --summary <log>` prints max gap ≤ 900 s |
-| K2 | A soak log doesn't record which firmware it judges, and each ship restarts the 24 h clock by hand. `ship.sh` writes the full SHA + series to `robot/work/shipped` before deploy and runs `soak.sh --restart` after the push (`NO_DEPLOY=1` leaves the soak alone); `soak.sh` keeps `robot/work/soak.pid`, stamps `# sha= series=` in the header and ends INCOMPLETE naming both SHAs when `shipped` changes mid-run | `robot/firmware/{ship.sh,soak.sh}`, `docs/backlog.md` soak line | `WORK=<tmp>` soak, rewrite `shipped`, `soak.sh --restart` → old log's `--summary` is INCOMPLETE and names both SHAs |
 | K4 | Runtime robot settings live only on the robot: volume LOW=1 (quiet-idle S2, set by a one-off `curl`), the no-auto-update setting, SSH setup. A re-onboard or factory reset loses them silently. Add an idempotent `robot/firmware/settings.sh` that `ship.sh` runs after deploy | `robot/firmware/settings.sh` (new), `ship.sh` | set the volume to 4 by hand → the next `make ship` puts it back to 1 and logs it |
 
 ## Order
 
-K2 → K4 → R6 → R7.
+K4 → R6 → R7.

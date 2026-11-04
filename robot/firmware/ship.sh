@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Ship the patched firmware: tests, patches, build (live progress), built-asset check, deploy, robot smoke check, git push.
-# Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no deploy, no push).
+# Ship the patched firmware: tests, patches, build (live progress), built-asset check, deploy, robot smoke check, git push, soak restart.
+# Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no deploy, no push, the soak keeps running).
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
 # HEAD-only: checks, patches and apply.sh come from the committed HEAD; uncommitted fork files are ignored.
 # Log: every run is recorded to robot/work/ship-logs/ship-<time>-<sha>.log (latest.log = newest); the newest 20 are kept.

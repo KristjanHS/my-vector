@@ -28,7 +28,7 @@ summary() {
       if (n < 12) { printf "INCOMPLETE: %d readings (need 12), %d failed polls\n", n, miss; exit 1 }
       for (i = 0; i < 6; i++) { a += v[i]; b += v[n - 6 + i] }
       d = (b - a) / 6; span = t[n - 1] - t[0]
-      if (off || d <= 0) verdict = "FAIL"
+      if (off || (!shipped && d <= 0)) verdict = "FAIL"
       else if (shipped || span < th * 3600 - iv || gap > 3 * iv || miss * 10 > n + miss) verdict = "INCOMPLETE"
       else verdict = "PASS"
       printf "%s: %.1fh of %dh, %d readings, %d off-dock, %d failed polls, max gap %ds, volts min %.3f, %.3f -> %.3f (%+.3f)\n",
@@ -47,20 +47,20 @@ if [[ ${1:-} == --restart ]]; then
   shift
   pids=$(cat "$work/soak.pid" 2>/dev/null || true)
   # Soaks started before the pidfile existed: only the real work dir has them.
-  [[ -n $pids || -n ${WORK:-} ]] || pids=$(pgrep -f '^(/usr)?(/bin/)?bash [^ ]*/soak\.sh( [0-9]+){0,2}$' || true)
+  [[ -n $pids || -n ${WORK:-} ]] || pids=$(pgrep -f '^(/usr)?(/bin/)?bash [^ ]*/robot/[^/ ]+/soak\.sh( [0-9]+){0,2}$' || true)
   for p in $pids; do
     [[ $(tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null) == *soak.sh* ]] || continue
     echo "stopping soak pid $p"
-    kill -TERM "$p"; pkill -TERM -P "$p" -x sleep || true
-    for _ in {1..20}; do kill -0 "$p" 2>/dev/null || break; sleep 0.5; done
-    ! kill -0 "$p" 2>/dev/null || { echo "FAIL: soak pid $p still running after 10 s" >&2; exit 1; }
+    kill -TERM "$p" 2>/dev/null || continue; pkill -TERM -P "$p" -x sleep || true
+    # 25 s outlasts a poll's curl -m 20, which defers the TERM trap.
+    for _ in {1..50}; do kill -0 "$p" 2>/dev/null || break; sleep 0.5; done
+    ! kill -0 "$p" 2>/dev/null || { echo "FAIL: soak pid $p still running after 25 s" >&2; exit 1; }
   done
-  [[ -z $pids ]] || tail -n 3 "$work/soak.out" 2>/dev/null || true
   rm -f "$work/soak.pid"
-  setsid nohup "$here/soak.sh" "$@" >"$work/soak.out" 2>&1 </dev/null &
+  setsid nohup "$here/soak.sh" "$@" >>"$work/soak.out" 2>&1 </dev/null &
   for _ in {1..20}; do [[ -s $work/soak.pid ]] && break; sleep 0.5; done
   [[ -s $work/soak.pid ]] || { echo "FAIL: soak did not start; see $work/soak.out:" >&2; cat "$work/soak.out" >&2; exit 1; }
-  echo "soak started: pid $(<"$work/soak.pid"), $(head -1 "$work/soak.out")"
+  echo "soak started: pid $(<"$work/soak.pid"), $(grep '^logging to' "$work/soak.out" | tail -1)"
   exit
 fi
 
