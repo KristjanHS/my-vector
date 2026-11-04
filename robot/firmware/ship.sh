@@ -79,6 +79,8 @@ echo "built firmware matches the tree"
 ((deploy)) || { echo; echo "built, not deployed (--no-deploy) at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z"). log: $SHIP_LOG"; exit 0; }
 
 step "deploy: ./build/deploy-v.sh to $ip"
+# Written before deploy: a running soak (soak.sh) stops judging as soon as the robot may hold new firmware.
+{ echo "$full"; git -C "$repo" show "$full:robot/firmware/series" | paste -sd, -; } >"$repo/robot/work/shipped"
 (cd "$src" && script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
 
 step "robot smoke test: smoke.sh (units up + stable, log, head, face, speech, base still)"
@@ -90,4 +92,5 @@ step "push: $sha to origin main"
 git -C "$repo" push origin "$full:refs/heads/main" ||
   die "git push failed — the robot is ALREADY running $sha; push it by hand so origin == robot (rejected? origin may already have it, git fetch to check)"
 echo
-echo "shipped $sha at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z") (log: $SHIP_LOG). Restart the soak: setsid nohup $here/soak.sh >$repo/robot/work/soak.out 2>&1 </dev/null &"
+echo "shipped $sha at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z") (log: $SHIP_LOG)"
+"$here/soak.sh" --restart || echo "WARN: soak not restarted; run $here/soak.sh --restart"
