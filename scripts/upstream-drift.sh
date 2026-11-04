@@ -8,7 +8,6 @@ cd "$(git rev-parse --show-toplevel)"
 # Upstream files the fork edits on purpose: the only places an upstream merge can conflict.
 allowed_edits=(
   chipper/pkg/wirepod/sdkapp/bcassume.go # busy-spin fix while behavior control is held
-  chipper/pkg/wirepod/sdkapp/server.go   # InitAutoHold() call
   .gitignore                             # fork block: *.key, chipper/*.bak, session-certs
 )
 

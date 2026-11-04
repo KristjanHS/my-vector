@@ -8,7 +8,7 @@ help: ## List available targets (default)
 start: ## Run the wire-pod server (needs the NOPASSWD sudoers rule)
 	sudo -n $(CURDIR)/chipper/start.sh || { echo "no sudoers rule? see docs/run-without-sudo-password.md"; exit 1; }
 
-check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, chipper myvector Go tests
+check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector Go tests
 	$(CURDIR)/scripts/check.sh
 
 ship: ## Ship committed HEAD: check, patch, build (live), deploy the robot firmware, git push; NO_DEPLOY=1 stops after the build; log in robot/work/ship-logs/

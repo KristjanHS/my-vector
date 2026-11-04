@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Slice 0 power stress: holds Vector on the dock (AUTO_HOLD=override), tilts his head and talks every minute;
+# Slice 0 power stress: holds Vector on the dock (assume_behavior_control priority=high), tilts his head and talks every minute;
 # a ping-reply gap >= 20 s counts as one reboot. Needs chipper. Usage: power-stress.sh [minutes] (default 25)
 set -uo pipefail
 mins=${1:-25}

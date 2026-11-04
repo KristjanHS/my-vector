@@ -3,7 +3,7 @@
 **Goal**: delete the server-side auto-hold (`AUTO_HOLD`); the patched firmware alone keeps him on the charger, with
 "Hey Vector" working and no wire-pod dependency. **Gate**: start only after the soak and Q6 checks in
 `docs/backlog.md` §OWED[USER] pass (verdict due after 2026-11-05 08:12). FAIL → don't run this plan; A1–A5 in
-2026-11-04-architecture-refactors.md (docs/plans/) shrink auto-hold instead. **Status**: written, not started.
+2026-11-04-architecture-refactors.md (docs/plans/) shrink auto-hold instead. **Status**: ✅ SHIPPED 2026-11-04, gate waived by the user; the soak verdict is still owed in `docs/backlog.md`.
 
 ## Rulings
 
