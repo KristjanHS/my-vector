@@ -9,16 +9,11 @@ face/eye animation, head, voice and the stay-docked patch keep working.
 
 | id | ruling | edit site |
 |---|---|---|
-| L1 | Clamp at the one lift output: `LiftController::SetPower` always sends `HAL::MotorSetPower(MotorID::MOTOR_LIFT, 0)`; head, wheels untouched | `robot/supervisor/src/liftController.cpp` |
-| L2 | Lift calibration never runs: report the lift calibrated at boot so `behaviorReactToUncalibratedHeadAndLift` can't loop | `liftController.cpp` `StartCalibrationRoutine` / `isCalibrated_` |
+| L1 | Clamp in `LiftController::SetPower`: always sends `HAL::MotorSetPower(MotorID::MOTOR_LIFT, 0)`; head, wheels and `testModeController` direct writes untouched | `robot/supervisor/src/liftController.cpp` |
+| L2 | Calibration runs unpowered (completes at rest after `LIFT_STOP_TIME_MS`); `CalibrateMotorAction` calls `ShouldSuppressTrackLocking(true)` so L3 can't fail it into a `ReactToUncalibratedHeadAndLift` loop | `engine/actions/basicActions.cpp` |
 | L3 | Hold `LIFT_TRACK` locked for good from engine start so animation lift keyframes are dropped (eyes = face track, unaffected) | `MovementComponent::LockTracks`, owner `"my-vector-lift-lock"` |
 | L4 | Accepted breakage: charger mount (raises lift to 45 mm), pick-up, fist bump, cliff recovery lift moves fail or time out | — |
 | L5 | Ship as `robot/stay-on-charger/lift-lock.patch`; `apply.sh` applies both patches | `robot/stay-on-charger/apply.sh` |
-
-## Open questions
-
-- `[AUDIT]` With 0 lift power, does `CalibrationUpdate` (`LCS_LOWER_LIFT`) hang with no timeout? L2 removes the path; confirm by reading it.
-- `[AUDIT]` Do `MoveLiftToHeightAction`/`MoveLiftToAngleAction` check `LIFT_TRACK` locks? If not, L1 alone stops them; check that they fail and don't retry forever.
 
 ## Checklist
 
