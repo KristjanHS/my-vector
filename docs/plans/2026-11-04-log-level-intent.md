@@ -14,14 +14,14 @@ VT = `robot/work/wire-os-victor`.
 | id | ruling | edit site |
 |---|---|---|
 | L1 | Two intent names, no param (wire-pod `cloud_intent` forwards none → no Go change): `my_vector_log_debug`, `my_vector_log_info`. Intercept at the top of `OnAppIntent`, before `GetUserIntentFromAppIntent`; `return` without `DevSetUserIntentPending` → no behavior, no motion | `VT/engine/aiComponent/behaviorComponent/userIntentComponent.cpp` |
-| L2 | Marker `LOG_WARNING("my-vector.LogLevel", …)`: `debug on for %d s` / `info (app)` / `info (timeout)` — WARNING skips the channel filter | same |
+| L2 | Marker `LOG_WARNING("my-vector.LogLevel", …)`: `debug on for %d s` / `info (app)` / `info (timeout)` / `info (size)` — WARNING skips the channel filter; plus `LOG_DEBUG("my-vector.LogLevel.Probe", "gate on")` (channel BehaviorSystem) at debug on | same |
 | L3 | Gate `std::atomic<bool> gMyVectorDebugLog{false}` (decl `logging.h`, def `logging.cpp`); `sChanneledDebugF`/`sChanneledDebugV`/`sChanneledDebug` drop their `#if ALLOW_DEBUG_LOGGING` and return first when the gate is false, before `vsnprintf`; every `#if ALLOW_DEBUG_LOGGING` macro branch also wraps its `sChanneledDebug*` call in `if (gMyVectorDebugLog)` → args not evaluated while off | `VT/lib/util/source/anki/util/logging/logging.{h,cpp}` |
 | L4 | `ALLOW_DEBUG_LOGGING=1` in `target_compile_definitions(cozmo_engine PRIVATE …)` only — not util, not coretech (root CMake drops non-`ANKI_` `-D` args) | `VT/engine/CMakeLists.txt` |
 | L5 | All channels while on: `ILoggerProvider::PrintChanneledLogD` skips the filter when `gMyVectorDebugLog` (engine can't reach its `ChannelFilter`); INFO stays filtered, nothing to restore | `VT/lib/util/source/anki/util/logging/iLoggerProvider.cpp` |
-| L6 | Revert deadline now + 600 s, checked in `UserIntentComponent::UpdateDependent` via `BaseStationTimer`; boot = gate off, channels as configured | `userIntentComponent.cpp` |
+| L6 | Revert deadline now + 600 s, or `/var/log/messages` (RAM tmpfs, never rotated) grown > `kMyVectorDebugLogMaxGrowth_B` since debug on (stat once per s), checked in `UserIntentComponent::UpdateDependent`; boot = gate off | `userIntentComponent.cpp` |
 | L7 | `0007-log-level-intent.patch`: authored in the clone, `apply.sh --export`; body names `vic-engine` + `libankiutil`, ends `Logs my-vector.LogLevel.`, no `---` line | `robot/firmware/{series,0007-log-level-intent.patch}` |
 | L8 | Rows: src `userIntentComponent.cpp` `my_vector_log_debug` · src `logging.cpp` `gMyVectorDebugLog` · bin `lib/libcozmo_engine.so` `my-vector.LogLevel` · bin `lib/libankiutil.so` `gMyVectorDebugLog` (drop if `strings` misses it) | `robot/firmware/markers.tsv` |
-| L9 | A3: `cloud_intent my_vector_log_debug` → `my-vector.LogLevel debug on` within 10 s AND ≥1 new vic-engine `BehaviorSystem`-channel line; then `my_vector_log_info` → `info (app)`; EXIT trap also sends `my_vector_log_info`; A4's pose span covers A3 | `robot/firmware/smoke.sh` |
+| L9 | A3: `cloud_intent my_vector_log_debug` → `my-vector.LogLevel debug on` within 10 s AND the `[@BehaviorSystem] my-vector.LogLevel.Probe` line; then `my_vector_log_info` → `info (app)`; EXIT trap also sends `my_vector_log_info`; A4's pose span covers A3 | `robot/firmware/smoke.sh` |
 
 ## Checklist
 
@@ -34,7 +34,7 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 
 ### Stage 2: live (USER: `make syncwt` + `make ship`)
 - [ ] 2.1 At rest after ship: 0 `my-vector.LogLevel` lines; `quiet-count.sh` rate ≈ pre-ship.
-- [ ] 2.2 `my_vector_log_debug` → marker + `BehaviorSystem` lines, pose Δ ≤ 5 mm; `my_vector_log_info` → marker, rate back to rest; one run left to `info (timeout)` at 10 min.
+- [ ] 2.2 `my_vector_log_debug` → marker + `BehaviorSystem` lines, pose Δ ≤ 5 mm; `my_vector_log_info` → marker, rate back to rest; one run left to `info (timeout)` at 10 min; record its `/var/log/messages` growth (MB) vs the 40 MB cap.
 
 ### Stage 3: A3 in the smoke test
 - [x] 3.1 L9 in `smoke.sh` (A3 FAILs without sending the intent until 0007 is on the robot); S5 green; offline matcher red demo done.

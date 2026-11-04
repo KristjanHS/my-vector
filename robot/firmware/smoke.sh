@@ -17,7 +17,7 @@ esn=${ESN:-$(sed -n 's/^esn: *//p' "$main"/robot/backup/robot-id-*.txt 2>/dev/nu
 [[ -n $esn ]] || setup "no ESN; set ESN=<esn>"
 [[ -s $src/robot_ip.txt && -f $src/robot_sshkey ]] || setup "need $src/robot_ip.txt and robot_sshkey"
 ip=$(<"$src/robot_ip.txt")
-ssh_() { ssh -i "$src/robot_sshkey" -o BatchMode=yes -o ConnectTimeout=8 -o PubkeyAcceptedAlgorithms=+ssh-rsa \
+ssh_() { ssh -i "$src/robot_sshkey" -o BatchMode=yes -o ConnectTimeout=8 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 -o PubkeyAcceptedAlgorithms=+ssh-rsa \
   -o HostKeyAlgorithms=+ssh-rsa "root@$ip" "$@"; }
 pids() { ssh_ "for u in ${units[*]}; do systemctl is-active -q \$u || exit 1; pidof -s \$u || exit 1; done" 2>/dev/null | tr '\n' ' '; }
 docked() {
@@ -61,13 +61,13 @@ code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$ip:8888/consolevars"
 [[ $code == 200 ]] || die "vic-engine :8888/consolevars answered ${code:-nothing}"
 ok "vic-engine :8888 answers"
 
-# A3: patch 0007's app intents turn vic-engine DEBUG on (marker + a [@BehaviorSystem] line, filtered at rest) and off.
+# A3: patch 0007's app intents turn vic-engine DEBUG on (marker + the DEBUG probe line, channel filtered at rest) and off.
 ssh_ "grep -qF my-vector.LogLevel /anki/lib/libcozmo_engine.so" || die "A3: firmware lacks patch 0007; intent not sent"
 intent() { curl -s -m 10 "$server/api-sdk/cloud_intent?serial=$esn&intent=$1" >/dev/null || true; }
 seen() { # seen <ERE>...: every pattern appears in /var/log/messages after line $n0 within 10 s
   local end=$((SECONDS + 10)) new p miss
   while :; do
-    new=$(ssh_ "tail -n +$((n0 + 1)) /var/log/messages" 2>/dev/null || true) miss=
+    new=$(ssh_ "tail -n +$((n0 + 1)) /var/log/messages | grep -F my-vector.LogLevel" 2>/dev/null || true) miss=
     for p; do grep -qE -- "$p" <<<"$new" || miss=1; done
     [[ -n $miss ]] || return 0
     ((SECONDS < end)) || return 1; sleep 2
@@ -76,8 +76,8 @@ seen() { # seen <ERE>...: every pattern appears in /var/log/messages after line 
 n0=$(ssh_ 'wc -l </var/log/messages') || die "A3: cannot read /var/log/messages"
 trap 'intent my_vector_log_info' EXIT
 intent my_vector_log_debug
-seen 'my-vector\.LogLevel.*debug on' 'vic-engine [0-9]+ \[@BehaviorSystem\]' ||
-  die "A3: no 'my-vector.LogLevel debug on' + vic-engine [@BehaviorSystem] line within 10 s"
+seen 'my-vector\.LogLevel.*debug on' 'vic-engine [0-9]+ \[@BehaviorSystem\] my-vector\.LogLevel\.Probe: gate on' ||
+  die "A3: no 'my-vector.LogLevel debug on' + DEBUG probe line within 10 s"
 intent my_vector_log_info
 seen 'my-vector\.LogLevel.*info \(app\)' || die "A3: no 'my-vector.LogLevel info (app)' within 10 s"
 ok "A3 log-level intent: DEBUG on, back to info"

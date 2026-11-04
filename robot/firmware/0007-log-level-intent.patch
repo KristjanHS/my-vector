@@ -4,17 +4,18 @@ Date: Wed, 4 Nov 2026 10:53:42 +0200
 Subject: [PATCH] log-level-intent
 
 vic-engine: app intent my_vector_log_debug turns DEBUG logging on for 600 s (all channels,
-no behavior runs); my_vector_log_info or the timeout turns it back off. libankiutil: the
-runtime gate gMyVectorDebugLog (off at boot) guards the DEBUG macros and sChanneledDebug*,
-and bypasses the channel filter for DEBUG while on. cozmo_engine builds ALLOW_DEBUG_LOGGING=1.
-Logs my-vector.LogLevel.
+no behavior runs) and writes a DEBUG probe line; my_vector_log_info, the timeout, or
+/var/log/messages growing 40 MB since debug on (it is RAM tmpfs) turns it back off.
+libankiutil: the runtime gate gMyVectorDebugLog (off at boot) guards the DEBUG macros and
+sChanneledDebug*, and bypasses the channel filter for DEBUG while on. cozmo_engine builds
+ALLOW_DEBUG_LOGGING=1. Logs my-vector.LogLevel.
 ---
  engine/CMakeLists.txt                         |  1 +
- .../behaviorComponent/userIntentComponent.cpp | 24 +++++++++++++++++++
- .../anki/util/logging/iLoggerProvider.cpp     |  4 ++--
- lib/util/source/anki/util/logging/logging.cpp |  9 ++++---
- lib/util/source/anki/util/logging/logging.h   | 14 +++++++----
- 5 files changed, 41 insertions(+), 11 deletions(-)
+ .../behaviorComponent/userIntentComponent.cpp | 46 +++++++++++++++++++
+ .../anki/util/logging/iLoggerProvider.cpp     |  4 +-
+ lib/util/source/anki/util/logging/logging.cpp |  9 ++--
+ lib/util/source/anki/util/logging/logging.h   | 14 ++++--
+ 5 files changed, 63 insertions(+), 11 deletions(-)
 
 diff --git a/engine/CMakeLists.txt b/engine/CMakeLists.txt
 index 8b6e3a22..203538b1 100644
@@ -29,10 +30,19 @@ index 8b6e3a22..203538b1 100644
  )
  
 diff --git a/engine/aiComponent/behaviorComponent/userIntentComponent.cpp b/engine/aiComponent/behaviorComponent/userIntentComponent.cpp
-index 6456a0b3..aa490733 100644
+index 6456a0b3..d9a55dbe 100644
 --- a/engine/aiComponent/behaviorComponent/userIntentComponent.cpp
 +++ b/engine/aiComponent/behaviorComponent/userIntentComponent.cpp
-@@ -65,6 +65,11 @@ static const char* kAltParamsKey = "parameters"; // "params" is reserved in CLAD
+@@ -48,6 +48,8 @@
+ 
+ #include "json/json.h"
+ 
++#include <sys/stat.h>
++
+ #define LOG_CHANNEL "BehaviorSystem"
+ 
+ namespace Anki {
+@@ -65,6 +67,16 @@ static const char* kAltParamsKey = "parameters"; // "params" is reserved in CLAD
  static const float kDefaultIntentFeedbackShutoffTime     =  5.0f;
  static const float kIntentFeedbackTransitionShutoffTime  =  2.0f;
  
@@ -40,32 +50,52 @@ index 6456a0b3..aa490733 100644
 +static const char* kMyVectorLogInfoIntent  = "my_vector_log_info";
 +static const int   kMyVectorDebugLogDuration_s = 600;
 +static double      sMyVectorDebugLogDeadline_s = 0.0;
++// /var/log is RAM (tmpfs): DEBUG turns off early once messages grew this much since debug on.
++static const off_t kMyVectorDebugLogMaxGrowth_B = 40 << 20;
++static off_t       sMyVectorDebugLogStart_B = 0;
++static double      sMyVectorDebugLogNextSizeCheck_s = 0.0;
++static off_t MyVectorLogSize() { struct stat st; return stat("/var/log/messages", &st) == 0 ? st.st_size : 0; }
 +
    CONSOLE_VAR(bool, kStreamAfterDevWakeWord, "UserIntentComponent", false);
    CONSOLE_VAR(bool, kPlayGetInAfterDevWakeWord, "UserIntentComponent", false);
  
-@@ -791,6 +796,12 @@ bool UserIntentComponent::SetCloudIntentPendingFromString(const std::string& clo
+@@ -791,6 +803,23 @@ bool UserIntentComponent::SetCloudIntentPendingFromString(const std::string& clo
  
  void UserIntentComponent::UpdateDependent(const BCCompMap& dependentComps)
  {
-+  if( Util::gMyVectorDebugLog &&
-+      BaseStationTimer::getInstance()->GetCurrentTimeInSeconds() >= sMyVectorDebugLogDeadline_s ) {
-+    Util::gMyVectorDebugLog = false;
-+    LOG_WARNING("my-vector.LogLevel", "info (timeout)");
++  if( Util::gMyVectorDebugLog ) {
++    const double now_s = BaseStationTimer::getInstance()->GetCurrentTimeInSecondsDouble();
++    if( now_s >= sMyVectorDebugLogDeadline_s ) {
++      Util::gMyVectorDebugLog = false;
++      LOG_WARNING("my-vector.LogLevel", "info (timeout)");
++    } else if( now_s >= sMyVectorDebugLogNextSizeCheck_s ) {
++      sMyVectorDebugLogNextSizeCheck_s = now_s + 1.0;
++      const off_t size_B = MyVectorLogSize();
++      if( size_B < sMyVectorDebugLogStart_B ) {
++        sMyVectorDebugLogStart_B = size_B;
++      } else if( size_B - sMyVectorDebugLogStart_B > kMyVectorDebugLogMaxGrowth_B ) {
++        Util::gMyVectorDebugLog = false;
++        LOG_WARNING("my-vector.LogLevel", "info (size)");
++      }
++    }
 +  }
 +
    {
      std::lock_guard<std::mutex> lock{_mutex};
      if (_pendingCloudIntent.GetTag() != CloudMic::MessageTag::INVALID) {
-@@ -1150,6 +1161,19 @@ void UserIntentComponent::OnCloudData(CloudMic::Message&& data)
+@@ -1150,6 +1179,23 @@ void UserIntentComponent::OnCloudData(CloudMic::Message&& data)
  
  void UserIntentComponent::OnAppIntent(const ExternalInterface::AppIntent& appIntent )
  {
 +  // my-vector: log-level intents switch the DEBUG gate and run no behavior (no DevSetUserIntentPending)
 +  if( appIntent.intent == kMyVectorLogDebugIntent ) {
-+    sMyVectorDebugLogDeadline_s = BaseStationTimer::getInstance()->GetCurrentTimeInSeconds() + kMyVectorDebugLogDuration_s;
++    const double now_s = BaseStationTimer::getInstance()->GetCurrentTimeInSecondsDouble();
++    sMyVectorDebugLogDeadline_s = now_s + kMyVectorDebugLogDuration_s;
++    sMyVectorDebugLogNextSizeCheck_s = now_s + 1.0;
++    sMyVectorDebugLogStart_B = MyVectorLogSize();
 +    Util::gMyVectorDebugLog = true;
 +    LOG_WARNING("my-vector.LogLevel", "debug on for %d s", kMyVectorDebugLogDuration_s);
++    LOG_DEBUG("my-vector.LogLevel.Probe", "gate on");
 +    return;
 +  }
 +  if( appIntent.intent == kMyVectorLogInfoIntent ) {
