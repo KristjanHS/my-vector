@@ -99,7 +99,7 @@ the C++ patch is the route, 3a is only a stopgap, the JSON edit is dropped.
 - [x] Back up first (`robot/backup/anki-2026-11-03.tgz`): `ssh root@<vector-ip> tar -C / -czf - anki > robot/backup/anki-$(date +%F).tgz`.
 - [x] Built and deployed 2026-11-04 07:13 (`./build/build-v.sh`, `./build/deploy-v.sh`; the bundled `robot_sshkey` works as is).
       Check: `md5sum /anki/lib/libcozmo_engine.so` on the robot = `_build/vicos/Release/dist/lib/libcozmo_engine.so`.
-- [ ] Done when `robot/stay-on-charger/soak.sh` (24 h) ends `PASS` (no off-dock reading, voltage rises, Q7), one voice
+- [ ] Done when `robot/stay-on-charger/soak.sh --summary robot/work/soak-<start>.log` prints `PASS` (24 h, no off-dock reading, voltage rises, Q7), one voice
       command that moves him is tried (Q6), and "Hey Vector" works throughout.
 
 ### Slice 4: retire the server hold
