@@ -1,8 +1,8 @@
 # Vector quiet idle: very few, quiet sounds while he sits on the charger
 
 **Goal**: powered on and idle on the dock, he makes only rare, quiet sounds; "Hey Vector", the wake-word chime and
-spoken answers stay audible. **Status**: Stage 1 measured 2026-11-04; Stage 2–3 in progress. Same checkout, build and
-deploy as 2026-11-04-vector-lift-lock.md (docs/plans/); robot steps are `[USER]`.
+spoken answers stay audible. **Status**: ✅ SHIPPED 2026-11-04 (vic-engine 08:06); the listen check is in
+`docs/backlog.md` §OWED[USER]. Same checkout, build and deploy as 2026-11-04-vector-lift-lock.md (docs/plans/).
 
 ## Rulings
 
@@ -15,10 +15,8 @@ deploy as 2026-11-04-vector-lift-lock.md (docs/plans/); robot steps are `[USER]`
 | S5 | Eye-contact and motion reactions stay: 0 hits in S1 | — |
 | S6 | Ship S3, S4, S7 as `robot/stay-on-charger/quiet-idle.patch`, applied by `apply.sh` after `lift-lock.patch` | `robot/stay-on-charger/apply.sh` |
 | S7 | `DanceToTheBeatCoordinator` wakes only off the charger: add `not OnChargerPlatform` to its `wantsToBeActivatedCondition`; voice "dance" untouched | `danceToTheBeat/danceToTheBeatCoordinator.json` |
-
-## Open questions
-
-- `[AUDIT]` TTS on the same bus as SFX? Stage 2's "what time is it" check decides by ear; if answers are too quiet, go back to 2.
+| S8 | Answers too quiet at volume 1 → new firmware stage: speech-only volume, master stays 1 (a separate TTS bus is unverified) | — (staged only if the listen check fails) |
+| S9 | Stage 4 recount = `quiet-count.sh`: PASS = 0 `RTS_OnCharger`/`ListeningForBeats` hits and ≥1 `Sleeping` start since vic-engine start | `robot/stay-on-charger/quiet-count.sh` |
 
 ## Checklist
 
@@ -26,13 +24,13 @@ deploy as 2026-11-04-vector-lift-lock.md (docs/plans/); robot steps are `[USER]`
 - [x] Count since boot: `grep -E 'vic-(engine|anim)' /var/log/messages` over SSH, split fields on `\x1f`, count `@behavior.feature.start` and `@action.play_animation`.
 
 ### Stage 2: volume (no code)
-- [ ] `curl "http://localhost:8080/api-sdk/volume?serial=0090927c&volume=1"`; "Hey Vector, what time is it?" is still clearly audible.
+- [x] `curl "http://localhost:8080/api-sdk/volume?serial=0090927c&volume=1"` (2026-11-04); the ear check is `[USER]`, S8.
 
 ### Stage 3: quiet-idle patch (PC side)
 - [x] S3 + S4 + S7 in `robot/work/wire-os-victor`, export `quiet-idle.patch`, extend `apply.sh`; `./build/build-v.sh` is green.
 
 ### Stage 4: deploy + listen `[USER]` — today, with lift-lock; restarts the 24 h soak
-- [ ] User: `make syncwt`, then `make ship` in the main checkout; rerun the Stage 1 count over awake + a sleep window: `RTS_OnCharger_*` and `ListeningForBeats` = 0, chime and answer still play.
+- [x] User: `make syncwt`, then `make ship` in the main checkout; `robot/stay-on-charger/quiet-count.sh` → PASS (S9).
 - [x] Restart `robot/stay-on-charger/soak.sh` and repoint the soak line in `docs/backlog.md` §OWED[USER].
 
 ## Rollback
