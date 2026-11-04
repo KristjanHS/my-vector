@@ -47,7 +47,7 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 
 ### Stage 2: static (`make check`)
 - [x] 2.1 `markers.tsv` + `check-static.sh` S1, S5, S-src; W1; red demo S1 (extra series line) + S5 (`move_wheels` in a smoke comment).
-- [ ] 2.2 RF1 `apply.sh --check` + S2, S3; `make check` stays under 10 s; red demos: a patch's `index` line hash edited (S2), a marker typo (S3 hit), a marker present at pin e.g. `#include` (S3 miss).
+- [x] 2.2 RF1 `apply.sh --check` + S2, S3; `make check` stays under 10 s; red demos: a patch's `index` line hash edited (S2), a marker typo (S3 hit), a marker present at pin e.g. `#include` (S3 miss).
 - [ ] 2.3 S4 `--built` + RF2 in ship's built-assets step; red demo: a `bin` marker typo against the current `_build`.
 
 ### Stage 3: smoke (`make robot-test`)

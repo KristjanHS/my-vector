@@ -41,3 +41,19 @@ echo "smoke motion-free OK (${#smoke[@]} files)"
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$repo/.git")")
 src=${VICTOR_SRC:-$main/robot/work/wire-os-victor}
 if [[ ! -d $src/.git ]]; then echo "SKIP: no victor clone at $src (patch re-export, src markers)"; exit 0; fi
+
+# S2: *.patch + series are a byte-identical re-export of pin + series.
+tip=$(VICTOR_SRC=$src "$here/apply.sh" --check) || die "apply.sh --check"
+pin=$(sed -n 's/^pin=//p' "$here/apply.sh")
+echo "patch re-export OK (tip ${tip:0:12})"
+
+# S3: each src marker is in the patched tree and not at pin (so it proves that patch landed).
+n=0
+for r in "${rows[@]}"; do
+  IFS=$'\t' read -r p kind path marker <<<"$r"
+  [[ $kind == src ]] || continue
+  grep -qF -- "$marker" <(git -C "$src" show "$tip:$path" 2>/dev/null) || die "$p: src marker not in $path: $marker"
+  ! grep -qF -- "$marker" <(git -C "$src" show "$pin:$path" 2>/dev/null) || die "$p: src marker already at pin in $path: $marker"
+  n=$((n + 1))
+done
+echo "src markers OK ($n)"

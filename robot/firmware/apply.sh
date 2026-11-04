@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Clones wire-os-victor into the gitignored robot/work/ and points its branch my-vector at pin + one commit per patch in series.
 # Commits are built off a temp index with the patch's own dates (same SHAs every run); the checkout rewrites only differing files.
-# Usage: apply.sh [--export]   --export writes my-vector's commits back out as *.patch + series (after editing them in the clone).
+# Usage: apply.sh [--export|--check]   --export writes my-vector's commits back out as *.patch + series (after editing them in the clone).
+#   --check rebuilds pin + series off-branch, re-exports it, diffs against *.patch + series; prints the tip sha (moves nothing).
 #   Commit bodies must not contain a `---` line or start with From:/Subject:/Date: (format-patch/mailinfo eat them).
 # Then build + deploy from that checkout: ./build/build-v.sh, then ./build/deploy-v.sh (needs Docker).
 set -euo pipefail
@@ -15,14 +16,21 @@ br=my-vector
 die() { echo "FAIL: $*" >&2; exit 1; }
 g() { git -C "$src" "$@"; }
 
-[[ -d $src/.git ]] || git clone --recurse-submodules "$url" "$src"
-g cat-file -e "$pin^{commit}" 2>/dev/null || g fetch origin "$pin"
+mode=${1:-}
+case $mode in '' | --export | --check) ;; *) die "unknown arg: $1 (only --export, --check)" ;; esac
+if [[ $mode == --check ]]; then
+  [[ -d $src/.git ]] || die "no victor clone at $src"
+  g cat-file -e "$pin^{commit}" 2>/dev/null || die "pin ${pin:0:12} not in $src"
+else
+  [[ -d $src/.git ]] || git clone --recurse-submodules "$url" "$src"
+  g cat-file -e "$pin^{commit}" 2>/dev/null || g fetch origin "$pin"
+fi
 gd=$(g rev-parse --absolute-git-dir)
 tmp=$(mktemp -d "$gd/my-vector-apply.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 old=$(g rev-parse -q --verify "refs/heads/$br" || true)
 
-if [[ ${1:-} == --export ]]; then
+if [[ $mode == --export ]]; then
   [[ -n $old ]] || die "no $br branch in $src"
   g merge-base --is-ancestor "$pin" "$old" || die "$br does not start from pin ${pin:0:12}"
   g -c format.signOff=false format-patch -q --zero-commit --no-signature --no-numbered --no-thread -o "$tmp/out" "$pin..$br"
@@ -35,23 +43,37 @@ if [[ ${1:-} == --export ]]; then
   echo "OK: exported $n patches from $br to $here"
   exit 0
 fi
-[[ -z ${1:-} ]] || die "unknown arg: $1 (only --export)"
-
 mapfile -t series < <(grep -v '^[[:space:]]*$' "$here/series")
-export GIT_INDEX_FILE=$tmp/index
-g read-tree "$pin"
 field() { sed -n "s/^$1: //p" "$tmp/info"; }
-tip=$pin
-for p in "${series[@]}"; do
-  git mailinfo -b "$tmp/msg" "$tmp/diff" <"$here/$p" >"$tmp/info"
-  [[ -n $(field Author) && -n $(field Date) ]] || die "$p is not a format-patch file (no Author/Date)"
-  g apply --cached "$tmp/diff" || die "$p does not apply on top of pin + the patches before it"
-  tip=$({ field Subject; [[ ! -s $tmp/msg ]] || { echo; cat "$tmp/msg"; }; } |
-    GIT_AUTHOR_NAME=$(field Author) GIT_AUTHOR_EMAIL=$(field Email) GIT_AUTHOR_DATE=$(field Date) \
-    GIT_COMMITTER_NAME=$(field Author) GIT_COMMITTER_EMAIL=$(field Email) GIT_COMMITTER_DATE=$(field Date) \
-    git -C "$src" commit-tree --no-gpg-sign "$(g write-tree)" -p "$tip")
-done
-unset GIT_INDEX_FILE
+# Sets tip = pin + one commit per series patch, built off a temp index (no ref, index or file touched).
+build_tip() {
+  local p
+  export GIT_INDEX_FILE=$tmp/index
+  g read-tree "$pin"
+  tip=$pin
+  for p in "${series[@]}"; do
+    git mailinfo -b "$tmp/msg" "$tmp/diff" <"$here/$p" >"$tmp/info"
+    [[ -n $(field Author) && -n $(field Date) ]] || die "$p is not a format-patch file (no Author/Date)"
+    g apply --cached "$tmp/diff" || die "$p does not apply on top of pin + the patches before it"
+    tip=$({ field Subject; [[ ! -s $tmp/msg ]] || { echo; cat "$tmp/msg"; }; } |
+      GIT_AUTHOR_NAME=$(field Author) GIT_AUTHOR_EMAIL=$(field Email) GIT_AUTHOR_DATE=$(field Date) \
+      GIT_COMMITTER_NAME=$(field Author) GIT_COMMITTER_EMAIL=$(field Email) GIT_COMMITTER_DATE=$(field Date) \
+      git -C "$src" commit-tree --no-gpg-sign "$(g write-tree)" -p "$tip")
+  done
+  unset GIT_INDEX_FILE
+}
+build_tip
+
+if [[ $mode == --check ]]; then
+  mkdir "$tmp/want"
+  cp "$here"/*.patch "$tmp/want/"
+  printf '%s\n' "${series[@]}" >"$tmp/want/series"
+  g -c format.signOff=false format-patch -q --zero-commit --no-signature --no-numbered --no-thread -o "$tmp/out" "$pin..$tip"
+  (cd "$tmp/out" && ls -- *.patch) >"$tmp/out/series"
+  diff -r "$tmp/want" "$tmp/out" >&2 || die "*.patch + series are not a byte-identical re-export of pin + series"
+  echo "$tip"
+  exit 0
+fi
 
 # Never move my-vector off commits apply.sh didn't build (unexported edits), unless they hold the same tree (just exported).
 built=$gd/my-vector-built
