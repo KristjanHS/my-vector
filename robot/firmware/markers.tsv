@@ -18,3 +18,5 @@
 0008-speech-volume.patch	src	animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp	my-vector.SpeechVolume
 0008-speech-volume.patch	src	animProcess/src/cozmoAnim/animation/trackLayerManagers/audioLayerManager.cpp	kEnableKeepAliveEyeBlinkAudioEvents, CONSOLE_PATH, false
 0008-speech-volume.patch	bin	bin/vic-anim	my-vector.SpeechVolume
+0008-speech-volume.patch	src	animProcess/src/cozmoAnim/animation/trackLayerManagers/audioLayerManager.cpp	kEnableKeepAliveEyeDartAudioEvents, CONSOLE_PATH, false
+0008-speech-volume.patch	src	animProcess/src/cozmoAnim/animation/trackLayerManagers/audioLayerManager.cpp	kEnableKeepAliveEyeSquintAudioEvents, CONSOLE_PATH, false

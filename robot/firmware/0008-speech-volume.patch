@@ -31,7 +31,7 @@ index 67fb861d..a23c91c1 100644
  
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 diff --git a/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp b/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
-index 786557d1..bfe81134 100644
+index 786557d1..40919980 100644
 --- a/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
 +++ b/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
 @@ -392,6 +392,10 @@ CozmoAudioController::CozmoAudioController( const Anim::AnimContext* context )
@@ -41,7 +41,7 @@ index 786557d1..bfe81134 100644
 +
 +    // my-vector speech-volume V6: idle animation sounds at 0.1; wake chime and TTS ride other buses
 +    SetParameter( ToAudioParameterId( APT::Robot_Vic_Volume_Animation ), 0.1f, kInvalidAudioGameObject );
-+    PRINT_CH_INFO("Audio", "my-vector.SpeechVolume", "Robot_Vic_Volume_Animation=0.1");
++    PRINT_NAMED_WARNING("my-vector.SpeechVolume", "Robot_Vic_Volume_Animation=0.1");
    }
    if (sThis == nullptr) {
      sThis = this;

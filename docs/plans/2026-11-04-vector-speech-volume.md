@@ -23,7 +23,7 @@
 - [x] Round B: per RTPC × ladder, measured dB + `[USER]` ear; real "what time is it?" at Animation 0.1 → chime + answer loud (V6).
 
 ### Stage 2: firmware (only if a V3 RTPC passes)
-- [x] Post V6 + V7 in `CozmoAudioController` init (after the `SetSwitchState` block) as `0008-speech-volume` on the clone's `my-vector`, exported by `robot/firmware/apply.sh --export`; `./build/build-v.sh` green.
+- [x] V6 in `CozmoAudioController` init (after the `SetSwitchState` block), V7 in `audioLayerManager.cpp` (also mutes engine-commanded squints) as `0008-speech-volume` on the clone's `my-vector`, exported by `robot/firmware/apply.sh --export`; `./build/build-v.sh` green.
 - [ ] User: `make syncwt`, `make ship` from main; `master_volume=4`; listen check `[USER]`; `quiet-count.sh` → PASS.
 
 ## Rollback
