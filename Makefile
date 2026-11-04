@@ -6,16 +6,15 @@ help: ## List available targets (default)
 	@echo "  syncwt|commit|commitwt  shared worktree targets (~/.config/make/worktree.mk, from dotfiles)"
 
 start: ## Restart wire-pod.service once daemon-enable ran, else run the server in the foreground (NOPASSWD sudoers rules)
-	@if systemctl is-enabled -q wire-pod 2>/dev/null; then \
-	  sudo -n systemctl restart wire-pod || { echo "no sudoers rule? see docs/run-without-sudo-password.md"; exit 1; }; \
-	  echo "wire-pod restarted; logs: journalctl -u wire-pod -f"; \
+	@if systemctl is-enabled -q wire-pod 2>/dev/null; then $(CURDIR)/scripts/restart-service.sh; \
 	else sudo -n $(CURDIR)/chipper/start.sh || { echo "no sudoers rule? see docs/run-without-sudo-password.md"; exit 1; }; fi
 
-daemon-enable: ## Install + start wire-pod.service (starts with WSL, restarts on crash); asks the sudo password
-	@systemctl is-active -q wire-pod || ! pgrep -f '[/]chipper/start.sh' >/dev/null || { echo "a foreground wire-pod is running: stop it first"; exit 1; }
+daemon-enable: ## Install + (re)start wire-pod.service (starts with WSL, restarts on crash); asks the sudo password
+	@systemctl is-active -q wire-pod || [ -z "$$(ss -Hltn 'sport = :443')" ] || { echo "something already listens on :443 (a foreground wire-pod?): stop it first"; exit 1; }
 	sed 's|@REPO@|$(CURDIR)|g' $(CURDIR)/scripts/wire-pod.service | sudo tee /etc/systemd/system/wire-pod.service >/dev/null
 	sudo systemctl daemon-reload
-	sudo systemctl enable --now wire-pod
+	sudo systemctl enable wire-pod
+	sudo systemctl restart wire-pod
 	@echo "logs: journalctl -u wire-pod -f"
 
 daemon-disable: ## Stop + remove wire-pod.service (make start runs in the foreground again)
