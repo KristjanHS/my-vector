@@ -80,6 +80,9 @@ state() { # state <label>: one robot_state sample as JSON, or die
 pose_bound_mm=5
 s0=$(state start)
 [[ $(jq -r .wheels_moving <<<"$s0") == false ]] || die "A4: wheels moving at start: $s0"
+# L3: ENCODER_LIFT_INVALID (0x400000) set = the lift-lock recalibration loop is live (0002 must not latch syscon's lift_invalid).
+lift_bit() { local st; st=$(jq -r .status <<<"$2"); (((st & 0x400000) == 0)) || die "L3: ENCODER_LIFT_INVALID set at $1 (status $st): recalibration loop"; }
+lift_bit start "$s0"
 
 # A1 + A2 under behavior control (default priority), released on exit.
 sdk assume_behavior_control >/dev/null # answers before the grant; A1's head reads are the check
@@ -128,6 +131,8 @@ ok "A3 log-level intent: DEBUG on, back to info"
 # A4 end: the base did not move during the run (head and lift do not change the pose).
 s1=$(state end)
 [[ $(jq -r .wheels_moving <<<"$s1") == false ]] || die "A4: wheels moving at end: $s1"
+lift_bit end "$s1"
+ok "L3 lift encoder bit clear at start and end"
 [[ $(jq -r .origin_id <<<"$s1") == $(jq -r .origin_id <<<"$s0") ]] || die "A4: pose origin changed (delocalized?): $s0 → $s1"
 d=$(jq -rn --argjson a "$s0" --argjson b "$s1" '[($b.pose.x - $a.pose.x), ($b.pose.y - $a.pose.y)] | map(fabs) | max')
 jq -en --argjson d "$d" "\$d <= $pose_bound_mm" >/dev/null || die "A4: base moved $d mm (bound $pose_bound_mm mm): $s0 → $s1"

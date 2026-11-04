@@ -1,7 +1,7 @@
 # Firmware test suite: static checks in `make check`, on-robot smoke after deploy
 
 **Goal**: a firmware change that breaks a patch or a main function fails a command — static in seconds (`make check`), live in ~30 s (`make robot-test`, and `make ship` before its push).
-**Status**: staged 2026-11-04 — 3.2 code done; its live red demos + A4 wait on `2026-11-04-lift-calibration-loop.md (docs/plans/)`. Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
+**Status**: staged 2026-11-04 — 3.2 code done; its live red demos + A4 wait on the next `make ship` (lift-loop fix in 0002, L3 in `smoke.sh`). Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
 
 ## Refactor first
 

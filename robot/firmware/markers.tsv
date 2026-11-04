@@ -3,6 +3,7 @@
 0001-stay-on-charger.patch	bin	lib/libcozmo_engine.so	StayOnChargerUntilCharged.BehaviorUpdate.OffCharger
 0002-lift-lock.patch	src	robot/supervisor/src/liftController.cpp	power_ = 0.f
 0002-lift-lock.patch	bin	lib/libcozmo_engine.so	my-vector-lift-lock
+0002-lift-lock.patch	src	robot/supervisor/src/liftController.cpp	lift_invalid only while the lift is driven
 0003-quiet-idle.patch	src	resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/danceToTheBeat/danceToTheBeatCoordinator.json	"not": { "conditionType": "OnChargerPlatform" }
 0003-quiet-idle.patch	bin	data/assets/cozmo_resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/globalInterruptions.json	outranks ReactToSoundAwake
 0004-quiet-winsock.patch	src	lib/util/source/3rd/civetweb/src/CMakeLists.txt	if (WIN32)
