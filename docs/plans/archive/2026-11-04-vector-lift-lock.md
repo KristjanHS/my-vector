@@ -2,7 +2,7 @@
 
 **Goal**: no lift motor movement ever (a lift move pried him off the contacts on 2026-11-04 and he lost power);
 face/eye animation, head, voice and the stay-docked patch keep working.
-**Status**: Stage 1 built 2026-11-04; Stage 2 (deploy + live check) owed. Same checkout, build and deploy as slice 3b of
+**Status**: ✅ SHIPPED 2026-11-04 (deploy rides the quiet-idle build); live check → `docs/backlog.md` §OWED[USER]. Same checkout, build and deploy as slice 3b of
 2026-11-03-vector-unlock-wireos.md (docs/plans/archive/); the robot step is `[USER]`.
 
 ## Rulings
