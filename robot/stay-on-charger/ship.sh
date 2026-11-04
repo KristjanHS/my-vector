@@ -17,14 +17,15 @@ step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s\033[0m\n' "$i" "$total
 [[ $(git -C "$repo" rev-parse --absolute-git-dir) == "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)" ]] ||
   die "run from the main checkout, not a worktree: make syncwt, then make -C ~/projects/my-vector ship"
 [[ $(git -C "$repo" branch --show-current) == main ]] || die "main checkout is not on main"
-full=$(git -C "$repo" rev-parse HEAD); sha=$(git -C "$repo" rev-parse --short "$full")
+full=${SHIP_FULL:-$(git -C "$repo" rev-parse HEAD)}; sha=$(git -C "$repo" rev-parse --short "$full")
 
 # Re-run this script under `script`, which records exactly what the terminal shows (live progress included)
 # and passes the exit code through (-e). Prune first so the new log makes the newest $keep.
 logs=$repo/robot/work/ship-logs keep=20
 if [[ -z ${SHIP_LOG:-} ]]; then
   mkdir -p "$logs"
-  find "$logs" -maxdepth 1 -name 'ship-*.log' | sort -r | tail -n +"$keep" | xargs -r rm -f --
+  find "$logs" -maxdepth 1 -name 'ship-*.log' -print0 | sort -rz | tail -zn +"$keep" | xargs -0r rm -f --
+  export SHIP_FULL=$full  # the re-run ships the sha named in the log, even if HEAD moves in between
   export SHIP_LOG=$logs/ship-$(date +%Y%m%d-%H%M%S)-$sha.log
   ln -sfn "$(basename "$SHIP_LOG")" "$logs/latest.log"
   exec script -qefc "$(printf '%q ' "$0" "$@")" "$SHIP_LOG"
