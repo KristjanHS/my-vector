@@ -15,6 +15,10 @@
 | E4 | Free only (R2): local, or an online free tier; paid-only options are listed but cannot win. Listen tests per R4 (Vector's speaker, user scores 1–5, `play.sh -v 60`) |
 | E5 | Language codes: `en-US`, `et-EE` (wire-pod's `xx-XX` convention); fresh-install default `en-US` |
 | E6 | Robot runs (Stage 2, live parts of 9 and 10) start only on the user's explicit go; robot stays docked |
+| E7 | EN or ET stack loaded, never both; each stack (STT + LLM + TTS) ≤ 8 GB VRAM (RTX 3070 Laptop); a candidate that cannot fit its stack is listed, not measured |
+| E8 | Switch is manual only — no language auto-detect (D-RF C dropped) |
+| E9 | STT test audio: FLEURS `et_ee` test (CC-BY-4.0, open) now; Common Voice `et` once the user downloads it from Mozilla Data Collective into `robot/work/et-stt/cv/`; Stage 2.2 commands rescored before Stage 3 |
+| E10 | Keyed free tiers (Azure F0, Google) measured once the user puts keys in gitignored `robot/work/et-stt/keys.env` (never read by Claude); until then rows read "pending keys" |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -45,13 +49,12 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 |---|---|---|---|
 | A | Bolt-on: switch writes `STT.Language` + `STT_SERVICE`, restarts chipper (`sudo` restart from the page) | S; upstream untouched | needs one engine good at both languages, or a restart that changes binary; ~restart gap per switch |
 | B | Fork provider `myvector/lang.Current()` (persisted in `myvectorConfig.json`); `fork_*.go` hooks in `LoadIntents`/`GetText`/STT entry consult it per request; a fork STT router holds the en + et engines | M; ~4 drift-listed hook lines | none; live switch, no restart |
-| C | B + per-utterance auto-detect (whisper language-ID picks en/et; switch = preferred/forced) | M–L | needs R-a to show reliable en/et ID on short commands |
 
 ## Research stages (each = one commit: findings written into §Deliverable)
 
 | id | question | method / output |
 |---|---|---|
-| 1.1 R-a STT | Lead: `TalTechNLP/whisper-large-v3-turbo-et-verbatim` (CT2 `ct2/` subfolder, faster-whisper cuda float16 = stt-faster preset `et-large`; reuse = copy that config, stt-faster has no server; its WER/latency/VRAM are unmeasured); also Vosk et?, whisper.cpp, free online (TartuNLP ASR, Azure F0, Google) | 50 Common Voice `et` clips (CC0) → `robot/work/et-stt/`; table WER · end-of-speech→text s · RAM/VRAM · offline. Targets: WER ≤ 25 %, ≤ 2.0 s (vosk `en-US` baseline measured alongside) |
+| 1.1 R-a STT | Lead: `TalTechNLP/whisper-large-v3-turbo-et-verbatim` (CT2 `ct2/` subfolder, faster-whisper cuda float16 = stt-faster preset `et-large`; reuse = copy that config, stt-faster has no server; its WER/latency/VRAM are unmeasured); also Vosk et?, whisper.cpp, free online (TartuNLP ASR, Azure F0, Google) | harness `robot/et-stt/` (tracked), data/results `robot/work/et-stt/`; 50 FLEURS `et_ee` clips (+ CV `et` when present, E9); table WER · end-of-speech→text s · RAM/VRAM · offline. Targets: WER ≤ 25 %, ≤ 2.0 s (vosk `en-US` baseline measured alongside) |
 | 1.2 R-b TTS | Free Estonian voices: TartuNLP Neurokõne (local model + free API), MMS-TTS `est` (license check), Piper/Kokoro et (expect none), edge-tts `et-EE-AnuNeural` (A5 ToS risk), Azure F0 `et-EE-Anu/Kert`, espeak-ng `et` | add engine adapter(s) to `robot/voice-samples/{gen.sh,synth.py}` (`pkgs[]` + branch); `gen.sh et-<set> "<text>" <engine:voice>…` with a time, a weather, a timer and an LLM sentence; first-audio s on GPU/CPU; VRAM next to Kokoro (R20) |
 | 1.3 R-c LLM | Estonian answer quality: `gemma3:4b-it-qat` vs `gemma3:12b`, EuroLLM-9B, Llammas, qwen3; prompt line "Answer in Estonian"; alt: answer in English + free MT (TartuNLP Neurotõlge) | 10 fixed Estonian questions, each scored 1–5 by the user for language + content; first-token s; VRAM fit with STT+TTS; append to `docs/llm-trials.md` |
 | 1.4 R-d built-in lines | Which robot lines actually speak (inventory K14 + `CreateUtterance` callers); Estonian text path: D1 robot-side `et-EE` table + `RobotSetting.locale` + patched `GetTTSStringForTime`; D2 patch 0010 sends line key/args + `lang`, PC server renders Estonian; D3 wire-pod answers the 8 allowlisted intents itself via T1 | per option: patch size, what Acapela does with `et-EE` locale (no pack → crash/fallback?), behaviour/face animation kept? Fallback when PC down: English Acapela speaking Estonian text = unacceptable → name the fallback |
@@ -72,7 +75,7 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 | T1 / T2 Estonian voice | 1.2 + 2.1 | listen scores, first audio |
 | LLM model + prompt line | 1.3 | scores, VRAM |
 | Built-in-line method D1/D2/D3 | 1.4 | patch size, fallback |
-| Switch UX + D-RF A/B/C | 1.5 | ASCII page mock |
+| Switch UX + D-RF A/B | 1.5 | ASCII page mock |
 
 ## Build stages (shape set by Stage 3 where marked)
 
