@@ -10,7 +10,10 @@
 | R1 | English only; Estonian voice = its own follow-up research plan, authored when this one closes |
 | R2 | Free only — local, or an online API's free tier; paid-only options are listed but cannot win |
 | R3 | Two separate picks, never tied: T1 = LLM-answer voice, T2 = built-in robot voice (time, weather…) → soft female |
-| R4 | Listen tests live on Vector's speaker; user scores 1–5; probe = `chipper/pkg/myvector/voiceprobe` |
+| R4 | Listen tests live on Vector's speaker; user scores 1–5; tools = `robot/voice-samples/{gen,play}.sh` |
+| R5 | A1 out: stock voice scored 1–2 in every combo; slower helps → test candidates at `gen.sh -s` > 1 |
+| R6 | Sample volume: `play.sh -v 60` (SayText at master 2 was a bit loud) |
+| R7 | Best of Piper/edge set (A–F): `piper:en_GB-cori-high` (public domain) |
 
 ## Seams already known (verify, don't re-derive)
 
