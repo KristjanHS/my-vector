@@ -16,6 +16,7 @@ import re
 import sys
 import threading
 import time
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -182,12 +183,9 @@ class KokoroEngine:
         self._pipeline = KPipeline
 
     def close(self):
-        """Drop model + pipelines and hand the freed CUDA memory back to the driver."""
+        """Drop model + pipelines; reclaim_memory() then hands the VRAM back."""
         self._pipes.clear()
         self._model = None
-        gc.collect()
-        if self.device == "cuda":
-            self._torch.cuda.empty_cache()
 
     def synth(self, voice_id, text, slow):
         lang = voice_id[0]
@@ -204,36 +202,57 @@ class KokoroEngine:
         return (np.concatenate(parts) if parts else np.zeros(0, np.float32)), 24000
 
 
+def reclaim_memory():
+    """Collect dropped models and return torch's cached CUDA blocks to the driver; never under the Synth lock."""
+    gc.collect()
+    torch = sys.modules.get("torch")
+    if torch is not None and torch.cuda.is_initialized():
+        torch.cuda.empty_cache()
+
+
 class LazyKokoro:
     """Kokoro resident iff pinned (a kokoro voice selected in wire-pod); unpinned it loads for a request and frees at its end.
 
-    Every load/free runs under `lock` (Synth's), so a free never lands mid-synthesis.
+    Every load/free runs under `lock` (Synth's), so a free never lands mid-synthesis; reclaim runs after the lock is released.
     """
 
-    def __init__(self, factory, device, lock):
-        self._factory, self.device, self._lock = factory, device, lock
+    def __init__(self, factory, device, lock, reclaim=reclaim_memory):
+        self._factory, self._want, self.device = factory, device, device  # _want: every load retries it (one OOM != CPU forever)
+        self._lock, self._reclaim = lock, reclaim
         self._engine, self.pinned, self._requests = None, False, 0
 
     @property
     def loaded(self):
         return self._engine is not None
 
+    @staticmethod
+    def _call(what, fn, *args):
+        """fn(*args), but a failure re-raises as a fresh error: the original traceback's frames would keep the model alive."""
+        try:
+            return fn(*args)
+        except Exception as e:
+            log.error("kokoro %s failed:\n%s", what, traceback.format_exc())  # text, not exc_info: a kept LogRecord pins frames too
+            msg = f"kokoro {what} failed: {e!r}"
+        raise RuntimeError(msg)
+
     def _load(self):  # caller holds the lock
         t = time.monotonic()
-        self._engine = self._factory(self.device)
+        self._engine = self._call("load", self._factory, self._want)
         self.device = self._engine.device
         log.info("kokoro loaded on %s in %.1f s", self.device, time.monotonic() - t)
 
-    def _free_if_unused(self):  # caller holds the lock
-        if self._engine is not None and not self.pinned and not self._requests:
-            self._engine.close()
-            self._engine = None
-            log.info("kokoro freed")
+    def _drop_if_unused(self):  # caller holds the lock; True -> caller runs self._reclaim() after releasing it
+        if self._engine is None or self.pinned or self._requests:
+            return False
+        self._engine.close()
+        self._engine = None
+        log.info("kokoro freed")
+        return True
 
     def synth(self, voice_id, text, slow):  # Synth calls this under the lock
         if self._engine is None:
             self._load()
-        return self._engine.synth(voice_id, text, slow)
+        return self._call("synthesis", self._engine.synth, voice_id, text, slow)
 
     @contextlib.contextmanager
     def request(self):
@@ -245,19 +264,28 @@ class LazyKokoro:
         finally:
             with self._lock:
                 self._requests -= 1
-                self._free_if_unused()
+                dropped = self._drop_if_unused()
+            if dropped:
+                self._reclaim()
 
     def set_pinned(self, pinned):
-        """Selected -> load + warm now (the robot's first line is fast); unselected -> free now (or at the last request's end)."""
+        """Selected -> load + warm now (the robot's first line is fast); unselected -> free now (or at the last request's end).
+
+        A failed load/warm leaves it unpinned and raises, so the caller's next attempt retries.
+        """
         with self._lock:
             if pinned == self.pinned:
                 return
-            self.pinned = pinned
             log.info("kokoro %s", "selected: loading, stays resident" if pinned else "unselected: freeing")
-            if pinned and self._engine is None:
-                self._load()
-                self._engine.synth(next(v for e, v in VOICES.values() if e == "kokoro"), "Hello there.", 1.0)
-            self._free_if_unused()
+            try:
+                if pinned and self._engine is None:
+                    self._load()
+                    self._call("warm", self._engine.synth, next(v for e, v in VOICES.values() if e == "kokoro"), "Hello there.", 1.0)
+                self.pinned = pinned
+            finally:
+                dropped = self._drop_if_unused()
+        if dropped:
+            self._reclaim()
 
 
 def kokoro_selected(path):
@@ -269,7 +297,7 @@ def kokoro_selected(path):
         t1, t2 = cfg.get("t1", DEFAULT_VOICE), cfg.get("t2", DEFAULT_VOICE)
         slow = cfg.get("slow", DEFAULT_SLOW)
         for v in (t1, t2):
-            if v != STOCK and v not in VOICES:  # also non-strings
+            if not isinstance(v, str) or (v != STOCK and v not in VOICES):  # a dict/list would TypeError on `in`
                 raise ValueError(f"voice {v!r}")
         if isinstance(slow, bool) or not isinstance(slow, (int, float)) or not SLOW_MIN <= slow <= SLOW_MAX:
             raise ValueError(f"slow {slow!r}")
@@ -293,19 +321,23 @@ class ConfigWatcher:
         except OSError:
             key = None
         if key != self._key:  # one log line per change, not per poll
-            self._key = key
             pinned, err = kokoro_selected(self.path)
             if err:
                 log.warning("voice config unreadable, using defaults: %s", err)
             self.kokoro.set_pinned(pinned)
+            self._key = key  # only after success: a failed load retries next poll
+
+    def poll_logged(self):
+        """poll(), but a failure only logs: cori still serves and a kokoro request still loads on demand."""
+        try:
+            self.poll()
+        except Exception:
+            log.exception("kokoro pin/free failed; retrying next poll")
 
     def run(self, interval=CONFIG_POLL_S):
         while True:
             time.sleep(interval)
-            try:
-                self.poll()
-            except Exception:  # a failed load must not kill the watcher; a request still loads on demand
-                log.exception("kokoro pin/free failed")
+            self.poll_logged()
 
 
 class Synth:
@@ -437,7 +469,7 @@ def main():
         return
     synth.warm({"piper"})
     watcher = ConfigWatcher(os.environ.get("TTS_VOICE_CONFIG", VOICE_CONFIG), kokoro)
-    watcher.poll()  # a selected Kokoro loads + warms before the port opens
+    watcher.poll_logged()  # a selected Kokoro loads + warms before the port opens
     threading.Thread(target=watcher.run, daemon=True).start()
     log.info("warm: piper%s, kokoro on %s", " + kokoro" if kokoro.loaded else "", kokoro.device)
 

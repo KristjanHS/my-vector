@@ -1,8 +1,12 @@
+import gc
 import http.client
+import inspect
 import json
 import socket
 import threading
 import time
+import types
+import weakref
 from http.server import ThreadingHTTPServer
 
 import numpy as np
@@ -234,14 +238,22 @@ def test_tts_chunked_request_body_is_411(serve):
 
 
 
+
+class Model:
+    """Stands in for the GPU model: a test checks it is garbage once freed."""
+
+
 class FakeKokoro(FakeEngine):
     """FakeEngine with KokoroEngine's load/close surface; `gate` (an Event) holds each synth until set; `events` logs order."""
 
-    def __init__(self, device, events, gate=None):
-        super().__init__(24000)
-        self.device, self.events, self.gate, self.closed = device, events, gate, False
+    def __init__(self, device, events, fail_at=0):
+        super().__init__(24000, fail_at)
+        self.device, self.events, self.gate, self.closed = device, events, None, False
+        self.model = Model()
+        self.ref = weakref.ref(self.model)
 
     def synth(self, voice_id, text, slow):
+        model = self.model  # a frame local, as Kokoro's pipeline frames hold the model  # noqa: F841
         self.events.append("synth start")
         if self.gate:
             self.gate.wait(10)
@@ -251,51 +263,83 @@ class FakeKokoro(FakeEngine):
 
     def close(self):
         self.events.append("close")
-        self.closed = True
+        self.closed, self.model = True, None
+
+
+def test_kokoro_engine_has_the_surface_the_fakes_stand_in_for():
+    # B1 smoke: a module function inserted mid-class orphaned KokoroEngine.synth while every faked test stayed green
+    for name in ("synth", "close"):
+        assert inspect.signature(getattr(server.KokoroEngine, name)) == inspect.signature(getattr(FakeKokoro, name))
 
 
 @pytest.fixture
 def lazy():
-    """-> (LazyKokoro, Synth, made, events): every factory call appends a FakeKokoro to made, all log into events."""
-    made, events, lock = [], [], threading.Lock()
+    """LazyKokoro + Synth over FakeKokoros. f.made: engines; f.events: order log; f.devices: devices asked of the factory;
+    f.reclaims: (Synth lock held?, live models of closed engines) per reclaim; f.fail_loads / f.fail_at / f.fallback steer loads."""
+    f = types.SimpleNamespace(made=[], events=[], devices=[], reclaims=[], fail_loads=0, fail_at=0, fallback=False)
+    lock = threading.Lock()
 
     def factory(device):
-        events.append("load")
-        made.append(FakeKokoro(device, events))
-        return made[-1]
+        f.devices.append(device)
+        if f.fail_loads:
+            f.fail_loads -= 1
+            raise RuntimeError("load down")
+        f.events.append("load")
+        f.made.append(FakeKokoro("cpu" if f.fallback else device, f.events, f.fail_at))
+        return f.made[-1]
 
-    k = server.LazyKokoro(factory, "cuda", lock)
-    return k, server.Synth({"piper": FakeEngine(22050), "kokoro": k}, {}, lock), made, events
+    def reclaim():
+        gc.collect()
+        f.reclaims.append((lock.locked(), sum(1 for e in f.made if e.closed and e.ref() is not None)))
+
+    f.k = server.LazyKokoro(factory, "cuda", lock, reclaim)
+    f.synth = server.Synth({"piper": FakeEngine(22050), "kokoro": f.k}, {}, lock)
+    return f
+
+
+def wait_until(cond, timeout=5):
+    end = time.monotonic() + timeout
+    while not cond():
+        assert time.monotonic() < end, "timed out"
+        time.sleep(0.001)
 
 
 def test_unselected_request_loads_once_and_frees_at_request_end(lazy):
-    k, synth, made, events = lazy
-    assert not k.loaded
-    assert len(list(synth.stream("af_bella", "One. Two.", 1.0))) == 2
-    assert events == ["load", "synth start", "synth end", "synth start", "synth end", "close"]
-    assert not k.loaded
-    list(synth.stream("cori", "Hi.", 1.0))  # a Piper request never touches Kokoro
-    assert len(made) == 1
+    assert not lazy.k.loaded
+    assert len(list(lazy.synth.stream("af_bella", "One. Two.", 1.0))) == 2
+    assert lazy.events == ["load", "synth start", "synth end", "synth start", "synth end", "close"]
+    assert not lazy.k.loaded and lazy.reclaims == [(False, 0)]  # reclaimed outside the lock, model gone
+    list(lazy.synth.stream("cori", "Hi.", 1.0))  # a Piper request never touches Kokoro
+    assert len(lazy.made) == 1
+
+
+def test_overlapping_unselected_requests_share_one_load(lazy):
+    a, b = lazy.synth.stream("af_bella", "One. Two.", 1.0), lazy.synth.stream("af_bella", "Three.", 1.0)
+    next(a)
+    next(b)
+    list(a)
+    assert lazy.k.loaded  # b still holds it
+    list(b)
+    assert not lazy.k.loaded and lazy.events.count("load") == 1 and lazy.events.count("close") == 1
 
 
 def test_selected_loads_warm_now_stays_resident_and_frees_on_deselect(lazy):
-    k, synth, made, events = lazy
+    k, made = lazy.k, lazy.made
     k.set_pinned(True)
     assert k.loaded and made[0].calls == [("af_bella", "Hello there.", 1.0)]
-    list(synth.stream("af_bella", "Hi.", 1.0))
+    list(lazy.synth.stream("af_bella", "Hi.", 1.0))
     assert k.loaded and len(made) == 1 and not made[0].closed
     k.set_pinned(False)
-    assert not k.loaded and made[0].closed
+    assert not k.loaded and made[0].closed and lazy.reclaims == [(False, 0)]
 
 
 def test_deselect_mid_synth_frees_after_the_request(lazy):
-    k, synth, made, events = lazy
+    k, events = lazy.k, lazy.events
     k.set_pinned(True)
-    made[0].gate = gate = threading.Event()
-    t = threading.Thread(target=lambda: list(synth.stream("af_bella", "One. Two.", 1.0)))
+    lazy.made[0].gate = gate = threading.Event()
+    t = threading.Thread(target=lambda: list(lazy.synth.stream("af_bella", "One. Two.", 1.0)))
     t.start()
-    while events[-1] != "synth start":
-        time.sleep(0.001)
+    wait_until(lambda: events[-1] == "synth start")
     unpin = threading.Thread(target=k.set_pinned, args=(False,))
     unpin.start()
     unpin.join(0.2)  # blocked on the lock behind the sentence
@@ -307,14 +351,41 @@ def test_deselect_mid_synth_frees_after_the_request(lazy):
     assert not k.loaded
 
 
+def test_failed_synth_still_frees_the_model(lazy):
+    lazy.fail_at = 1
+    with pytest.raises(RuntimeError, match="engine down"):
+        list(lazy.synth.stream("af_bella", "One.", 1.0))
+    assert not lazy.k.loaded and lazy.k._requests == 0
+    assert lazy.reclaims == [(False, 0)]  # no traceback frame kept the model alive through the reclaim
+
+
+def test_failed_pin_load_is_retried_by_the_watcher(lazy, tmp_path):
+    f = tmp_path / "myvectorConfig.json"
+    f.write_text('{"t1": "af_bella"}')
+    w = server.ConfigWatcher(f, lazy.k)
+    lazy.fail_loads = 1
+    w.poll_logged()  # logs, does not raise
+    assert not lazy.k.pinned and not lazy.k.loaded
+    w.poll_logged()  # file unchanged, still retried
+    assert lazy.k.pinned and lazy.k.loaded
+
+
+def test_cpu_fallback_does_not_stick(lazy):
+    lazy.fallback = True
+    list(lazy.synth.stream("af_bella", "Hi.", 1.0))
+    assert lazy.k.device == "cpu"
+    lazy.fallback = False
+    list(lazy.synth.stream("af_bella", "Hi.", 1.0))
+    assert lazy.devices == ["cuda", "cuda"] and lazy.k.device == "cuda"
+
+
 def test_handler_frees_unselected_kokoro_after_the_response(lazy):
-    k, synth, made, events = lazy
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(synth, lambda: {}))
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(lazy.synth, lambda: {}))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
         r, data = post(srv.server_address[1], {"text": "One. Two.", "voice": "af_bella"})
         assert r.status == 200 and len(data) == 2 * 1600 * 2
-        assert events[-1] == "close" and not k.loaded
+        assert lazy.events[-1] == "close" and not lazy.k.loaded
     finally:
         srv.shutdown()
         srv.server_close()
@@ -331,6 +402,8 @@ def test_handler_frees_unselected_kokoro_after_the_response(lazy):
         ('{"t1": "af_bella", "slow": 9}', False, True),
         ('{"t1": "af_bella"', False, True),
         ('["af_bella"]', False, True),
+        ('{"t1": {}}', False, True),
+        ('{"t2": ["af_bella"]}', False, True),
     ],
 )
 def test_kokoro_selected_reads_t1_t2_and_invalid_is_defaults(tmp_path, text, pinned, bad):
@@ -345,7 +418,7 @@ def test_kokoro_selected_missing_file_is_defaults(tmp_path):
 
 
 def test_watcher_pins_on_select_and_frees_on_garbled(lazy, tmp_path, caplog):
-    k, synth, made, events = lazy
+    k = lazy.k
     f = tmp_path / "myvectorConfig.json"
     f.write_text('{"t1": "cori"}')
     w = server.ConfigWatcher(f, k)
