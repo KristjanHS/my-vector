@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Ship the patched firmware: tests, patches, robot compat check, build (live progress), built-asset check, deploy, robot settings, robot smoke check, git push.
-# Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no deploy, no push).
+# Ship the patched firmware: tests, patches, robot compat check, build (live progress), built-asset check, wire-pod restart
+# (only if chipper/ changed since the running server's sha), deploy, robot settings, robot smoke check, git push.
+# Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no server restart, no deploy, no push).
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
 # HEAD-only: checks, patches and apply.sh come from the committed HEAD; uncommitted fork files are ignored.
+#   The server is the exception: wire-pod.service runs `go run` from the working tree, so a needed restart
+#   requires HEAD == the shipped sha and a clean chipper/ (else FAIL before the build).
 # Log: every run is recorded to robot/work/ship-logs/ship-<time>-<sha>.log (latest.log = newest); the newest 20 are kept.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -13,7 +16,7 @@ add_warns() { local w; w=$(grep '^WARN\|^SETUP' <<<"$1" || true); [[ -z $w ]] ||
 show_warns() { [[ -z $warns ]] || printf '\033[1;33m%s\033[0m\n' "$warns" >&2; }
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; show_warns; [[ -z ${SHIP_LOG:-} ]] || echo "log: $SHIP_LOG" >&2; exit 1; }
 case ${1:-} in '') deploy=1 ;; --no-deploy) deploy=0 ;; *) die "unknown arg: $1 (only --no-deploy)" ;; esac
-total=$((5 + deploy * 5)); i=0
+total=$((5 + deploy * 6)); i=0
 step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s\033[0m\n' "$i" "$total" "$*"; }
 [[ $(git -C "$repo" rev-parse --absolute-git-dir) == "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)" ]] ||
   die "run from the main checkout, not a worktree: make syncwt, then make -C ~/projects/my-vector ship"
@@ -74,6 +77,28 @@ if ((deploy)); then
   out=$("$cs" "$src" "$tip" 2>&1) || die "${out#FAIL: }"
   echo "$out"
   add_warns "$out"
+
+  # start.sh stamps `git rev-parse --short HEAD` into the `go run` child of the service's main pid; empty = no server.
+  server_sha() {
+    local pid; pid=$(systemctl show -p MainPID --value wire-pod 2>/dev/null || true)
+    [[ -n $pid && $pid != 0 ]] || return 0
+    pgrep -a -P "$pid" | grep -o 'vars\.CommitSHA=[0-9a-f]*' | head -1 | cut -d= -f2 || true
+  }
+  # The restart runs the working tree as stamped HEAD: it must be exactly the shipped sha.
+  server_tree_ok() {
+    [[ $(git -C "$repo" rev-parse HEAD) == "$full" ]] || die "HEAD moved off $sha: a wire-pod restart would run another commit"
+    local d; d=$(git -C "$repo" status --porcelain -- chipper)
+    [[ -z $d ]] || die "chipper/ has uncommitted changes, which a wire-pod restart would run live: $d"
+  }
+  running=$(server_sha)
+  restart=0
+  # An unknown sha (git diff exits 128) counts as changed.
+  [[ -n $running ]] && git -C "$repo" diff --quiet "$running" "$full" -- chipper 2>/dev/null || restart=1
+  if ((restart)); then
+    systemctl is-enabled -q wire-pod ||
+      die "chipper/ changed since the running server (${running:-none}) and wire-pod.service is not enabled: make daemon-enable"
+    server_tree_ok
+  fi
 fi
 
 json=$(echo "$want" | grep '\.json$' || true)
@@ -93,6 +118,20 @@ tree_is_patches
 echo "built firmware matches the tree"
 
 ((deploy)) || { echo; echo "built, not deployed (--no-deploy) at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z"). log: $SHIP_LOG"; exit 0; }
+
+# Before the deploy: a server that won't start stops the ship with the robot untouched, and the robot
+# reboots straight onto the new server; smoke.sh's wire-pod link check then covers both.
+if ((restart)); then
+  step "server: chipper/ changed since ${running:-none (not running)} -> restart wire-pod on $sha"
+  server_tree_ok
+  "$repo/scripts/restart-service.sh" || die "wire-pod did not come up on $sha — server DOWN, robot untouched, not pushed; fix and ship again"
+  now=$(server_sha)
+  [[ -n $now && $(git -C "$repo" rev-parse -q --verify "$now^{commit}" || true) == "$full" ]] ||
+    die "wire-pod restarted but reports ${now:-no sha}, not $sha — robot untouched, not pushed"
+  echo "wire-pod runs $sha"
+else
+  step "server: wire-pod already runs $running, chipper/ unchanged — no restart"
+fi
 
 step "deploy: ./build/deploy-v.sh to $ip"
 (cd "$src" && script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
