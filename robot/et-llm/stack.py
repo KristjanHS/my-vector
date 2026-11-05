@@ -21,7 +21,6 @@ LADDER = [
     ("i1-IQ4_XS", None),
     ("i1-Q3_K_M", None),
 ]
-UPGRADE = ("i1-Q5_K_S", None)  # E11: only when Q4_K_M passes
 W = bench.ROOT / "robot/work"
 STT_PY, STT_MODEL = W / "et-stt/venv/bin/python", W / "et-stt/models/taltech-et/ct2"
 TTS_PY, TARTU_DIR = (
@@ -361,8 +360,6 @@ def run(args):
         for quant, ctx in LADDER:
             fit = run_variant(quant, ctx, kokoro_mib, ver, warm_q)
             if fit == "yes":
-                if (quant, ctx) == LADDER[0]:
-                    run_variant(*UPGRADE, kokoro_mib, ver, warm_q)
                 return
             if (
                 ctx
