@@ -25,6 +25,7 @@
 | R16 | T2 shares the one slow slider; robot sends `slow` = saved slow × its own per-line `durationScalar` |
 | R17 | Robot POSTs one sentence per request, 1.5 s timeout each; after a failure the rest of the line speaks in Acapela |
 | R18 | PC URL = new `ROBOT_TTS_URL` in `robot/robot.env` (e.g. `http://<pc-lan-ip>:8091`); file missing/bad or voice `stock` → Acapela |
+| R19 | Patch 0010 skips wire-pod/SDK-originated SayText (R12/R13 stand): those stay Acapela; only robot-internal lines use T2 |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -88,4 +89,5 @@ works with every LLM provider · offline/private · fork code size (`fork_*.go` 
 | B3 | T1 playback: `DoSayText` → `voice.Speak(voice.Current())` (non-`stock` → `voice.Say` → B1 stream; B1 down → R9; `stock` → R12) + R14 demo endpoint `voice.DemoAPI` | `chipper/pkg/myvector/voice/`; `ttr/fork_say.go` (hook in kgsim_cmds.go, drift-listed); `sdkapp/fork_voice.go` |
 | B4.1 | T2 field + picker (R8, R16) and push on save (R15) | `chipper/pkg/myvector/voice/`, `robot/firmware/voice-push.sh`, `settings.sh`, `robot/robot.env.example` |
 | B4.2 | patch 0010: vic-anim provider reads R15's file per line, POSIX-socket HTTP/1.0 `POST /tts` per sentence (R17), Acapela fallback (R18); robot `curl` :8091/health first — a Windows firewall rule may be owed | `robot/firmware/0010-*.patch`, `series`, `markers.tsv` |
+| B4.3 | R19: SDK-origin SayText bypasses the PC path — prefer a robot-side origin flag (engine → anim TTS request), else a wire-pod text tag the patch strips | `0010-pc-voice.patch`; if tag: voice pkg / `fork_*.go` |
 | B5 | Verify: listen on Vector per track × voice; LLM answer + "what time is it" both soft female; B1 stopped → stock voice; "Hey Vector" mid PC sentence cuts it (else: cancel `forkSayText` ctx from the KGSim interrupt); gaps between sentences acceptable (else: prefetch the next chunk) | `robot/voice-samples/play.sh`, `make robot-test` |
