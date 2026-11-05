@@ -23,7 +23,7 @@ daemon-disable: ## Stop + remove wire-pod.service (make start runs in the foregr
 	sudo nft delete table inet wirepod_guard 2>/dev/null || true
 	sudo systemctl daemon-reload
 
-check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector Go tests
+check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector + vars fork Go tests
 	$(CURDIR)/scripts/check.sh
 
 robot-test: ## On-robot smoke test (~45 s, needs wire-pod + the docked robot); exit 0 PASS, 1 FAIL, 2 setup

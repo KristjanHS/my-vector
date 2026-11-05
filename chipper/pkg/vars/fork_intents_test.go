@@ -58,7 +58,7 @@ func TestForkDroppedKeyphrasesExistInEnUS(t *testing.T) {
 	}
 }
 
-// forkMatch mirrors ProcessTextAll (ttr): exact match first, then substring unless requiresexact.
+// forkMatch mirrors ProcessTextAll (ttr): exact match first, then ForkContainsPhrase unless requiresexact.
 func forkMatch(intents []JsonIntent, text string) string {
 	text = strings.ToLower(text)
 	for _, it := range intents {
@@ -70,7 +70,7 @@ func forkMatch(intents []JsonIntent, text string) string {
 	}
 	for _, it := range intents {
 		for _, k := range it.Keyphrases {
-			if strings.Contains(text, strings.ToLower(k)) && !it.RequireExactMatch {
+			if ForkContainsPhrase(text, strings.ToLower(k)) && !it.RequireExactMatch {
 				return it.Name
 			}
 		}
@@ -89,8 +89,20 @@ func TestForkFilterRoutesQuestionsToLLM(t *testing.T) {
 		"is it time for lunch":                 "",
 		"capture the flag rules":               "",
 		"lets have a conversation about space": "",
+		"how does photosynthesis work":         "",
+		"what does the name isaac mean":        "",
+		"which way is clockwise":               "",
+		"can i ask you a question about mars":  "",
+		"whats the big picture":                "",
+		"why am i tired all the time":          "",
+		"is this photo real":                   "",
 		"whats the weather":                    "intent_weather_extend",
 		"take a picture":                       "intent_photo_take_extend",
+		"can you take a photo of me":           "intent_photo_take_extend",
+		"take a selfie":                        "intent_photo_take_extend",
+		"what's the time":                      "intent_clock_time",
+		"tell me the time":                     "intent_clock_time",
+		"lets talk":                            "intent_knowledge_promptquestion",
 		"my name is kristjan":                  "intent_names_username_extend",
 		"what time is it":                      "intent_clock_time",
 		"set a timer for five minutes":         "intent_clock_settimer_extend",
@@ -100,6 +112,26 @@ func TestForkFilterRoutesQuestionsToLLM(t *testing.T) {
 	for text, want := range cases {
 		if got := forkMatch(in, text); got != want {
 			t.Errorf("%q: matched %q, want %q", text, got, want)
+		}
+	}
+}
+
+func TestForkContainsPhraseWholeWords(t *testing.T) {
+	cases := []struct {
+		text, phrase string
+		want         bool
+	}{
+		{"how does photosynthesis work", "photo", false},
+		{"what's up", "what", false},
+		{"photo photosynthesis", "photosynthesis", true},
+		{"photosynthesis photo", "photo", true},
+		{"check the timer?", "timer", true},
+		{"现在几点", "几点", true},
+		{"anything", "", false},
+	}
+	for _, c := range cases {
+		if got := ForkContainsPhrase(c.text, c.phrase); got != c.want {
+			t.Errorf("ForkContainsPhrase(%q, %q) = %v, want %v", c.text, c.phrase, got, c.want)
 		}
 	}
 }

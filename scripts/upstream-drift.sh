@@ -12,6 +12,7 @@ allowed_edits=(
   chipper/pkg/wirepod/ttr/kgsim.go       # TopP: forkTopP(...) — Claude rejects top_p (fork_llm.go)
   chipper/pkg/wirepod/ttr/kgsim_cmds.go  # same, on the LLM-commands/camera path
   chipper/pkg/vars/vars.go               # LoadIntents returns forkFilterIntents(...) (fork_intents.go)
+  chipper/pkg/wirepod/ttr/matchIntentSend.go # ProcessTextAll partial pass: vars.ForkContainsPhrase (whole words)
 )
 
 to=(); [[ ${1:-} == --head ]] && to=("$(git rev-parse --verify "${2:-HEAD}^{commit}")")
