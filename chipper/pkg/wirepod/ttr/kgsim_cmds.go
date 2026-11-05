@@ -529,6 +529,14 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
+				var flushed bool
+				if fullRespSlice, flushed = forkFlushUnpunctuated(fullRespSlice, fullRespText); flushed {
+					isDone = true
+					select {
+					case speakReady <- fullRespSlice[0]:
+					default:
+					}
+				}
 				isDone = true
 				newStr := fullRespSlice[0]
 				for i, str := range fullRespSlice {
