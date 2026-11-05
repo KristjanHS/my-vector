@@ -131,8 +131,8 @@ Speaking lines under the 8 intents: clock (`GetTTSStringForTime`, digits), weath
 |---|---|---|---|---|---|
 | 1 | TalTech `whisper-large-v3-turbo-et-verbatim`, faster-whisper cuda `int8_float16` | yes, offline | 0.36 / 0.44 s | 8.5 % · 1.31 GB | lead |
 | 2 | same, cuda `float16` (stt-faster `et-large`) | yes, offline | 0.38 / 0.43 s | 7.6 % · 2.28 GB | +1 GB for −0.9 pt |
-| 3 | stock large-v3-turbo cuda `int8_float16` (whisper.cpp stand-in) | yes, offline | 0.39 / 0.46 s | 18.1 % · 1.31 GB | 2× TalTech WER |
-| 4 | TalTech CPU `int8` | yes, offline | 7.15 / 7.69 s | 8.5 % · 0 | fails 2.0 s |
+| 3 | stock large-v3-turbo cuda `int8_float16` via faster-whisper (proxy for whisper.cpp, not run) | yes, offline | 0.39 / 0.46 s | 18.1 % · 1.31 GB | 2× TalTech WER |
+| 4 | TalTech CPU `int8` | yes, offline | 7.15 / 7.69 s | 8.5 % · – (CPU) | fails 2.0 s |
 | – | Vosk et · TartuNLP/TalTech keyless API | — | — | — | no model · no public API |
 | – | Azure F0 · Google v1 `et-EE`; CV `et` | free tier | — | — | pending keys (E10) · pending CV (E9) |
 | base | Vosk `en-US` on FLEURS `en_us` | yes, offline | 0.02 / 0.04 s | 31.6 % (en) · CPU | today's English |
@@ -141,7 +141,7 @@ E7 fit: gemma3:4b 5.8 GB + STT 1.31 GB leaves ≤ 0.9 GB for ET TTS + desktop �
 
 ### TTS (1.2 R-b)
 
-GPU shared with another job during the run — VRAM = torch peak, latencies pessimistic; samples in `robot/work/voice-samples/et-*/norm/`.
+Numbers unsaved (R-b terminal; GPU shared with a sibling job, VRAM = torch running peak, first audio = full synth for non-streaming) — re-measure on an idle GPU with `BENCH=1` (→ `bench.log`) before Stage 3. Samples: `robot/work/voice-samples/et-*/norm/`.
 
 | rank | option | free | first audio GPU / CPU (short · llm) | score (VRAM · license) | verdict |
 |---|---|---|---|---|---|
@@ -150,4 +150,5 @@ GPU shared with another job during the run — VRAM = torch peak, latencies pess
 | 3 | edge-tts `et-EE-Anu/KertNeural` | keyless, online | 1.1 · 1.2 s | 0 · unofficial endpoint (A5 ToS) | backup only |
 | 4 | XTTS-v2-est (`tartuNLP/XTTS-v2-est`) | yes, offline | 0.78 · 0.73 / 3.4 · 4.1 s | ~2.3 GB · CPML non-commercial | over E7, quality reference |
 | 5 | espeak-ng `et` | yes, offline | – / 0.01 · 0.02 s | 0 · GPL-3 | robotic baseline |
+| ref | Kokoro `af_bella` (English, R20; same run) | yes, offline | 1.45 s (GPU) | 0.65 GB · Apache-2.0 | today's English |
 | – | Neurokõne API · Azure F0 · MMS `est` · Kokoro et | — | — | — | HTTP 408 ×3 (retry `tartu:mari`) · pending keys · no model · no voice |

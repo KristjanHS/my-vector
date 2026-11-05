@@ -208,9 +208,10 @@ def eng_google(a):
             },
             "audio": {"content": base64.b64encode(wav_bytes(x)[44:]).decode()},
         }
+        # key in a header, never the URL: requests quotes the URL in HTTPError messages
         r = s.post(
             "https://speech.googleapis.com/v1/speech:recognize",
-            params={"key": key},
+            headers={"X-Goog-Api-Key": key},
             json=body,
             timeout=30,
         )
@@ -223,6 +224,17 @@ def eng_google(a):
 
 
 ENGINES = {"fw": eng_fw, "vosk": eng_vosk, "azure": eng_azure, "google": eng_google}
+KEY_VARS = ("AZURE_SPEECH_KEY", "GOOGLE_STT_KEY")
+
+
+def scrub(e):
+    """Exception -> short string with key values and URLs masked (it lands in results JSON and stdout)."""
+    msg = str(e)
+    for v in KEY_VARS:
+        if os.environ.get(v):
+            msg = msg.replace(os.environ[v], "<key>")
+    msg = re.sub(r"https?://\S+", "<url>", msg)
+    return f"{type(e).__name__}: {msg[:120]}"
 
 
 def pct(xs, p):
@@ -241,6 +253,10 @@ def vram(base, loaded, peak):
         "load_delta": loaded - base,
         "peak_delta": peak - base,
     }
+
+
+def sec(v):
+    return "-" if v is None else f"{v:.2f}"
 
 
 def gb(v):
@@ -265,7 +281,14 @@ def bench(a):
     pk = Peak()
     if base is not None:
         pk.start()
-    fn(audio[0])  # warm-up, excluded
+    warm_err = None
+    try:
+        fn(audio[0])  # warm-up, excluded
+    except Exception as e:
+        if not online:
+            raise
+        warm_err = scrub(e)  # online: the traceback would quote the request
+        print(f"{a.name}: warm-up failed: {warm_err}")
     rows = []
     for (p, ref, dur), x in zip(data, audio):
         t0 = time.perf_counter()
@@ -273,7 +296,7 @@ def bench(a):
             hyp, lat = fn(x)
             err = None
         except Exception as e:  # online engines: record, keep going
-            hyp, lat, err = "", None, f"{type(e).__name__}: {str(e)[:120]}"
+            hyp, lat, err = "", None, scrub(e)
         lat = time.perf_counter() - t0 if lat is None else lat
         rows.append(
             {
@@ -291,7 +314,9 @@ def bench(a):
     pk.stop = True
     refs = [r["ref"] for r in rows]
     hyps = [r["hyp"] for r in rows]
-    lats = [r["lat"] for r in rows]
+    lats = [
+        r["lat"] for r in rows if not r["err"]
+    ]  # a failed call's time is not a latency
     out = {
         "name": a.name,
         "engine": a.engine,
@@ -303,17 +328,18 @@ def bench(a):
         "n": len(rows),
         "median_clip_s": statistics.median(r["dur"] for r in rows),
         "wer": jiwer.wer(refs, hyps),
-        "lat_med": statistics.median(lats),
-        "lat_p90": pct(lats, 0.9),
+        "lat_med": statistics.median(lats) if lats else None,
+        "lat_p90": pct(lats, 0.9) if lats else None,
         "load_s": round(load_s, 1),
         "errors": sum(1 for r in rows if r["err"]),
+        "warmup_err": warm_err,
         "vram_mib": vram(base, loaded, pk.peak),
         "clips": rows,
     }
     RES.mkdir(parents=True, exist_ok=True)
     (RES / f"{a.name}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1))
     print(
-        f"{a.name}: WER {out['wer']:.1%}  lat med {out['lat_med']:.2f}s p90 {out['lat_p90']:.2f}s  "
+        f"{a.name}: WER {out['wer']:.1%}  lat med {sec(out['lat_med'])}s p90 {sec(out['lat_p90'])}s  "
         f"VRAM {gb(out['vram_mib'])}  errors {out['errors']}"
     )
 
@@ -322,7 +348,7 @@ def summary(_):
     for f in sorted(RES.glob("*.json")):
         r = json.loads(f.read_text())
         print(
-            f"{r['name']:<28} {r['dataset']:<10} WER {r['wer']:6.1%}  lat {r['lat_med']:.2f}/{r['lat_p90']:.2f}s  "
+            f"{r['name']:<28} {r['dataset']:<10} WER {r['wer']:6.1%}  lat {sec(r['lat_med'])}/{sec(r['lat_p90'])}s  "
             f"VRAM {gb(r['vram_mib'])}  clip med {r['median_clip_s']:.2f}s  err {r['errors']}"
         )
 

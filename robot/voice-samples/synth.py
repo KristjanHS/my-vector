@@ -7,7 +7,8 @@ engine piper: voice = model path (.onnx), @Speaker for multi-speaker · edge: en
 · espeak (espeak-ng unpacked in $ESPEAK_ROOT): et.
 slow > 1 speaks slower (Piper length_scale, edge/azure rate, Kokoro/TartuNLP/XTTS 1/speed, espeak wpm).
 $DEVICE=cpu|cuda forces the torch device (kokoro, xtts). $BENCH=1: one warm-up per voice, then stderr
-"bench <name> first=<s> total=<s> torch_gb=<peak>" (first = first audio bytes for streaming engines, else = total).
+"bench <name> first=<s> total=<s> torch_gb=<peak>" (first = first audio bytes for streaming engines, else = total),
+also appended to $BENCH_LOG (if set) as "<UTC time> <engine>:<voice> device=<$DEVICE|auto> first=.. total=.. torch_gb=..".
 """
 
 import asyncio
@@ -203,6 +204,7 @@ elif engine == "espeak":
                 str(round(175 / slow)),
                 "-w",
                 f"{out}.wav",
+                "--",  # text starting with "-" is not an option
                 text,
             ],
             env={**os.environ, "LD_LIBRARY_PATH": lib},
@@ -229,8 +231,11 @@ for v in voices:
             if tp and tp.cuda.is_initialized()
             else 0
         )
-        print(
-            f"bench {name(v)} first={first or total:.3f} total={total:.3f} torch_gb={gb:.2f}",
-            file=sys.stderr,
-            flush=True,
-        )
+        m = f"first={first or total:.3f} total={total:.3f} torch_gb={gb:.2f}"
+        print(f"bench {name(v)} {m}", file=sys.stderr, flush=True)
+        if os.environ.get("BENCH_LOG"):
+            voice = re.sub(r"\.(onnx|wav)", "", os.path.basename(v))
+            stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            dev = os.environ.get("DEVICE") or "auto"
+            with open(os.environ["BENCH_LOG"], "a") as f:
+                f.write(f"{stamp} {engine}:{voice} device={dev} {m}\n")
