@@ -69,6 +69,17 @@ def test_limiter_only_dips_around_the_peak():
     assert abs(np.abs(out[8000:]).max() - 0.1) < 0.002
 
 
+def test_limit_holds_the_ceiling_itself_not_via_the_final_clip():
+    """limit() alone stays under PEAK (to_pcm16's clip would hide a no-op or overshooting limiter = hard clipping)."""
+    rng = np.random.default_rng(0)
+    x = (0.2 * rng.standard_normal(4000)).astype(np.float32)
+    for i in (0, 15, 16, 31, 32, 33, 63, 64, 99, 3999):  # block edges and the padded tail
+        x[i] = 3.0
+    y = server.limit(x)
+    assert np.abs(y).max() <= server.PEAK + 1e-6
+    assert not np.allclose(y, np.clip(x, -server.PEAK, server.PEAK), atol=1e-3)  # gain dips, not clipping
+
+
 def test_parse_request_defaults_and_clamp():
     assert server.parse_request(b'{"text": "hi"}') == ("hi", "af_bella", 1.0, 0.0)
     assert server.parse_request(b'{"text": "hi", "voice": "cori", "slow": 9}')[

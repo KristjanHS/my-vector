@@ -29,7 +29,7 @@
 | R20 | Kokoro holds VRAM only while a kokoro voice is T1 or T2 (server watches `chipper/myvectorConfig.json`); unselected request loads for that request, frees after |
 | R21 | KG placeholder (`streamingKG` "bla bla") gets sdkOrigin → Acapela when T2 first sound is > 0.5 s later than stock (median of 3); measured on the console-SayText proxy `robot/voice-samples/onset.sh`, B5 confirms on a real KG question |
 | R22 | Fresh-install default for T1 and T2 = `af_bella` (user prefers it over `cori`): `voice.DefaultVoice`, server `DEFAULT_VOICE`, `settings.sh` |
-| R23 | PC voice loudness: service base -14 LUFS (was -20) + peak limiter in place of the whole-sentence scale-down; T1 stream at `AudioVolume` 100 (was 60, R6) + `boost_db` 2 → +8 dB over before (user A/B pick, light limiting; +15 squashed). T2 gets the +6 dB base. Measured at robot output: T1 stream path plays ~6 dB under SayText at the same source |
+| R23 | PC voice loudness: service base -14 LUFS (was -20) + peak limiter in place of the whole-sentence scale-down; T1 stream at `AudioVolume` 100 (was 60, R6) + `boost_db` 2 → service output +8 dB over before (+6 base, +2 boost; user A/B pick, +15 squashed), and the robot-side vol 60→100 step on top. T2 gets the +6 dB base. Limited >3 dB: base <1% of speech, T1 ~3% — no headroom for a bigger boost. Measured at robot output: T1 stream path plays ~6 dB under SayText at the same source |
 
 ## Seams already known (verify, don't re-derive)
 

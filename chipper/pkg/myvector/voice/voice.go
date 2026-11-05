@@ -24,7 +24,7 @@ const (
 	rate         = 16000
 	frame        = 1024                   // bytes per ExternalAudioStreamChunk (32 ms)
 	volume       = 100                    // R23: the stream path's max; 60 (R6) was picked at master 2
-	boostDB      = 2.0                    // R23: TTS service boost on top of its -14 LUFS base (+8 dB over the old -20, light limiting)
+	boostDB      = 2.0                    // R23: on top of the service's -14 LUFS base; ~3% of speech already limited >3 dB, no headroom left
 	lead         = 300 * time.Millisecond // audio queued ahead of the speaker
 )
 

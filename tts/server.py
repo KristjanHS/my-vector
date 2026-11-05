@@ -106,7 +106,7 @@ def limit(x, ceiling=PEAK):
     g, cur = np.empty(n), 1.0
     for i, w in enumerate(want):
         cur = w if w < cur else cur + (1.0 - cur) * rel
-        g[i] = min(cur, w)
+        g[i] = min(cur, w)  # cur may recover past a pinned w; g never tops w, so the ceiling holds
     # linear between block centres: both ends are under the bound for the samples between them
     gs = np.interp(np.arange(x.size), np.arange(n) * LIMIT_BLOCK + (LIMIT_BLOCK - 1) / 2, g)
     return x * gs.astype(np.float32)
