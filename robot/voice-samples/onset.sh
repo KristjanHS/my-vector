@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Time-to-first-sound of a robot-internal (T2) line per arm: engine console SayText → output capture → onset.
 # Arms: stock · cori · af_bella (PC up) · refused (PC port closed) · blackhole (PC host gone). Restores the voice file.
-# Usage: [RUNS=3] [WORD=bla-bla-…] onset.sh [arm…] — B5 of 2026-11-05-vector-voice-research.md (docs/plans/).
+# Usage: [RUNS=3] [WORD=bla-bla-…] onset.sh [arm…] — V2 of 2026-11-05-vector-voice-verify.md (docs/plans/).
 set -uo pipefail
 self=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/volume-probe/lib.sh

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Loudness of the PC voices vs stock at robot output, per track (plan R23, B5).
+# Loudness of the PC voices vs stock at robot output, per track — V1 of 2026-11-05-vector-voice-verify.md (docs/plans/).
 # T1 = wire-pod demo endpoint (LLM-answer path: SDK stream, or SayText for stock);
 # T2 = engine console SayText with the robot voice file set (robot-internal path). Restores the voice file.
 # Pass = a PC voice's active level within $BAR dB of the same track's stock line.
