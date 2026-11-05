@@ -12,6 +12,7 @@ sizes are bounded before any size_t sum (32-bit wrap). A failed sentence and the
 line speak in Acapela (R17). Logs my-vector.Voice. Host test: robot/firmware/tests/pc-voice.sh.
 
 R19: SDK SayText (wire-pod) stays Acapela: sdkComponent sets the new TextToSpeechPrepare.sdkOrigin, vic-anim passes it to the provider, which skips the PC voice (log 'acapela: sdk SayText (R19)'). Built-in lines (time, weather, behaviours) keep T2.
+B5: the KnowledgeGraph response line (wire-pod's streaming placeholder) also sets sdkOrigin via BehaviorTextToSpeechLoop::SetTextToSay - PC voice put +0.5-0.64 s before its first sound, PC down +1.5 s.
 ---
  .../textToSpeech/textToSpeechComponent.cpp    |  14 +-
  .../textToSpeech/textToSpeechComponent.h      |   6 +-
@@ -21,11 +22,14 @@ R19: SDK SayText (wire-pod) stays Acapela: sdkComponent sets the new TextToSpeec
  .../textToSpeech/textToSpeechProvider_mac.h   |   3 +-
  .../textToSpeechProvider_vicos.cpp            | 282 +++++++++++++++++-
  .../textToSpeech/textToSpeechProvider_vicos.h |  18 +-
+ .../behaviorTextToSpeechLoop.cpp              |   5 +-
+ .../behaviorTextToSpeechLoop.h                |   3 +-
+ .../behaviorKnowledgeGraphQuestion.cpp        |   3 +-
  engine/components/sdkComponent.cpp            |   3 +-
  .../textToSpeech/textToSpeechCoordinator.cpp  |   4 +-
  .../textToSpeech/textToSpeechCoordinator.h    |   3 +-
  .../robotInterface/messageEngineToRobot.clad  |   1 +
- 12 files changed, 328 insertions(+), 18 deletions(-)
+ 15 files changed, 335 insertions(+), 22 deletions(-)
 
 diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
 index 9f3df6f6..783e876c 100644
@@ -526,6 +530,57 @@ index c0a69008..c20a4f42 100644
  }; // class TextToSpeechProviderImpl
  
  } // end namespace TextToSpeech
+diff --git a/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorTextToSpeechLoop.cpp b/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorTextToSpeechLoop.cpp
+index b1a575fc..cb859a45 100644
+--- a/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorTextToSpeechLoop.cpp
++++ b/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorTextToSpeechLoop.cpp
+@@ -124,7 +124,8 @@ BehaviorTextToSpeechLoop::~BehaviorTextToSpeechLoop()
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ void BehaviorTextToSpeechLoop::SetTextToSay(const std::string& textToSay,
+                                             const UtteranceReadyCallback readyCallback,
+-                                            const AudioTtsProcessingStyle style)
++                                            const AudioTtsProcessingStyle style,
++                                            const bool sdkOrigin)
+ {
+   _dVars.textToSay = textToSay;
+ 
+@@ -154,7 +155,7 @@ void BehaviorTextToSpeechLoop::SetTextToSay(const std::string& textToSay,
+   }
+ 
+   auto & ttsCoordinator = GetBEI().GetTextToSpeechCoordinator();
+-  _dVars.utteranceID = ttsCoordinator.CreateUtterance(_dVars.textToSay, triggerType, style, callback);
++  _dVars.utteranceID = ttsCoordinator.CreateUtterance(_dVars.textToSay, triggerType, style, 1.f, 0.f, callback, sdkOrigin);
+ 
+   // if we failed to created the utterance, let the callback know so they aren't waiting forever ...
+   if((kInvalidUtteranceID == _dVars.utteranceID) && readyCallback){
+diff --git a/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorTextToSpeechLoop.h b/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorTextToSpeechLoop.h
+index 01d40af1..8bfbb130 100644
+--- a/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorTextToSpeechLoop.h
++++ b/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorTextToSpeechLoop.h
+@@ -37,7 +37,8 @@ public:
+   using UtteranceReadyCallback = std::function<void(bool)>;
+   void SetTextToSay(const std::string& textToSay,
+                     const UtteranceReadyCallback readyCallback = {},
+-                    const AudioTtsProcessingStyle style = AudioTtsProcessingStyle::Default_Processed);
++                    const AudioTtsProcessingStyle style = AudioTtsProcessingStyle::Default_Processed,
++                    const bool sdkOrigin = false); // my-vector (0010): true = stays Acapela (R19)
+   
+   void ClearTextToSay();
+   
+diff --git a/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp b/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp
+index 3573cdbe..8971c28c 100644
+--- a/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp
++++ b/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp
+@@ -319,7 +319,8 @@ namespace Anki
+           }
+         };
+ 
+-        _iVars.ttsBehavior->SetTextToSay(_dVars.responseString, callback);
++        // my-vector (0010): wire-pod's streaming placeholder ("bla bla") stays Acapela — PC voice +0.5–0.64 s to first sound, PC down +1.5 s (B5)
++        _iVars.ttsBehavior->SetTextToSay(_dVars.responseString, callback, BehaviorTextToSpeechLoop::AudioTtsProcessingStyle::Default_Processed, true);
+ 
+         // let's transition into our "searching" loop
+         // since we always want to loop at least once, play the get in + loop anim before we do any logic for the tts
 diff --git a/engine/components/sdkComponent.cpp b/engine/components/sdkComponent.cpp
 index a147e2cd..96c80e80 100644
 --- a/engine/components/sdkComponent.cpp

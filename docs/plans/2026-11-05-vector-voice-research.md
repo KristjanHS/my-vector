@@ -1,6 +1,6 @@
 # Vector voice: research every way to a softer, clearer voice
 
-**Status**: OPEN — B1–B4 built; next = B5 live verify (after `make ship`).
+**Status**: OPEN — B1–B4 shipped, B5 timing done (R21); next = `make ship` (R21 + R22), then B5 listening checks.
 **Want**: easier on the ear and easier to understand than the stock robot voice; user leans to a soft female voice.
 
 ## Rulings (2026-11-05 questions round)
@@ -27,6 +27,8 @@
 | R18 | PC URL = new `ROBOT_TTS_URL` in `robot/robot.env` (e.g. `http://<pc-lan-ip>:8091`); file missing/bad or voice `stock` → Acapela |
 | R19 | Patch 0010 skips wire-pod/SDK-originated SayText (R12/R13 stand): those stay Acapela; only robot-internal lines use T2 |
 | R20 | Kokoro holds VRAM only while a kokoro voice is T1 or T2 (server watches `chipper/myvectorConfig.json`); unselected request loads for that request, frees after |
+| R21 | KG placeholder (`streamingKG` "bla bla") gets sdkOrigin → Acapela when T2 first sound is > 0.5 s later than stock (median of 3): `robot/voice-samples/onset.sh` |
+| R22 | Fresh-install default for T1 and T2 = `af_bella` (user prefers it over `cori`): `voice.DefaultVoice`, server `DEFAULT_VOICE`, `settings.sh` |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -91,4 +93,4 @@ works with every LLM provider · offline/private · fork code size (`fork_*.go` 
 | B4.1 | T2 field + picker (R8, R16) and push on save (R15) | `chipper/pkg/myvector/voice/`, `robot/firmware/voice-push.sh`, `settings.sh`, `robot/robot.env.example` |
 | B4.2 | patch 0010: vic-anim provider reads R15's file per line, POSIX-socket HTTP/1.0 `POST /tts` per sentence (R17), Acapela fallback (R18); robot `curl` :8091/health first — a Windows firewall rule may be owed | `robot/firmware/0010-*.patch`, `series`, `markers.tsv` |
 | B4.3 | R19: SDK-origin SayText bypasses the PC path — prefer a robot-side origin flag (engine → anim TTS request), else a wire-pod text tag the patch strips | `0010-pc-voice.patch`; if tag: voice pkg / `fork_*.go` |
-| B5 | Verify: listen on Vector per track × voice; LLM answer + "what time is it" both soft female; B1 stopped → stock voice; "Hey Vector" mid PC sentence cuts it (else: cancel `forkSayText` ctx from the KGSim interrupt); gaps between sentences acceptable (else: prefetch the next chunk); time an LLM answer T2 stock vs cori, PC up/down — slower ⇒ KG placeholder line (`streamingKG` "bla bla") gets sdkOrigin too | `robot/voice-samples/play.sh`, `make robot-test` |
+| B5 | Verify: listen on Vector per track × voice; LLM answer + "what time is it" both soft female; B1 stopped → stock voice; "Hey Vector" mid PC sentence cuts it (else: cancel `forkSayText` ctx from the KGSim interrupt); gaps between sentences acceptable (else: prefetch the next chunk); after the R21 ship, `bla bla` speaks Acapela (`grep 'acapela: sdk' /var/log/messages`) | `robot/voice-samples/play.sh`, `make robot-test` |
