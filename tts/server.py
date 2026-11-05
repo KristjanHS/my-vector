@@ -35,7 +35,7 @@ VOICES = {"cori": ("piper", "en_GB-cori-high"), "af_bella": ("kokoro", "af_bella
 log = logging.getLogger("myvector-tts")
 
 # wire-pod's chipper/pkg/myvector/voice/settings.go: the voice choices beyond VOICES, defaults, slow range
-STOCK, DEFAULT_VOICE, DEFAULT_SLOW = "stock", "cori", 1.2
+STOCK, DEFAULT_VOICE, DEFAULT_SLOW = "stock", "af_bella", 1.2
 VOICE_CONFIG = Path(__file__).resolve().parents[1] / "chipper/myvectorConfig.json"
 CONFIG_POLL_S = 5
 
@@ -126,7 +126,7 @@ def parse_request(body):
         raise ValueError("text: non-empty string required")
     if len(text) > MAX_TEXT:
         raise ValueError(f"text: over {MAX_TEXT} chars")
-    voice = req.get("voice", "cori")
+    voice = req.get("voice", DEFAULT_VOICE)
     if voice not in VOICES:
         raise ValueError(f"voice: one of {sorted(VOICES)}")
     try:

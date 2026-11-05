@@ -60,10 +60,10 @@ def test_to_pcm16_gain_and_peak_limit():
 
 
 def test_parse_request_defaults_and_clamp():
-    assert server.parse_request(b'{"text": "hi"}') == ("hi", "cori", 1.0)
-    assert server.parse_request(b'{"text": "hi", "voice": "af_bella", "slow": 9}')[
+    assert server.parse_request(b'{"text": "hi"}') == ("hi", "af_bella", 1.0)
+    assert server.parse_request(b'{"text": "hi", "voice": "cori", "slow": 9}')[
         1:
-    ] == ("af_bella", server.SLOW_MAX)
+    ] == ("cori", server.SLOW_MAX)
     assert server.parse_request(b'{"text": "hi", "slow": 0.1}')[2] == server.SLOW_MIN
 
 
@@ -397,13 +397,13 @@ def test_handler_frees_unselected_kokoro_after_the_response(lazy):
         ('{"t1": "af_bella", "slow": 1.2}', True, False),
         ('{"t1": "cori", "t2": "af_bella"}', True, False),
         ('{"t1": "stock", "t2": "cori"}', False, False),
-        ("{}", False, False),
-        ('{"t1": "af_bella", "t2": "nobody"}', False, True),  # settings.go: any invalid field -> all defaults
-        ('{"t1": "af_bella", "slow": 9}', False, True),
-        ('{"t1": "af_bella"', False, True),
-        ('["af_bella"]', False, True),
-        ('{"t1": {}}', False, True),
-        ('{"t2": ["af_bella"]}', False, True),
+        ("{}", True, False),  # default voice af_bella
+        ('{"t1": "cori", "t2": "nobody"}', True, True),  # settings.go: any invalid field -> all defaults
+        ('{"t1": "cori", "t2": "cori", "slow": 9}', True, True),
+        ('{"t1": "cori"', True, True),
+        ('["cori"]', True, True),
+        ('{"t1": {}, "t2": "cori"}', True, True),
+        ('{"t1": "cori", "t2": ["cori"]}', True, True),
     ],
 )
 def test_kokoro_selected_reads_t1_t2_and_invalid_is_defaults(tmp_path, text, pinned, bad):
@@ -414,21 +414,24 @@ def test_kokoro_selected_reads_t1_t2_and_invalid_is_defaults(tmp_path, text, pin
 
 
 def test_kokoro_selected_missing_file_is_defaults(tmp_path):
-    assert server.kokoro_selected(tmp_path / "none.json") == (False, None)
+    assert server.kokoro_selected(tmp_path / "none.json") == (True, None)
 
 
-def test_watcher_pins_on_select_and_frees_on_garbled(lazy, tmp_path, caplog):
+def test_watcher_pins_on_select_frees_on_unselect_and_garbled_is_defaults(lazy, tmp_path, caplog):
     k = lazy.k
     f = tmp_path / "myvectorConfig.json"
-    f.write_text('{"t1": "cori"}')
+    f.write_text('{"t1": "cori", "t2": "cori"}')
     w = server.ConfigWatcher(f, k)
     w.poll()
     assert not k.pinned and not k.loaded
-    f.write_text('{"t2": "af_bella"}')
+    f.write_text('{"t1": "cori", "t2": "af_bella"}')
     w.poll()
     assert k.pinned and k.loaded
+    f.write_text('{"t1": "stock", "t2": "cori"}')
+    w.poll()
+    assert not k.pinned and not k.loaded
     f.write_text("garbled{")
     w.poll()
     w.poll()  # unchanged file: no second warning
-    assert not k.pinned and not k.loaded
+    assert k.pinned and k.loaded  # defaults = af_bella
     assert sum("using defaults" in r.message for r in caplog.records) == 1

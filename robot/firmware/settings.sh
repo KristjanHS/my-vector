@@ -37,9 +37,9 @@ case $(ssh_ "[ -e $flag ] && echo present || { touch $flag && echo created; }" 2
   *) warn "no-auto-update: could not check or create $flag over SSH to $ip" ;;
 esac
 
-# T2 voice (plan R15): the saved t2 + slow, voice.Defaults() (cori, 1.2) for a missing file or field.
+# T2 voice (plan R15): the saved t2 + slow, voice.Defaults() (af_bella, 1.2) for a missing file or field.
 conf_field() { sed -n "s/.*\"$1\": *\"\{0,1\}\([a-z_0-9.]*\).*/\1/p" "$conf" 2>/dev/null | head -1; }
 t2=$(conf_field t2) slow=$(conf_field slow)
-if out=$("$here/voice-push.sh" "${t2:-cori}" "${slow:-1.2}" 2>&1); then ok "${out#ok: }"
+if out=$("$here/voice-push.sh" "${t2:-af_bella}" "${slow:-1.2}" 2>&1); then ok "${out#ok: }"
 else warn "T2 voice: not pushed: ${out##*$'\n'}"; fi
 exit $rc

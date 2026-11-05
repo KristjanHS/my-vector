@@ -34,7 +34,7 @@ const (
 )
 
 // Voices are the T1 and T2 choices (plan R8); every name but Stock must be a tts/server.py VOICES key.
-var Voices = []string{DefaultVoice, "af_bella", Stock}
+var Voices = []string{DefaultVoice, "cori", Stock}
 
 // Settings is the T1 (LLM-answer) and T2 (robot's built-in lines) voice and their one slow factor (R16; 1 = normal speed).
 type Settings struct {

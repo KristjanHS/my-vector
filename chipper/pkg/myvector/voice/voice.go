@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	DefaultVoice = "cori"
+	DefaultVoice = "af_bella"
 	Fallback     = "fallback" // Say's voice name when SayText spoke
 	rate         = 16000
 	frame        = 1024                   // bytes per ExternalAudioStreamChunk (32 ms)

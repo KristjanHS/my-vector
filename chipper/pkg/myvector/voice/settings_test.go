@@ -60,7 +60,7 @@ func TestSettingsValidate(t *testing.T) {
 
 func TestSettingsCurrentDefaults(t *testing.T) {
 	path := tempSettings(t)
-	if got := Current(); got != (Settings{"cori", "cori", 1.2}) {
+	if got := Current(); got != (Settings{"af_bella", "af_bella", 1.2}) {
 		t.Fatalf("missing file: %+v", got)
 	}
 	for _, bad := range []string{`{`, `{"t1":"bella","slow":1}`, `{"t1":"cori","slow":9}`, `{"t1":"cori","t2":"bella","slow":1}`} {
@@ -69,8 +69,8 @@ func TestSettingsCurrentDefaults(t *testing.T) {
 			t.Errorf("file %s: %+v, want defaults", bad, got)
 		}
 	}
-	os.WriteFile(path, []byte(`{"t1":"af_bella"}`), 0644) // a pre-T2 file
-	if got := Current(); got != (Settings{"af_bella", DefaultVoice, DefaultSlow}) {
+	os.WriteFile(path, []byte(`{"t1":"cori"}`), 0644) // a pre-T2 file
+	if got := Current(); got != (Settings{"cori", DefaultVoice, DefaultSlow}) {
 		t.Errorf("partial file: %+v", got)
 	}
 }
@@ -120,7 +120,7 @@ func TestSettingsHandler(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != 200 {
 		t.Fatalf("GET: %d %s", w.Code, w.Body)
 	}
-	if got.Settings != Defaults() || strings.Join(got.Voices, ",") != "cori,af_bella,stock" || got.SlowMin != 0.5 || got.SlowMax != 2 {
+	if got.Settings != Defaults() || strings.Join(got.Voices, ",") != "af_bella,cori,stock" || got.SlowMin != 0.5 || got.SlowMax != 2 {
 		t.Fatalf("GET reply: %+v", got)
 	}
 
