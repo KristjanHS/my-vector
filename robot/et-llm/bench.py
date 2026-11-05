@@ -95,7 +95,12 @@ def ask(model, question):
             line = line.decode().strip()
             if not line.startswith("data: ") or line == "data: [DONE]":
                 continue
-            delta = json.loads(line[6:])["choices"][0]["delta"].get("content") or ""
+            obj = json.loads(line[6:])
+            if "error" in obj:
+                raise RuntimeError(f"{model}: stream error: {obj['error']}")
+            delta = ((obj.get("choices") or [{}])[0].get("delta") or {}).get(
+                "content"
+            ) or ""
             if delta and first is None:
                 first = time.monotonic() - t0
             parts.append(delta)
@@ -137,7 +142,8 @@ def gen(models):
         row = {
             "model": model,
             "load_s": round(load_s, 1),
-            "size_vram_mib": ps[0]["size_vram"] // 2**20 if ps else None,
+            "size_mib": ps[0]["size"] >> 20 if ps else None,
+            "size_vram_mib": ps[0]["size_vram"] >> 20 if ps else None,
             "gpu_used_mib": used,
             "gpu_total_mib": total,
             "gpu_base_mib": base,
@@ -166,15 +172,18 @@ def summary():
     answers = load_rows(ANSWERS)
     scores = json.loads(SCORES.read_text()) if SCORES.exists() else {}
     loads = {}
-    for r in load_rows(MODELS):
-        loads[r["model"]] = r  # last load wins
+    for r in load_rows(MODELS):  # last good load wins; an error row only if no good one
+        if "error" not in r or "error" in loads.get(r["model"], {"error": ""}):
+            loads[r["model"]] = r
     print(
-        "| model | answers | scored | mean score | first token med/max s | VRAM GiB | free GiB (need) | fit |"
+        "| model | answers | empty | scored | mean score | first token med/max s | VRAM GiB | free GiB (need) | fit |"
     )
-    print("|---|---|---|---|---|---|---|---|")
+    print("|---|---|---|---|---|---|---|---|---|")
     for model, ld in loads.items():
         if "error" in ld:
-            print(f"| {model} | – | – | – | – | – | – | skipped: {ld['error'][:60]} |")
+            print(
+                f"| {model} | – | – | – | – | – | – | – | skipped: {ld['error'][:60]} |"
+            )
             continue
         rows = [a for a in answers if a["model"] == model]
         sc = [
@@ -183,15 +192,24 @@ def summary():
             if f"{model}|{a['qid']}" in scores
         ]
         ft = [a["first_token_s"] for a in rows if a["first_token_s"] is not None]
-        free = (
-            ld["gpu_total_mib"] - OTHER_MIB - ld["size_vram_mib"]
-        )  # live base drifts with TTS voices loaded
+        empty = sum(1 for a in rows if a["answer"] == "" or a["first_token_s"] is None)
         mean = f"{statistics.mean(sc):.2f}" if sc else "–"
         ftx = f"{statistics.median(ft):.2f} / {max(ft):.2f}" if ft else "–"
-        vram = f"{ld['size_vram_mib'] / 1024:.2f}" if ld["size_vram_mib"] else "–"
-        fit = "yes" if free >= NEED_MIB else "no"
+        vram_mib, size_mib = ld.get("size_vram_mib"), ld.get("size_mib")
+        need = f"({NEED_MIB / 1024:.2f})"
+        if not vram_mib:  # no /api/ps match at load time
+            vram, freex, fit = "–", f"– {need}", "unknown"
+        else:
+            free = (
+                ld["gpu_total_mib"] - OTHER_MIB - vram_mib
+            )  # live base drifts with TTS voices loaded
+            vram, freex = f"{vram_mib / 1024:.2f}", f"{free / 1024:.2f} {need}"
+            if size_mib and vram_mib < size_mib:
+                fit = "spill"  # partial CPU offload
+            else:
+                fit = "yes" if free >= NEED_MIB else "no"
         print(
-            f"| {model} | {len(rows)} | {len(sc)} | {mean} | {ftx} | {vram} | {free / 1024:.2f} ({NEED_MIB / 1024:.2f}) | {fit} |"
+            f"| {model} | {len(rows)} | {empty} | {len(sc)} | {mean} | {ftx} | {vram} | {freex} | {fit} |"
         )
 
 
@@ -201,7 +219,11 @@ if __name__ == "__main__":
     if args[:1] == ["--lang"] and len(args) > 1 and args[1] in LANGS:
         lang, args = args[1], args[2:]
     use(lang)
-    if len(args) >= 2 and args[0] == "gen":
+    if (
+        len(args) >= 2
+        and args[0] == "gen"
+        and not any(m.startswith("-") for m in args[1:])
+    ):
         gen(args[1:])
     elif args == ["summary"]:
         summary()
