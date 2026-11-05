@@ -15,6 +15,7 @@
 | R6 | Sample volume: `play.sh -v 60` (SayText at master 2 was a bit loud) |
 | R7 | Listen favourites: `piper:en_GB-cori-high` (public domain) and `kokoro:af_bella` (Apache-2.0) |
 | R8 | Both favourites selectable in the solution, per track: T1 and T2 each pick `cori` · `af_bella` · `stock` |
+| R9 | Fallback voice (new voice unavailable) = A1 combo Four: `UseVectorVoice: false`, `DurationScalar: 1.2` |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -75,6 +76,6 @@ works with every LLM provider · offline/private · fork code size (`fork_*.go` 
 |---|---|---|
 | B1 | PC TTS service: `POST /tts {text, voice, slow}` → 16 kHz s16le PCM per sentence; voices `cori`, `af_bella`; models warm at start | `tts/server.py` (reuses `robot/voice-samples/synth.py` engines) + `scripts/myvector-tts.service` |
 | B2 | T1 voice setting (`cori`·`af_bella`·`stock`) + slow factor, stored in fork config, selectable in the web UI | `chipper/pkg/myvector/voice/` + `fork_*.go` glue in `sdkapp` |
-| B3 | T1 playback: non-`stock` → B1 → K2 stream, sentence by sentence (fixes K4); B1 down → stock SayText | `fork_*.go` beside `DoSayText` (kgsim_cmds.go — drift-listed hook) |
-| B4 | T2: patch 0010 in vic-anim provider calls B1 with the T2 voice; 1.5 s timeout → Acapela; robot→PC port must pass `wire-pod-guard.nft` (:8080 is PC-only) | `robot/firmware/0010-*.patch`, `series` |
+| B3 | T1 playback: non-`stock` → B1 → K2 stream, sentence by sentence (fixes K4); B1 down → SayText per R9 | `fork_*.go` beside `DoSayText` (kgsim_cmds.go — drift-listed hook) |
+| B4 | T2: patch 0010 in vic-anim provider calls B1 with the T2 voice; 1.5 s timeout → Acapela in R9's generic style at 1.2; robot→PC port must pass `wire-pod-guard.nft` (:8080 is PC-only) | `robot/firmware/0010-*.patch`, `series` |
 | B5 | Verify: listen on Vector per track × voice; LLM answer + "what time is it" both soft female; B1 stopped → stock voice | `robot/voice-samples/play.sh`, `make robot-test` |
