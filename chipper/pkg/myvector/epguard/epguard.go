@@ -25,6 +25,6 @@ func Register(mux *http.ServeMux) {
 // treats any non-empty reply as success, so an empty one is what makes it show
 // "Error setting up wire-pod, check the logs" — and the log says why.
 func Refuse(w http.ResponseWriter, r *http.Request) {
-	logger.Println("my-vector: refused " + UseIPPath + " — the robot trusts only the Escape Pod certificate; pick Escape Pod (/api-chipper/use_ep)")
+	logger.Println("my-vector: refused " + UseIPPath + " from " + r.RemoteAddr + " — the robot trusts only the Escape Pod certificate; pick Escape Pod (/api-chipper/use_ep)")
 	w.WriteHeader(http.StatusForbidden)
 }
