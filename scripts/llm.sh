@@ -14,14 +14,14 @@
 #   scripts/llm.sh ha-say [TEXT]                ask HA's agent (HA_AGENT) directly, like the plugin does
 #   scripts/llm.sh ha-plugin [build|remove]     build/remove the NonaSuomy "assist ..." wire-pod plugin
 #
-# Keys come from the environment or robot/work/llm/keys.env (gitignored):
+# Keys come from the environment or ~/.config/my-vector/keys.env (outside the repo; LLM_KEYS overrides):
 #   ANTHROPIC_API_KEY  OPENAI_API_KEY  TOGETHER_API_KEY  GEMINI_API_KEY  HA_TOKEN  [HA_URL] [HA_AGENT]
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WEB=${WIREPOD_WEB:-http://localhost:8080}
 OLLAMA=${OLLAMA_URL:-http://localhost:11434}
 WORK=$ROOT/robot/work/llm
-KEYS=$WORK/keys.env
+KEYS=${LLM_KEYS:-$HOME/.config/my-vector/keys.env}
 GO=/usr/local/go/bin/go
 mkdir -p "$WORK"
 if [[ -f $KEYS ]]; then set -a; . "$KEYS"; set +a; fi
