@@ -1,5 +1,9 @@
-.PHONY: help start daemon-enable daemon-disable check robot-test ship
+.PHONY: help start daemon-enable daemon-disable tts-setup tts-enable tts-disable check robot-test ship
 # Run from anywhere: make -C ~/projects/my-vector <target>
+# robot/work of the main checkout (venvs + models live there, also when make runs in a worktree)
+WORK := $(shell dirname "$$(git -C $(CURDIR) rev-parse --path-format=absolute --git-common-dir)")/robot/work
+HF_HOME ?= $(HOME)/.cache/huggingface
+HF_HUB_CACHE ?= $(HF_HOME)/hub
 
 help: ## List available targets (default)
 	@grep -E '^[a-zA-Z0-9_.-]+:.*## ' $(firstword $(MAKEFILE_LIST)) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -20,10 +24,28 @@ daemon-enable: ## Install + (re)start wire-pod.service (starts with WSL, restart
 daemon-disable: ## Stop + remove wire-pod.service (make start runs in the foreground again)
 	sudo systemctl disable --now wire-pod
 	sudo rm -f /etc/systemd/system/wire-pod.service
-	sudo nft delete table inet wirepod_guard 2>/dev/null || true
+	systemctl is-active -q myvector-tts || sudo nft delete table inet wirepod_guard 2>/dev/null || true # the TTS port keeps its guard
 	sudo systemctl daemon-reload
 
-check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector Go tests
+tts-setup: ## Create/refresh the TTS venv in robot/work + voice models (Kokoro into your HF cache; no sudo; downloads ~3 GB on first run)
+	$(CURDIR)/tts/setup.sh
+
+tts-enable: ## Install + (re)start myvector-tts.service (:8091, runs as you, starts with WSL); asks the sudo password
+	@[ -x $(WORK)/tts/venv/bin/python ] || { echo "no TTS venv: run make tts-setup first"; exit 1; }
+	@[ -d $(HF_HUB_CACHE)/models--hexgrad--Kokoro-82M ] || { echo "no Kokoro in HF_HUB_CACHE=$(HF_HUB_CACHE) (the unit runs offline): export HF_HOME/HF_HUB_CACHE as make tts-setup saw them"; exit 1; }
+	sed -e 's|@REPO@|$(CURDIR)|g' -e 's|@WORK@|$(WORK)|g' -e 's|@USER@|$(USER)|g' -e 's|@HF_HOME@|$(HF_HOME)|g' -e 's|@HF_HUB_CACHE@|$(HF_HUB_CACHE)|g' $(CURDIR)/scripts/myvector-tts.service | sudo tee /etc/systemd/system/myvector-tts.service >/dev/null
+	sudo systemctl daemon-reload
+	sudo systemctl enable myvector-tts
+	sudo systemctl restart myvector-tts
+	@echo "logs: journalctl -u myvector-tts -f   live check (after ~30 s warm-up): tts/smoke.sh"
+
+tts-disable: ## Stop + remove myvector-tts.service
+	sudo systemctl disable --now myvector-tts
+	sudo rm -f /etc/systemd/system/myvector-tts.service
+	systemctl is-active -q wire-pod || sudo nft delete table inet wirepod_guard 2>/dev/null || true # wire-pod keeps its guard
+	sudo systemctl daemon-reload
+
+check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector + vars fork Go tests
 	$(CURDIR)/scripts/check.sh
 
 robot-test: ## On-robot smoke test (~45 s, needs wire-pod + the docked robot); exit 0 PASS, 1 FAIL, 2 setup

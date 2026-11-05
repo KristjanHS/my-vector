@@ -1,0 +1,13 @@
+# ROBOT_TTS_URL cases: ok = voice-push.sh and patch 0010's MyVectorLoadVoice both accept; bad = both reject (pc-voice.sh runs each side).
+ok http://192.168.1.10:8091
+ok http://10.0.0.2:8091/
+ok http://10.0.0.2:80/tts/base
+ok http://10.0.0.2
+bad https://192.168.1.10:8091
+bad http://pc.local:8091
+bad http://192.168.1:8091
+bad http://256.1.1.1:8091
+bad http://01.2.3.4:8091
+bad http://192.168.1.10:0
+bad http://192.168.1.10:70000
+bad ftp://192.168.1.10:8091

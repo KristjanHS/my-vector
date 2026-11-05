@@ -309,7 +309,7 @@ func LoadIntents() ([]JsonIntent, error) {
 		// }
 		// logger.Println("Loaded " + strconv.Itoa(len(jsonIntents)) + " intents and " + strconv.Itoa(len(matches)) + " matches (language: " + APIConfig.STT.Language + ")")
 	}
-	return jsonIntents, err
+	return forkFilterIntents(jsonIntents), err
 }
 
 func WriteJdocs() {

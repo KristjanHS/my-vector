@@ -1,12 +1,16 @@
 # shellcheck shell=bash
 # Robot connection facts for every robot/ script: sources the main checkout's robot/robot.env (gitignored; template robot.env.example).
-# Sets esn ip key server ssh_opts (env ESN / SERVER override); SETUP exit 2 when a fact is missing.
-robot_dir=$(dirname "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --path-format=absolute --git-common-dir)")/robot
+# Sets esn ip key server ssh_opts (env ESN / SERVER override); SETUP exit 2 when a fact is missing. tts_url (ROBOT_TTS_URL) is optional.
+common=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+  common=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.git # git refused (root on a user-owned repo, no safe.directory): this checkout
+robot_dir=$(dirname "$common")/robot
 [[ -f $robot_dir/robot.env ]] ||
   { echo "SETUP: no $robot_dir/robot.env; cp robot/robot.env.example robot/robot.env and fill it in" >&2; exit 2; }
 # shellcheck source=robot/robot.env.example
 . "$robot_dir/robot.env"
 esn=${ESN:-${ROBOT_ESN:-}} ip=${ROBOT_IP:-} server=${SERVER:-${ROBOT_SERVER:-}} key=${ROBOT_KEY:-}
+# shellcheck disable=SC2034 # voice-push.sh reads it
+tts_url=${ROBOT_TTS_URL:-}
 [[ -z $key || $key == /* ]] || key=$robot_dir/$key
 [[ -n $esn && -n $ip && -n $server && -f $key ]] ||
   { echo "SETUP: $robot_dir/robot.env needs ROBOT_ESN, ROBOT_IP, ROBOT_SERVER and ROBOT_KEY (an existing file)" >&2; exit 2; }

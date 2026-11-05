@@ -294,15 +294,7 @@ func DoSayText(input string, robot *vector.Vector) error {
 		err := DoSayText_OpenAI(robot, input)
 		return err
 	}
-	robot.Conn.SayText(
-		context.Background(),
-		&vectorpb.SayTextRequest{
-			Text:           input,
-			UseVectorVoice: true,
-			DurationScalar: 0.95,
-		},
-	)
-	return nil
+	return forkSayText(input, robot)
 }
 
 func pcmLength(data []byte) time.Duration {
@@ -529,6 +521,14 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
+				var flushed bool
+				if fullRespSlice, flushed = forkFlushUnpunctuated(fullRespSlice, fullRespText); flushed {
+					isDone = true
+					select {
+					case speakReady <- fullRespSlice[0]:
+					default:
+					}
+				}
 				isDone = true
 				newStr := fullRespSlice[0]
 				for i, str := range fullRespSlice {
