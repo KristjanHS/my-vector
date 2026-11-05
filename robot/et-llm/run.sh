@@ -14,4 +14,6 @@ if [[ ${#MODELS[@]} -eq 0 ]]; then
 fi
 trap '"$ROOT/scripts/llm.sh" warm 2>&1 | tail -3' EXIT
 python3 -I "$ROOT/robot/et-llm/bench.py" --lang "$LANG_" gen "${MODELS[@]}"
+gen_rc=$?
 python3 -I "$ROOT/robot/et-llm/bench.py" --lang "$LANG_" summary
+exit "$gen_rc"
