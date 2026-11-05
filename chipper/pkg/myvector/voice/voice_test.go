@@ -43,7 +43,7 @@ func (r *robot) ExternalAudioStreamPlayback(ctx context.Context, _ ...grpc.CallO
 }
 
 func (r *robot) BehaviorControl(ctx context.Context, _ ...grpc.CallOption) (vectorpb.ExternalInterface_BehaviorControlClient, error) {
-	return &control{r: r, ctx: ctx, replies: make(chan *vectorpb.BehaviorControlResponse, 1)}, nil
+	return &control{r: r, ctx: ctx, replies: make(chan *vectorpb.BehaviorControlResponse, 2)}, nil
 }
 
 type control struct {
@@ -57,6 +57,8 @@ func (c *control) Send(m *vectorpb.BehaviorControlRequest) error {
 	switch {
 	case m.GetControlRequest() != nil && c.r.grant:
 		c.r.controlled = true
+		c.replies <- &vectorpb.BehaviorControlResponse{ResponseType: &vectorpb.BehaviorControlResponse_KeepAlive{ // gateway pings precede the grant
+			KeepAlive: &vectorpb.KeepAlivePing{}}}
 		c.replies <- &vectorpb.BehaviorControlResponse{ResponseType: &vectorpb.BehaviorControlResponse_ControlGrantedResponse{
 			ControlGrantedResponse: &vectorpb.ControlGrantedResponse{}}}
 	case m.GetControlRelease() != nil:

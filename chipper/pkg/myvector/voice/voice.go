@@ -83,6 +83,8 @@ var ControlWait = 10 * time.Second
 
 // Control takes SDK behavior control and returns its release. SayText (Stock and the R9 fallback) fails
 // "Failed to say text" without it; LLM answers already speak inside kgsim's BControl, so only callers outside it need this.
+// The engine has one control slot with no owner check (sdkComponent.cpp): a second holder's request is granted at once
+// and either holder's release ends control for both, so a demo overlapping an LLM answer can fail the other's SayText.
 func Control(ctx context.Context, v *vector.Vector) (func(), error) {
 	ctx, cancel := context.WithCancel(ctx)
 	timer := time.AfterFunc(ControlWait, cancel)
@@ -105,7 +107,7 @@ func Control(ctx context.Context, v *vector.Vector) (func(), error) {
 		}
 	}
 	if !timer.Stop() && ctx.Err() != nil {
-		err = fmt.Errorf("behavior control not granted within %s", ControlWait)
+		err = fmt.Errorf("behavior control not granted within %s (robot unreachable or busy)", ControlWait)
 	}
 	cancel()
 	return nil, err
