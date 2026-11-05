@@ -27,8 +27,17 @@ pids() { # the units' PIDs; status 1 = a unit is down, 255 = ssh transport failu
 same_pids() { # same_pids <when>: PIDs still $up, else die; lost SSH = setup
   local now rc=0; now=$(pids) || rc=$?
   ((rc != 255)) || setup "lost SSH to $ip"
-  [[ $now == "$up" ]] || die "units: a PID changed $1: $up → ${now:-a unit down}"
+  [[ $now == "$up" ]] || die_down "units: a PID changed $1: $up → ${now:-a unit down}"
 }
+# On a unit failure: each unit's systemd state + the robot journal's crash lines since a minute before the smoke start ($t0, robot clock).
+crash='Fatal|SIGSEGV|SIGABRT|terminate called|Backtrace|SeAssert|caught signal|terminated by signal|#[0-9]+ pc |Main process exited'
+crash_report() {
+  ssh_ "for u in ${units[*]}; do echo \"\$u: \$(systemctl show -p ActiveState -p SubState -p MainPID -p ExecMainStatus \$u | tr '\n' ' ')\"; done
+echo 'crash lines (robot journal):'
+journalctl -o short-iso --no-pager --since @$((t0 - 60)) | grep -E '$crash' | tail -n 15 | grep . || echo '  none'" 2>/dev/null ||
+    echo "(no crash report: SSH failed)"
+}
+die_down() { echo "FAIL: $*" >&2; crash_report >&2; exit 1; }
 docked() {
   local b; b=$(curl -s -m 20 "$server/api-sdk/get_battery?serial=$esn" || true)
   [[ $b == *'"is_on_charger_platform":true'* ]] || die "docked ($1): not on the charger platform: ${b:0:200}"
@@ -44,13 +53,14 @@ done
 
 step "units up and stable (up to 195 s)"
 # P1: units active within 180 s, PIDs unchanged 15 s later (and at the end).
+t0=$(ssh_ 'date +%s' 2>/dev/null) || t0=$(date +%s)
 end=$((SECONDS + 180))
 while :; do
   rc=0; up=$(pids) || rc=$?
   ((rc)) || break
   if ((SECONDS >= end)); then
     ((rc != 255)) || setup "lost SSH to $ip"
-    die "units: ${units[*]} not all active within 180 s"
+    die_down "units: ${units[*]} not all active within 180 s"
   fi
   sleep 5
 done
