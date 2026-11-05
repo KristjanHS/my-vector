@@ -19,6 +19,8 @@
 | E8 | Switch is manual only — no language auto-detect (D-RF C dropped) |
 | E9 | STT test audio: FLEURS `et_ee` test (CC-BY-4.0, open) now; Common Voice `et` once the user downloads it from Mozilla Data Collective into `robot/work/et-stt/cv/`; Stage 2.2 commands rescored before Stage 3 |
 | E10 | Keyed free tiers (Azure F0, Google) DROPPED: Azure F0 signup wants a credit card, Google STT a paid billing account — fail E4 |
+| E11 | ET-mode LLM = EstLLM 8B `i1-Q4_K_M`, the only ET model (user pick; Q5_K_S leaves 0.03 GiB → no Neurokõne room); blind scoring + gemma4-for-ET dropped |
+| E12 | EN-mode LLM re-pick (user ask): gemma3:4b baseline vs `qwen3.5:4b`, `ministral-3:8b`, `gemma4:e2b-it-qat` via `bench.py --lang en`; fit = free ≥ Kokoro 0.65 GiB; 6.6 GB tags listed only |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -56,7 +58,7 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 |---|---|---|
 | 1.1 R-a STT | Lead: `TalTechNLP/whisper-large-v3-turbo-et-verbatim` (CT2 `ct2/` subfolder, faster-whisper cuda float16 = stt-faster preset `et-large`; reuse = copy that config, stt-faster has no server; its WER/latency/VRAM are unmeasured); also Vosk et?, whisper.cpp, free online (TartuNLP ASR, Azure F0, Google) | harness `robot/et-stt/` (tracked), data/results `robot/work/et-stt/`; 50 FLEURS `et_ee` clips (+ CV `et` when present, E9); table WER · end-of-speech→text s · RAM/VRAM · offline. Targets: WER ≤ 25 %, ≤ 2.0 s (vosk `en-US` baseline measured alongside) |
 | 1.2 R-b TTS | Free Estonian voices: TartuNLP Neurokõne (local model + free API), MMS-TTS `est` (license check), Piper `et_EE-news-medium`, Kokoro et (none), edge-tts `et-EE-AnuNeural` (A5 ToS risk), Azure F0 `et-EE-Anu/Kert`, espeak-ng `et` | add engine adapter(s) to `robot/voice-samples/{gen.sh,synth.py}` (`pkgs[]` + branch); `gen.sh et-<set> "<text>" <engine:voice>…` with a time, a weather, a timer and an LLM sentence; first-audio s on GPU/CPU; VRAM next to Kokoro (R20) |
-| 1.3 R-c LLM | Estonian answer quality: `gemma3:4b-it-qat` vs EstLLM 8B (`mradermacher/…EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M`), `gemma4:e2b`/`e4b` (need Windows Ollama ≥ 0.20; skipped until then); listed only: gemma3:12b, EuroLLM-9B, qwen3, English + MT | harness `robot/et-llm/` (`bench.py gen` → `score.py` → `bench.py summary`), data `robot/work/et-llm/`; 10 drafted questions run as-is; one blind 1–5 score per answer; first-token s; fit = VRAM + 1.31 GB STT + 0.7 GB desktop ≤ 8 GB; append to `docs/llm-trials.md` |
+| 1.3 R-c LLM | ET: EstLLM `i1-Q4_K_M` measured (E11). EN: E12 candidates — `qwen3.5:4b` + `gemma4` need Windows Ollama ≥ 0.20 (now 0.18.2) | `robot/et-llm/run.sh`-style `bench.py [--lang en] gen` → `score.py en` (blind 1–5) → `bench.py --lang en summary`; data `robot/work/et-llm/<lang>/`; append the EN pick to `docs/llm-trials.md` |
 | 1.4 R-d built-in lines | Which robot lines actually speak (inventory K14 + `CreateUtterance` callers); Estonian text path: D1 robot-side `et-EE` table + `RobotSetting.locale` + patched `GetTTSStringForTime`; D2 patch 0010 sends line key/args + `lang`, PC server renders Estonian; D3 wire-pod answers the 8 allowlisted intents itself via T1 | per option: patch size, what Acapela does with `et-EE` locale (no pack → crash/fallback?), behaviour/face animation kept? Fallback when PC down: English Acapela speaking Estonian text = unacceptable → name the fallback |
 | 1.5 R-e switch | Where the toggle lives: extend `/myvector/voice` into language+voice vs new fork page; how STT, intents, GetText, LLM, T1, T2 read one setting; inventory K9 literals + every `STT.Language` reader; live vs restart | table consumer → read site → hook; feeds D-RF |
 
@@ -73,7 +75,7 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 |---|---|---|
 | STT engine (+ en engine stays vosk?) | 1.1 | WER, latency, offline |
 | T1 / T2 Estonian voice | 1.2 + 2.1 | listen scores, first audio |
-| LLM model + prompt line | 1.3 | scores, VRAM |
+| EN LLM model (ET = E11) | 1.3 / E12 | EN scores, VRAM |
 | Built-in-line method D1/D2a/D2b/D3 | 1.4 | patch size, fallback |
 | Switch UX + D-RF A/B | 1.5 | ASCII page mock |
 
@@ -152,3 +154,13 @@ Numbers unsaved (R-b terminal; GPU shared with a sibling job, VRAM = torch runni
 | 5 | espeak-ng `et` | yes, offline | – / 0.01 · 0.02 s | 0 · GPL-3 | robotic baseline |
 | ref | Kokoro `af_bella` (English, R20; same run) | yes, offline | 1.45 s (GPU) | 0.65 GB · Apache-2.0 | today's English |
 | – | Neurokõne API · Azure F0 · MMS `est` · Kokoro et | — | — | — | HTTP 408 ×3 (retry `tartu:mari`) · dropped (E10) · no model · no voice |
+
+### LLM (1.3 R-c)
+
+Fit = 8 GiB − 0.94 GiB outside Ollama (`OTHER_MIB`) − Ollama `size_vram`; view `python3 -I robot/et-llm/bench.py [--lang en] summary`.
+
+| rank | option | free | latency | score | verdict |
+|---|---|---|---|---|---|
+| 1 | EstLLM 8B `i1-Q4_K_M` (ET) | yes, offline | first token 0.16 / 0.41 s, load 49.8 s | 5.09 GiB · 1.97 GiB free ≥ STT 1.31 + Neurokõne ≤ 0.41 | pick (E11) |
+| – | EstLLM `i1-Q5_K_S` / `Q5_K_M` (+0.63 / +0.76 GiB file, unrun) | yes, offline | – | est. 1.34 / 1.22 GiB free | no Neurokõne room / no STT room |
+| ref | gemma3:4b-it-qat (today's EN) | yes, offline | 0.19 / 0.26 s | 5.42 GiB · 1.65 GiB free | EN baseline (E12) |

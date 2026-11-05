@@ -1,5 +1,5 @@
-# Estonian LLM bench (plan 2026-11-05-estonian-language-mode.md Stage 1.3): answers + first-token s + VRAM fit.
-# Usage: bench.py gen MODEL... | bench.py summary   (stdlib only; run with python3 -I)
+# LLM bench (plan 2026-11-05-estonian-language-mode.md Stage 1.3): answers + first-token s + VRAM fit, per language.
+# Usage: bench.py [--lang et|en] gen MODEL... | bench.py [--lang et|en] summary   (stdlib only; python3 -I)
 import json
 import statistics
 import subprocess
@@ -10,20 +10,35 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-W = ROOT / "robot/work/et-llm"
-ANSWERS = W / "answers.jsonl"
-MODELS = W / "models.jsonl"
-SCORES = W / "scores.json"
-QUESTIONS = ROOT / "robot/et-llm/questions.txt"
 OLLAMA = "http://localhost:11434"
-STT_MIB = 1341  # TalTech int8_float16 VRAM peak 1.31 GiB (plan Deliverable §STT)
-# wire-pod CreateAIReq default prompt + CreatePrompt's speech-to-text line (commands block left out) + plan R-c language line
-PROMPT = (
+# lang -> (questions file, prompt language line, GPU MiB the rest of that stack needs next to the LLM)
+LANGS = {
+    "et": (
+        "questions.txt",
+        "\n\nAnswer in Estonian.",
+        1341,
+    ),  # TalTech STT int8_float16 peak 1.31 GiB
+    "en": (
+        "questions-en.txt",
+        "",
+        666,
+    ),  # vosk STT is CPU; Kokoro af_bella 0.65 GiB (R20)
+}
+OTHER_MIB = 961  # GPU use outside Ollama at session start 2026-11-05: 6507 used - 5546 gemma3 (desktop + idle TTS server)
+# wire-pod CreateAIReq default prompt + CreatePrompt's speech-to-text line (commands block left out)
+BASE_PROMPT = (
     "You are a helpful, animated robot called Vector. Keep the response concise yet informative."
     "\n\nKeep in mind, user input comes from speech-to-text software, so respond accordingly. "
     "No special characters, especially these: & ^ * # @ - . No lists. No formatting."
-    "\n\nAnswer in Estonian."
 )
+
+
+def use(lang):
+    global W, ANSWERS, MODELS, SCORES, QUESTIONS, PROMPT, NEED_MIB
+    qfile, line, NEED_MIB = LANGS[lang]
+    W = ROOT / "robot/work/et-llm" / lang
+    ANSWERS, MODELS, SCORES = W / "answers.jsonl", W / "models.jsonl", W / "scores.json"
+    QUESTIONS, PROMPT = ROOT / "robot/et-llm" / qfile, BASE_PROMPT + line
 
 
 def post(path, body, timeout=600):
@@ -154,7 +169,7 @@ def summary():
     for r in load_rows(MODELS):
         loads[r["model"]] = r  # last load wins
     print(
-        "| model | answers | scored | mean score | first token med/max s | VRAM GiB | free for STT | fit |"
+        "| model | answers | scored | mean score | first token med/max s | VRAM GiB | free GiB (need) | fit |"
     )
     print("|---|---|---|---|---|---|---|---|")
     for model, ld in loads.items():
@@ -168,20 +183,29 @@ def summary():
             if f"{model}|{a['qid']}" in scores
         ]
         ft = [a["first_token_s"] for a in rows if a["first_token_s"] is not None]
-        free = ld["gpu_total_mib"] - ld["gpu_used_mib"]
+        free = (
+            ld["gpu_total_mib"] - OTHER_MIB - ld["size_vram_mib"]
+        )  # live base drifts with TTS voices loaded
         mean = f"{statistics.mean(sc):.2f}" if sc else "–"
         ftx = f"{statistics.median(ft):.2f} / {max(ft):.2f}" if ft else "–"
         vram = f"{ld['size_vram_mib'] / 1024:.2f}" if ld["size_vram_mib"] else "–"
-        fit = "yes" if free >= STT_MIB else "no"
+        fit = "yes" if free >= NEED_MIB else "no"
         print(
-            f"| {model} | {len(rows)} | {len(sc)} | {mean} | {ftx} | {vram} | {free / 1024:.2f} | {fit} |"
+            f"| {model} | {len(rows)} | {len(sc)} | {mean} | {ftx} | {vram} | {free / 1024:.2f} ({NEED_MIB / 1024:.2f}) | {fit} |"
         )
 
 
 if __name__ == "__main__":
-    if len(sys.argv) >= 3 and sys.argv[1] == "gen":
-        gen(sys.argv[2:])
-    elif sys.argv[1:] == ["summary"]:
+    args = sys.argv[1:]
+    lang = "et"
+    if args[:1] == ["--lang"] and len(args) > 1 and args[1] in LANGS:
+        lang, args = args[1], args[2:]
+    use(lang)
+    if len(args) >= 2 and args[0] == "gen":
+        gen(args[1:])
+    elif args == ["summary"]:
         summary()
     else:
-        sys.exit(__doc__ or "usage: bench.py gen MODEL... | bench.py summary")
+        sys.exit(
+            "usage: bench.py [--lang et|en] gen MODEL... | bench.py [--lang et|en] summary"
+        )
