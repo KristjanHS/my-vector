@@ -488,7 +488,7 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 	aireq := openai.ChatCompletionRequest{
 		MaxCompletionTokens: 2048,
 		Temperature:         1,
-		TopP:                1,
+		TopP:                forkTopP(vars.APIConfig.Knowledge.Model),
 		FrequencyPenalty:    0,
 		PresencePenalty:     0,
 		Messages:            msgs,
