@@ -58,7 +58,7 @@ func TestSettingsCurrentDefaults(t *testing.T) {
 }
 
 func TestSettingsSaveRoundTrip(t *testing.T) {
-	path := tempSettings(t)
+	tempSettings(t)
 	want := Settings{Stock, 1.5}
 	if err := Save(want); err != nil {
 		t.Fatal(err)
@@ -71,6 +71,14 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 	}
 	if got := Current(); got != want {
 		t.Fatalf("rejected Save changed the file: %+v", got)
+	}
+}
+
+func TestSettingsSaveFailLeavesNoTemp(t *testing.T) {
+	path := tempSettings(t)
+	os.Mkdir(path, 0755) // rename onto a directory fails
+	if err := Save(Defaults()); err == nil {
+		t.Fatal("Save over a directory succeeded")
 	}
 	if m, _ := filepath.Glob(filepath.Join(filepath.Dir(path), ".myvectorConfig-*")); len(m) != 0 {
 		t.Fatalf("temp files left: %v", m)
