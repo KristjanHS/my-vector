@@ -145,28 +145,28 @@ E7 fit: gemma3:4b 5.8 GB + STT 1.31 GB leaves ≤ 0.9 GB for ET TTS + desktop �
 
 ### TTS (1.2 R-b)
 
-Numbers unsaved (R-b terminal; GPU shared with a sibling job, VRAM = torch running peak, first audio = full synth for non-streaming) — re-measure on an idle GPU with `BENCH=1` (→ `bench.log`) before Stage 3. Samples: `robot/work/voice-samples/et-*/norm/`.
+Idle GPU (Ollama unloaded), `BENCH=1` → `robot/work/voice-samples/bench-et-{time,llm}-{gpu,cpu}/bench.log`; VRAM = torch peak, first audio = full synth for non-streaming. Samples: `robot/work/voice-samples/et-*/norm/`.
 
 | rank | option | free | first audio GPU / CPU (short · llm) | score (VRAM · license) | verdict |
 |---|---|---|---|---|---|
-| 1 | TartuNLP Neurokõne local (`tartulocal:`, 10 speakers) | yes, offline | 0.61 · 1.02 / 1.1 · 2.3 s | 0.12–0.41 GB · worker MIT, weights unstated | co-lead; trim ~0.5 s lead silence |
-| 1 | Piper `et_EE-news-medium` (Mari/Vesta/Albert/Kalev) | yes, offline | – / 0.10 · 0.20 s | 0 · data CC-BY, piper GPL-3 | co-lead |
-| 3 | edge-tts `et-EE-Anu/KertNeural` | keyless, online | 1.1 · 1.2 s | 0 · unofficial endpoint (A5 ToS) | backup only |
-| 4 | XTTS-v2-est (`tartuNLP/XTTS-v2-est`) | yes, offline | 0.78 · 0.73 / 3.4 · 4.1 s | ~2.3 GB · CPML non-commercial | over E7, quality reference |
+| 1 | TartuNLP Neurokõne local (`tartulocal:`, 10 speakers) | yes, offline | 0.28 · 0.38 / 1.09 · 2.01 s | 0.12–0.20 GB · worker MIT, weights unstated | co-lead; trim ~0.5 s lead silence |
+| 1 | Piper `et_EE-news-medium` (Mari/Vesta/Albert/Kalev) | yes, offline | – / 0.07 · 0.22 s | 0 · data CC-BY, piper GPL-3 | co-lead |
+| 3 | edge-tts `et-EE-Anu/KertNeural` | keyless, online | 2.12 · 3.33 s | 0 · unofficial endpoint (A5 ToS) | backup only |
+| 4 | XTTS-v2-est (`tartuNLP/XTTS-v2-est`) | yes, offline | 0.79 · 0.66 / 2.40 · 2.26 s | 1.95–2.09 GB · CPML non-commercial | over E7, quality reference |
 | 5 | espeak-ng `et` | yes, offline | – / 0.01 · 0.02 s | 0 · GPL-3 | robotic baseline |
-| ref | Kokoro `af_bella` (English, R20; same run) | yes, offline | 1.45 s (GPU) | 0.65 GB · Apache-2.0 | today's English |
+| ref | Kokoro `af_bella` (English, R20; same run) | yes, offline | 0.86 · 1.27 s (GPU) | 0.69–0.79 GB · Apache-2.0 | today's English |
 | – | Neurokõne API · Azure F0 · MMS `est` · Kokoro et | — | — | — | HTTP 408 ×3 (retry `tartu:mari`) · dropped (E10) · no model · no voice |
 
 ### LLM (1.3 R-c)
 
-Ollama 0.40.14, `reasoning_effort: "none"`; view `bench.py --lang <lang> summary`. Base (Ollama unloaded, TTS server up) seen 1318–2389 MiB, Windows alone 1144; ET view `stack.py summary` (E13 Kokoro share 783 MiB). EN headroom = total − LLM − 2389 − 256. Rows predate the warm-up (max = cold first question): re-run `run.sh en` before Stage 3.
+Ollama 0.40.14, `reasoning_effort: "none"`; view `bench.py --lang <lang> summary`. Base (Ollama unloaded, TTS server up) seen 1318–2389 MiB, Windows alone 1144; ET view `stack.py summary` (E13 Kokoro share 783 MiB). EN headroom = total − LLM − 2389 − 256. EN rows = warm-up re-run; scores owed (`score.py en`).
 
 | rank | option | free | latency (first sentence med / max · total med) | score (LLM GiB · headroom) | verdict |
 |---|---|---|---|---|---|
 | ET | EstLLM 8B `i1-Q4_K_M` | yes, offline | stack: STT 0.45 · first sentence 0.30 · TTS 0.48 s | stack peak 7753/8192 · +537 MiB | ET pick (E11) |
 | – | EstLLM 8B `i1-Q4_K_S` / `i1-Q5_K_S` | yes, offline | — | — | not needed (Q4_K_M fits) · Q5 skipped (user); deleted from Ollama |
-| EN | gemma4:e2b-it-qat | yes, offline | 0.29 / 0.90 · 0.35 s | 2.74 · 2740 | user score |
-| EN | gemma4:e4b-it-qat | yes, offline | 0.43 / 1.42 · 0.53 s | 4.14 · 1304 | user score |
-| EN | qwen3.5:4b | yes, offline | 0.69 / 1.89 · 1.22 s | 3.71 · 1753 | user score |
-| ref | gemma3:4b-it-qat (today's EN) | yes, offline | 0.16 / 8.53 · 0.41 s | 4.32 · 1120 | EN baseline |
+| EN | gemma4:e2b-it-qat | yes, offline | 0.23 / 0.66 · 0.26 s | 2.76 · 2720 | user score |
+| EN | gemma4:e4b-it-qat | yes, offline | 0.42 / 1.15 · 0.48 s | 4.16 · 1284 | user score |
+| EN | qwen3.5:4b | yes, offline | 0.26 / 1.22 · 0.85 s | 3.71 · 1748 | user score |
+| ref | gemma3:4b-it-qat (today's EN) | yes, offline | 0.17 / 0.31 · 0.34 s | 4.33 · 1116 | EN baseline |
 | – | ministral-3:8b | yes, offline | 0.66 / 9.43 · 5.12 s | 5.44 · spill | out (CPU spill); deleted from Ollama |
