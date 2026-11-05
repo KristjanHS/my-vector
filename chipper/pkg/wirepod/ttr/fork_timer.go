@@ -1,22 +1,28 @@
 package wirepod_ttr
 
 import (
+	"math"
+	"os"
+	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	lcztn "github.com/kercre123/wire-pod/chipper/pkg/wirepod/localization"
 )
 
 // forkTimerUnits: nominative, genitive, translative, partitive → seconds (E23).
-var forkTimerUnits = map[string]int{
+var forkTimerUnits = map[string]float64{
 	"sekund": 1, "sekundi": 1, "sekundiks": 1, "sekundit": 1,
 	"minut": 60, "minuti": 60, "minutiks": 60, "minutit": 60,
 	"tund": 3600, "tunni": 3600, "tunniks": 3600, "tundi": 3600,
 }
 
-var forkTimerHalf = map[string]bool{"pool": true, "poole": true, "pooleks": true}
+// forkTimerFractions add to the number before them: "kaks ja pool" = 2.5, "poolteist" = 1.5.
+var forkTimerFractions = map[string]float64{
+	"pool": 0.5, "poole": 0.5, "pooleks": 0.5,
+	"poolteist": 1.5, "pooleteist": 1.5, "pooleteise": 1.5, "pooleteiseks": 1.5,
+}
 
 // forkTimerNumbers maps every 1–99 word form E23 names (unit, teen, ten; nom/gen/-ks) to its value.
 var forkTimerNumbers = func() map[string]int {
@@ -34,35 +40,41 @@ var forkTimerNumbers = func() map[string]int {
 	return m
 }()
 
-// forkTimerText rewrites an et-EE timer phrase to "<seconds> second", the one form both words2num branches parse.
+// forkTimerToken keeps a decimal comma inside its number ("1,5") instead of splitting it.
+var forkTimerToken = regexp.MustCompile(`\d+(?:[.,]\d+)?|\pL+`)
+
+// forkTimerText rewrites an et-EE timer phrase to "<seconds> <second unit>", the one form both words2num branches parse.
 func forkTimerText(input string) string {
 	if lang.Current() != lang.Estonian {
 		return input
 	}
-	words := strings.FieldsFunc(strings.ToLower(input), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
-	total, num, half := 0, 0, false
-	for _, w := range words {
+	total, num := 0.0, 0.0
+	for _, w := range forkTimerToken.FindAllString(strings.ToLower(input), -1) {
 		if secs, ok := forkTimerUnits[w]; ok {
-			if half {
-				total += secs / 2
-			} else {
-				total += num * secs
+			if num == 0 {
+				num = 1 // bare unit: "pane taimer tunniks"
 			}
-			num, half = 0, false
-		} else if n, err := strconv.Atoi(w); err == nil {
-			num = n
+			total += num * secs
+			num = 0
+		} else if w[0] >= '0' && w[0] <= '9' { // digits only: ParseFloat also takes "inf"/"nan"
+			num, _ = strconv.ParseFloat(strings.Replace(w, ",", ".", 1), 64)
 		} else if n, ok := forkTimerNumbers[w]; ok {
-			if num >= 20 && num%10 == 0 && n < 10 {
-				num += n // "kakskümmend viis", "kahekümne viieks"
+			if num >= 20 && num < 100 && math.Mod(num, 10) == 0 && n < 10 {
+				num += float64(n) // "kakskümmend viis", "kahekümne viieks"
 			} else {
-				num = n
+				num = float64(n)
 			}
-		} else if forkTimerHalf[w] {
-			half = true
+		} else if f, ok := forkTimerFractions[w]; ok {
+			num += f
 		}
 	}
-	if total == 0 {
+	secs := int(math.Round(total))
+	if secs == 0 {
 		return input
 	}
-	return strconv.Itoa(total) + " " + lcztn.GetText(lcztn.STR_SECOND)
+	unit := lcztn.GetText(lcztn.STR_SECOND) // the vosk branch's regex unit
+	if os.Getenv("STT_SERVICE") == "whisper.cpp" {
+		unit = "second" // whisperSpeechtoNum hard-codes it; ko-KR's "초" would never match
+	}
+	return strconv.Itoa(secs) + " " + unit
 }

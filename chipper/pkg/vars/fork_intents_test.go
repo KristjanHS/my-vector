@@ -123,27 +123,32 @@ func TestForkIntentsEstonian(t *testing.T) {
 	lang.UseForTest(t, lang.Estonian)
 	in := forkFilterIntents(loadIntentFile(t, "../../intent-data/et-EE.json"))
 	cases := map[string]string{
-		"Mis kell on?":                   "intent_clock_time",
-		"Paneme taimer viieks minutiks.": "intent_clock_settimer_extend",
-		"Mis ilm on Tallinnas?":          "intent_weather_extend",
-		"Kes ma olen?":                   "intent_names_ask",
-		"Mis on Eesti pealinn?":          "",
-		"Kui kaugel on kuu?":             "",
-		"Räägi mulle üks nali.":          "",
-		"Miks taevas on sinine?":         "",
-		"Mitu päeva on aastas?":          "",
-		"Kes kirjutas Tõde ja õigus?":    "",
-		"Pane taimer viieks minutiks.":   "intent_clock_settimer_extend",
-		"Kui palju taimeril aega on?":    "intent_clock_checktimer",
-		"Mis mu nimi on?":                "intent_names_ask",
-		"Minu nimi on Kristjan.":         "intent_names_username_extend",
-		"Ütle kellaaega.":                "intent_clock_time",
-		"Tee minust pilti.":              "intent_photo_take_extend",
-		"Mul on küsimus.":                "intent_knowledge_promptquestion",
-		"Kohv ilma suhkruta.":            "",
-		"Mis on maailma kõrgeim mägi?":   "",
-		"Mina olen väsinud.":             "",
-		"Kus on kesklinn?":               "",
+		"Mis kell on?":                        "intent_clock_time",
+		"Paneme taimer viieks minutiks.":      "intent_clock_settimer_extend",
+		"Mis ilm on Tallinnas?":               "intent_weather_extend",
+		"Kes ma olen?":                        "intent_names_ask",
+		"Mis on Eesti pealinn?":               "",
+		"Kui kaugel on kuu?":                  "",
+		"Räägi mulle üks nali.":               "",
+		"Miks taevas on sinine?":              "",
+		"Mitu päeva on aastas?":               "",
+		"Kes kirjutas Tõde ja õigus?":         "",
+		"Pane taimer viieks minutiks.":        "intent_clock_settimer_extend",
+		"Kui palju taimeril aega on?":         "intent_clock_checktimer",
+		"Mis mu nimi on?":                     "intent_names_ask",
+		"Minu nimi on Kristjan.":              "intent_names_username_extend",
+		"Ütle kellaaega.":                     "intent_clock_time",
+		"Tee minust pilti.":                   "intent_photo_take_extend",
+		"Mul on küsimus.":                     "intent_knowledge_promptquestion",
+		"Kohv ilma suhkruta.":                 "",
+		"Mis on maailma kõrgeim mägi?":        "",
+		"Mina olen väsinud.":                  "",
+		"Kus on kesklinn?":                    "",
+		"Kui palju aega on jäänud jõuludeni?": "",
+		"Kui palju aega taimeril on jäänud?":  "intent_clock_checktimer",
+		"Mitu minutit taimeril on jäänud?":    "intent_clock_checktimer",
+		"Kui palju aega taimeril?":            "intent_clock_checktimer",
+		"Mitu sekundit taimeril jäänud?":      "intent_clock_checktimer",
 	}
 	for text, want := range cases {
 		if got := forkMatch(in, strings.ToLower(text)); got != want {
@@ -182,9 +187,25 @@ func TestForkContainsPhraseWholeWords(t *testing.T) {
 		{"ilma suhkruta", "ilm", false},
 		{"anything", "*", false},
 	}
+	lang.UseForTest(t, lang.Estonian)
 	for _, c := range cases {
 		if got := ForkContainsPhrase(c.text, c.phrase); got != c.want {
 			t.Errorf("ForkContainsPhrase(%q, %q) = %v, want %v", c.text, c.phrase, got, c.want)
 		}
+	}
+}
+
+// Latin-1/Extended-A letters are word letters only in et-EE; other languages keep the byte rule.
+func TestForkContainsPhraseLatinLettersEstonianOnly(t *testing.T) {
+	oldLang := APIConfig.STT.Language
+	t.Cleanup(func() { APIConfig.STT.Language = oldLang })
+	APIConfig.STT.Language = "en-US"
+	lang.UseForTest(t, lang.English)
+	if !ForkContainsPhrase("zamanı söyle", "zaman") {
+		t.Error(`en-US: ("zamanı söyle", "zaman") = false, want upstream true`)
+	}
+	lang.UseForTest(t, lang.Estonian)
+	if ForkContainsPhrase("mitu päeva on", "eva") {
+		t.Error(`et-EE: ("mitu päeva on", "eva") = true, want false`)
 	}
 }

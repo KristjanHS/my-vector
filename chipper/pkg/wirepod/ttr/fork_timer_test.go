@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
 func TestForkTimerEstonian(t *testing.T) {
@@ -19,12 +20,24 @@ func TestForkTimerEstonian(t *testing.T) {
 		"taimer viieteistkümneks minutiks":      "900",
 		"taimer üheksakümne üheksaks sekundiks": "99",
 		"taimer kakskümmend üks minutit":        "1260",
+		"taimer 1,5 tundi":                      "5400",
+		"kaks ja pool minutit":                  "150",
+		"pane taimer tunniks":                   "3600",
+		"pane taimer minutiks":                  "60",
+		"poolteist tundi":                       "5400",
+		"pooleteist tunniks":                    "5400",
+		"poolteist minutit":                     "90",
 	}
-	for _, stt := range []string{"vosk", "whisper.cpp"} { // whisper.cpp routes digits to whisperSpeechtoNum
-		t.Setenv("STT_SERVICE", stt)
-		for in, want := range cases {
-			if got := words2num(in); got != want {
-				t.Errorf("%s: words2num(%q) = %s, want %s", stt, in, got, want)
+	oldLang := vars.APIConfig.STT.Language
+	t.Cleanup(func() { vars.APIConfig.STT.Language = oldLang })
+	for _, base := range []string{"en-US", "it-IT", "ko-KR"} { // STR_SECOND: "second", "secondi", "초"
+		vars.APIConfig.STT.Language = base
+		for _, stt := range []string{"vosk", "whisper.cpp"} { // whisper.cpp routes digits to whisperSpeechtoNum
+			t.Setenv("STT_SERVICE", stt)
+			for in, want := range cases {
+				if got := words2num(in); got != want {
+					t.Errorf("%s/%s: words2num(%q) = %s, want %s", base, stt, in, got, want)
+				}
 			}
 		}
 	}

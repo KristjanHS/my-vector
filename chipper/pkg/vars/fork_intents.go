@@ -35,18 +35,21 @@ var forkAddedKeyphrases = map[string][]string{
 	"intent_clock_time":        {"what's the time", "whats the time", "tell me the time"},
 }
 
-// forkIsWord: ASCII alnum, ', and Latin letters U+00C0–U+024F (ä õ ö ü š ž); CJK etc. stay separators so zh-CN still matches.
-func forkIsWord(r rune) bool {
-	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '\'' || r >= 0xC0 && r <= 0x24F && r != 0xD7 && r != 0xF7
+// forkIsWord: ASCII alnum and '; in et-EE also Latin letters U+00C0–U+024F (ä õ ö ü š ž). CJK etc. stay separators so zh-CN still matches.
+func forkIsWord(r rune, latin bool) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '\'' ||
+		latin && r >= 0xC0 && r <= 0x24F && r != 0xD7 && r != 0xF7
 }
 
 // ForkContainsPhrase is ProcessTextAll's partial match on whole words; a trailing "*" (E22) matches any word ending.
+// Outside et-EE bytes >= 0x80 stay separators (upstream rule: tr-TR "zamanı" still matches "zaman").
 func ForkContainsPhrase(text, phrase string) bool {
 	stem := strings.HasSuffix(phrase, "*")
 	phrase = strings.TrimSuffix(phrase, "*")
 	if phrase == "" {
 		return false
 	}
+	latin := ForkLanguage() == lang.Estonian
 	for i := 0; i < len(text); {
 		j := strings.Index(text[i:], phrase)
 		if j < 0 {
@@ -54,9 +57,19 @@ func ForkContainsPhrase(text, phrase string) bool {
 		}
 		j += i
 		end := j + len(phrase)
-		before, _ := utf8.DecodeLastRuneInString(text[:j])
-		after, _ := utf8.DecodeRuneInString(text[end:])
-		if (j == 0 || !forkIsWord(before)) && (stem || end == len(text) || !forkIsWord(after)) {
+		var before, after rune
+		if latin {
+			before, _ = utf8.DecodeLastRuneInString(text[:j])
+			after, _ = utf8.DecodeRuneInString(text[end:])
+		} else {
+			if j > 0 {
+				before = rune(text[j-1])
+			}
+			if end < len(text) {
+				after = rune(text[end])
+			}
+		}
+		if (j == 0 || !forkIsWord(before, latin)) && (stem || end == len(text) || !forkIsWord(after, latin)) {
 			return true
 		}
 		i = j + 1
