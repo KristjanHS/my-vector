@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 )
 
 func loadIntentFile(t *testing.T, path string) []JsonIntent {
@@ -60,7 +62,7 @@ func TestForkDroppedKeyphrasesExistInEnUS(t *testing.T) {
 
 // forkMatch mirrors ProcessTextAll (ttr): exact match first, then ForkContainsPhrase unless requiresexact.
 func forkMatch(intents []JsonIntent, text string) string {
-	text = strings.ToLower(text)
+	text = ForkNormalizeText(strings.ToLower(text))
 	for _, it := range intents {
 		for _, k := range it.Keyphrases {
 			if text == strings.ToLower(k) {
@@ -116,6 +118,51 @@ func TestForkFilterRoutesQuestionsToLLM(t *testing.T) {
 	}
 }
 
+// Stage 2.2 mic phrases as Whisper wrote them (raw, then lowercased by the ET router) plus collision guards.
+func TestForkIntentsEstonian(t *testing.T) {
+	lang.UseForTest(t, lang.Estonian)
+	in := forkFilterIntents(loadIntentFile(t, "../../intent-data/et-EE.json"))
+	cases := map[string]string{
+		"Mis kell on?":                   "intent_clock_time",
+		"Paneme taimer viieks minutiks.": "intent_clock_settimer_extend",
+		"Mis ilm on Tallinnas?":          "intent_weather_extend",
+		"Kes ma olen?":                   "intent_names_ask",
+		"Mis on Eesti pealinn?":          "",
+		"Kui kaugel on kuu?":             "",
+		"Räägi mulle üks nali.":          "",
+		"Miks taevas on sinine?":         "",
+		"Mitu päeva on aastas?":          "",
+		"Kes kirjutas Tõde ja õigus?":    "",
+		"Pane taimer viieks minutiks.":   "intent_clock_settimer_extend",
+		"Kui palju taimeril aega on?":    "intent_clock_checktimer",
+		"Mis mu nimi on?":                "intent_names_ask",
+		"Minu nimi on Kristjan.":         "intent_names_username_extend",
+		"Ütle kellaaega.":                "intent_clock_time",
+		"Tee minust pilti.":              "intent_photo_take_extend",
+		"Mul on küsimus.":                "intent_knowledge_promptquestion",
+		"Kohv ilma suhkruta.":            "",
+		"Mis on maailma kõrgeim mägi?":   "",
+		"Mina olen väsinud.":             "",
+		"Kus on kesklinn?":               "",
+	}
+	for text, want := range cases {
+		if got := forkMatch(in, strings.ToLower(text)); got != want {
+			t.Errorf("%q: matched %q, want %q", text, got, want)
+		}
+	}
+}
+
+func TestForkNormalizeTextEnglishUnchanged(t *testing.T) {
+	lang.UseForTest(t, lang.English)
+	if got := ForkNormalizeText("what time is it?"); got != "what time is it?" {
+		t.Errorf("en-US: %q", got)
+	}
+	lang.UseForTest(t, lang.Estonian)
+	if got := ForkNormalizeText("minu nimi on kristjan."); got != "minu nimi on kristjan" {
+		t.Errorf("et-EE: %q", got)
+	}
+}
+
 func TestForkContainsPhraseWholeWords(t *testing.T) {
 	cases := []struct {
 		text, phrase string
@@ -128,6 +175,12 @@ func TestForkContainsPhraseWholeWords(t *testing.T) {
 		{"check the timer?", "timer", true},
 		{"现在几点", "几点", true},
 		{"anything", "", false},
+		{"mitu päeva on", "eva", false},
+		{"räägi mulle", "räägi", true},
+		{"paneme taimerit", "taimer*", true},
+		{"pane ataimer", "taimer*", false},
+		{"ilma suhkruta", "ilm", false},
+		{"anything", "*", false},
 	}
 	for _, c := range cases {
 		if got := ForkContainsPhrase(c.text, c.phrase); got != c.want {

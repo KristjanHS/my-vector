@@ -59,10 +59,12 @@ func TestForkLangLoadIntents(t *testing.T) {
 
 // Pins the upstream hook lines that only an upstream-file edit could unit-test (!locale sits inline in a loop).
 func TestForkLangHookLines(t *testing.T) {
-	for file, hook := range map[string]string{
-		"vars.go":                           `jsonFile, err := os.ReadFile(path + "intent-data/" + ForkLanguage() + ".json")`,
-		"../wirepod/ttr/matchIntentSend.go": `arg = vars.ForkLanguage()`,
+	for _, c := range []struct{ file, hook string }{
+		{"vars.go", `jsonFile, err := os.ReadFile(path + "intent-data/" + ForkLanguage() + ".json")`},
+		{"../wirepod/ttr/matchIntentSend.go", `arg = vars.ForkLanguage()`},
+		{"../wirepod/ttr/matchIntentSend.go", `voiceText = vars.ForkNormalizeText(strings.ToLower(voiceText))`},
 	} {
+		file, hook := c.file, c.hook
 		src, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
