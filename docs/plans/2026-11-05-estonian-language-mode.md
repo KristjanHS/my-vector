@@ -19,7 +19,7 @@
 | E8 | Switch is manual only — no language auto-detect (D-RF C dropped) |
 | E9 | STT test audio: FLEURS `et_ee` test (CC-BY-4.0, open) now; Common Voice `et` once the user downloads it from Mozilla Data Collective into `robot/work/et-stt/cv/`; Stage 2.2 commands rescored before Stage 3 |
 | E10 | Keyed free tiers (Azure F0, Google) DROPPED: Azure F0 signup wants a credit card, Google STT a paid billing account — fail E4 |
-| E11 | ET-mode LLM = EstLLM 8B, the only ET model (user pick); quant = largest `i1-*` passing the 1.3 ET stack test (Q4_K_M + Q4_K_S first; Q5_K_S only if Q4_K_M passes; Q6_K skipped); spill = no fit, speed reported only (user: full-VRAM speed is ok); blind scoring + gemma4-for-ET dropped |
+| E11 | ET-mode LLM = EstLLM 8B, the only ET model (user pick); quant = largest `i1-*` passing the 1.3 ET stack test (Q4_K_M passed 1.3 → pick; Q5_K_S/Q6_K skipped, user); spill = no fit, speed reported only (user: full-VRAM speed is ok); blind scoring + gemma4-for-ET dropped |
 | E12 | EN-mode LLM re-pick (user ask): gemma3:4b baseline vs `qwen3.5:4b`, `ministral-3:8b`, `gemma4:e2b-it-qat`, `gemma4:e4b-it-qat` via `bench.py --lang en`; af_bella must fit beside it |
 | E13 | ET fit base = worst base − Kokoro's measured VRAM share (ET stack never loads Kokoro, E7); `stack.py` measures the share with a throwaway second TTS server |
 | E14 | ET no-fit ladder, stop at first pass: Q4_K_M → Q4_K_S → Q4_K_M `num_ctx` 2048 (only ctx variant; Q4_K_S@2048 estimated from its saving) → `i1-IQ4_XS` → `i1-Q3_K_M` |
@@ -159,14 +159,14 @@ Numbers unsaved (R-b terminal; GPU shared with a sibling job, VRAM = torch runni
 
 ### LLM (1.3 R-c)
 
-Ollama 0.40.14, `reasoning_effort: "none"`; view `bench.py --lang <lang> summary`. Base (Ollama unloaded, TTS server up) seen 1318–2389 MiB, Windows alone 1144 — ET rows await `stack.py`. EN headroom = total − LLM − 2389 − 256. Rows predate the warm-up (max = cold first question): re-run `run.sh en` before Stage 3.
+Ollama 0.40.14, `reasoning_effort: "none"`; view `bench.py --lang <lang> summary`. Base (Ollama unloaded, TTS server up) seen 1318–2389 MiB, Windows alone 1144; ET view `stack.py summary` (E13 Kokoro share 783 MiB). EN headroom = total − LLM − 2389 − 256. Rows predate the warm-up (max = cold first question): re-run `run.sh en` before Stage 3.
 
 | rank | option | free | latency (first sentence med / max · total med) | score (LLM GiB · headroom) | verdict |
 |---|---|---|---|---|---|
-| ET | EstLLM 8B `i1-Q4_K_M` | yes, offline | 0.20 / 27.77 · 1.46 s | 5.06 · −128 MiB (old formula) | stack test |
-| ET | EstLLM 8B `i1-Q4_K_S` | yes, offline | 0.22 / 9.55 · 1.23 s | 4.85 · +45 MiB (old formula) | stack test |
+| ET | EstLLM 8B `i1-Q4_K_M` | yes, offline | stack: STT 0.45 · first sentence 0.30 · TTS 0.48 s | stack peak 7753/8192 · +537 MiB | ET pick (E11) |
+| – | EstLLM 8B `i1-Q4_K_S` / `i1-Q5_K_S` | yes, offline | — | — | not needed (Q4_K_M fits) · Q5 skipped (user); deleted from Ollama |
 | EN | gemma4:e2b-it-qat | yes, offline | 0.29 / 0.90 · 0.35 s | 2.74 · 2740 | user score |
 | EN | gemma4:e4b-it-qat | yes, offline | 0.43 / 1.42 · 0.53 s | 4.14 · 1304 | user score |
 | EN | qwen3.5:4b | yes, offline | 0.69 / 1.89 · 1.22 s | 3.71 · 1753 | user score |
 | ref | gemma3:4b-it-qat (today's EN) | yes, offline | 0.16 / 8.53 · 0.41 s | 4.32 · 1120 | EN baseline |
-| – | ministral-3:8b | yes, offline | 0.66 / 9.43 · 5.12 s | 5.44 · spill | out (CPU spill) |
+| – | ministral-3:8b | yes, offline | 0.66 / 9.43 · 5.12 s | 5.44 · spill | out (CPU spill); deleted from Ollama |
