@@ -94,13 +94,13 @@ func (s *Sink) Wrap(stream interface{}) interface{} {
 	return stream
 }
 
-// Save writes <dir>/<stamp>.ogg (or .pcm) plus <stamp>.txt holding transcript; returns the audio path.
-func (s *Sink) Save(dir, transcript string, now time.Time) (string, error) {
+// Save writes <dir>/<stamp>.ogg (opus) or .pcm plus <stamp>.txt holding transcript; returns the audio path.
+func (s *Sink) Save(dir, transcript string, opus bool, now time.Time) (string, error) {
 	s.mu.Lock()
 	audio := append([]byte(nil), s.buf.Bytes()...)
 	s.mu.Unlock()
 	ext := ".pcm"
-	if bytes.HasPrefix(audio, []byte("OggS")) {
+	if opus {
 		ext = ".ogg"
 	}
 	base := filepath.Join(dir, now.Format("20060102-150405.000"))

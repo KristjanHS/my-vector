@@ -28,6 +28,11 @@ if [[ -d $W/cv ]]; then
   run taltech-et-cuda-i8f16-cv --engine fw --model "$TT" --device cuda --compute int8_float16 --dataset cv-et
   run stock-turbo-cuda-i8f16-cv --engine fw --model "$ST" --device cuda --compute int8_float16 --dataset cv-et
 else echo "== CV: pending CV download ($W/cv absent)"; fi
+if compgen -G "$W/mic/*.[op][gc][gm]" >/dev/null; then  # Stage 2.2 Vector mic captures (miccap)
+  run taltech-et-cuda-i8f16-mic --engine fw --model "$TT" --device cuda --compute int8_float16 --dataset mic-et
+  run taltech-et-cuda-fp16-mic --engine fw --model "$TT" --device cuda --compute float16 --dataset mic-et
+  run stock-turbo-cuda-i8f16-mic --engine fw --model "$ST" --device cuda --compute int8_float16 --dataset mic-et
+fi
 if [[ -f $W/keys.env ]]; then
   # keys only enter these subshells' environment; values are never printed
   ( set -a; . "$W/keys.env"; set +a
