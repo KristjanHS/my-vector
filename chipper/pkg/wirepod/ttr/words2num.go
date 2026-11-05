@@ -73,6 +73,7 @@ var textToNumber = map[string]int{
 }
 
 func words2num(input string) string {
+	input = forkTimerText(input) // fork_timer.go: et-EE forms → "<n> second"
 
 	initializeTextToNumberwithCurrentLocalization()
 
