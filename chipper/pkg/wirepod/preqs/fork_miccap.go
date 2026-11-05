@@ -19,10 +19,10 @@ func forkMicCapture(h func(sr.SpeechRequest) (string, error)) func(sr.SpeechRequ
 			return h(req)
 		}
 		var s miccap.Sink
-		s.Write(req.FirstReq)
+		s.Write(req.MicData) // raw first chunk; FirstReq is already decoded+filtered when opus
 		req.Stream = s.Wrap(req.Stream)
 		text, err := h(req)
-		if p, serr := s.Save(dir, text, time.Now()); serr != nil {
+		if p, serr := s.Save(dir, text, req.IsOpus, time.Now()); serr != nil {
 			logger.Println("miccap: " + serr.Error())
 		} else {
 			logger.Println("miccap: saved " + p)

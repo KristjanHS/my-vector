@@ -74,6 +74,12 @@ def clips(dataset, n=N):
             (str(base / "clips" / r["path"]), r["sentence"], durs[r["path"]])
             for r in rows[:n]
         ]
+    if dataset == "mic-et":  # Stage 2.2: Vector mic captures (miccap), in mic-commands.txt order
+        refs = (Path(__file__).parent / "mic-commands.txt").read_text(encoding="utf-8").splitlines()
+        audio = sorted(p for p in (WORK / "mic").iterdir() if p.suffix in (".ogg", ".pcm"))
+        if len(audio) != len(refs):
+            raise SystemExit(f"mic-et: {len(audio)} captures for {len(refs)} commands — prune retries first")
+        return [(str(a), r, len(load16k(str(a))) / 16000) for a, r in zip(audio, refs)]
     raise SystemExit(f"unknown dataset {dataset}")
 
 
@@ -82,6 +88,10 @@ def load16k(path):
         decode_audio,
     )  # PyAV: any format -> mono float32 16 kHz
 
+    if path.endswith(".pcm"):  # miccap raw: 16 kHz s16le mono
+        import numpy as np
+
+        return np.frombuffer(open(path, "rb").read(), dtype=np.int16).astype(np.float32) / 32768
     return decode_audio(path, sampling_rate=16000)
 
 
