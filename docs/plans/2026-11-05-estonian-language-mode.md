@@ -64,8 +64,8 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 
 | id | ruling | edit site |
 |---|---|---|
-| 2.1 | Play every R-b candidate × the 4 sets via `play.sh -v 60 {et-time,et-weather,et-timer,et-llm}` (18 voices each); user scores 1–5 per T1 / T2 use | `robot/voice-samples/play.sh` |
-| 2.2 | User speaks 10 Estonian commands to Vector ("Mis kell on?", "Pane taimer viieks minutiks", "Mis ilm on Tallinnas?", "Kes ma olen?" + 6 LLM questions); record mic audio, score each STT candidate offline | `robot/work/et-stt/` |
+| 2.1 | DONE: blind `et-llm` ×18 → liked edge Anu, Piper Mari, Neurokõne mari, Neurokõne vesta; those 4 × time/weather/timer → Piper Mari + Neurokõne mari (T1 and T2) | `robot/voice-samples/play.sh` |
+| 2.2 | DONE: `robot/et-stt/mic-commands.txt` spoken to Vector, captured by `myvector/miccap` into `robot/work/et-stt/mic/`; `run.sh` `*-mic` rows | `robot/work/et-stt/` |
 
 ## Stage 3 — [USER DECISION] picks
 
@@ -129,9 +129,9 @@ Speaking lines under the 8 intents: clock (`GetTTSStringForTime`, digits), weath
 
 | rank | option | free | latency med/p90 | score (WER · VRAM peak) | verdict |
 |---|---|---|---|---|---|
-| 1 | TalTech `whisper-large-v3-turbo-et-verbatim`, faster-whisper cuda `int8_float16` | yes, offline | 0.36 / 0.44 s (CV 0.30 / 0.38) | 8.5 % (CV 13.7 %) · 1.31 GB | lead |
-| 2 | same, cuda `float16` (stt-faster `et-large`) | yes, offline | 0.38 / 0.43 s (CV 0.32 / 0.39) | 7.6 % (CV 13.7 %) · 2.28 GB | +1 GB for −0.9 pt FLEURS, 0 pt CV |
-| 3 | stock large-v3-turbo cuda `int8_float16` via faster-whisper (proxy for whisper.cpp, not run) | yes, offline | 0.39 / 0.46 s | 18.1 % (CV 39.5 %) · 1.31 GB | 2–3× TalTech WER |
+| 1 | TalTech `whisper-large-v3-turbo-et-verbatim`, faster-whisper cuda `int8_float16` | yes, offline | 0.36 / 0.44 s (CV 0.30 / 0.38) | 8.5 % (CV 13.7 %, Vector mic 2.6 %) · 1.31 GB | lead |
+| 2 | same, cuda `float16` (stt-faster `et-large`) | yes, offline | 0.38 / 0.43 s (CV 0.32 / 0.39) | 7.6 % (CV 13.7 %, Vector mic 2.6 %) · 2.28 GB | +1 GB for −0.9 pt FLEURS, 0 pt CV |
+| 3 | stock large-v3-turbo cuda `int8_float16` via faster-whisper (proxy for whisper.cpp, not run) | yes, offline | 0.39 / 0.46 s | 18.1 % (CV 39.5 %, Vector mic 25.6 %) · 1.31 GB | 2–3× TalTech WER |
 | 4 | TalTech CPU `int8` | yes, offline | 7.15 / 7.69 s | 8.5 % · – (CPU) | fails 2.0 s |
 | – | Vosk et · TartuNLP/TalTech keyless API | — | — | — | no model · no public API |
 | – | Azure F0 · Google v1 `et-EE` | card / paid billing | — | — | dropped (E10) |
