@@ -3,6 +3,15 @@
 **Status**: OPEN — research only; output = a ranked pick + the plan stage that builds it.
 **Want**: easier on the ear and easier to understand than the stock robot voice; user leans to a soft female voice.
 
+## Rulings (2026-11-05 questions round)
+
+| id | ruling |
+|---|---|
+| R1 | English only; Estonian voice = its own follow-up research plan, authored when this one closes |
+| R2 | Free only — local, or an online API's free tier; paid-only options are listed but cannot win |
+| R3 | Two separate picks, never tied: T1 = LLM-answer voice, T2 = built-in robot voice (time, weather…) → soft female |
+| R4 | Listen tests live on Vector's speaker; user scores 1–5; probe = `chipper/pkg/myvector/voiceprobe` |
+
 ## Seams already known (verify, don't re-derive)
 
 | id | fact | where |
@@ -34,5 +43,5 @@ works with every LLM provider · offline/private · fork code size (`fork_*.go` 
 
 ## Deliverable
 
-Ranked table of A1–A8 against the criteria, top pick + runner-up, then a build stage
+Per track (T1, T2): ranked table of A1–A8 against the criteria, top pick + runner-up, then a build stage
 (`id | ruling | edit site`) appended here. Run A1 first: it costs nothing and may be enough.
