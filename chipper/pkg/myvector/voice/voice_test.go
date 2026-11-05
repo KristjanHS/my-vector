@@ -225,3 +225,31 @@ func midStream(t *testing.T, cut int) {
 		t.Fatalf("Say = %q, %v, SayText %d; want cori + error, no SayText", got, err, len(r.said))
 	}
 }
+
+func TestSpeakStock(t *testing.T) {
+	service(t, func(w http.ResponseWriter, r *http.Request) { t.Error("service called for stock") })
+	r := &robot{}
+	got, err := Speak(context.Background(), &vector.Vector{Conn: r}, "hi", Settings{Stock, 1.3})
+	if err != nil || got != Stock {
+		t.Fatalf("Speak = %q, %v; want stock, nil", got, err)
+	}
+	if len(r.said) != 1 || !r.said[0].UseVectorVoice || r.said[0].DurationScalar != float32(1.3) || r.said[0].Text != "hi" {
+		t.Errorf("SayText = %v, want R12 (robot voice at slow 1.3)", r.said)
+	}
+}
+
+func TestSpeakPCVoice(t *testing.T) {
+	var req map[string]any
+	service(t, func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&req)
+		w.Write(make([]byte, 100))
+	})
+	r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1), completeOnEnd: true}
+	got, err := Speak(context.Background(), &vector.Vector{Conn: r}, "hi", Settings{"af_bella", 0.8})
+	if err != nil || got != "af_bella" {
+		t.Fatalf("Speak = %q, %v; want af_bella, nil", got, err)
+	}
+	if req["voice"] != "af_bella" || req["slow"] != 0.8 || len(r.said) != 0 {
+		t.Errorf("service request = %v, SayText calls %d; want af_bella at 0.8 streamed", req, len(r.said))
+	}
+}

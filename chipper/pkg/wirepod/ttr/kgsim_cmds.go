@@ -294,15 +294,7 @@ func DoSayText(input string, robot *vector.Vector) error {
 		err := DoSayText_OpenAI(robot, input)
 		return err
 	}
-	robot.Conn.SayText(
-		context.Background(),
-		&vectorpb.SayTextRequest{
-			Text:           input,
-			UseVectorVoice: true,
-			DurationScalar: 0.95,
-		},
-	)
-	return nil
+	return forkSayText(input, robot)
 }
 
 func pcmLength(data []byte) time.Duration {

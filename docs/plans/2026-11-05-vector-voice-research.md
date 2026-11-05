@@ -19,6 +19,8 @@
 | R10 | Voice picker = fork page `/myvector/voice` + one drift-listed link line in upstream `index.html` |
 | R11 | Fresh-install slow factor = 1.2 (range 0.5–2.0, the TTS server's clamp) |
 | R12 | Slow drives `stock` too: T1 `stock` speaks `SayText(UseVectorVoice: true, DurationScalar: slow)` (B3) |
+| R13 | T1 voice covers `DoSayText` (LLM answers) only; `KGSim` server lines, camera countdown, face message stay stock |
+| R14 | `/myvector/voice` gets "Test on Vector": speaks editable sample text in the page's unsaved voice + slow via `voice.Speak`, shows the voice that spoke |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -79,6 +81,6 @@ works with every LLM provider · offline/private · fork code size (`fork_*.go` 
 |---|---|---|
 | B1 | PC TTS service on :8091 (guard: loopback + Vector): `POST /tts {text, voice, slow}` → chunked 16 kHz s16le PCM, one chunk per sentence; `cori`, `af_bella` warm at start; Kokoro GPU, CPU fallback; fixed per-voice gain to -20 LUFS + peak limit; non-root unit; stubbed pytest in `make check` + live `tts/smoke.sh` | `tts/`, `scripts/myvector-tts.service`, `scripts/wire-pod-guard.nft`, `Makefile` `tts-*` |
 | B2 | T1 voice setting (`cori`·`af_bella`·`stock`) + slow factor, stored in fork config, selectable in the web UI | `chipper/pkg/myvector/voice/` + `fork_*.go` glue in `sdkapp` |
-| B3 | T1 playback: `DoSayText` calls `voice.Say` (non-`stock` → B1 → K2 stream, fixes K4; B1 down → R9) — `voice.Say` built, `fork_say` (robot-test A2) uses it | `chipper/pkg/myvector/voice/`; `fork_*.go` beside `DoSayText` (kgsim_cmds.go — drift-listed hook) |
+| B3 | T1 playback: `DoSayText` → `voice.Speak(voice.Current())` (non-`stock` → `voice.Say` → B1 stream; B1 down → R9; `stock` → R12) + R14 demo endpoint `voice.DemoAPI` | `chipper/pkg/myvector/voice/`; `ttr/fork_say.go` (hook in kgsim_cmds.go, drift-listed); `sdkapp/fork_voice.go` |
 | B4 | T2: patch 0010 in vic-anim provider calls B1 with the T2 voice; 1.5 s timeout → Acapela in R9's generic style at 1.2; robot calls B1 on :8091 (guard admits Vector's IP); first `curl` :8091/health from the robot — a Windows firewall rule may be owed, as for Ollama :11434 | `robot/firmware/0010-*.patch`, `series` |
 | B5 | Verify: listen on Vector per track × voice; LLM answer + "what time is it" both soft female; B1 stopped → stock voice | `robot/voice-samples/play.sh`, `make robot-test` |

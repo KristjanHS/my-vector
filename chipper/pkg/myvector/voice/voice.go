@@ -63,6 +63,18 @@ func Say(ctx context.Context, v *vector.Vector, text, voice string, slow float64
 	return voice, stream(ctx, v, first, body)
 }
 
+// Speak says text in s.T1 at s.Slow and returns the voice that spoke, as Say does; Stock is the robot voice (plan R12).
+func Speak(ctx context.Context, v *vector.Vector, text string, s Settings) (string, error) {
+	if s.T1 != Stock {
+		return Say(ctx, v, text, s.T1, s.Slow)
+	}
+	resp, err := v.Conn.SayText(ctx, &vectorpb.SayTextRequest{Text: text, UseVectorVoice: true, DurationScalar: float32(s.Slow)})
+	if err == nil && resp.GetState() != vectorpb.SayTextResponse_FINISHED {
+		err = fmt.Errorf("SayText ended %s", resp.GetState())
+	}
+	return Stock, err
+}
+
 func fetch(ctx context.Context, text, voice string, slow float64) (io.ReadCloser, error) {
 	req, _ := json.Marshal(map[string]any{"text": text, "voice": voice, "slow": slow})
 	hctx, cancel := context.WithCancel(ctx)

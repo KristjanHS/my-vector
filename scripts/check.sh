@@ -21,6 +21,7 @@ echo "shell syntax OK"
 echo "go vet sdkapp OK"
 if [[ -d $dir/chipper/pkg/myvector ]]; then (cd "$dir/chipper" && go test ./pkg/myvector/...); fi
 if [[ -f $dir/chipper/pkg/vars/fork_intents_test.go ]]; then (cd "$dir/chipper" && go test -run Fork ./pkg/vars/); fi
+(cd "$dir/chipper" && go test -run Fork ./pkg/wirepod/ttr/)
 tts_py=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")/robot/work/tts/venv/bin/python
 if [[ -d $dir/tts/tests && -x $tts_py ]]; then "$tts_py" -m pytest -q -p no:cacheprovider "$dir/tts/tests"
 elif [[ -d $dir/tts/tests ]]; then echo "tts tests skipped: no venv (make tts-setup)"; fi

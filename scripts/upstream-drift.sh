@@ -10,7 +10,7 @@ allowed_edits=(
   chipper/pkg/wirepod/sdkapp/bcassume.go # busy-spin fix while behavior control is held
   .gitignore                             # fork block: *.key, chipper/*.bak, session-certs
   chipper/pkg/wirepod/ttr/kgsim.go       # TopP: forkTopP(...) — Claude rejects top_p (fork_llm.go)
-  chipper/pkg/wirepod/ttr/kgsim_cmds.go  # same, on the LLM-commands/camera path
+  chipper/pkg/wirepod/ttr/kgsim_cmds.go  # same, on the LLM-commands/camera path; DoSayText -> forkSayText (fork_say.go)
   chipper/pkg/vars/vars.go               # LoadIntents returns forkFilterIntents(...) (fork_intents.go)
   chipper/pkg/wirepod/ttr/matchIntentSend.go # ProcessTextAll partial pass: vars.ForkContainsPhrase (whole words)
   chipper/webroot/index.html             # nav link to the fork voice page /myvector/voice (myvector/voice)

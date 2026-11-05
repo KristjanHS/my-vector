@@ -1,7 +1,9 @@
 package voice
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/fforchino/vector-go-sdk/pkg/vector"
 )
 
 func tempSettings(t *testing.T) string {
@@ -148,5 +152,57 @@ func TestSettingsVoicesMatchService(t *testing.T) {
 		if in := strings.Contains(string(src), `"`+v+`": (`); in == (v == Stock) {
 			t.Errorf("voice %q: in tts/server.py VOICES = %v", v, in)
 		}
+	}
+}
+
+func demo(t *testing.T, ctype, body string, robotErr error) (*httptest.ResponseRecorder, *robot) {
+	t.Helper()
+	rb := &robot{}
+	h := DemoHandler(func(*http.Request) (context.Context, *vector.Vector, error) {
+		return context.Background(), &vector.Vector{Conn: rb}, robotErr
+	})
+	r := httptest.NewRequest(http.MethodPost, DemoAPI, strings.NewReader(body))
+	r.Header.Set("Content-Type", ctype)
+	w := httptest.NewRecorder()
+	h(w, r)
+	return w, rb
+}
+
+func TestDemoHandlerSpeaksUnsavedSelection(t *testing.T) {
+	path := tempSettings(t)
+	w, rb := demo(t, "application/json", `{"t1":"stock","slow":1.5,"text":"hello there"}`, nil)
+	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"voice":"stock"}` {
+		t.Fatalf("POST: %d %s", w.Code, w.Body)
+	}
+	if len(rb.said) != 1 || rb.said[0].Text != "hello there" || rb.said[0].DurationScalar != 1.5 {
+		t.Errorf("SayText = %v, want the posted text at slow 1.5", rb.said)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("demo saved the settings: %v", err)
+	}
+}
+
+func TestDemoHandlerRejects(t *testing.T) {
+	for _, c := range []struct {
+		ctype, body string
+		robotErr    error
+		code        int
+	}{
+		{"application/json", `{"t1":"stock","slow":1,"text":""}`, nil, 400},
+		{"application/json", `{"t1":"stock","slow":1,"text":"` + strings.Repeat("é", DemoMaxText+1) + `"}`, nil, 400},
+		{"application/json", `{"t1":"bella","slow":1,"text":"hi"}`, nil, 400},
+		{"application/json", `{"t1":"stock","slow":1,"text":"hi","x":1}`, nil, 400},
+		{"text/plain", `{"t1":"stock","slow":1,"text":"hi"}`, nil, 415},
+		{"application/json", `{"t1":"stock","slow":1,"text":"hi"}`, errors.New("no robot"), 502},
+	} {
+		w, rb := demo(t, c.ctype, c.body, c.robotErr)
+		if w.Code != c.code || len(rb.said) != 0 {
+			t.Errorf("%s %.40s: %d with %d SayText calls, want %d and none", c.ctype, c.body, w.Code, len(rb.said), c.code)
+		}
+	}
+	w := httptest.NewRecorder()
+	DemoHandler(nil)(w, httptest.NewRequest(http.MethodGet, DemoAPI, nil))
+	if w.Code != 405 {
+		t.Errorf("GET: %d, want 405", w.Code)
 	}
 }

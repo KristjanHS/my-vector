@@ -21,6 +21,10 @@
       <label>Slow factor: <output id="slowOut"></output>
         <input type="range" id="slow" step="0.05" />
       </label>
+      <label>Sample text:
+        <textarea id="sample" rows="3" maxlength="599" style="width: 100%">Hi, I'm Vector. It's a lovely day, and I'm happy to help. What would you like to know?</textarea>
+      </label>
+      <button type="button" id="test">Test on Vector</button>
       <button type="submit">Save</button>
     </form>
     <p id="status"></p>
@@ -39,18 +43,28 @@
       Object.assign($("slow"), { min: s.slowMin, max: s.slowMax, value: s.slow });
       $("slowOut").textContent = s.slow.toFixed(2);
     }
-    async function call(opts) {
-      const r = await fetch(api, opts);
+    async function call(opts, url = api) {
+      const r = await fetch(url, opts);
       if (!r.ok) throw new Error((await r.text()).trim());
       return r.json();
     }
+    function post(extra) {
+      const t1 = document.querySelector("input[name=t1]:checked");
+      return { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ t1: t1 && t1.value, slow: Number($("slow").value), ...extra }) };
+    }
     $("slow").addEventListener("input", (e) => { $("slowOut").textContent = Number(e.target.value).toFixed(2); });
+    $("test").addEventListener("click", async () => {
+      $("test").disabled = true;
+      status("Speaking on Vector…");
+      try { status("Spoke: " + (await call(post({ text: $("sample").value }), api + "/test")).voice); }
+      catch (err) { status("Test failed: " + err.message); }
+      finally { $("test").disabled = false; }
+    });
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const t1 = document.querySelector("input[name=t1]:checked");
       try {
-        show(await call({ method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ t1: t1 && t1.value, slow: Number($("slow").value) }) }));
+        show(await call(post()));
         status("Saved.");
       } catch (err) { status("Not saved: " + err.message); }
     });
