@@ -33,7 +33,7 @@ func TestForkDoSayTextUsesSavedVoice(t *testing.T) {
 	oldURL := voice.URL
 	voice.URL = s.URL
 	t.Cleanup(func() { voice.URL = oldURL })
-	if err := voice.Save(voice.Settings{T1: voice.Stock, Slow: 1.4}); err != nil {
+	if err := voice.Save(voice.Settings{T1: voice.Stock, T2: voice.Stock, Slow: 1.4}); err != nil {
 		t.Fatal(err)
 	}
 	r := &sayRobot{}

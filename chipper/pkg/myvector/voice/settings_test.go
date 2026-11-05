@@ -22,7 +22,18 @@ func tempSettings(t *testing.T) string {
 	old := SettingsPath
 	SettingsPath = func() string { return path }
 	t.Cleanup(func() { SettingsPath = old })
+	stubPush(t, nil)
 	return path
+}
+
+// stubPush makes PushT2 record its Settings and return err.
+func stubPush(t *testing.T, err error) *[]Settings {
+	t.Helper()
+	var pushed []Settings
+	old := PushT2
+	PushT2 = func(_ context.Context, s Settings) error { pushed = append(pushed, s); return err }
+	t.Cleanup(func() { PushT2 = old })
+	return &pushed
 }
 
 func TestSettingsValidate(t *testing.T) {
@@ -30,14 +41,16 @@ func TestSettingsValidate(t *testing.T) {
 		s  Settings
 		ok bool
 	}{
-		{Settings{"cori", 1.2}, true},
-		{Settings{"af_bella", SlowMin}, true},
-		{Settings{Stock, SlowMax}, true},
-		{Settings{"", 1}, false},
-		{Settings{"bella", 1}, false},
-		{Settings{"cori", 0.49}, false},
-		{Settings{"cori", 2.01}, false},
-		{Settings{"cori", math.NaN()}, false},
+		{Settings{"cori", "cori", 1.2}, true},
+		{Settings{"af_bella", Stock, SlowMin}, true},
+		{Settings{Stock, "af_bella", SlowMax}, true},
+		{Settings{"", "cori", 1}, false},
+		{Settings{"cori", "", 1}, false},
+		{Settings{"bella", "cori", 1}, false},
+		{Settings{"cori", "bella", 1}, false},
+		{Settings{"cori", "cori", 0.49}, false},
+		{Settings{"cori", "cori", 2.01}, false},
+		{Settings{"cori", "cori", math.NaN()}, false},
 	} {
 		if err := c.s.Validate(); (err == nil) != c.ok {
 			t.Errorf("Validate(%+v) = %v, want ok=%v", c.s, err, c.ok)
@@ -47,31 +60,31 @@ func TestSettingsValidate(t *testing.T) {
 
 func TestSettingsCurrentDefaults(t *testing.T) {
 	path := tempSettings(t)
-	if got := Current(); got != (Settings{"cori", 1.2}) {
+	if got := Current(); got != (Settings{"cori", "cori", 1.2}) {
 		t.Fatalf("missing file: %+v", got)
 	}
-	for _, bad := range []string{`{`, `{"t1":"bella","slow":1}`, `{"t1":"cori","slow":9}`} {
+	for _, bad := range []string{`{`, `{"t1":"bella","slow":1}`, `{"t1":"cori","slow":9}`, `{"t1":"cori","t2":"bella","slow":1}`} {
 		os.WriteFile(path, []byte(bad), 0644)
 		if got := Current(); got != Defaults() {
 			t.Errorf("file %s: %+v, want defaults", bad, got)
 		}
 	}
-	os.WriteFile(path, []byte(`{"t1":"af_bella"}`), 0644)
-	if got := Current(); got != (Settings{"af_bella", DefaultSlow}) {
+	os.WriteFile(path, []byte(`{"t1":"af_bella"}`), 0644) // a pre-T2 file
+	if got := Current(); got != (Settings{"af_bella", DefaultVoice, DefaultSlow}) {
 		t.Errorf("partial file: %+v", got)
 	}
 }
 
 func TestSettingsSaveRoundTrip(t *testing.T) {
 	tempSettings(t)
-	want := Settings{Stock, 1.5}
+	want := Settings{Stock, "af_bella", 1.5}
 	if err := Save(want); err != nil {
 		t.Fatal(err)
 	}
 	if got := Current(); got != want {
 		t.Fatalf("Current() = %+v, want %+v", got, want)
 	}
-	if err := Save(Settings{"bella", 1}); err == nil {
+	if err := Save(Settings{"cori", "bella", 1}); err == nil {
 		t.Fatal("Save accepted an unknown voice")
 	}
 	if got := Current(); got != want {
@@ -111,16 +124,22 @@ func TestSettingsHandler(t *testing.T) {
 		t.Fatalf("GET reply: %+v", got)
 	}
 
-	w = serve(http.MethodPost, "application/json; charset=utf-8", `{"t1":"af_bella","slow":0.8}`)
-	if w.Code != 200 || Current() != (Settings{"af_bella", 0.8}) {
+	pushed := stubPush(t, nil)
+	w = serve(http.MethodPost, "application/json; charset=utf-8", `{"t1":"af_bella","t2":"stock","slow":0.8}`)
+	if w.Code != 200 || Current() != (Settings{"af_bella", Stock, 0.8}) || strings.Contains(w.Body.String(), "pushError") {
 		t.Fatalf("POST: %d %s, saved %+v", w.Code, w.Body, Current())
+	}
+	if len(*pushed) != 1 || (*pushed)[0] != Current() {
+		t.Fatalf("pushed %+v, want the saved settings once", *pushed)
 	}
 
 	for _, c := range []struct {
 		method, ctype, body string
 		code                int
 	}{
-		{http.MethodPost, "application/json", `{"t1":"bella","slow":1}`, 400},
+		{http.MethodPost, "application/json", `{"t1":"bella","t2":"cori","slow":1}`, 400},
+		{http.MethodPost, "application/json", `{"t1":"cori","t2":"bella","slow":1}`, 400},
+		{http.MethodPost, "application/json", `{"t1":"cori","slow":1}`, 400},
 		{http.MethodPost, "application/json", `{"t1":"cori","slow":1,"x":1}`, 400},
 		{http.MethodPost, "application/json", `{"t1":"cori","slow":"1"}`, 400},
 		{http.MethodPost, "text/plain", `{"t1":"cori","slow":1}`, 415},
@@ -130,8 +149,69 @@ func TestSettingsHandler(t *testing.T) {
 			t.Errorf("%s %s %s: %d, want %d", c.method, c.ctype, c.body, w.Code, c.code)
 		}
 	}
-	if Current() != (Settings{"af_bella", 0.8}) {
-		t.Fatalf("a rejected request changed the settings: %+v", Current())
+	if Current() != (Settings{"af_bella", Stock, 0.8}) || len(*pushed) != 1 {
+		t.Fatalf("a rejected request changed the settings to %+v or pushed: %+v", Current(), *pushed)
+	}
+}
+
+func TestSettingsHandlerPushFailKeepsSave(t *testing.T) {
+	tempSettings(t)
+	stubPush(t, errors.New("SETUP: no ROBOT_TTS_URL"))
+	w := serve(http.MethodPost, "application/json", `{"t1":"cori","t2":"af_bella","slow":1.1}`)
+	var got settingsReply
+	json.Unmarshal(w.Body.Bytes(), &got)
+	if w.Code != 200 || got.PushError != "SETUP: no ROBOT_TTS_URL" || Current() != (Settings{"cori", "af_bella", 1.1}) {
+		t.Fatalf("POST: %d %s, saved %+v; want 200 with pushError and the save kept", w.Code, w.Body, Current())
+	}
+}
+
+// fakeScript makes pushScript a shell script with body; it gets voice-push.sh's args.
+func fakeScript(t *testing.T, body string) {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "voice-push.sh")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\n"+body+"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	old := pushScript
+	pushScript = func() (string, error) { return p, nil }
+	t.Cleanup(func() { pushScript = old })
+}
+
+func TestPushT2Args(t *testing.T) {
+	args := filepath.Join(t.TempDir(), "args")
+	fakeScript(t, `echo "$@" >`+args)
+	if err := pushT2(context.Background(), Settings{"cori", "af_bella", 1.25}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(args); string(b) != "af_bella 1.25\n" {
+		t.Fatalf("voice-push.sh args %q, want T2 and slow", b)
+	}
+}
+
+func TestPushT2ErrorHasLastLine(t *testing.T) {
+	fakeScript(t, `echo checking; echo "SETUP: no ROBOT_TTS_URL" >&2; exit 2`)
+	err := pushT2(context.Background(), Defaults())
+	if err == nil || !strings.HasSuffix(err.Error(), ": SETUP: no ROBOT_TTS_URL") {
+		t.Fatalf("err = %v, want the script's last line", err)
+	}
+}
+
+func TestPushT2Timeout(t *testing.T) {
+	old := PushTimeout
+	PushTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { PushTimeout = old })
+	fakeScript(t, `sleep 30 & wait`) // the orphaned sleep keeps the output pipe open, as a hung ssh would
+	start := time.Now()
+	err := pushT2(context.Background(), Defaults())
+	if err == nil || !strings.Contains(err.Error(), "no answer") || time.Since(start) > 5*time.Second {
+		t.Fatalf("err = %v after %v, want a timeout within 5 s", err, time.Since(start))
+	}
+}
+
+func TestPushScriptFound(t *testing.T) {
+	p, err := pushScript()
+	if err != nil || !strings.HasSuffix(p, "/robot/firmware/voice-push.sh") {
+		t.Fatalf("pushScript() = %q, %v", p, err)
 	}
 }
 

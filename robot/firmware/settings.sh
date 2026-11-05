@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy).
+# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): volume, no-auto-update, T2 voice file.
 # Usage: settings.sh   idempotent: reads first, sets only what differs. Exit 0 = all in place; 1 = a WARN line printed; 2 = SETUP (robot/env.sh).  (env: ESN, SERVER)
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -8,6 +8,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 settings=/data/data/com.anki.victor/persistent/jdocs/vic.RobotSettings.json
 volume=4 # master_volume: MUTE 0 … HIGH 5; quiet idle comes from the per-bus patches, not from this
 flag=/data/data/user-do-not-auto-update
+conf=$robot_dir/../chipper/myvectorConfig.json # voice.SettingsPath: wire-pod (cwd chipper/) saves it beside apiConfig.json
 rc=0
 ok() { echo "ok: $*"; }
 warn() { echo "WARN: $*"; rc=1; }
@@ -35,4 +36,10 @@ case $(ssh_ "[ -e $flag ] && echo present || { touch $flag && echo created; }" 2
   created) ok "no-auto-update: $flag created" ;;
   *) warn "no-auto-update: could not check or create $flag over SSH to $ip" ;;
 esac
+
+# T2 voice (plan R15): the saved t2 + slow, voice.Defaults() (cori, 1.2) for a missing file or field.
+conf_field() { sed -n "s/.*\"$1\": *\"\{0,1\}\([a-z_0-9.]*\).*/\1/p" "$conf" 2>/dev/null | head -1; }
+t2=$(conf_field t2) slow=$(conf_field slow)
+if out=$("$here/voice-push.sh" "${t2:-cori}" "${slow:-1.2}" 2>&1); then ok "${out#ok: }"
+else warn "T2 voice: not pushed: ${out##*$'\n'}"; fi
 exit $rc

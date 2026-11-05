@@ -8,6 +8,7 @@
   <style>
     .voice-box { max-width: 420px; margin: 24px auto; padding: 0 16px; }
     .voice-box label { display: block; margin: 6px 0; }
+    .voice-box fieldset { margin: 8px 0; }
     .voice-box input[type=range] { width: 100%; }
     #status { min-height: 1.4em; }
   </style>
@@ -15,16 +16,17 @@
 <body>
   <div class="voice-box">
     <p><a href="/">&larr; Wire-Pod</a></p>
-    <h2>Voice for LLM answers</h2>
+    <h2>Voices</h2>
     <form id="form">
-      <div id="voices"></div>
-      <label>Slow factor: <output id="slowOut"></output>
+      <fieldset><legend>T1: LLM answers</legend><div id="t1"></div></fieldset>
+      <fieldset><legend>T2: robot's own lines (time, weather…)</legend><div id="t2"></div></fieldset>
+      <label>Slow factor (T1 and T2): <output id="slowOut"></output>
         <input type="range" id="slow" step="0.05" />
       </label>
       <label>Sample text:
         <textarea id="sample" rows="3" maxlength="599" style="width: 100%">Hi, I'm Vector. It's a lovely day, and I'm happy to help. What would you like to know?</textarea>
       </label>
-      <button type="button" id="test">Test on Vector</button>
+      <button type="button" id="test">Test T1 on Vector</button>
       <button type="submit">Save</button>
     </form>
     <p id="status"></p>
@@ -34,12 +36,14 @@
     const $ = (id) => document.getElementById(id);
     const status = (t) => { $("status").textContent = t; };
     function show(s) {
-      $("voices").replaceChildren(...s.voices.map((v) => {
-        const l = document.createElement("label");
-        const r = Object.assign(document.createElement("input"), { type: "radio", name: "t1", value: v, checked: v === s.t1 });
-        l.append(r, " " + v);
-        return l;
-      }));
+      for (const t of ["t1", "t2"]) {
+        $(t).replaceChildren(...s.voices.map((v) => {
+          const l = document.createElement("label");
+          const r = Object.assign(document.createElement("input"), { type: "radio", name: t, value: v, checked: v === s[t] });
+          l.append(r, " " + v);
+          return l;
+        }));
+      }
       Object.assign($("slow"), { min: s.slowMin, max: s.slowMax, value: s.slow });
       $("slowOut").textContent = s.slow.toFixed(2);
     }
@@ -49,9 +53,9 @@
       return r.json();
     }
     function post(extra) {
-      const t1 = document.querySelector("input[name=t1]:checked");
+      const pick = (t) => { const r = document.querySelector(`input[name=${t}]:checked`); return r && r.value; };
       return { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ t1: t1 && t1.value, slow: Number($("slow").value), ...extra }) };
+        body: JSON.stringify({ t1: pick("t1"), t2: pick("t2"), slow: Number($("slow").value), ...extra }) };
     }
     $("slow").addEventListener("input", (e) => { $("slowOut").textContent = Number(e.target.value).toFixed(2); });
     $("test").addEventListener("click", async () => {
@@ -63,9 +67,11 @@
     });
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
+      status("Saving…");
       try {
-        show(await call(post()));
-        status("Saved.");
+        const s = await call(post());
+        show(s);
+        status(s.pushError ? "Saved; robot not updated: " + s.pushError : "Saved; robot updated.");
       } catch (err) { status("Not saved: " + err.message); }
     });
     call().then(show).catch((err) => status("Could not load: " + err.message));

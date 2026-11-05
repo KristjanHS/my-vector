@@ -10,7 +10,10 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,24 +33,27 @@ const (
 	DemoTimeout      = 90 * time.Second // DemoMaxText at SlowMax
 )
 
-// Voices are the T1 choices (plan R8); every name but Stock must be a tts/server.py VOICES key.
+// Voices are the T1 and T2 choices (plan R8); every name but Stock must be a tts/server.py VOICES key.
 var Voices = []string{DefaultVoice, "af_bella", Stock}
 
-// Settings is the T1 (LLM-answer) voice and its slow factor (1 = normal speed).
+// Settings is the T1 (LLM-answer) and T2 (robot's built-in lines) voice and their one slow factor (R16; 1 = normal speed).
 type Settings struct {
 	T1   string  `json:"t1"`
+	T2   string  `json:"t2"`
 	Slow float64 `json:"slow"`
 }
 
-func Defaults() Settings { return Settings{T1: DefaultVoice, Slow: DefaultSlow} }
+func Defaults() Settings { return Settings{T1: DefaultVoice, T2: DefaultVoice, Slow: DefaultSlow} }
 
 func (s Settings) Validate() error {
-	ok := false
-	for _, v := range Voices {
-		ok = ok || s.T1 == v
-	}
-	if !ok {
-		return fmt.Errorf("t1: one of %v", Voices)
+	for _, f := range []struct{ name, v string }{{"t1", s.T1}, {"t2", s.T2}} {
+		ok := false
+		for _, v := range Voices {
+			ok = ok || f.v == v
+		}
+		if !ok {
+			return fmt.Errorf("%s: one of %v", f.name, Voices)
+		}
 	}
 	if !(s.Slow >= SlowMin && s.Slow <= SlowMax) { // NaN fails too
 		return fmt.Errorf("slow: %g to %g", SlowMin, SlowMax)
@@ -109,15 +115,68 @@ func Save(s Settings) error {
 	return err
 }
 
+// PushTimeout bounds one voice-push.sh run (its SSH ConnectTimeout is 8 s).
+var PushTimeout = 15 * time.Second
+
+var (
+	// PushT2 writes s's T2 + slow to the robot (plan R15); tests replace it so none runs SSH.
+	PushT2 = pushT2
+	// pushScript is robot/firmware/voice-push.sh in the nearest ancestor of the cwd (wire-pod's is chipper/).
+	pushScript = func() (string, error) { return findUp(filepath.Join("robot", "firmware", "voice-push.sh")) }
+)
+
+func findUp(rel string) (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for {
+		if p := filepath.Join(dir, rel); fileExists(p) {
+			return p, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("no %s above the working directory", rel)
+		}
+		dir = parent
+	}
+}
+
+func fileExists(p string) bool { st, err := os.Stat(p); return err == nil && !st.IsDir() }
+
+// pushT2 runs voice-push.sh <t2> <slow>; its error carries the script's last output line.
+func pushT2(ctx context.Context, s Settings) error {
+	script, err := pushScript()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, PushTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, script, s.T2, strconv.FormatFloat(s.Slow, 'g', -1, 64))
+	cmd.WaitDelay = time.Second // an orphaned ssh holding the output pipe must not outlive the timeout
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return fmt.Errorf("voice-push.sh: no answer in %v", PushTimeout)
+	}
+	if err != nil {
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		return fmt.Errorf("voice-push.sh: %v: %s", err, lines[len(lines)-1])
+	}
+	return nil
+}
+
 type settingsReply struct {
 	Settings
 	Voices  []string `json:"voices"`
 	SlowMin float64  `json:"slowMin"`
 	SlowMax float64  `json:"slowMax"`
+	// PushError is why a saved T2 did not reach the robot; the save itself stands.
+	PushError string `json:"pushError,omitempty"`
 }
 
-// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings) validates and saves.
+// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings) validates, saves and pushes T2.
 func SettingsHandler(w http.ResponseWriter, r *http.Request) {
+	pushErr := ""
 	switch r.Method {
 	case http.MethodGet:
 	case http.MethodPost:
@@ -129,13 +188,17 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "save: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if err := PushT2(r.Context(), s); err != nil {
+			pushErr = err.Error()
+			logger.Println("myvector voice settings: saved; robot not updated: " + pushErr)
+		}
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "GET or POST", http.StatusMethodNotAllowed)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(settingsReply{Current(), Voices, SlowMin, SlowMax})
+	json.NewEncoder(w).Encode(settingsReply{Current(), Voices, SlowMin, SlowMax, pushErr})
 }
 
 // decode reads an application/json POST body into v and runs valid on it; on failure it has written the error.
@@ -179,7 +242,7 @@ func DemoHandler(robotFor func(*http.Request) (context.Context, *vector.Vector, 
 			http.Error(w, "POST", http.StatusMethodNotAllowed)
 			return
 		}
-		var d demoRequest
+		d := demoRequest{Settings: Settings{T2: DefaultVoice}} // the demo speaks T1; t2 may be omitted
 		if !decode(w, r, &d, d.valid) {
 			return
 		}

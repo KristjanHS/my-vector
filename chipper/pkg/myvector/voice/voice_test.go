@@ -272,7 +272,7 @@ func midStream(t *testing.T, cut int) {
 func TestSpeakStock(t *testing.T) {
 	service(t, func(w http.ResponseWriter, r *http.Request) { t.Error("service called for stock") })
 	r := &robot{}
-	got, err := Speak(context.Background(), &vector.Vector{Conn: r}, "hi", Settings{Stock, 1.3})
+	got, err := Speak(context.Background(), &vector.Vector{Conn: r}, "hi", Settings{Stock, Stock, 1.3})
 	if err != nil || got != Stock {
 		t.Fatalf("Speak = %q, %v; want stock, nil", got, err)
 	}
@@ -288,7 +288,7 @@ func TestSpeakPCVoice(t *testing.T) {
 		w.Write(make([]byte, 100))
 	})
 	r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1), completeOnEnd: true}
-	got, err := Speak(context.Background(), &vector.Vector{Conn: r}, "hi", Settings{"af_bella", 0.8})
+	got, err := Speak(context.Background(), &vector.Vector{Conn: r}, "hi", Settings{"af_bella", "cori", 0.8})
 	if err != nil || got != "af_bella" {
 		t.Fatalf("Speak = %q, %v; want af_bella, nil", got, err)
 	}
