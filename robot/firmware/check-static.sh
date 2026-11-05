@@ -31,7 +31,7 @@ echo "series/manifest OK (${#series[@]} patches, ${#rows[@]} markers)"
 # S5: the smoke test must never command the wheels or the lift.
 smoke=()
 voice_go=() # fork_say speaks through myvector/voice
-for f in "$repo"/chipper/pkg/myvector/voice/*.go; do [[ $f == *_test.go ]] || voice_go+=("$f"); done
+for f in "$repo"/chipper/pkg/myvector/voice/*.go; do [[ ! -f $f || $f == *_test.go ]] || voice_go+=("$f"); done # -f: an unmatched glob stays literal
 for f in "$here/smoke.sh" "$repo/chipper/pkg/wirepod/sdkapp/fork_smoke.go"; do [[ ! -f $f ]] || smoke+=("$f"); done
 [[ ! -f $here/smoke.sh || (${#smoke[@]} == 2 && ${#voice_go[@]} -gt 0) ]] || die "smoke.sh present but fork_smoke.go or myvector/voice/*.go missing (S5 would skip it)"
 smoke+=("${voice_go[@]}")
