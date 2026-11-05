@@ -76,7 +76,7 @@ def clips(dataset, n=N):
         ]
     if dataset == "mic-et":  # Stage 2.2: Vector mic captures (miccap), in mic-commands.txt order
         refs = (Path(__file__).parent / "mic-commands.txt").read_text(encoding="utf-8").splitlines()
-        audio = sorted(p for p in (WORK / "mic").iterdir() if p.suffix in (".ogg", ".pcm"))
+        audio = sorted(p for p in (WORK / "mic-et").iterdir() if p.suffix in (".ogg", ".pcm"))
         if len(audio) != len(refs):
             raise SystemExit(f"mic-et: {len(audio)} captures for {len(refs)} commands — prune retries first")
         return [(str(a), r, len(load16k(str(a))) / 16000) for a, r in zip(audio, refs)]
