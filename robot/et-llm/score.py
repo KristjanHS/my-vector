@@ -1,10 +1,15 @@
 # Blind scorer for the Estonian LLM bench: shuffled answers, model hidden, one 1-5 score each; resumable.
-# Usage: python3 -I robot/et-llm/score.py   (q = quit, s = skip; scores -> robot/work/et-llm/scores.json)
+# Usage: python3 -I robot/et-llm/score.py [et|en]   (q = quit, s = skip; scores -> robot/work/et-llm/<lang>/scores.json)
 import json
 import random
+import sys
 from pathlib import Path
 
-W = Path(__file__).resolve().parents[2] / "robot/work/et-llm"
+W = (
+    Path(__file__).resolve().parents[2]
+    / "robot/work/et-llm"
+    / (sys.argv[1] if len(sys.argv) > 1 else "et")
+)
 ANSWERS, SCORES = W / "answers.jsonl", W / "scores.json"
 
 
