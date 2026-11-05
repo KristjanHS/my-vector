@@ -16,6 +16,9 @@
 | R7 | Listen favourites: `piper:en_GB-cori-high` (public domain) and `kokoro:af_bella` (Apache-2.0) |
 | R8 | Both favourites selectable in the solution, per track: T1 and T2 each pick `cori` · `af_bella` · `stock` |
 | R9 | Fallback voice (new voice unavailable) = A1 combo Four: `UseVectorVoice: false`, `DurationScalar: 1.2` |
+| R10 | Voice picker = fork page `/myvector/voice` + one drift-listed link line in upstream `index.html` |
+| R11 | Fresh-install slow factor = 1.2 (range 0.5–2.0, the TTS server's clamp) |
+| R12 | Slow drives `stock` too: T1 `stock` speaks `SayText(UseVectorVoice: true, DurationScalar: slow)` (B3) |
 
 ## Seams already known (verify, don't re-derive)
 

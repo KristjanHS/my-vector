@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wire-Pod - Voice</title>
+  <link rel="stylesheet" type="text/css" href="/css/style.css" />
+  <style>
+    .voice-box { max-width: 420px; margin: 24px auto; padding: 0 16px; }
+    .voice-box label { display: block; margin: 6px 0; }
+    .voice-box input[type=range] { width: 100%; }
+    #status { min-height: 1.4em; }
+  </style>
+</head>
+<body>
+  <div class="voice-box">
+    <p><a href="/">&larr; Wire-Pod</a></p>
+    <h2>Voice for LLM answers</h2>
+    <form id="form">
+      <div id="voices"></div>
+      <label>Slow factor: <output id="slowOut"></output>
+        <input type="range" id="slow" step="0.05" />
+      </label>
+      <button type="submit">Save</button>
+    </form>
+    <p id="status"></p>
+  </div>
+  <script>
+    const api = "/myvector/api/voice";
+    const $ = (id) => document.getElementById(id);
+    const status = (t) => { $("status").textContent = t; };
+    function show(s) {
+      $("voices").replaceChildren(...s.voices.map((v) => {
+        const l = document.createElement("label");
+        const r = Object.assign(document.createElement("input"), { type: "radio", name: "t1", value: v, checked: v === s.t1 });
+        l.append(r, " " + v);
+        return l;
+      }));
+      Object.assign($("slow"), { min: s.slowMin, max: s.slowMax, value: s.slow });
+      $("slowOut").textContent = s.slow.toFixed(2);
+    }
+    async function call(opts) {
+      const r = await fetch(api, opts);
+      if (!r.ok) throw new Error((await r.text()).trim());
+      return r.json();
+    }
+    $("slow").addEventListener("input", (e) => { $("slowOut").textContent = Number(e.target.value).toFixed(2); });
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const t1 = document.querySelector("input[name=t1]:checked");
+      try {
+        show(await call({ method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ t1: t1 && t1.value, slow: Number($("slow").value) }) }));
+        status("Saved.");
+      } catch (err) { status("Not saved: " + err.message); }
+    });
+    call().then(show).catch((err) => status("Could not load: " + err.message));
+  </script>
+</body>
+</html>

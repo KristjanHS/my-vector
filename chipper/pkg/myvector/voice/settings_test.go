@@ -1,0 +1,144 @@
+package voice
+
+import (
+	"encoding/json"
+	"math"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func tempSettings(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "myvectorConfig.json")
+	old := SettingsPath
+	SettingsPath = func() string { return path }
+	t.Cleanup(func() { SettingsPath = old })
+	return path
+}
+
+func TestSettingsValidate(t *testing.T) {
+	for _, c := range []struct {
+		s  Settings
+		ok bool
+	}{
+		{Settings{"cori", 1.2}, true},
+		{Settings{"af_bella", SlowMin}, true},
+		{Settings{Stock, SlowMax}, true},
+		{Settings{"", 1}, false},
+		{Settings{"bella", 1}, false},
+		{Settings{"cori", 0.49}, false},
+		{Settings{"cori", 2.01}, false},
+		{Settings{"cori", math.NaN()}, false},
+	} {
+		if err := c.s.Validate(); (err == nil) != c.ok {
+			t.Errorf("Validate(%+v) = %v, want ok=%v", c.s, err, c.ok)
+		}
+	}
+}
+
+func TestSettingsCurrentDefaults(t *testing.T) {
+	path := tempSettings(t)
+	if got := Current(); got != (Settings{"cori", 1.2}) {
+		t.Fatalf("missing file: %+v", got)
+	}
+	for _, bad := range []string{`{`, `{"t1":"bella","slow":1}`, `{"t1":"cori","slow":9}`} {
+		os.WriteFile(path, []byte(bad), 0644)
+		if got := Current(); got != Defaults() {
+			t.Errorf("file %s: %+v, want defaults", bad, got)
+		}
+	}
+	os.WriteFile(path, []byte(`{"t1":"af_bella"}`), 0644)
+	if got := Current(); got != (Settings{"af_bella", DefaultSlow}) {
+		t.Errorf("partial file: %+v", got)
+	}
+}
+
+func TestSettingsSaveRoundTrip(t *testing.T) {
+	path := tempSettings(t)
+	want := Settings{Stock, 1.5}
+	if err := Save(want); err != nil {
+		t.Fatal(err)
+	}
+	if got := Current(); got != want {
+		t.Fatalf("Current() = %+v, want %+v", got, want)
+	}
+	if err := Save(Settings{"bella", 1}); err == nil {
+		t.Fatal("Save accepted an unknown voice")
+	}
+	if got := Current(); got != want {
+		t.Fatalf("rejected Save changed the file: %+v", got)
+	}
+	if m, _ := filepath.Glob(filepath.Join(filepath.Dir(path), ".myvectorConfig-*")); len(m) != 0 {
+		t.Fatalf("temp files left: %v", m)
+	}
+}
+
+func serve(method, ctype, body string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(method, SettingsAPI, strings.NewReader(body))
+	if ctype != "" {
+		r.Header.Set("Content-Type", ctype)
+	}
+	w := httptest.NewRecorder()
+	SettingsHandler(w, r)
+	return w
+}
+
+func TestSettingsHandler(t *testing.T) {
+	tempSettings(t)
+	w := serve(http.MethodGet, "", "")
+	var got settingsReply
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != 200 {
+		t.Fatalf("GET: %d %s", w.Code, w.Body)
+	}
+	if got.Settings != Defaults() || strings.Join(got.Voices, ",") != "cori,af_bella,stock" || got.SlowMin != 0.5 || got.SlowMax != 2 {
+		t.Fatalf("GET reply: %+v", got)
+	}
+
+	w = serve(http.MethodPost, "application/json; charset=utf-8", `{"t1":"af_bella","slow":0.8}`)
+	if w.Code != 200 || Current() != (Settings{"af_bella", 0.8}) {
+		t.Fatalf("POST: %d %s, saved %+v", w.Code, w.Body, Current())
+	}
+
+	for _, c := range []struct {
+		method, ctype, body string
+		code                int
+	}{
+		{http.MethodPost, "application/json", `{"t1":"bella","slow":1}`, 400},
+		{http.MethodPost, "application/json", `{"t1":"cori","slow":1,"x":1}`, 400},
+		{http.MethodPost, "application/json", `{"t1":"cori","slow":"1"}`, 400},
+		{http.MethodPost, "text/plain", `{"t1":"cori","slow":1}`, 415},
+		{http.MethodPut, "application/json", `{"t1":"cori","slow":1}`, 405},
+	} {
+		if w := serve(c.method, c.ctype, c.body); w.Code != c.code {
+			t.Errorf("%s %s %s: %d, want %d", c.method, c.ctype, c.body, w.Code, c.code)
+		}
+	}
+	if Current() != (Settings{"af_bella", 0.8}) {
+		t.Fatalf("a rejected request changed the settings: %+v", Current())
+	}
+}
+
+func TestSettingsPage(t *testing.T) {
+	w := httptest.NewRecorder()
+	PageHandler(w, httptest.NewRequest(http.MethodGet, SettingsPage, nil))
+	if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") || !strings.Contains(w.Body.String(), `"`+SettingsAPI+`"`) {
+		t.Fatalf("page: %s, API path %s missing", w.Header().Get("Content-Type"), SettingsAPI)
+	}
+}
+
+// Voices (minus Stock) must be the TTS service's voices, or a pick would 400 there.
+func TestSettingsVoicesMatchService(t *testing.T) {
+	src, err := os.ReadFile("../../../../tts/server.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range Voices {
+		if in := strings.Contains(string(src), `"`+v+`": (`); in == (v == Stock) {
+			t.Errorf("voice %q: in tts/server.py VOICES = %v", v, in)
+		}
+	}
+}
