@@ -26,11 +26,11 @@ make start                   # once: restarts wire-pod so it runs the Claude fix
 journalctl -u wire-pod -f    # optional, second terminal: watch requests ("Using <model>", "LLM returned no response")
 ```
 
-Keys live in `robot/work/llm/keys.env` (gitignored, chmod 600). `ANTHROPIC_API_KEY` is already in it
+Keys live in `~/.config/my-vector/keys.env` (outside the repo, chmod 600). `ANTHROPIC_API_KEY` is already in it
 (copied from private-app's workspace key). Add other keys as you reach their step:
 
 ```bash
-echo 'OPENAI_API_KEY=sk-...' >> robot/work/llm/keys.env
+echo 'OPENAI_API_KEY=sk-...' >> ~/.config/my-vector/keys.env
 ```
 
 **How to ask Vector** (the same for every option):
@@ -126,7 +126,7 @@ scripts/llm.sh use claude --commands --intentgraph --remember   # then the step-
 Needs a key with billing enabled (platform.openai.com → API keys; prepaid credit).
 
 ```bash
-echo 'OPENAI_API_KEY=sk-...' >> robot/work/llm/keys.env
+echo 'OPENAI_API_KEY=sk-...' >> ~/.config/my-vector/keys.env
 scripts/llm.sh use openai                   # gpt-4o-mini
 scripts/llm.sh use openai --voice nova      # answers in an OpenAI voice instead of Vector's
 ```
@@ -141,7 +141,7 @@ Voices: `alloy onyx fable shimmer nova echo`. Notes:
 Needs a key (api.together.ai; new accounts usually get trial credit).
 
 ```bash
-echo 'TOGETHER_API_KEY=...' >> robot/work/llm/keys.env
+echo 'TOGETHER_API_KEY=...' >> ~/.config/my-vector/keys.env
 scripts/llm.sh models together | grep -i instruct          # model ids change; pick one
 scripts/llm.sh use together meta-llama/Llama-3.3-70B-Instruct-Turbo
 ```
@@ -169,9 +169,9 @@ with extra parts.
    Then Settings → Voice assistants → Assist → set **Conversation agent** to it.
 3. **Token**: your profile (bottom-left) → Security → Long-lived access tokens → Create:
    ```bash
-   echo 'HA_TOKEN=eyJ...' >> robot/work/llm/keys.env
+   echo 'HA_TOKEN=eyJ...' >> ~/.config/my-vector/keys.env
    scripts/llm.sh ha-agents                 # e.g. conversation.ollama_conversation
-   echo 'HA_AGENT=conversation.ollama_conversation' >> robot/work/llm/keys.env
+   echo 'HA_AGENT=conversation.ollama_conversation' >> ~/.config/my-vector/keys.env
    scripts/llm.sh ha-say "Why is the sky blue?"   # HA answers directly
    ```
 4. **Plugin** (cloned and built from `robot/work/llm/`, so the GPL source never enters this repo):
@@ -197,7 +197,7 @@ Remove it all: `scripts/llm.sh ha-plugin remove && make start`, then `scripts/ll
 `custom` takes any server that speaks the OpenAI chat API. There's a preset for Gemini:
 
 ```bash
-echo 'GEMINI_API_KEY=...' >> robot/work/llm/keys.env      # aistudio.google.com
+echo 'GEMINI_API_KEY=...' >> ~/.config/my-vector/keys.env      # aistudio.google.com
 scripts/llm.sh models gemini
 scripts/llm.sh use gemini gemini-2.5-flash
 ```
