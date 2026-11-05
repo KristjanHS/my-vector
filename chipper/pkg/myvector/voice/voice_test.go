@@ -181,7 +181,7 @@ func TestSayStreamsServiceAudio(t *testing.T) {
 	if err != nil || got != "cori" {
 		t.Fatalf("Say = %q, %v; want cori, nil", got, err)
 	}
-	if req["text"] != "smoke test" || req["voice"] != "cori" || req["slow"] != 1.0 {
+	if req["text"] != "smoke test" || req["voice"] != "cori" || req["slow"] != 1.0 || req["boost_db"] != boostDB {
 		t.Errorf("service request = %v", req)
 	}
 	if len(r.said) != 0 {

@@ -23,7 +23,8 @@ const (
 	Fallback     = "fallback" // Say's voice name when SayText spoke
 	rate         = 16000
 	frame        = 1024                   // bytes per ExternalAudioStreamChunk (32 ms)
-	volume       = 60                     // R6
+	volume       = 100                    // R23: the stream path's max; 60 (R6) was picked at master 2
+	boostDB      = 2.0                    // R23: TTS service boost on top of its -14 LUFS base (+8 dB over the old -20, light limiting)
 	lead         = 300 * time.Millisecond // audio queued ahead of the speaker
 )
 
@@ -114,7 +115,7 @@ func Control(ctx context.Context, v *vector.Vector) (func(), error) {
 }
 
 func fetch(ctx context.Context, text, voice string, slow float64) (io.ReadCloser, error) {
-	req, _ := json.Marshal(map[string]any{"text": text, "voice": voice, "slow": slow})
+	req, _ := json.Marshal(map[string]any{"text": text, "voice": voice, "slow": slow, "boost_db": boostDB})
 	hctx, cancel := context.WithCancel(ctx)
 	r, err := http.NewRequestWithContext(hctx, http.MethodPost, URL+"/tts", bytes.NewReader(req))
 	if err != nil {

@@ -59,12 +59,24 @@ def test_to_pcm16_gain_and_peak_limit():
     assert abs(loud.max() / 32767 - server.PEAK) < 0.01
 
 
+def test_limiter_only_dips_around_the_peak():
+    """A loud burst is held to PEAK; quiet audio 0.5 s later keeps its full gain (not a whole-sentence scale-down)."""
+    t = np.arange(16000) / 16000
+    x = 0.1 * np.sin(2 * np.pi * 440 * t)
+    x[:800] *= 30  # 3.0 peak burst, first 50 ms
+    out = np.frombuffer(server.to_pcm16(x, 16000), "<i2") / 32767
+    assert np.abs(out).max() <= server.PEAK + 1e-4
+    assert abs(np.abs(out[8000:]).max() - 0.1) < 0.002
+
+
 def test_parse_request_defaults_and_clamp():
-    assert server.parse_request(b'{"text": "hi"}') == ("hi", "af_bella", 1.0)
+    assert server.parse_request(b'{"text": "hi"}') == ("hi", "af_bella", 1.0, 0.0)
     assert server.parse_request(b'{"text": "hi", "voice": "cori", "slow": 9}')[
-        1:
+        1:3
     ] == ("cori", server.SLOW_MAX)
     assert server.parse_request(b'{"text": "hi", "slow": 0.1}')[2] == server.SLOW_MIN
+    assert server.parse_request(b'{"text": "hi", "boost_db": 99}')[3] == server.BOOST_MAX
+    assert server.parse_request(b'{"text": "hi", "boost_db": -3}')[3] == 0.0
 
 
 @pytest.mark.parametrize(
@@ -76,6 +88,8 @@ def test_parse_request_defaults_and_clamp():
         b'{"text": "hi", "voice": "x"}',
         b'{"text": "hi", "slow": "fast"}',
         b'{"text": "hi", "slow": NaN}',
+        b'{"text": "hi", "boost_db": "max"}',
+        b'{"text": "hi", "boost_db": NaN}',
     ],
 )
 def test_parse_request_rejects(body):

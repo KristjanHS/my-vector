@@ -29,6 +29,7 @@
 | R20 | Kokoro holds VRAM only while a kokoro voice is T1 or T2 (server watches `chipper/myvectorConfig.json`); unselected request loads for that request, frees after |
 | R21 | KG placeholder (`streamingKG` "bla bla") gets sdkOrigin → Acapela when T2 first sound is > 0.5 s later than stock (median of 3); measured on the console-SayText proxy `robot/voice-samples/onset.sh`, B5 confirms on a real KG question |
 | R22 | Fresh-install default for T1 and T2 = `af_bella` (user prefers it over `cori`): `voice.DefaultVoice`, server `DEFAULT_VOICE`, `settings.sh` |
+| R23 | PC voice loudness: service base -14 LUFS (was -20) + peak limiter in place of the whole-sentence scale-down; T1 stream at `AudioVolume` 100 (was 60, R6) + `boost_db` 2 → +8 dB over before (user A/B pick, light limiting; +15 squashed). T2 gets the +6 dB base. Measured at robot output: T1 stream path plays ~6 dB under SayText at the same source |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -87,7 +88,7 @@ works with every LLM provider · offline/private · fork code size (`fork_*.go` 
 
 | id | ruling | edit site |
 |---|---|---|
-| B1 | PC TTS service on :8091 (guard: loopback + Vector): `POST /tts {text, voice, slow}` → chunked 16 kHz s16le PCM, one chunk per sentence; `cori`, `af_bella` warm at start; Kokoro GPU, CPU fallback; fixed per-voice gain to -20 LUFS + peak limit; non-root unit; stubbed pytest in `make check` + live `tts/smoke.sh` | `tts/`, `scripts/myvector-tts.service`, `scripts/wire-pod-guard.nft`, `Makefile` `tts-*` |
+| B1 | PC TTS service on :8091 (guard: loopback + Vector): `POST /tts {text, voice, slow, boost_db}` → chunked 16 kHz s16le PCM, one chunk per sentence; `cori`, `af_bella` warm at start; Kokoro GPU, CPU fallback; fixed per-voice gain to -14 LUFS (R23) + peak limiter; non-root unit; stubbed pytest in `make check` + live `tts/smoke.sh` | `tts/`, `scripts/myvector-tts.service`, `scripts/wire-pod-guard.nft`, `Makefile` `tts-*` |
 | B2 | T1 voice setting (`cori`·`af_bella`·`stock`) + slow factor, stored in fork config, selectable in the web UI | `chipper/pkg/myvector/voice/` + `fork_*.go` glue in `sdkapp` |
 | B3 | T1 playback: `DoSayText` → `voice.Speak(voice.Current())` (non-`stock` → `voice.Say` → B1 stream; B1 down → R9; `stock` → R12) + R14 demo endpoint `voice.DemoAPI` | `chipper/pkg/myvector/voice/`; `ttr/fork_say.go` (hook in kgsim_cmds.go, drift-listed); `sdkapp/fork_voice.go` |
 | B4.1 | T2 field + picker (R8, R16) and push on save (R15) | `chipper/pkg/myvector/voice/`, `robot/firmware/voice-push.sh`, `settings.sh`, `robot/robot.env.example` |

@@ -1,4 +1,4 @@
-"""my-vector TTS service: POST /tts {"text", "voice", "slow"} -> chunked 16 kHz s16le mono PCM, one chunk per sentence.
+"""my-vector TTS service: POST /tts {"text", "voice", "slow", "boost_db"} -> chunked 16 kHz s16le mono PCM, one chunk per sentence.
 
 GET /health -> {"voices": [...], "device": ..., "kokoro_loaded": bool}. Piper (+ Kokoro if selected) warm before the port opens.
 Kokoro holds the GPU only while a kokoro voice is wire-pod's T1/T2 (myvectorConfig.json); unselected it loads for one request only.
@@ -26,7 +26,10 @@ RATE = 16000
 SLOW_MIN, SLOW_MAX = 0.5, 2.0
 MAX_TEXT = 5000
 MAX_SENTENCE = 300  # longer sentences split again at , ; :
-PEAK = 0.97  # per-sentence limiter ceiling (float full scale)
+PEAK = 0.97  # limiter ceiling (float full scale)
+BOOST_MAX = 18.0  # dB; boost_db is clamped to 0..BOOST_MAX
+LIMIT_BLOCK = 32  # samples (2 ms) per limiter gain step
+LIMIT_RELEASE_S = 0.06  # limiter gain recovery time constant
 GAINS_FILE = Path(__file__).with_name("gains.json")  # tts/calibrate.py writes it
 
 # voice name -> (engine, engine voice id)
@@ -89,18 +92,35 @@ def _hard_cut(s):
     return out
 
 
+def limit(x, ceiling=PEAK):
+    """Peak limiter: gain dips instantly around any block whose peak tops `ceiling`, recovers over LIMIT_RELEASE_S."""
+    if not x.size or float(np.max(np.abs(x))) <= ceiling:
+        return x
+    n = -(-x.size // LIMIT_BLOCK)
+    a = np.zeros(n * LIMIT_BLOCK, np.float32)
+    a[: x.size] = np.abs(x)
+    pk = a.reshape(n, LIMIT_BLOCK).max(axis=1)
+    pk = np.maximum(pk, np.maximum(np.r_[0, pk[:-1]], np.r_[pk[1:], 0]))  # each step also covers its neighbours
+    want = np.minimum(1.0, ceiling / np.maximum(pk, 1e-9))
+    rel = 1.0 - np.exp(-LIMIT_BLOCK / (RATE * LIMIT_RELEASE_S))
+    g, cur = np.empty(n), 1.0
+    for i, w in enumerate(want):
+        cur = w if w < cur else cur + (1.0 - cur) * rel
+        g[i] = min(cur, w)
+    # linear between block centres: both ends are under the bound for the samples between them
+    gs = np.interp(np.arange(x.size), np.arange(n) * LIMIT_BLOCK + (LIMIT_BLOCK - 1) / 2, g)
+    return x * gs.astype(np.float32)
+
+
 def to_pcm16(audio, rate, gain=1.0):
-    """float audio at `rate` -> 16 kHz s16le bytes, times `gain`, scaled down to PEAK if it would clip."""
+    """float audio at `rate` -> 16 kHz s16le bytes, times `gain`, peak-limited to PEAK."""
     x = np.asarray(audio, dtype=np.float32).reshape(-1)
     if rate != RATE and x.size:
         import soxr
 
         x = soxr.resample(x, rate, RATE, quality="HQ").astype(np.float32)
-    x = x * np.float32(gain)
-    peak = float(np.max(np.abs(x))) if x.size else 0.0
-    if peak > PEAK:
-        x *= np.float32(PEAK / peak)
-    return (np.clip(x, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
+    x = limit(x * np.float32(gain))
+    return (np.clip(x, -PEAK, PEAK) * 32767.0).astype("<i2").tobytes()
 
 
 def load_gains(path=GAINS_FILE):
@@ -114,7 +134,7 @@ def load_gains(path=GAINS_FILE):
 
 
 def parse_request(body):
-    """Validate a /tts JSON body -> (text, voice, slow). Raises ValueError with a client-facing message."""
+    """Validate a /tts JSON body -> (text, voice, slow, boost_db). Raises ValueError with a client-facing message."""
     try:
         req = json.loads(body or b"{}")
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -135,7 +155,13 @@ def parse_request(body):
         raise ValueError("slow: number required") from None
     if slow != slow:  # NaN
         raise ValueError("slow: number required")
-    return text, voice, min(max(slow, SLOW_MIN), SLOW_MAX)
+    try:
+        boost = float(req.get("boost_db", 0.0))
+    except (TypeError, ValueError):
+        raise ValueError("boost_db: number required") from None
+    if boost != boost:
+        raise ValueError("boost_db: number required")
+    return text, voice, min(max(slow, SLOW_MIN), SLOW_MAX), min(max(boost, 0.0), BOOST_MAX)
 
 
 class PiperEngine:
@@ -348,17 +374,17 @@ class Synth:
         self.gains = gains
         self._lock = lock or threading.Lock()
 
-    def sentence_pcm(self, voice, text, slow):
+    def sentence_pcm(self, voice, text, slow, boost_db=0.0):
         engine, voice_id = VOICES[voice]
         with self._lock:
             audio, rate = self.engines[engine].synth(voice_id, text, slow)
-        return to_pcm16(audio, rate, self.gains.get(voice, 1.0))
+        return to_pcm16(audio, rate, self.gains.get(voice, 1.0) * 10 ** (boost_db / 20))
 
-    def stream(self, voice, text, slow):
+    def stream(self, voice, text, slow, boost_db=0.0):
         engine = self.engines[VOICES[voice][0]]
         with getattr(engine, "request", contextlib.nullcontext)():
             for s in split_sentences(text):
-                pcm = self.sentence_pcm(voice, s, slow)
+                pcm = self.sentence_pcm(voice, s, slow, boost_db)
                 if pcm:
                     yield pcm
 
@@ -409,12 +435,12 @@ def make_handler(synth, info):
             body = self.rfile.read(n)
             self.close_connection = client_close
             try:
-                text, voice, slow = parse_request(body)
+                text, voice, slow, boost = parse_request(body)
             except ValueError as e:
                 self._json(400, {"error": str(e)})
                 return
             # Headers wait for the first sentence: time-to-first-byte = time-to-first-audio, and a failing voice is a 500.
-            chunks = synth.stream(voice, text, slow)
+            chunks = synth.stream(voice, text, slow, boost)
             try:
                 self._send_stream(chunks)
             finally:

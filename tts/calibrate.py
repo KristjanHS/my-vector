@@ -1,4 +1,4 @@
-"""Measure each voice's loudness on a reference paragraph (ffmpeg ebur128) and write gains.json for -20 LUFS.
+"""Measure each voice's loudness on a reference paragraph (ffmpeg ebur128) and write gains.json for -14 LUFS (R23; the limiter catches the peaks).
 
 Run with the service venv + the env setup.sh uses: TTS_PIPER_DIR=... venv/bin/python -I tts/calibrate.py
 """
@@ -15,8 +15,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import server  # noqa: E402
 
-# gen.sh's loudnorm target, the level the listen tests (R7) were scored at
-TARGET_LUFS = -20.0
+# R23: 6 dB over gen.sh's -20 loudnorm (the listen-test level), which played too quiet on the robot
+TARGET_LUFS = -14.0
 REFERENCE = (
     "Good morning! It's a little cloudy outside, with a high of twelve degrees. "
     "Would you like me to set a timer, or tell you something interesting about octopuses? "

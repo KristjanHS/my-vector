@@ -1,10 +1,10 @@
 {
   "cori": {
-    "gain_db": -3.9,
+    "gain_db": 2.1,
     "measured_lufs": -16.1
   },
   "af_bella": {
-    "gain_db": 4.9,
+    "gain_db": 10.9,
     "measured_lufs": -24.9
   }
 }
