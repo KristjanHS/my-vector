@@ -14,11 +14,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
@@ -64,7 +64,6 @@ func (s Settings) Validate() error {
 var (
 	// SettingsPath is the settings file, beside wire-pod's apiConfig.json (gitignored).
 	SettingsPath = func() string { return filepath.Join(filepath.Dir(vars.ApiConfigPath), "myvectorConfig.json") }
-	saveMu       sync.Mutex
 	//go:embed settings.html
 	page []byte
 )
@@ -89,30 +88,12 @@ func Current() Settings {
 	return s
 }
 
-// Save validates s and replaces the settings file atomically.
+// Save validates s and writes its keys to the settings file atomically, keeping the others ("lang").
 func Save(s Settings) error {
 	if err := s.Validate(); err != nil {
 		return err
 	}
-	b, _ := json.MarshalIndent(s, "", "  ")
-	saveMu.Lock()
-	defer saveMu.Unlock()
-	path := SettingsPath()
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".myvectorConfig-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) // no-op after the rename
-	if _, err = tmp.Write(append(b, '\n')); err == nil {
-		err = tmp.Chmod(0644)
-	}
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = os.Rename(tmp.Name(), path)
-	}
-	return err
+	return conf.Update(SettingsPath(), map[string]any{"t1": s.T1, "t2": s.T2, "slow": s.Slow})
 }
 
 // PushTimeout bounds one voice-push.sh run (its SSH ConnectTimeout is 8 s).
