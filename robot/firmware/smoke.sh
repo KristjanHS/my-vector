@@ -11,7 +11,11 @@ here=$(cd "$(dirname "$0")" && pwd)
 . "$here/../env.sh"
 units=(vic-engine vic-anim vic-robot)
 fatal='Fatal|SIGSEGV|SIGABRT|terminate called|Backtrace'
-die() { echo "FAIL: $*" >&2; exit 1; }
+die() { # once the units are up ($up), a failing check also reports a unit that died meanwhile
+  echo "FAIL: $*" >&2
+  [[ -z ${up:-} || $(pids) == "$up" ]] || crash_report >&2
+  exit 1
+}
 setup() { echo "SETUP: $*" >&2; exit 2; }
 ok() { echo "ok: $*"; }
 steps=9 step_n=0
@@ -31,11 +35,14 @@ same_pids() { # same_pids <when>: PIDs still $up, else die; lost SSH = setup
 }
 # On a unit failure: each unit's systemd state + the robot journal's crash lines since a minute before the smoke start ($t0, robot clock).
 crash='Fatal|SIGSEGV|SIGABRT|terminate called|Backtrace|SeAssert|caught signal|terminated by signal|#[0-9]+ pc |Main process exited'
+# First crash first: backtraces capped at 5 frames, 25 lines total; 30 s max (systemctl can stall while the fault handler tears down).
 crash_report() {
-  ssh_ "for u in ${units[*]}; do echo \"\$u: \$(systemctl show -p ActiveState -p SubState -p MainPID -p ExecMainStatus \$u | tr '\n' ' ')\"; done
+  timeout 30 ssh "${ssh_opts[@]}" -o ServerAliveInterval=3 -o ServerAliveCountMax=2 "root@$ip" "
+for u in ${units[*]}; do echo \"\$u: \$(systemctl show -p ActiveState -p SubState -p MainPID -p ExecMainStatus \$u | tr '\n' ' ')\"; done
 echo 'crash lines (robot journal):'
-journalctl -o short-iso --no-pager --since @$((t0 - 60)) | grep -E '$crash' | tail -n 15 | grep . || echo '  none'" 2>/dev/null ||
-    echo "(no crash report: SSH failed)"
+if j=\$(journalctl -o short-iso --no-pager --since @$((t0 - 60))); then
+  printf '%s\n' \"\$j\" | grep -E '$crash' | awk '/#[0-9]+ pc /{ if (++f > 5) next; print; next } { f = 0; print }' | head -n 25 | grep . || echo '  none'
+else echo '  journalctl failed'; fi" 2>/dev/null || echo "(no crash report: SSH failed or timed out)"
 }
 die_down() { echo "FAIL: $*" >&2; crash_report >&2; exit 1; }
 docked() {
