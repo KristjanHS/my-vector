@@ -14,7 +14,7 @@ allowed_edits=(
   chipper/pkg/vars/vars.go               # LoadIntents returns forkFilterIntents(...) (fork_intents.go); reads intent-data/<ForkLanguage()> (fork_lang.go)
   chipper/pkg/wirepod/ttr/matchIntentSend.go # ProcessTextAll partial pass: vars.ForkContainsPhrase (whole words); !locale = vars.ForkLanguage()
   chipper/pkg/wirepod/localization/localization.go # GetText asks forkGetText first (fork_lang.go)
-  chipper/pkg/wirepod/preqs/server.go    # sttHandler = forkMicCapture(...) — mic capture for STT scoring (fork_miccap.go)
+  chipper/pkg/wirepod/preqs/server.go    # sttHandler = forkMicCapture(forkSTTRouter(...)) — mic capture (fork_miccap.go) + et-EE STT router (fork_stt.go)
   chipper/webroot/index.html             # nav link to the fork voice page /myvector/voice (myvector/voice)
 )
 
