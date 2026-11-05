@@ -1,6 +1,11 @@
 package vars
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+)
 
 // Built-in intents that still match before the LLM (2026-11-05-intent-allowlist.md, docs/plans/).
 var forkAllowedIntents = []string{
@@ -30,11 +35,15 @@ var forkAddedKeyphrases = map[string][]string{
 	"intent_clock_time":        {"what's the time", "whats the time", "tell me the time"},
 }
 
-// ForkContainsPhrase is ProcessTextAll's partial match on whole words; bytes >= 0x80 are separators so zh-CN still matches.
+// forkIsWord: ASCII alnum, ', and Latin letters U+00C0–U+024F (ä õ ö ü š ž); CJK etc. stay separators so zh-CN still matches.
+func forkIsWord(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '\'' || r >= 0xC0 && r <= 0x24F && r != 0xD7 && r != 0xF7
+}
+
+// ForkContainsPhrase is ProcessTextAll's partial match on whole words; a trailing "*" (E22) matches any word ending.
 func ForkContainsPhrase(text, phrase string) bool {
-	isWord := func(b byte) bool {
-		return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '\''
-	}
+	stem := strings.HasSuffix(phrase, "*")
+	phrase = strings.TrimSuffix(phrase, "*")
 	if phrase == "" {
 		return false
 	}
@@ -45,12 +54,22 @@ func ForkContainsPhrase(text, phrase string) bool {
 		}
 		j += i
 		end := j + len(phrase)
-		if (j == 0 || !isWord(text[j-1])) && (end == len(text) || !isWord(text[end])) {
+		before, _ := utf8.DecodeLastRuneInString(text[:j])
+		after, _ := utf8.DecodeRuneInString(text[end:])
+		if (j == 0 || !forkIsWord(before)) && (stem || end == len(text) || !forkIsWord(after)) {
 			return true
 		}
 		i = j + 1
 	}
 	return false
+}
+
+// ForkNormalizeText trims Whisper's end punctuation in Estonian mode so names and exact matches stay clean.
+func ForkNormalizeText(text string) string {
+	if ForkLanguage() != lang.Estonian {
+		return text
+	}
+	return strings.TrimRight(text, " .?!…")
 }
 
 // forkFilterIntents keeps only allowlisted intents, in file order, minus dropped and plus added keyphrases.
