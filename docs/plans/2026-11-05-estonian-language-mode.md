@@ -27,6 +27,9 @@
 | E16 | EN LLM = `qwen3.5:4b` (mean 4.40 vs gemma3 3.70; vision ✓); becomes the default in 7.1, with reasoning off |
 | E17 | ET voice = Piper `et_EE-news-medium` Mari for T1 and T2 (CPU, 0 VRAM) |
 | E18 | Built-in lines = D2a; switch = D-RF B; toggle = `/myvector/voice` grown into "Language & voice" (language radio + per-language T1/T2) |
+| E19 | ET STT runs in its own service `stt/server.py` (`myvector-stt`, 127.0.0.1:8092, CUDA-12 venv `robot/work/et-stt/venv`); never inside the CUDA-13 TTS venv |
+| E20 | ET STT unreachable or failing → the router returns an error (no Vosk fallback) |
+| E21 | STT model loads when `myvectorConfig.json` `lang` = `et-EE` (5 s poll), frees on `en-US`; a request before the load waits for it |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -78,7 +81,7 @@ Ruled E15–E18 (2026-11-05).
 |---|---|---|---|
 | 4.1 | Lang provider: `lang.Current()` / `lang.Save()`, `"lang"` field in `myvectorConfig.json`, default `en-US`, invalid → `en-US` | `chipper/pkg/myvector/lang/` | `go test ./pkg/myvector/...` (`TestLangDefault`, `TestLangInvalidFallsBack`) — already in gate |
 | 4.2 | Hook `STT.Language` readers (K7 `GetText`, K5 `LoadIntents`, K9 literals) through 4.1 via `fork_*.go`; drift-list each hook line | `vars/fork_lang.go`, `localization/fork_lang.go`, `scripts/upstream-drift.sh` | `go test -run Fork ./pkg/vars/` (`TestForkLangEnglishUnchanged`) + drift check |
-| 5.1 | Estonian STT engine wired + model fetch into `robot/work/`-style gitignored path (E15) | `chipper/pkg/wirepod/stt/<engine>/` or fork router `fork_stt.go` | new `go test -run Fork ./pkg/wirepod/stt/...` with a stub engine; add the package to `scripts/check.sh` |
+| 5.1 | Estonian STT (E15, E19–E21): `forkSTTRouter` wraps the Vosk handler; `stt/server.py` + `stt/setup.sh` (model fetch into `robot/work/et-stt/`) + `make stt-setup/stt-enable/stt-disable` | `preqs/fork_stt.go`, `preqs/server.go` (drift-listed), `stt/`, `scripts/myvector-stt.service`, `Makefile` | `go test -run Fork ./pkg/wirepod/preqs/` (`TestForkSTTRouter*`, httptest stub) + pytest `stt/tests` in `scripts/check.sh` + live `stt/smoke.sh` |
 | 6.1 | `et-EE` intent table for the 8 `forkAllowedIntents`; per-language `forkDroppedKeyphrases`/`forkAddedKeyphrases` (`map[lang]…`); Estonian stem matching in `ForkContainsPhrase` (kell/kella/kellaaeg) | `vars/fork_intents.go`, `chipper/intent-data/et-EE.json` | `TestForkIntentsEstonian` (10 Stage 2.2 phrases → intent), English table test unchanged |
 | 6.2 | Estonian `GetText` words (numbers for timer, weather locative "Tallinnas") via fork override, not a 14th upstream column | `localization/fork_texts.go` | `TestForkTimerEstonian` ("viieks minutiks" → 300 s), `TestForkWeatherCityEstonian` |
 | 7.1 | LLM language line appended in `CreateAIReq` when `lang = et-EE`; EN default `qwen3.5:4b` (E16); send `ReasoningEffort: "none"` only when `Provider == "custom"` (Ollama; qwen3.5/gemma4 think by default — OpenAI rejects it on non-reasoning models) | `ttr/fork_prompt.go` (hook in kgsim.go, drift-listed), `scripts/llm.sh` + `docs/llm-trials.md` default model | `go test -run Fork ./pkg/wirepod/ttr/` (`TestForkPromptEstonian`, `TestForkPromptEnglishUnchanged`, `TestForkPromptOpenAIOmitsReasoning`) |
