@@ -94,8 +94,8 @@ Notes:
 
 - Animations play while docked. The firmware patches keep him on the charger; if one ever tries to
   drive him off, drop `--commands`.
-- `--intentgraph` sends a sentence to a built-in intent if any keyword matches ("tonight" → goodnight, "start" → explore);
-  follow-up listening only works on the "I have a question" route.
+- Only 8 built-in intents still match first (time, timers, weather, "take a photo", names, "I have a question");
+  the rest go to the LLM (`forkAllowedIntents`). Follow-up listening only works after "I have a question" or "let's talk".
 - Small models sometimes write the command names out loud instead of running them. If that happens,
   try the bigger `mistral` model or go to step 3.
 

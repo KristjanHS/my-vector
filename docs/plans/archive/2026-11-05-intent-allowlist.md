@@ -1,6 +1,6 @@
 # Built-in intent allowlist — most sentences go to the LLM
 
-**Status**: OPEN — rulings made 2026-11-05 (llm-trials run); build in a fresh session.
+**Status**: ✅ SHIPPED 2026-11-05 — live "cook tonight" confirm owed (docs/backlog.md §OWED[USER]).
 
 Why: wire-pod substring-matches 55 built-in intents before the LLM ("tonight" → goodnight, "start" → explore);
 with a worn battery Vector stays docked, so movement/cube/game intents only steal questions.
@@ -20,4 +20,4 @@ with a worn battery Vector stays docked, so movement/cube/game intents only stea
 - [x] R1/R4 + `fork_intents_test.go`: filtered names == allowlist; an unknown name in the list fails the test.
 - [x] `make check`; `go -C chipper test ./pkg/vars/`; red demo on the filter.
 - [ ] `make start`; falsifier: "Hey Vector, what should I cook tonight?" → log shows `Making LLM request`, not `intent_greeting_goodnight`.
-- [ ] Code review; update `llm-trials.md` (docs/) step 2 note.
+- [x] Code review; update `llm-trials.md` (docs/) step 2 note.

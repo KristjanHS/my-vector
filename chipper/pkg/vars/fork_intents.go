@@ -2,7 +2,7 @@ package vars
 
 import "strings"
 
-// Built-in intents that still match before the LLM (intent-allowlist.md, docs/plans/).
+// Built-in intents that still match before the LLM (2026-11-05-intent-allowlist.md, docs/plans/).
 var forkAllowedIntents = []string{
 	"intent_clock_time",
 	"intent_clock_settimer_extend",
