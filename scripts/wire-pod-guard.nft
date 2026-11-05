@@ -1,6 +1,6 @@
 #!/usr/sbin/nft -f
-# Loaded by wire-pod.service (ExecStartPre; an nft error stops the whole service). :80 and :8080 serve the same
-# unauthenticated API (LLM key included): only this PC and `allowed` reach them. Add a device here, then `make daemon-enable`.
+# Loaded by wire-pod.service + myvector-tts.service (ExecStartPre; an nft error stops the service). :80/:8080 serve the same
+# unauthenticated API (LLM key included), :8091 the TTS service: only this PC and `allowed` reach them. Add a device here, then `make daemon-enable`.
 # The ports are hardcoded: a WEBSERVER_PORT override in source.sh needs the same change here.
 table inet wirepod_guard
 delete table inet wirepod_guard
@@ -16,10 +16,10 @@ table inet wirepod_guard {
 	chain input {
 		type filter hook input priority filter; policy accept;
 		# lo = WSL itself; loopback0 = Windows localhost under mirrored networking
-		tcp dport { 80, 8080 } iifname { "lo", "loopback0" } accept
-		tcp dport { 80, 8080 } ip saddr @allowed4 accept
-		tcp dport { 80, 8080 } ip6 saddr @allowed6 accept
-		tcp dport { 80, 8080 } limit rate 6/minute log prefix "wirepod-guard drop: "
-		tcp dport { 80, 8080 } drop
+		tcp dport { 80, 8080, 8091 } iifname { "lo", "loopback0" } accept
+		tcp dport { 80, 8080, 8091 } ip saddr @allowed4 accept
+		tcp dport { 80, 8080, 8091 } ip6 saddr @allowed6 accept
+		tcp dport { 80, 8080, 8091 } limit rate 6/minute log prefix "wirepod-guard drop: "
+		tcp dport { 80, 8080, 8091 } drop
 	}
 }

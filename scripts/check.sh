@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, firmware static checks (check-static.sh), go vet of the patched sdkapp,
-# chipper myvector + vars fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir).
+# chipper myvector + vars fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir), tts pytest (when the TTS venv exists).
 # Usage: check.sh [--head [rev]]   --head checks only that commit (default HEAD) via a git archive copy;
 #   make ship passes its pinned sha so the checked commit is the one it ships.
 set -euo pipefail
@@ -21,3 +21,6 @@ echo "shell syntax OK"
 echo "go vet sdkapp OK"
 if [[ -d $dir/chipper/pkg/myvector ]]; then (cd "$dir/chipper" && go test ./pkg/myvector/...); fi
 if [[ -f $dir/chipper/pkg/vars/fork_intents_test.go ]]; then (cd "$dir/chipper" && go test -run Fork ./pkg/vars/); fi
+tts_py=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")/robot/work/tts/venv/bin/python
+if [[ -d $dir/tts/tests && -x $tts_py ]]; then "$tts_py" -m pytest -q -p no:cacheprovider "$dir/tts/tests"
+elif [[ -d $dir/tts/tests ]]; then echo "tts tests skipped: no venv (make tts-setup)"; fi

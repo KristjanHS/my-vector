@@ -1,5 +1,7 @@
-.PHONY: help start daemon-enable daemon-disable check robot-test ship
+.PHONY: help start daemon-enable daemon-disable tts-setup tts-enable tts-disable check robot-test ship
 # Run from anywhere: make -C ~/projects/my-vector <target>
+# robot/work of the main checkout (venvs + models live there, also when make runs in a worktree)
+WORK := $(shell dirname "$$(git -C $(CURDIR) rev-parse --path-format=absolute --git-common-dir)")/robot/work
 
 help: ## List available targets (default)
 	@grep -E '^[a-zA-Z0-9_.-]+:.*## ' $(firstword $(MAKEFILE_LIST)) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -21,6 +23,22 @@ daemon-disable: ## Stop + remove wire-pod.service (make start runs in the foregr
 	sudo systemctl disable --now wire-pod
 	sudo rm -f /etc/systemd/system/wire-pod.service
 	sudo nft delete table inet wirepod_guard 2>/dev/null || true
+	sudo systemctl daemon-reload
+
+tts-setup: ## Create/refresh the TTS venv + voice models in robot/work (no sudo; downloads ~3 GB on first run)
+	$(CURDIR)/tts/setup.sh
+
+tts-enable: ## Install + (re)start myvector-tts.service (:8091, runs as you, starts with WSL); asks the sudo password
+	@[ -x $(WORK)/tts/venv/bin/python ] || { echo "no TTS venv: run make tts-setup first"; exit 1; }
+	sed -e 's|@REPO@|$(CURDIR)|g' -e 's|@WORK@|$(WORK)|g' -e 's|@USER@|$(USER)|g' $(CURDIR)/scripts/myvector-tts.service | sudo tee /etc/systemd/system/myvector-tts.service >/dev/null
+	sudo systemctl daemon-reload
+	sudo systemctl enable myvector-tts
+	sudo systemctl restart myvector-tts
+	@echo "logs: journalctl -u myvector-tts -f   live check (after ~30 s warm-up): tts/smoke.sh"
+
+tts-disable: ## Stop + remove myvector-tts.service
+	sudo systemctl disable --now myvector-tts
+	sudo rm -f /etc/systemd/system/myvector-tts.service
 	sudo systemctl daemon-reload
 
 check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector + vars fork Go tests
