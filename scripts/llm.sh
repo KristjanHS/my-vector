@@ -62,6 +62,17 @@ use() {
       *) die "unknown flag $1" ;;
     esac; shift
   done
+  # OpenAI TTS is called with the provider's key, so any other provider leaves Vector silent.
+  if [[ -n $voice ]]; then
+    [[ $P == openai ]] || die "--voice works only with the openai preset"
+    [[ " alloy onyx fable shimmer nova echo " == *" $voice "* ]] || die "--voice: one of alloy onyx fable shimmer nova echo"
+  fi
+  # ping always omits top_p for Claude, so it can't tell whether the server runs fork_llm.go yet.
+  local started fix=$ROOT/chipper/pkg/wirepod/ttr/fork_llm.go
+  started=$(systemctl show wire-pod -p ActiveEnterTimestamp --value 2>/dev/null || true)
+  if [[ ${M,,} == claude* && -n $started ]] && (($(date -d "$started" +%s) < $(stat -c %Y "$fix"))); then
+    echo "WARNING: wire-pod started before the Claude fix — run: make start (ping below still passes)" >&2
+  fi
   local key=ollama
   if [[ -n $K ]]; then need_key "$K"; key=${!K}; fi
   # Full settings every time, so nothing from the previous provider leaks through.
@@ -74,8 +85,8 @@ print(json.dumps({"enable":True,"provider":e["P"],"endpoint":e["E"],"model":e["M
   ping
 }
 
-# Same request shape as chipper/pkg/wirepod/ttr/kgsim.go (stream, temperature 1, top_p 1 except
-# Claude — see fork_llm.go). Key goes through the environment, never argv.
+# Smoke test of kgsim.go's request: same endpoint, key, model, stream, temperature and top_p rule;
+# no command prompt, chat history or 2048-token cap. Key goes through the environment, never argv.
 ping() {
   local q=${1:-Why is the sky blue? Answer in one sentence.}
   get_kg | Q=$q python3 -I -c 'import json,os,sys,time,urllib.request
@@ -189,7 +200,8 @@ ha_plugin() {
 
 case ${1:-} in
   show) show ;;
-  backup) f=$WORK/kg-$(date +%Y%m%d-%H%M%S).json; (umask 077; get_kg >"$f"); echo "saved $f" ;;
+  backup) f=$WORK/kg-$(date +%Y%m%d-%H%M%S).json
+          (umask 077; get_kg >"$f.tmp") || { rm -f "$f.tmp"; exit 1; }; mv "$f.tmp" "$f"; echo "saved $f" ;;
   restore) [[ -f ${2:-} ]] || die "usage: restore FILE"; set_kg <"$2"; echo restored; show ;;
   off) echo '{"enable":false}' | set_kg; echo "LLM off" ;;
   use) shift; use "$@" ;;
