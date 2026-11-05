@@ -118,8 +118,8 @@ scripts/llm.sh use claude --commands --intentgraph --remember   # then the step-
 - Spend: check usage in the Anthropic Console (the workspace that owns the key). A spoken answer is a
   few hundred tokens, so the credit lasts a long time on Haiku.
 - **Key exposure:** wire-pod stores the key in plain text and serves it, with no login, at
-  `:8080/api/get_kg_api`; `scripts/wire-pod-guard.nft` (loaded by wire-pod.service) limits :8080 to this
-  PC. Keep a spend limit on that workspace. `use ollama` overwrites the stored key; `off` does not.
+  `:80` and `:8080` (`/api/get_kg_api`); `scripts/wire-pod-guard.nft` limits both to this PC and Vector, only
+  while wire-pod runs as the service (`make daemon-enable`). Keep a workspace spend limit. `use ollama` overwrites the key; `off` doesn't.
 
 ## 4. OpenAI
 
