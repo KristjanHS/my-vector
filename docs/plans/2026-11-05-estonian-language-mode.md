@@ -19,7 +19,7 @@
 | E8 | Switch is manual only — no language auto-detect (D-RF C dropped) |
 | E9 | STT test audio: FLEURS `et_ee` test (CC-BY-4.0, open) now; Common Voice `et` once the user downloads it from Mozilla Data Collective into `robot/work/et-stt/cv/`; Stage 2.2 commands rescored before Stage 3 |
 | E10 | Keyed free tiers (Azure F0, Google) DROPPED: Azure F0 signup wants a credit card, Google STT a paid billing account — fail E4 |
-| E11 | ET-mode LLM = EstLLM 8B, the only ET model (user pick); quant = `bench.py ladder`: Q4_K_M, then up Q5_K_S→Q5_K_M while fit, else down Q4_K_S→IQ4_XS (Q6_K skipped); pick = last fit, CPU spill = no fit, speed reported only (user: full-VRAM speed is ok); blind scoring + gemma4-for-ET dropped |
+| E11 | ET-mode LLM = EstLLM 8B, the only ET model (user pick); quant = largest `i1-*` passing the 1.3 ET stack test (Q4_K_M + Q4_K_S first; Q5_K_S only if Q4_K_M passes; Q6_K skipped); spill = no fit, speed reported only (user: full-VRAM speed is ok); blind scoring + gemma4-for-ET dropped |
 | E12 | EN-mode LLM re-pick (user ask): gemma3:4b baseline vs `qwen3.5:4b`, `ministral-3:8b`, `gemma4:e2b-it-qat`, `gemma4:e4b-it-qat` via `bench.py --lang en`; af_bella must fit beside it |
 
 ## Seams already known (verify, don't re-derive)
@@ -58,7 +58,7 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 |---|---|---|
 | 1.1 R-a STT | Lead: `TalTechNLP/whisper-large-v3-turbo-et-verbatim` (CT2 `ct2/` subfolder, faster-whisper cuda float16 = stt-faster preset `et-large`; reuse = copy that config, stt-faster has no server; its WER/latency/VRAM are unmeasured); also Vosk et?, whisper.cpp, free online (TartuNLP ASR, Azure F0, Google) | harness `robot/et-stt/` (tracked), data/results `robot/work/et-stt/`; 50 FLEURS `et_ee` clips (+ CV `et` when present, E9); table WER · end-of-speech→text s · RAM/VRAM · offline. Targets: WER ≤ 25 %, ≤ 2.0 s (vosk `en-US` baseline measured alongside) |
 | 1.2 R-b TTS | Free Estonian voices: TartuNLP Neurokõne (local model + free API), MMS-TTS `est` (license check), Piper `et_EE-news-medium`, Kokoro et (none), edge-tts `et-EE-AnuNeural` (A5 ToS risk), Azure F0 `et-EE-Anu/Kert`, espeak-ng `et` | add engine adapter(s) to `robot/voice-samples/{gen.sh,synth.py}` (`pkgs[]` + branch); `gen.sh et-<set> "<text>" <engine:voice>…` with a time, a weather, a timer and an LLM sentence; first-audio s on GPU/CPU; VRAM next to Kokoro (R20) |
-| 1.3 R-c LLM | Windows Ollama now 0.40.14; re-run every row on it. Fit test (replaces `OTHER_MIB` + `size_vram`): `base` = nvidia-smi used after unload settles, Kokoro resident (`:8091/health` `kokoro_loaded`); LLM = used after load − base; EN fit: 8192 − used ≥ 0; ET fit: 8192 − used + 666 ≥ 1341 STT + 420 Neurokõne | `robot/et-llm/run.sh`-style `bench.py [--lang en] gen` → `score.py en` (blind 1–5) → `bench.py --lang en summary`; data `robot/work/et-llm/<lang>/`; append the EN pick to `docs/llm-trials.md` |
+| 1.3 R-c LLM | Ollama 0.40.14. EN fit = `bench.py` delta (no spill). ET fit = new `robot/et-llm/stack.py`: quant loaded, then TalTech STT clip (`robot/work/et-stt/venv`, faster-whisper `int8_float16`) ∥ Neurokõne sentence (`venv-tartulocal`, `synth.py tartulocal`), nvidia-smi 100 ms peak; fit = no spill ∧ peak − base + 2389 (worst base seen) + 256 ≤ 8192 | `robot/et-llm/run.sh`-style `bench.py [--lang en] gen` → `score.py en` (blind 1–5) → `bench.py --lang en summary`; data `robot/work/et-llm/<lang>/`; append the EN pick to `docs/llm-trials.md` |
 | 1.4 R-d built-in lines | Which robot lines actually speak (inventory K14 + `CreateUtterance` callers); Estonian text path: D1 robot-side `et-EE` table + `RobotSetting.locale` + patched `GetTTSStringForTime`; D2 patch 0010 sends line key/args + `lang`, PC server renders Estonian; D3 wire-pod answers the 8 allowlisted intents itself via T1 | per option: patch size, what Acapela does with `et-EE` locale (no pack → crash/fallback?), behaviour/face animation kept? Fallback when PC down: English Acapela speaking Estonian text = unacceptable → name the fallback |
 | 1.5 R-e switch | Where the toggle lives: extend `/myvector/voice` into language+voice vs new fork page; how STT, intents, GetText, LLM, T1, T2 read one setting; inventory K9 literals + every `STT.Language` reader; live vs restart | table consumer → read site → hook; feeds D-RF |
 
@@ -88,7 +88,7 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 | 5.1 | Estonian STT engine wired + model fetch into `robot/work/`-style gitignored path (shape set by STT pick) | `chipper/pkg/wirepod/stt/<engine>/` or fork router `fork_stt.go` | new `go test -run Fork ./pkg/wirepod/stt/...` with a stub engine; add the package to `scripts/check.sh` |
 | 6.1 | `et-EE` intent table for the 8 `forkAllowedIntents`; per-language `forkDroppedKeyphrases`/`forkAddedKeyphrases` (`map[lang]…`); Estonian stem matching in `ForkContainsPhrase` (kell/kella/kellaaeg) | `vars/fork_intents.go`, `chipper/intent-data/et-EE.json` | `TestForkIntentsEstonian` (10 Stage 2.2 phrases → intent), English table test unchanged |
 | 6.2 | Estonian `GetText` words (numbers for timer, weather locative "Tallinnas") via fork override, not a 14th upstream column | `localization/fork_texts.go` | `TestForkTimerEstonian` ("viieks minutiks" → 300 s), `TestForkWeatherCityEstonian` |
-| 7.1 | LLM language line appended in `CreateAIReq` when `lang = et-EE`; model per Stage 3 | `ttr/fork_prompt.go` (hook in kgsim.go, drift-listed) | `go test -run Fork ./pkg/wirepod/ttr/` (`TestForkPromptEstonian`, `TestForkPromptEnglishUnchanged`) |
+| 7.1 | LLM language line appended in `CreateAIReq` when `lang = et-EE`; model per Stage 3; send `ReasoningEffort: "none"` (qwen3.5/gemma4 think by default) | `ttr/fork_prompt.go` (hook in kgsim.go, drift-listed) | `go test -run Fork ./pkg/wirepod/ttr/` (`TestForkPromptEstonian`, `TestForkPromptEnglishUnchanged`) |
 | 8.1 | TTS server: Estonian engine + voice key(s) in `VOICES`, gain to -14 LUFS (R23, `tts/calibrate.py`), Estonian sentence split (shape set by voice pick) | `tts/server.py`, `tts/gains.json`, `tts/requirements.txt` | pytest `tts/tests` (stub engine) + live `tts/smoke.sh` |
 | 8.2 | Per-language T1/T2 in settings (`Settings` gains et pair; `Voices` per lang); page gets the language switch (shape set by UX pick) | `myvector/voice/settings.go`, `settings.html` | `TestSettingsValidate` + `TestSettingsSaveRoundTrip` extended; add pytest `test_voices_match_go` (none today) |
 | 9.1 | Built-in lines in Estonian (shape set by D1/D2/D3): D1/D2 = new patch `0011-*.patch` + `series` + `markers.tsv`; push `lang` in `myvector-voice.json` via `voice-push.sh` | `robot/firmware/`, `voice-push.sh`, `myvector/voice/` | `robot/firmware/check-static.sh`; host test `robot/firmware/tests/et-lines.sh` added to `scripts/check.sh`; `TestPushT2Args` extended |
@@ -157,10 +157,14 @@ Numbers unsaved (R-b terminal; GPU shared with a sibling job, VRAM = torch runni
 
 ### LLM (1.3 R-c)
 
-Rows below measured on Ollama 0.18.2 with the refuted `OTHER_MIB` fit (961 MiB already held Kokoro; `size_vram` under-reports) — superseded by the 1.3 fit-test re-run.
+Ollama 0.40.14, `reasoning_effort: "none"`; view `bench.py --lang <lang> summary`. Base (Ollama unloaded, TTS server up) seen 1318–2389 MiB, Windows alone 1144 — ET rows await `stack.py`.
 
-| rank | option | free | latency | score | verdict |
+| rank | option | free | latency (first sentence med / max · total med) | score (LLM GiB · headroom) | verdict |
 |---|---|---|---|---|---|
-| 1 | EstLLM 8B `i1-Q4_K_M` (ET) | yes, offline | first token 0.16 / 0.41 s, load 49.8 s | 5.09 GiB · 1.97 GiB free ≥ STT 1.31 + Neurokõne ≤ 0.41 | pick (E11) |
-| – | EstLLM `i1-Q5_K_S` / `Q5_K_M` (+0.63 / +0.76 GiB file, unrun) | yes, offline | – | est. 1.34 / 1.22 GiB free | no Neurokõne room / no STT room |
-| ref | gemma3:4b-it-qat (today's EN) | yes, offline | 0.19 / 0.26 s | 5.42 GiB · 1.65 GiB free | EN baseline (E12) |
+| ET | EstLLM 8B `i1-Q4_K_M` | yes, offline | 0.20 / 27.77 · 1.46 s | 5.06 · −128 MiB (old formula) | stack test |
+| ET | EstLLM 8B `i1-Q4_K_S` | yes, offline | 0.22 / 9.55 · 1.23 s | 4.85 · +45 MiB (old formula) | stack test |
+| EN | gemma4:e2b-it-qat | yes, offline | 0.29 / 0.90 · 0.35 s | 2.74 · 4067 | user score |
+| EN | gemma4:e4b-it-qat | yes, offline | 0.43 / 1.42 · 0.53 s | 4.14 · 2631 | user score |
+| EN | qwen3.5:4b | yes, offline | 0.69 / 1.89 · 1.22 s | 3.71 · 3079 | user score |
+| ref | gemma3:4b-it-qat (today's EN) | yes, offline | 0.16 / 8.53 · 0.41 s | 4.32 · 1650 | EN baseline |
+| – | ministral-3:8b | yes, offline | 0.66 / 9.43 · 5.12 s | 5.44 · spill | out (CPU spill) |
