@@ -29,9 +29,10 @@ const (
 var (
 	// URL is the TTS service; MYVECTOR_TTS_URL overrides it.
 	URL = envOr("MYVECTOR_TTS_URL", "http://127.0.0.1:8091")
-	// FirstAudio bounds connect + headers; the service sends headers with the first sentence.
+	// FirstAudio bounds dial + request + headers; the service sends headers with the first sentence.
 	FirstAudio = 3 * time.Second
-	tail       = 300 * time.Millisecond // wait past the last queued frame
+	tail       = 300 * time.Millisecond                                                      // wait past the last queued frame
+	client     = &http.Client{Transport: &http.Transport{IdleConnTimeout: 20 * time.Second}} // server idles out at 30 s
 )
 
 func envOr(k, def string) string {
@@ -64,23 +65,38 @@ func Say(ctx context.Context, v *vector.Vector, text, voice string, slow float64
 
 func fetch(ctx context.Context, text, voice string, slow float64) (io.ReadCloser, error) {
 	req, _ := json.Marshal(map[string]any{"text": text, "voice": voice, "slow": slow})
-	r, err := http.NewRequestWithContext(ctx, http.MethodPost, URL+"/tts", bytes.NewReader(req))
+	hctx, cancel := context.WithCancel(ctx)
+	r, err := http.NewRequestWithContext(hctx, http.MethodPost, URL+"/tts", bytes.NewReader(req))
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	r.Header.Set("Content-Type", "application/json")
-	c := http.Client{Transport: &http.Transport{ResponseHeaderTimeout: FirstAudio}}
-	resp, err := c.Do(r)
+	timer := time.AfterFunc(FirstAudio, cancel)
+	resp, err := client.Do(r)
+	if !timer.Stop() && ctx.Err() == nil {
+		err = fmt.Errorf("no audio from %s within %s", URL, FirstAudio)
+	}
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
 		resp.Body.Close()
-		return nil, fmt.Errorf("tts %d: %s", resp.StatusCode, bytes.TrimSpace(msg))
+		cancel()
+		return nil, fmt.Errorf("tts %d: %s", resp.StatusCode, bytes.Join(bytes.Fields(msg), []byte(" ")))
 	}
-	return resp.Body, nil
+	return body{resp.Body, cancel}, nil
 }
+
+// body ends the request context with the body.
+type body struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b body) Close() error { defer b.cancel(); return b.ReadCloser.Close() }
 
 // readFrame reads up to one frame; io.EOF only at a clean end with nothing read. Not io.ReadFull: its
 // ErrUnexpectedEOF would hide a body cut mid-stream (net/http's own ErrUnexpectedEOF) as a short last frame.
@@ -150,6 +166,13 @@ func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader)
 		err = c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamChunk{
 			AudioStreamChunk: &vectorpb.ExternalAudioStreamChunk{AudioChunkSizeBytes: uint32(len(b)), AudioChunkSamples: b}}})
 		end = end.Add(time.Duration(len(b)) * time.Second / (2 * rate))
+		select {
+		case e := <-done: // overrun/failure ends it; a mid-text complete (drained between sentences) does not
+			if e != nil {
+				return e
+			}
+		default:
+		}
 		if err == nil {
 			sleep(ctx, time.Until(end)-lead)
 			if b, err = readFrame(body); err == io.EOF {

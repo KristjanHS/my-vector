@@ -30,14 +30,16 @@ echo "series/manifest OK (${#series[@]} patches, ${#rows[@]} markers)"
 
 # S5: the smoke test must never command the wheels or the lift.
 smoke=()
-voice_go=$repo/chipper/pkg/myvector/voice/voice.go # fork_say speaks through it
-for f in "$here/smoke.sh" "$repo/chipper/pkg/wirepod/sdkapp/fork_smoke.go" "$voice_go"; do [[ ! -f $f ]] || smoke+=("$f"); done
-[[ ! -f $here/smoke.sh || ${#smoke[@]} == 3 ]] || die "smoke.sh present but fork_smoke.go or myvector/voice/voice.go missing (S5 would skip it)"
+voice_go=() # fork_say speaks through myvector/voice
+for f in "$repo"/chipper/pkg/myvector/voice/*.go; do [[ $f == *_test.go ]] || voice_go+=("$f"); done
+for f in "$here/smoke.sh" "$repo/chipper/pkg/wirepod/sdkapp/fork_smoke.go"; do [[ ! -f $f ]] || smoke+=("$f"); done
+[[ ! -f $here/smoke.sh || (${#smoke[@]} == 2 && ${#voice_go[@]} -gt 0) ]] || die "smoke.sh present but fork_smoke.go or myvector/voice/*.go missing (S5 would skip it)"
+smoke+=("${voice_go[@]}")
 if ((${#smoke[@]})); then
   hits=$(grep -nE 'move_wheels|move_lift|DriveWheels|DriveStraight|MoveLift' "${smoke[@]}" || true)
   [[ -z $hits ]] || die "smoke code commands motion: $hits"
 fi
-if ((${#smoke[@]} == 3)); then
+if ((${#smoke[@]} >= 3)); then
   # S5 allowlist (comment lines skipped). smoke.sh: each `sdk <name>` and api-sdk/<name> names a listed endpoint
   # literally; sdk()'s own api-sdk/$1 is the one non-literal; cloud_intent only in intent(), whose calls pass my_vector_log_*.
   sdk_ok='conn_test|get_battery|assume_behavior_control|release_behavior_control|move_head|fork_robot_state|fork_face|fork_say'
@@ -67,7 +69,7 @@ if ((${#smoke[@]} == 3)); then
     done
     [[ $l != *cloud_intent* || $def == intent ]] || die "S5: smoke.sh:$n: cloud_intent outside intent(): $l"
   done <"${smoke[0]}"
-  # Every Conn use: fork_smoke.go .EventStream / .DisplayFaceImageRGB / .SayText; voice.go .ExternalAudioStreamPlayback / .SayText.
+  # Every Conn use: fork_smoke.go .EventStream / .DisplayFaceImageRGB / .SayText; myvector/voice .ExternalAudioStreamPlayback / .SayText.
   conn_ok() { # conn_ok <file> <method ERE>
     local n=0 l rest
     while IFS= read -r l; do
@@ -81,7 +83,7 @@ if ((${#smoke[@]} == 3)); then
     done <"$1"
   }
   conn_ok "${smoke[1]}" 'EventStream|DisplayFaceImageRGB|SayText'
-  conn_ok "${smoke[2]}" 'ExternalAudioStreamPlayback|SayText'
+  for f in "${voice_go[@]}"; do conn_ok "$f" 'ExternalAudioStreamPlayback|SayText'; done
 fi
 echo "smoke motion-free OK (${#smoke[@]} files; denylist + endpoint/method allowlist)"
 

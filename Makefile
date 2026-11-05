@@ -32,6 +32,7 @@ tts-setup: ## Create/refresh the TTS venv in robot/work + voice models (Kokoro i
 
 tts-enable: ## Install + (re)start myvector-tts.service (:8091, runs as you, starts with WSL); asks the sudo password
 	@[ -x $(WORK)/tts/venv/bin/python ] || { echo "no TTS venv: run make tts-setup first"; exit 1; }
+	@[ -d $(HF_HUB_CACHE)/models--hexgrad--Kokoro-82M ] || { echo "no Kokoro in HF_HUB_CACHE=$(HF_HUB_CACHE) (the unit runs offline): export HF_HOME/HF_HUB_CACHE as make tts-setup saw them"; exit 1; }
 	sed -e 's|@REPO@|$(CURDIR)|g' -e 's|@WORK@|$(WORK)|g' -e 's|@USER@|$(USER)|g' -e 's|@HF_HOME@|$(HF_HOME)|g' -e 's|@HF_HUB_CACHE@|$(HF_HUB_CACHE)|g' $(CURDIR)/scripts/myvector-tts.service | sudo tee /etc/systemd/system/myvector-tts.service >/dev/null
 	sudo systemctl daemon-reload
 	sudo systemctl enable myvector-tts

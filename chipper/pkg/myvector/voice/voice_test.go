@@ -3,6 +3,7 @@ package voice
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,9 @@ type robot struct {
 	vectorpb.ExternalInterfaceClient // nil: any other method panics
 	said                             []*vectorpb.SayTextRequest
 	sent                             []*vectorpb.ExternalAudioStreamRequest
+	at                               []time.Time                                // when each sent message arrived
+	verdict                          chan *vectorpb.ExternalAudioStreamResponse // Recv's replies
+	completeOnEnd                    bool                                       // reply PlaybackComplete to AudioStreamComplete
 }
 
 func (r *robot) SayText(_ context.Context, in *vectorpb.SayTextRequest, _ ...grpc.CallOption) (*vectorpb.SayTextResponse, error) {
@@ -38,12 +42,21 @@ type audio struct {
 
 func (a *audio) Send(m *vectorpb.ExternalAudioStreamRequest) error {
 	a.r.sent = append(a.r.sent, m)
+	a.r.at = append(a.r.at, time.Now())
+	if a.r.completeOnEnd && m.GetAudioStreamComplete() != nil {
+		a.r.verdict <- &vectorpb.ExternalAudioStreamResponse{AudioResponseType: &vectorpb.ExternalAudioStreamResponse_AudioStreamPlaybackComplete{
+			AudioStreamPlaybackComplete: &vectorpb.ExternalAudioStreamPlaybackComplete{}}}
+	}
 	return nil
 }
 
 func (a *audio) Recv() (*vectorpb.ExternalAudioStreamResponse, error) {
-	<-a.ctx.Done()
-	return nil, a.ctx.Err()
+	select {
+	case v := <-a.r.verdict:
+		return v, nil
+	case <-a.ctx.Done():
+		return nil, a.ctx.Err()
+	}
 }
 
 func service(t *testing.T, h http.HandlerFunc) {
@@ -57,11 +70,56 @@ func service(t *testing.T, h http.HandlerFunc) {
 
 func say(t *testing.T) (*robot, string, error) {
 	t.Helper()
-	r := &robot{}
+	r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1)}
+	got, err := sayOn(t, r)
+	return r, got, err
+}
+
+func sayOn(t *testing.T, r *robot) (string, error) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	got, err := Say(ctx, &vector.Vector{Conn: r}, "smoke test", "cori", 1)
-	return r, got, err
+	return Say(ctx, &vector.Vector{Conn: r}, "smoke test", "cori", 1)
+}
+
+func oneSecond(w http.ResponseWriter, r *http.Request) { w.Write(make([]byte, 2*16000)) }
+
+func TestSayPacesToRealTime(t *testing.T) {
+	service(t, oneSecond)
+	start := time.Now()
+	r, _, err := say(t)
+	took := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent := 0
+	for i, m := range r.sent {
+		sent += len(m.GetAudioStreamChunk().GetAudioChunkSamples())
+		ahead := r.at[i].Sub(start) + lead + 50*time.Millisecond
+		if limit := int(ahead.Seconds()*32000) + frame; sent > limit {
+			t.Fatalf("%d bytes sent by %s, want at most %d (real time + lead)", sent, r.at[i].Sub(start), limit)
+		}
+	}
+	if took < time.Second {
+		t.Errorf("Say returned after %s, before the 1 s clip played out", took)
+	}
+}
+
+func TestSayRobotVerdict(t *testing.T) {
+	service(t, oneSecond)
+	r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1)}
+	r.verdict <- &vectorpb.ExternalAudioStreamResponse{AudioResponseType: &vectorpb.ExternalAudioStreamResponse_AudioStreamBufferOverrun{
+		AudioStreamBufferOverrun: &vectorpb.ExternalAudioStreamBufferOverrun{}}}
+	start := time.Now()
+	if _, err := sayOn(t, r); err == nil || !strings.Contains(err.Error(), "overrun") || time.Since(start) > 500*time.Millisecond {
+		t.Errorf("overrun: Say = %v after %s, want the overrun error at once", err, time.Since(start))
+	}
+
+	r = &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1), completeOnEnd: true}
+	start = time.Now()
+	if _, err := sayOn(t, r); err != nil || time.Since(start) > time.Second {
+		t.Errorf("complete: Say = %v after %s, want nil on the robot's PlaybackComplete (before the 1 s estimate)", err, time.Since(start))
+	}
 }
 
 func TestSayStreamsServiceAudio(t *testing.T) {
@@ -150,8 +208,14 @@ func TestSayFallsBackServiceDown(t *testing.T) {
 }
 
 func TestSayMidStreamErrorNoFallback(t *testing.T) {
+	for _, cut := range []int{2048, 1500} { // on a frame boundary, mid-frame
+		t.Run(fmt.Sprint(cut), func(t *testing.T) { midStream(t, cut) })
+	}
+}
+
+func midStream(t *testing.T, cut int) {
 	service(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Write(make([]byte, 2048)) // chunked, as tts/server.py streams
+		w.Write(make([]byte, cut)) // chunked, as tts/server.py streams
 
 		w.(http.Flusher).Flush()
 		panic(http.ErrAbortHandler) // cut the body mid-stream
