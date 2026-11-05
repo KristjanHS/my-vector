@@ -289,7 +289,7 @@ func ProcessTextAll(req interface{}, voiceText string, intents []vars.JsonIntent
 			matched = 0
 			for _, b := range intents {
 				for _, c := range b.Keyphrases {
-					if strings.Contains(voiceText, strings.ToLower(c)) && !b.RequireExactMatch {
+					if vars.ForkContainsPhrase(voiceText, strings.ToLower(c)) && !b.RequireExactMatch {
 						logger.Println("Bot " + botSerial + " Partial match for intent " + b.Name + " (" + strings.ToLower(c) + ")")
 						if isOpus {
 							ParamChecker(req, b.Name, voiceText, botSerial)

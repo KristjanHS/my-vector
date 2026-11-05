@@ -3,8 +3,8 @@ package sdkapp
 // Fork endpoints for robot/firmware/smoke.sh. Exact patterns win over the
 // upstream "/api-sdk/" catch-all, so no upstream file changes.
 // Never commands the wheels or lift: check-static.sh S5 fails on a wheel/lift
-// name here (denylist) and on any Conn method but EventStream,
-// DisplayFaceImageRGB and SayText (allowlist).
+// name here or in myvector/voice (denylist) and on any Conn method but EventStream,
+// DisplayFaceImageRGB and SayText here, ExternalAudioStreamPlayback/SayText there (allowlist).
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/voice"
 )
 
 const (
@@ -77,7 +78,9 @@ func forkRobotState(w http.ResponseWriter, r *http.Request) {
 			"pose":           map[string]float32{"x": p.GetX(), "y": p.GetY(), "z": p.GetZ(), "q0": p.GetQ0()},
 			"origin_id":      p.GetOriginId(),
 			"status":         s.GetStatus(),
-			"wheels_moving":  s.GetStatus()&uint32(vectorpb.RobotStatus_ROBOT_STATUS_ARE_WHEELS_MOVING) != 0,
+			// smoke.sh A4 bounds the measured speeds; the ARE_WHEELS_MOVING flag (any speed > 1e-5 mm/s, or point-turn mode) is shown, not checked
+			"wheels_mm_s":   map[string]float32{"l": s.GetLeftWheelSpeedMmps(), "r": s.GetRightWheelSpeedMmps()},
+			"wheels_moving": s.GetStatus()&uint32(vectorpb.RobotStatus_ROBOT_STATUS_ARE_WHEELS_MOVING) != 0,
 		})
 		return
 	}
@@ -107,7 +110,7 @@ func forkFace(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
 }
 
-// forkSay speaks ?text= and writes the final utterance state (FINISHED on success).
+// forkSay speaks ?text= in voice.DefaultVoice and writes "FINISHED <voice>", "FINISHED fallback: <why>" or the error.
 func forkSay(w http.ResponseWriter, r *http.Request) {
 	robot, ok := forkRobot(w, r)
 	if !ok {
@@ -120,14 +123,10 @@ func forkSay(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(robot.Ctx, 15*time.Second) // under smoke.sh's curl -m 20
 	defer cancel()
-	resp, err := robot.Vector.Conn.SayText(ctx, &vectorpb.SayTextRequest{
-		DurationScalar: 1,
-		UseVectorVoice: true,
-		Text:           text,
-	})
+	used, err := voice.Say(ctx, robot.Vector, text, voice.DefaultVoice, 1)
 	if err != nil {
-		fmt.Fprint(w, "error: "+err.Error())
+		fmt.Fprint(w, "error: "+used+": "+err.Error())
 		return
 	}
-	fmt.Fprint(w, resp.GetState().String())
+	fmt.Fprint(w, "FINISHED "+used)
 }

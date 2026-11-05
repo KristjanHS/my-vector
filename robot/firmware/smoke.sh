@@ -4,14 +4,18 @@
 # Usage: smoke.sh   → PASS (exit 0); FAIL (1) names the first failing check; SETUP (2) = no ESN/key/SSH/wire-pod link.  (env: ESN, SERVER)
 # Moves only the head: check-static.sh S5 fails on a wheel/lift name in this file or fork_smoke.go (denylist), on any `sdk`/api-sdk
 # endpoint here not in its allowlist or not literal (cloud_intent only via intent my_vector_log_*), and on any Conn method in fork_smoke.go
-# other than EventStream/DisplayFaceImageRGB/SayText.
+# other than EventStream/DisplayFaceImageRGB/SayText (myvector/voice: ExternalAudioStreamPlayback/SayText/BehaviorControl). A2 speaks in the PC voice (:8091), WARN on fallback.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
 . "$here/../env.sh"
 units=(vic-engine vic-anim vic-robot)
 fatal='Fatal|SIGSEGV|SIGABRT|terminate called|Backtrace'
-die() { echo "FAIL: $*" >&2; exit 1; }
+die() { # once the units are up ($up), a failing check also reports a unit that died meanwhile
+  echo "FAIL: $*" >&2
+  [[ -z ${up:-} || $(pids) == "$up" ]] || crash_report >&2
+  exit 1
+}
 setup() { echo "SETUP: $*" >&2; exit 2; }
 ok() { echo "ok: $*"; }
 steps=9 step_n=0
@@ -27,8 +31,20 @@ pids() { # the units' PIDs; status 1 = a unit is down, 255 = ssh transport failu
 same_pids() { # same_pids <when>: PIDs still $up, else die; lost SSH = setup
   local now rc=0; now=$(pids) || rc=$?
   ((rc != 255)) || setup "lost SSH to $ip"
-  [[ $now == "$up" ]] || die "units: a PID changed $1: $up → ${now:-a unit down}"
+  [[ $now == "$up" ]] || die_down "units: a PID changed $1: $up → ${now:-a unit down}"
 }
+# On a unit failure: each unit's systemd state + the robot journal's crash lines since a minute before the smoke start ($t0, robot clock).
+crash='Fatal|SIGSEGV|SIGABRT|terminate called|Backtrace|SeAssert|caught signal|terminated by signal|#[0-9]+ pc |Main process exited'
+# First crash first: backtraces capped at 5 frames, 25 lines total; 30 s max (systemctl can stall while the fault handler tears down).
+crash_report() {
+  timeout 30 ssh "${ssh_opts[@]}" -o ServerAliveInterval=3 -o ServerAliveCountMax=2 "root@$ip" "
+for u in ${units[*]}; do echo \"\$u: \$(systemctl show -p ActiveState -p SubState -p MainPID -p ExecMainStatus \$u | tr '\n' ' ')\"; done
+echo 'crash lines (robot journal):'
+if j=\$(journalctl -o short-iso --no-pager --since @$((t0 - 60))); then
+  printf '%s\n' \"\$j\" | grep -E '$crash' | awk '/#[0-9]+ pc /{ if (++f > 5) next; print; next } { f = 0; print }' | head -n 25 | grep . || echo '  none'
+else echo '  journalctl failed'; fi" 2>/dev/null || echo "(no crash report: SSH failed or timed out)"
+}
+die_down() { echo "FAIL: $*" >&2; crash_report >&2; exit 1; }
 docked() {
   local b; b=$(curl -s -m 20 "$server/api-sdk/get_battery?serial=$esn" || true)
   [[ $b == *'"is_on_charger_platform":true'* ]] || die "docked ($1): not on the charger platform: ${b:0:200}"
@@ -44,13 +60,14 @@ done
 
 step "units up and stable (up to 195 s)"
 # P1: units active within 180 s, PIDs unchanged 15 s later (and at the end).
+t0=$(ssh_ 'date +%s' 2>/dev/null) || t0=$(date +%s)
 end=$((SECONDS + 180))
 while :; do
   rc=0; up=$(pids) || rc=$?
   ((rc)) || break
   if ((SECONDS >= end)); then
     ((rc != 255)) || setup "lost SSH to $ip"
-    die "units: ${units[*]} not all active within 180 s"
+    die_down "units: ${units[*]} not all active within 180 s"
   fi
   sleep 5
 done
@@ -97,15 +114,24 @@ ok "vic-engine :8888 answers"
 sdk() { curl -s -m 20 "$server/api-sdk/$1?serial=$esn${2:+&$2}" || true; }
 state() { # state <label>: one robot_state sample as JSON, or die
   local s; s=$(sdk fork_robot_state)
-  jq -e '.pose.x != null and .origin_id != null' <<<"$s" >/dev/null 2>&1 || die "robot state ($1): ${s:0:200} (wire-pod lacks fork_smoke.go? restart it)"
+  jq -e '.pose.x != null and .origin_id != null and .wheels_mm_s.l != null and .wheels_mm_s.r != null' <<<"$s" >/dev/null 2>&1 ||
+    die "robot state ($1): ${s:0:200} (wire-pod lacks the current fork_smoke.go? restart it)"
   echo "$s"
 }
 
 step "A4 baseline: wheels, lift bit, pose"
 # A4 start: wheels at rest before anything moves.
 pose_bound_mm=5 # max(5 mm, 3x rest drift); rest drift measured 0 mm over 10 s (2026-11-04)
+# Measured wheel speed, not the ARE_WHEELS_MOVING flag: the flag trips on any encoder speed > 1e-5 mm/s (or point-turn mode)
+# and did so, with no wheel power evident, while Vector fell asleep after boot (2026-11-05); a point turn shows up as base
+# movement in the end pose bound. 5 mm/s is a first guess; read 0, 0 mm/s at rest (2026-11-05).
+wheel_bound_mm_s=5
+wheels_still() { # wheels_still <label> <state>: |left| and |right| wheel speed <= the bound, else die
+  jq -e --argjson b "$wheel_bound_mm_s" '[.wheels_mm_s.l, .wheels_mm_s.r] | map(fabs) | max <= $b' <<<"$2" >/dev/null ||
+    die "A4: wheels moving at $1 (bound $wheel_bound_mm_s mm/s): $2"
+}
 s0=$(state start)
-[[ $(jq -r .wheels_moving <<<"$s0") == false ]] || die "A4: wheels moving at start: $s0"
+wheels_still start "$s0"
 # A4 lift bit: ENCODER_LIFT_INVALID (0x400000) set = the lift-lock recalibration loop is live (0002 must not latch syscon's lift_invalid).
 lift_bit() {
   local st; st=$(jq -r .status <<<"$2")
@@ -113,7 +139,7 @@ lift_bit() {
   (((st & 0x400000) == 0)) || die "A4: ENCODER_LIFT_INVALID set at $1 (status $st): recalibration loop"
 }
 lift_bit start "$s0"
-ok "A4 start: wheels at rest, lift encoder bit clear"
+ok "A4 start: wheels at rest ($(jq -r '"\(.wheels_mm_s.l), \(.wheels_mm_s.r)"' <<<"$s0") mm/s), lift encoder bit clear"
 
 step "A1 head to both limits"
 # A1 + A2 under behavior control (default priority), released on exit.
@@ -137,8 +163,9 @@ head_to -1 down '<= -0.3840 + 0.1' # MIN_HEAD_ANGLE -22°
 step "A2 face + speech"
 r=$(sdk fork_face); [[ $r == ok ]] || die "A2: fork_face: ${r:0:200}"
 ok "A2 face shown"
-r=$(sdk fork_say 'text=smoke%20test'); [[ $r == FINISHED ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED"
-ok "A2 said 'smoke test'"
+r=$(sdk fork_say 'text=smoke%20test'); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
+[[ $r != 'FINISHED fallback'* ]] && ok "A2 said 'smoke test' in ${r#FINISHED }" ||
+  echo "WARN: A2 said 'smoke test' in the fallback voice (TTS service :8091 down? make tts-enable): ${r#FINISHED fallback: }"
 sdk release_behavior_control >/dev/null
 
 step "A3 log-level intent"
@@ -167,7 +194,7 @@ ok "A3 log-level intent: DEBUG on, back to info"
 step "end checks: A4 base still, docked, log, units"
 # A4 end: the base did not move during the run (head and lift do not change the pose).
 s1=$(state end)
-[[ $(jq -r .wheels_moving <<<"$s1") == false ]] || die "A4: wheels moving at end: $s1"
+wheels_still end "$s1"
 lift_bit end "$s1"
 ok "A4 lift encoder bit clear at start and end"
 [[ $(jq -r .origin_id <<<"$s1") == $(jq -r .origin_id <<<"$s0") ]] || die "A4: pose origin changed (delocalized?): $s0 → $s1"
