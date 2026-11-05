@@ -78,7 +78,7 @@ func forkRobotState(w http.ResponseWriter, r *http.Request) {
 			"pose":           map[string]float32{"x": p.GetX(), "y": p.GetY(), "z": p.GetZ(), "q0": p.GetQ0()},
 			"origin_id":      p.GetOriginId(),
 			"status":         s.GetStatus(),
-			// smoke.sh A4 bounds the measured speeds; the ARE_WHEELS_MOVING flag (any speed > 1e-5 mm/s) is shown, not checked
+			// smoke.sh A4 bounds the measured speeds; the ARE_WHEELS_MOVING flag (any speed > 1e-5 mm/s, or point-turn mode) is shown, not checked
 			"wheels_mm_s":   map[string]float32{"l": s.GetLeftWheelSpeedMmps(), "r": s.GetRightWheelSpeedMmps()},
 			"wheels_moving": s.GetStatus()&uint32(vectorpb.RobotStatus_ROBOT_STATUS_ARE_WHEELS_MOVING) != 0,
 		})

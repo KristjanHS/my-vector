@@ -122,8 +122,9 @@ state() { # state <label>: one robot_state sample as JSON, or die
 step "A4 baseline: wheels, lift bit, pose"
 # A4 start: wheels at rest before anything moves.
 pose_bound_mm=5 # max(5 mm, 3x rest drift); rest drift measured 0 mm over 10 s (2026-11-04)
-# Measured wheel speed, not the ARE_WHEELS_MOVING flag: the flag trips on any encoder speed > 1e-5 mm/s and did so on an
-# unpowered sample while Vector fell asleep after boot (2026-11-05). 5 mm/s is a first guess, not yet measured at rest.
+# Measured wheel speed, not the ARE_WHEELS_MOVING flag: the flag trips on any encoder speed > 1e-5 mm/s (or point-turn mode)
+# and did so, with no wheel power evident, while Vector fell asleep after boot (2026-11-05); a point turn shows up as base
+# movement in the end pose bound. 5 mm/s is a first guess; read 0, 0 mm/s at rest (2026-11-05).
 wheel_bound_mm_s=5
 wheels_still() { # wheels_still <label> <state>: |left| and |right| wheel speed <= the bound, else die
   jq -e --argjson b "$wheel_bound_mm_s" '[.wheels_mm_s.l, .wheels_mm_s.r] | map(fabs) | max <= $b' <<<"$2" >/dev/null ||
