@@ -152,6 +152,9 @@ int main(int argc, char** argv)
     CHECK(h == "192.168.1.5" && po == 8091 && pa.empty() && vo == "cori" && sl > 1.29f && sl < 1.31f);
     CHECK(load("{\"url\":\"http://10.0.0.2/x/\",\"voice\":\"af_bella\"}", h, po, pa, vo, sl));
     CHECK(h == "10.0.0.2" && po == 80 && pa == "/x" && sl == 1.f);
+    // R19 origin gate on that valid file: robot-internal lines use the PC, SDK SayText stays Acapela
+    CHECK(MyVectorPcLine(false, h, po, pa, vo, sl, why));
+    CHECK(!MyVectorPcLine(true, h, po, pa, vo, sl, why) && why == "sdk SayText (R19)");
     std::ifstream urls(argv[1]);
     std::string want, url;
     int rows = 0;

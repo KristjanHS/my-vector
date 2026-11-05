@@ -1,6 +1,6 @@
 # Vector voice: research every way to a softer, clearer voice
 
-**Status**: OPEN — research done (rankings below); next = build stages B1–B5.
+**Status**: OPEN — B1–B4 built; next = B5 live verify (after `make ship`).
 **Want**: easier on the ear and easier to understand than the stock robot voice; user leans to a soft female voice.
 
 ## Rulings (2026-11-05 questions round)

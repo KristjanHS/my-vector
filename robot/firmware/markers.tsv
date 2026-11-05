@@ -25,3 +25,7 @@
 0009-eye-chimes-off.patch	bin	bin/vic-anim	my-vector.EyeChimes
 0010-pc-voice.patch	src	animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp	my-vector.Voice
 0010-pc-voice.patch	bin	bin/vic-anim	my-vector.Voice
+0010-pc-voice.patch	src	engine/components/sdkComponent.cpp	wire-pod's SayText stays Acapela (R19)
+0010-pc-voice.patch	src	robot/clad/src/clad/robotInterface/messageEngineToRobot.clad	bool sdkOrigin,
+0010-pc-voice.patch	src	animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp	MyVectorPcLine(sdkOrigin,
+0010-pc-voice.patch	bin	bin/vic-anim	sdk SayText (R19)
