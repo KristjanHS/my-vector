@@ -1,19 +1,33 @@
 # Blind scorer for the Estonian LLM bench: shuffled answers, model hidden, one 1-5 score each; resumable.
-# Usage: python3 -I robot/et-llm/score.py [et|en]   (q = quit, s = skip; scores -> robot/work/et-llm/<lang>/scores.json)
+# Usage: python3 -I robot/et-llm/score.py [[--lang] et|en]   (q = quit, s = skip; scores -> robot/work/et-llm/<lang>/scores.json)
 import json
 import random
 import sys
 from pathlib import Path
 
-W = (
-    Path(__file__).resolve().parents[2]
-    / "robot/work/et-llm"
-    / (sys.argv[1] if len(sys.argv) > 1 else "et")
-)
-ANSWERS, SCORES = W / "answers.jsonl", W / "scores.json"
+LANGS = {"et", "en"}
+USAGE = "usage: score.py [[--lang] et|en]"
+
+
+def parse_lang(args):
+    if args[:1] == ["--lang"]:
+        args = args[1:]
+        if not args:
+            sys.exit(USAGE)
+    if len(args) > 1 or (args and args[0] not in LANGS):
+        sys.exit(USAGE)
+    return args[0] if args else "et"
 
 
 def main():
+    W = (
+        Path(__file__).resolve().parents[2]
+        / "robot/work/et-llm"
+        / parse_lang(sys.argv[1:])
+    )
+    ANSWERS, SCORES = W / "answers.jsonl", W / "scores.json"
+    if not ANSWERS.exists():
+        sys.exit(f"no answers to score: {ANSWERS} missing (run bench.py gen first)")
     rows = [json.loads(line) for line in ANSWERS.read_text().splitlines()]
     scores = json.loads(SCORES.read_text()) if SCORES.exists() else {}
     random.Random(1918).shuffle(rows)
