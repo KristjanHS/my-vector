@@ -14,6 +14,8 @@ import (
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type robot struct {
@@ -23,15 +25,54 @@ type robot struct {
 	at                               []time.Time                                // when each sent message arrived
 	verdict                          chan *vectorpb.ExternalAudioStreamResponse // Recv's replies
 	completeOnEnd                    bool                                       // reply PlaybackComplete to AudioStreamComplete
+	needControl, controlled          bool                                       // the gateway's SayText needs behavior control
+	grant                            bool                                       // BehaviorControl grants a ControlRequest
+	released                         int
 }
 
 func (r *robot) SayText(_ context.Context, in *vectorpb.SayTextRequest, _ ...grpc.CallOption) (*vectorpb.SayTextResponse, error) {
+	if r.needControl && !r.controlled {
+		return nil, status.Error(codes.Internal, "Failed to say text") // vector-cloud gateway SayText on state INVALID
+	}
 	r.said = append(r.said, in)
 	return &vectorpb.SayTextResponse{State: vectorpb.SayTextResponse_FINISHED}, nil
 }
 
 func (r *robot) ExternalAudioStreamPlayback(ctx context.Context, _ ...grpc.CallOption) (vectorpb.ExternalInterface_ExternalAudioStreamPlaybackClient, error) {
 	return &audio{r: r, ctx: ctx}, nil
+}
+
+func (r *robot) BehaviorControl(ctx context.Context, _ ...grpc.CallOption) (vectorpb.ExternalInterface_BehaviorControlClient, error) {
+	return &control{r: r, ctx: ctx, replies: make(chan *vectorpb.BehaviorControlResponse, 1)}, nil
+}
+
+type control struct {
+	grpc.ClientStream
+	r       *robot
+	ctx     context.Context
+	replies chan *vectorpb.BehaviorControlResponse
+}
+
+func (c *control) Send(m *vectorpb.BehaviorControlRequest) error {
+	switch {
+	case m.GetControlRequest() != nil && c.r.grant:
+		c.r.controlled = true
+		c.replies <- &vectorpb.BehaviorControlResponse{ResponseType: &vectorpb.BehaviorControlResponse_ControlGrantedResponse{
+			ControlGrantedResponse: &vectorpb.ControlGrantedResponse{}}}
+	case m.GetControlRelease() != nil:
+		c.r.controlled = false
+		c.r.released++
+	}
+	return nil
+}
+
+func (c *control) Recv() (*vectorpb.BehaviorControlResponse, error) {
+	select {
+	case m := <-c.replies:
+		return m, nil
+	case <-c.ctx.Done():
+		return nil, c.ctx.Err()
+	}
 }
 
 type audio struct {

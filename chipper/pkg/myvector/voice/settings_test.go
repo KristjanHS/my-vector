@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 )
@@ -157,8 +158,12 @@ func TestSettingsVoicesMatchService(t *testing.T) {
 
 func demo(t *testing.T, ctype, body string, robotErr error) (*httptest.ResponseRecorder, *robot) {
 	t.Helper()
+	return demoOn(t, &robot{needControl: true, grant: true}, ctype, body, robotErr)
+}
+
+func demoOn(t *testing.T, rb *robot, ctype, body string, robotErr error) (*httptest.ResponseRecorder, *robot) {
+	t.Helper()
 	service(t, func(w http.ResponseWriter, r *http.Request) { t.Error("service called for stock") })
-	rb := &robot{}
 	h := DemoHandler(func(*http.Request) (context.Context, *vector.Vector, error) {
 		return context.Background(), &vector.Vector{Conn: rb}, robotErr
 	})
@@ -180,6 +185,19 @@ func TestDemoHandlerSpeaksUnsavedSelection(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("demo saved the settings: %v", err)
+	}
+	if rb.controlled || rb.released != 1 {
+		t.Errorf("behavior control held %v, released %d times; want released once", rb.controlled, rb.released)
+	}
+}
+
+func TestDemoHandlerControlNotGranted(t *testing.T) {
+	old := ControlWait
+	ControlWait = 50 * time.Millisecond
+	t.Cleanup(func() { ControlWait = old })
+	w, rb := demoOn(t, &robot{needControl: true}, "application/json", `{"t1":"stock","slow":1,"text":"hi"}`, nil)
+	if w.Code != 502 || !strings.Contains(w.Body.String(), "not granted") || len(rb.said) != 0 {
+		t.Errorf("POST: %d %q with %d SayText calls; want 502 not granted, none", w.Code, w.Body, len(rb.said))
 	}
 }
 

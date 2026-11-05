@@ -33,9 +33,9 @@ var (
 	// FirstAudio bounds dial + request + headers; the service sends headers with the first sentence.
 	FirstAudio = 3 * time.Second
 	// Stall bounds each later read: one sentence's synthesis (Kokoro CPU fallback ~4 s).
-	Stall = 10 * time.Second
-	tail      = 300 * time.Millisecond                                                      // wait past the last queued frame
-	client     = &http.Client{Transport: &http.Transport{IdleConnTimeout: 20 * time.Second}} // server idles out at 30 s
+	Stall  = 10 * time.Second
+	tail   = 300 * time.Millisecond                                                      // wait past the last queued frame
+	client = &http.Client{Transport: &http.Transport{IdleConnTimeout: 20 * time.Second}} // server idles out at 30 s
 )
 
 func envOr(k, def string) string {
@@ -76,6 +76,39 @@ func Speak(ctx context.Context, v *vector.Vector, text string, s Settings) (stri
 		err = fmt.Errorf("SayText ended %s", resp.GetState())
 	}
 	return Stock, err
+}
+
+// ControlWait bounds the wait for the robot to grant behavior control.
+var ControlWait = 10 * time.Second
+
+// Control takes SDK behavior control and returns its release. SayText (Stock and the R9 fallback) fails
+// "Failed to say text" without it; LLM answers already speak inside kgsim's BControl, so only callers outside it need this.
+func Control(ctx context.Context, v *vector.Vector) (func(), error) {
+	ctx, cancel := context.WithCancel(ctx)
+	timer := time.AfterFunc(ControlWait, cancel)
+	r, err := v.Conn.BehaviorControl(ctx)
+	if err == nil {
+		err = r.Send(&vectorpb.BehaviorControlRequest{RequestType: &vectorpb.BehaviorControlRequest_ControlRequest{
+			ControlRequest: &vectorpb.ControlRequest{Priority: vectorpb.ControlRequest_OVERRIDE_BEHAVIORS}}})
+	}
+	for err == nil {
+		var resp *vectorpb.BehaviorControlResponse
+		if resp, err = r.Recv(); err == nil && resp.GetControlGrantedResponse() != nil {
+			if !timer.Stop() {
+				break // ControlWait fired as the grant arrived: the stream is already cancelled
+			}
+			return func() {
+				r.Send(&vectorpb.BehaviorControlRequest{RequestType: &vectorpb.BehaviorControlRequest_ControlRelease{
+					ControlRelease: &vectorpb.ControlRelease{}}})
+				cancel()
+			}, nil
+		}
+	}
+	if !timer.Stop() && ctx.Err() != nil {
+		err = fmt.Errorf("behavior control not granted within %s", ControlWait)
+	}
+	cancel()
+	return nil, err
 }
 
 func fetch(ctx context.Context, text, voice string, slow float64) (io.ReadCloser, error) {

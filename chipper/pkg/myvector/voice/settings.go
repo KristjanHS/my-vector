@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	Stock            = "stock" // the robot's own voice; slow sets its DurationScalar (plan R12)
-	DefaultSlow      = 1.2     // plan R11
+	Stock            = "stock"  // the robot's own voice; slow sets its DurationScalar (plan R12)
+	DefaultSlow      = 1.2      // plan R11
 	SlowMin, SlowMax = 0.5, 2.0 // tts/server.py SLOW_MIN, SLOW_MAX
 	SettingsAPI      = "/myvector/api/voice"
 	SettingsPage     = "/myvector/voice"
@@ -190,6 +190,12 @@ func DemoHandler(robotFor func(*http.Request) (context.Context, *vector.Vector, 
 		}
 		ctx, cancel := context.WithTimeout(ctx, DemoTimeout)
 		defer cancel()
+		release, err := Control(ctx, v)
+		if err != nil {
+			http.Error(w, "robot control: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer release()
 		used, err := Speak(ctx, v, d.Text, d.Settings)
 		if err != nil {
 			http.Error(w, used+": "+err.Error(), http.StatusBadGateway)
