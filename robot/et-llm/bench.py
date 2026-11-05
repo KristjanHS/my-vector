@@ -133,6 +133,7 @@ def ask(model, question):
         "temperature": 1,
         "top_p": 1,
         "max_tokens": 2048,
+        "reasoning_effort": "none",  # qwen3.5/gemma4 think by default; wire-pod must send it too (go-openai ReasoningEffort)
         "messages": [
             {"role": "system", "content": PROMPT},
             {"role": "user", "content": question},
