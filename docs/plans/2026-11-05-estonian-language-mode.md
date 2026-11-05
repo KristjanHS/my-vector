@@ -19,7 +19,7 @@
 | E8 | Switch is manual only — no language auto-detect (D-RF C dropped) |
 | E9 | STT test audio: FLEURS `et_ee` test (CC-BY-4.0, open) now; Common Voice `et` once the user downloads it from Mozilla Data Collective into `robot/work/et-stt/cv/`; Stage 2.2 commands rescored before Stage 3 |
 | E10 | Keyed free tiers (Azure F0, Google) DROPPED: Azure F0 signup wants a credit card, Google STT a paid billing account — fail E4 |
-| E11 | ET-mode LLM = EstLLM 8B, the only ET model (user pick); quant = largest `i1-*` that passes the 1.3 fit test (Q4_K_M first); blind scoring + gemma4-for-ET dropped |
+| E11 | ET-mode LLM = EstLLM 8B, the only ET model (user pick); quant = `bench.py ladder`: Q4_K_M, then up Q5_K_S→Q5_K_M while fit, else down Q4_K_S→IQ4_XS (Q6_K skipped); pick = last fit, CPU spill = no fit, speed reported only (user: full-VRAM speed is ok); blind scoring + gemma4-for-ET dropped |
 | E12 | EN-mode LLM re-pick (user ask): gemma3:4b baseline vs `qwen3.5:4b`, `ministral-3:8b`, `gemma4:e2b-it-qat`, `gemma4:e4b-it-qat` via `bench.py --lang en`; af_bella must fit beside it |
 
 ## Seams already known (verify, don't re-derive)
@@ -75,7 +75,7 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 |---|---|---|
 | STT engine (+ en engine stays vosk?) | 1.1 | WER, latency, offline |
 | T1 / T2 Estonian voice | 1.2 + 2.1 | listen scores, first audio |
-| EN LLM model (ET = E11) | 1.3 / E12 | EN scores, VRAM |
+| EN LLM model + ET quant (E11) | 1.3 / E12 | EN scores, VRAM headroom, first sentence / total s |
 | Built-in-line method D1/D2a/D2b/D3 | 1.4 | patch size, fallback |
 | Switch UX + D-RF A/B | 1.5 | ASCII page mock |
 
