@@ -92,6 +92,19 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSettingsSaveKeepsLang(t *testing.T) {
+	path := tempSettings(t)
+	os.WriteFile(path, []byte(`{"lang":"et-EE","t1":"cori"}`), 0644)
+	if err := Save(Settings{Stock, "af_bella", 1.5}); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	b, _ := os.ReadFile(path)
+	if json.Unmarshal(b, &got); got["lang"] != "et-EE" || got["t1"] != Stock {
+		t.Fatalf("file = %s", b)
+	}
+}
+
 func TestSettingsSaveFailLeavesNoTemp(t *testing.T) {
 	path := tempSettings(t)
 	os.Mkdir(path, 0755) // rename onto a directory fails
