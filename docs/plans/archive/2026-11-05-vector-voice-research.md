@@ -7,7 +7,7 @@
 
 | id | ruling |
 |---|---|
-| R1 | English only; Estonian voice = its own follow-up research plan, authored when this one closes |
+| R1 | English only; Estonian voice = its own follow-up research plan → plan: `docs/plans/2026-11-05-estonian-language-mode.md` |
 | R2 | Free only — local, or an online API's free tier; paid-only options are listed but cannot win |
 | R3 | Two separate picks, never tied: T1 = LLM-answer voice, T2 = built-in robot voice (time, weather…) → soft female |
 | R4 | Listen tests live on Vector's speaker; user scores 1–5; tools = `robot/voice-samples/{gen,play}.sh` |
