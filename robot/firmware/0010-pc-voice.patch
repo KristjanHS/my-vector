@@ -568,7 +568,7 @@ index 01d40af1..8bfbb130 100644
    void ClearTextToSay();
    
 diff --git a/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp b/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp
-index 3573cdbe..8971c28c 100644
+index 3573cdbe..c534a9a8 100644
 --- a/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp
 +++ b/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp
 @@ -319,7 +319,8 @@ namespace Anki
@@ -576,7 +576,7 @@ index 3573cdbe..8971c28c 100644
          };
  
 -        _iVars.ttsBehavior->SetTextToSay(_dVars.responseString, callback);
-+        // my-vector (0010): wire-pod's streaming placeholder ("bla bla") stays Acapela — PC voice +0.5–0.64 s to first sound, PC down +1.5 s (B5)
++        // my-vector (0010): wire-pod's streaming placeholder ("bla bla") stays Acapela — no PC synth racing the T1 answer; console-SayText proxy: +0.5–0.64 s, PC down +1.5 s (B5)
 +        _iVars.ttsBehavior->SetTextToSay(_dVars.responseString, callback, BehaviorTextToSpeechLoop::AudioTtsProcessingStyle::Default_Processed, true);
  
          // let's transition into our "searching" loop

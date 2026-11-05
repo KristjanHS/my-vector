@@ -29,4 +29,4 @@
 0010-pc-voice.patch	src	robot/clad/src/clad/robotInterface/messageEngineToRobot.clad	bool sdkOrigin,
 0010-pc-voice.patch	src	animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp	MyVectorPcLine(sdkOrigin,
 0010-pc-voice.patch	bin	bin/vic-anim	sdk SayText (R19)
-0010-pc-voice.patch	src	engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp	streaming placeholder
+0010-pc-voice.patch	src	engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp	Default_Processed, true);

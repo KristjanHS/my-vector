@@ -7,6 +7,7 @@ import wave
 
 for f in sys.argv[1:]:
     w = wave.open(f)
+    assert w.getnchannels() == 1 and w.getsampwidth() == 2, f"{f}: not 16-bit mono"
     sr = w.getframerate()
     d = w.readframes(w.getnframes())
     s = struct.unpack("<%dh" % (len(d) // 2), d)
