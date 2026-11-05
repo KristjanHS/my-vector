@@ -1,0 +1,63 @@
+package wirepod_ttr
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/vars"
+)
+
+// stubWeather disables the provider (getWeather echoes the location) and records location probes.
+func stubWeather(t *testing.T, hits ...string) *[]string {
+	oldWeather, oldExists := vars.APIConfig.Weather, forkLocationExists
+	t.Cleanup(func() { vars.APIConfig.Weather, forkLocationExists = oldWeather, oldExists })
+	vars.APIConfig.Weather.Enable = false
+	probes := &[]string{}
+	forkLocationExists = func(loc string) bool {
+		*probes = append(*probes, loc)
+		for _, h := range hits {
+			if h == loc {
+				return true
+			}
+		}
+		return false
+	}
+	return probes
+}
+
+func TestForkWeatherCityEstonian(t *testing.T) {
+	lang.UseForTest(t, lang.Estonian)
+	cases := []struct {
+		speech, want string
+		hits, probes []string
+	}{
+		{"mis ilm on tallinnas", "Tallinn", nil, nil},
+		{"mis ilm on keilas", "Keila", []string{"Keila"}, []string{"Keila"}},
+		{"mis ilm on madridis", "Madrid", []string{"Madrid"}, []string{"Madridi", "Madrid"}},
+		{"mis ilm on?", "Home", nil, nil},
+		{"mis ilm väljas on?", "Home", nil, nil},
+		{"mis ilm on kuskilas", "Home", nil, []string{"Kuskila", "Kuskil"}},
+		{"mis ilm on kuskilas ja keilas", "Home", []string{"Keila"}, []string{"Kuskila", "Kuskil"}},
+	}
+	for _, c := range cases {
+		probes := stubWeather(t, c.hits...)
+		_, _, _, loc, _, _ := weatherParser(c.speech, "Home", "C")
+		if loc != c.want {
+			t.Errorf("%q: location %q, want %q", c.speech, loc, c.want)
+		}
+		if strings.Join(*probes, ",") != strings.Join(c.probes, ",") {
+			t.Errorf("%q: probes %q, want %q", c.speech, *probes, c.probes)
+		}
+	}
+}
+
+func TestForkWeatherEnglishUnchanged(t *testing.T) {
+	lang.UseForTest(t, lang.English)
+	t.Setenv("STT_SERVICE", "vosk")
+	probes := stubWeather(t, "london")
+	_, _, _, loc, _, _ := weatherParser("what's the weather in london", "Home", "C")
+	if loc != "london" || len(*probes) != 0 {
+		t.Errorf("en-US: location %q, probes %q; want upstream %q, none", loc, *probes, "london")
+	}
+}

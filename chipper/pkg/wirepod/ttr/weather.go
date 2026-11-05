@@ -426,6 +426,7 @@ func weatherParser(speechText string, botLocation string, botUnits string) (stri
 	} else {
 		apiLocation = botLocation
 	}
+	apiLocation = forkWeatherLocation(speechText, botLocation, apiLocation) // fork_weather.go: et-EE city word
 	// call to weather API
 	condition, is_forecast, local_datetime, speakable_location_string, temperature, temperature_unit := getWeather(apiLocation, botUnits, hoursFromNow)
 	return condition, is_forecast, local_datetime, speakable_location_string, temperature, temperature_unit
