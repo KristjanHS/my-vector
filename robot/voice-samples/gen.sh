@@ -49,7 +49,7 @@ for engine in piper edge kokoro; do
   done
   ((${#voices[@]})) || continue
   venv "$engine"
-  TXT=$text HF_HOME=$W/hf-cache HF_HUB_CACHE=$W/hf-cache/hub "$W/venv-$engine/bin/python" -I "$here/synth.py" "$engine" "$set_dir/raw" "$slow" "${voices[@]}" 2>&1 |
+  TXT=$text "$W/venv-$engine/bin/python" -I "$here/synth.py" "$engine" "$set_dir/raw" "$slow" "${voices[@]}" 2>&1 |
     { grep -vE 'Warning|warn|WeightNorm|super\(\).__init__' || true; }
 done
 for f in "$set_dir"/raw/*; do

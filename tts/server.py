@@ -1,7 +1,7 @@
 """my-vector TTS service: POST /tts {"text", "voice", "slow"} -> chunked 16 kHz s16le mono PCM, one chunk per sentence.
 
 GET /health -> {"voices": [...], "device": ...}. Models load + warm before the port opens (refused = still starting).
-Env: TTS_BIND (0.0.0.0), TTS_PORT (8091), TTS_PIPER_DIR (Piper .onnx dir), TTS_DEVICE (cuda|cpu), HF_HOME.
+Env: TTS_BIND (0.0.0.0), TTS_PORT (8091), TTS_PIPER_DIR (Piper .onnx dir), TTS_DEVICE (cuda|cpu), HF_HOME / HF_HUB_CACHE (the one shared HF cache).
 """
 
 import itertools

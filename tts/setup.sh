@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # make tts-setup: venv in robot/work/tts + Piper cori model, then one warm run (fills the shared HF cache; online).
-# Models are shared with robot/voice-samples (robot/work/voice-samples/{piper-voices,hf-cache}). Rerun after a requirements.txt change.
+# Piper voices: robot/work/voice-samples/piper-voices (shared with robot/voice-samples); HF models: your own HF cache (HF_HUB_CACHE). Rerun after a requirements.txt change.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 work=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")/robot/work
@@ -13,4 +13,4 @@ if [[ ! -f $m ]]; then # .onnx lands last, via .part, so a partial download neve
   mkdir -p "${m%/*}"
   curl -fsSL -o "$m.json" "$u.json" && curl -fsSL -o "$m.part" "$u" && mv "$m.part" "$m"
 fi
-HF_HOME=$samples/hf-cache HF_HUB_CACHE=$samples/hf-cache/hub TTS_PIPER_DIR=${m%/*} "$venv/bin/python" -I "$here/server.py" --warm-only
+TTS_PIPER_DIR=${m%/*} "$venv/bin/python" -I "$here/server.py" --warm-only
