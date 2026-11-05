@@ -12,8 +12,12 @@ voice=$1 slow=$2
 [[ $voice =~ ^[a-z_]+$ ]] || { echo "voice-push: bad voice '$voice'" >&2; exit 1; }
 [[ $slow =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "voice-push: bad slow '$slow'" >&2; exit 1; }
 [[ -n $tts_url ]] || { echo "SETUP: $robot_dir/robot.env needs ROBOT_TTS_URL (e.g. http://<pc-lan-ip>:8091)" >&2; exit 2; }
-[[ $tts_url =~ ^https?://[A-Za-z0-9.:_-]+(/[A-Za-z0-9._/-]*)?$ ]] ||
-  { echo "SETUP: ROBOT_TTS_URL '$tts_url' is not a plain http(s)://host:port URL" >&2; exit 2; }
+# Only what patch 0010's MyVectorLoadVoice takes (else the robot silently speaks Acapela); tests/tts-urls.txt holds both to it.
+oct='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
+port=0
+[[ ! $tts_url =~ ^http://($oct\.){3}$oct(:([0-9]{1,5}))?(/[A-Za-z0-9._/-]*)?$ ]] || port=$((10#${BASH_REMATCH[5]:-80}))
+((port >= 1 && port <= 65535)) ||
+  { echo "SETUP: ROBOT_TTS_URL '$tts_url' must be http://<IPv4>[:port][/path] (the robot takes no https or hostnames)" >&2; exit 2; }
 # Root (wire-pod's service, HOME=/root) checks the robot's host key against the repo owner's known_hosts.
 if ((EUID == 0)) && owner_home=$(getent passwd "$(stat -c %U "$robot_dir")" | cut -d: -f6) && [[ -n $owner_home ]]; then
   ssh_opts+=(-o "UserKnownHostsFile=$owner_home/.ssh/known_hosts")

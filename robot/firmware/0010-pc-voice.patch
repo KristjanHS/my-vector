@@ -6,16 +6,17 @@ Subject: [PATCH] pc-voice
 vic-anim TTS provider (B4.2, R15-R18): each line reads /data/data/myvector-voice.json
 {url, voice, slow}; missing/bad file, no url or voice stock speaks Acapela unchanged. Otherwise
 each sentence is one HTTP/1.0 POST /tts to the PC service (slow = file slow x durationScalar,
-clamped 0.5-2.0; 1.5 s to the first response byte), its 16 kHz PCM resampled to Acapela's rate
-because a stream keeps its first chunk's rate. A failed sentence and the rest of the line speak
-in Acapela (R17). Logs my-vector.Voice.
+clamped 0.5-2.0; 1.5 s to the first response byte, 20 s and 4 MB for the whole sentence), its
+16 kHz PCM resampled to Acapela's rate because a stream keeps its first chunk's rate. Chunk
+sizes are bounded before any size_t sum (32-bit wrap). A failed sentence and the rest of the
+line speak in Acapela (R17). Logs my-vector.Voice. Host test: robot/firmware/tests/pc-voice.sh.
 ---
- .../textToSpeechProvider_vicos.cpp            | 265 ++++++++++++++++++
+ .../textToSpeechProvider_vicos.cpp            | 272 ++++++++++++++++++
  .../textToSpeech/textToSpeechProvider_vicos.h |  15 +
- 2 files changed, 280 insertions(+)
+ 2 files changed, 287 insertions(+)
 
 diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp
-index 973d3bea..b9f2dae9 100644
+index 973d3bea..3028a7bc 100644
 --- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp
 +++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp
 @@ -24,6 +24,20 @@
@@ -39,7 +40,7 @@ index 973d3bea..b9f2dae9 100644
  /* Interpolate Acapela code fragments */
  #define USE_LOADINIFILE
  #include "ic_babile.h"
-@@ -37,6 +51,188 @@ namespace Anki {
+@@ -37,6 +51,195 @@ namespace Anki {
  namespace Vector {
  namespace TextToSpeech {
  
@@ -48,7 +49,8 @@ index 973d3bea..b9f2dae9 100644
 +constexpr int kMyVectorPcRate = 16000;          // tts/server.py RATE
 +constexpr int kMyVectorFirstByte_ms = 1500;     // R17: connect + first response byte
 +constexpr int kMyVectorIdle_ms = 5000;          // between later bytes (server splits sentences over 300 chars)
-+constexpr size_t kMyVectorMaxResponse = 16 << 20;
++constexpr int kMyVectorSentence_ms = 20000;     // whole POST: a trickling server must not hold the serial TTS queue
++constexpr size_t kMyVectorMaxResponse = 4 << 20; // > 2 min of 16 kHz s16 (3.84 MB); a 300-char sentence at slow 2.0 is ~1.3 MB
 +
 +// [begin, end) of each sentence: a .!? run followed by whitespace or the end (so never inside 3.14 or a \tag\).
 +std::vector<std::pair<size_t, size_t>> MyVectorSplitSentences(const std::string& t)
@@ -136,11 +138,14 @@ index 973d3bea..b9f2dae9 100644
 +    while (true) {
 +      const size_t lineEnd = r.find("\r\n", pos);
 +      if (lineEnd == std::string::npos) { why = "stream cut"; return false; }
++      const char* const line = r.c_str() + pos;
 +      char* endp = nullptr;
-+      const unsigned long n = strtoul(r.c_str() + pos, &endp, 16);
-+      if (endp == r.c_str() + pos) { why = "bad chunk size"; return false; }
++      const unsigned long n = isxdigit(static_cast<unsigned char>(*line)) ? strtoul(line, &endp, 16) : 0;
++      if (endp == nullptr || (endp != r.c_str() + lineEnd && *endp != ';') || n > kMyVectorMaxResponse) {
++        why = "bad chunk size"; return false; // strtoul takes "-1"/" 1"; n bounded first so no size_t sum below wraps (32-bit)
++      }
 +      if (n == 0) { break; }
-+      if (lineEnd + 2 + n + 2 > r.size()) { why = "stream cut"; return false; }
++      if (lineEnd + 4 > r.size() || n > r.size() - lineEnd - 4) { why = "stream cut"; return false; }
 +      body.append(r, lineEnd + 2, n);
 +      pos = lineEnd + 2 + n + 2;
 +    }
@@ -159,6 +164,7 @@ index 973d3bea..b9f2dae9 100644
 +{
 +  using Clock = std::chrono::steady_clock;
 +  const auto firstByteBy = Clock::now() + std::chrono::milliseconds(kMyVectorFirstByte_ms);
++  const auto doneBy = Clock::now() + std::chrono::milliseconds(kMyVectorSentence_ms);
 +  const auto msLeft = [&](Clock::time_point by) {
 +    return static_cast<int>(std::max<long long>(0,
 +      std::chrono::duration_cast<std::chrono::milliseconds>(by - Clock::now()).count()));
@@ -196,14 +202,16 @@ index 973d3bea..b9f2dae9 100644
 +  resp.clear();
 +  char buf[8192];
 +  while (true) {
-+    if (!waitFor(POLLIN, resp.empty() ? msLeft(firstByteBy) : kMyVectorIdle_ms)) {
-+      return fail(resp.empty() ? "no response in 1.5 s" : "response stalled");
++    const int left = msLeft(doneBy);
++    if (!waitFor(POLLIN, resp.empty() ? msLeft(firstByteBy) : std::min(kMyVectorIdle_ms, left))) {
++      return fail(resp.empty() ? "no response in 1.5 s" : left < kMyVectorIdle_ms ? "sentence over 20 s" : "response stalled");
 +    }
 +    const ssize_t n = recv(fd, buf, sizeof(buf), 0);
 +    if (n == 0) { break; }
 +    if (n < 0 && errno != EAGAIN && errno != EINTR) { return fail(std::string("recv: ") + strerror(errno)); }
 +    if (n > 0) { resp.append(buf, static_cast<size_t>(n)); }
 +    if (resp.size() > kMyVectorMaxResponse) { return fail("response too large"); }
++    if (msLeft(doneBy) == 0) { return fail("sentence over 20 s"); }
 +  }
 +  close(fd);
 +  return true;
@@ -228,7 +236,7 @@ index 973d3bea..b9f2dae9 100644
  TextToSpeechProviderImpl::TextToSpeechProviderImpl(const Anim::AnimContext* context, const Json::Value& tts_platform_config)
  {
    // Caller must provide context & RNG
-@@ -256,6 +452,71 @@ Result TextToSpeechProviderImpl::GetFirstAudioData(const std::string & text,
+@@ -256,6 +459,71 @@ Result TextToSpeechProviderImpl::GetFirstAudioData(const std::string & text,
                                                     float pitchScalar,
                                                     TextToSpeechProviderData & data,
                                                     bool & done)
@@ -300,7 +308,7 @@ index 973d3bea..b9f2dae9 100644
  {
    LOG_INFO("TextToSpeechProvider.GetFirstAudioData", "text=%s duration=%.2f pitch=%.2f",
              Anki::Util::HidePersonallyIdentifiableInfo(text.c_str()),
-@@ -340,6 +601,10 @@ Result TextToSpeechProviderImpl::GetFirstAudioData(const std::string & text,
+@@ -340,6 +608,10 @@ Result TextToSpeechProviderImpl::GetFirstAudioData(const std::string & text,
  
  Result TextToSpeechProviderImpl::GetNextAudioData(TextToSpeechProviderData & data, bool & done)
  {
