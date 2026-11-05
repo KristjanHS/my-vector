@@ -5,8 +5,8 @@ Goal: let Vector answer free-form questions with an LLM, comparing the community
 fill in the results table as you go.
 
 Almost everything runs through **`scripts/llm.sh`**. It changes wire-pod's LLM settings through the
-running server's web API (no restart), and `ping` sends the same request wire-pod sends, so you
-see the answer and its latency without talking to the robot.
+running server's web API (no restart), and `ping` sends a request built like wire-pod's (same
+endpoint, key and model), so you see the answer and its latency without talking to the robot.
 
 | # | option | cost | what it adds |
 |---|--------|------|--------------|
@@ -203,7 +203,8 @@ scripts/llm.sh use gemini gemini-2.5-flash
 ```
 
 For anything else (OpenRouter, Groq, …), use the web UI's "Custom" provider at
-http://localhost:8080. The endpoint must end in `/v1`, because wire-pod appends `/chat/completions`.
+http://localhost:8080. The endpoint is the base URL without `/chat/completions` (wire-pod appends that),
+e.g. `https://openrouter.ai/api/v1`.
 
 ## Skipped
 
@@ -215,7 +216,8 @@ http://localhost:8080. The endpoint must end in `/v1`, because wire-pod appends 
 
 ## Troubleshooting
 
-- **Vector says nothing, or asks you to check the LLM settings:** run `scripts/llm.sh ping`. It sends
-  the same request, so the HTTP error it prints is the cause.
+- **Vector says nothing, or asks you to check the LLM settings:** run `scripts/llm.sh ping`. It uses the
+  same endpoint, key and model, so a key, credit or model error shows up there with the provider's message.
+  If `ping` works but Vector doesn't on Claude, the server predates the fix: `make start`.
 - **"Hey Vector" ignored:** behavior control may be held (SDK "Assume"); release it in the web UI.
 - **Back to where you started:** `scripts/llm.sh restore robot/work/llm/kg-<time>.json` (from step 0), or `scripts/llm.sh off`.
