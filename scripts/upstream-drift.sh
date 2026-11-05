@@ -9,6 +9,8 @@ cd "$(git rev-parse --show-toplevel)"
 allowed_edits=(
   chipper/pkg/wirepod/sdkapp/bcassume.go # busy-spin fix while behavior control is held
   .gitignore                             # fork block: *.key, chipper/*.bak, session-certs
+  chipper/pkg/wirepod/ttr/kgsim.go       # TopP: forkTopP(...) — Claude rejects top_p (fork_llm.go)
+  chipper/pkg/wirepod/ttr/kgsim_cmds.go  # same, on the LLM-commands/camera path
 )
 
 to=(); [[ ${1:-} == --head ]] && to=("$(git rev-parse --verify "${2:-HEAD}^{commit}")")
