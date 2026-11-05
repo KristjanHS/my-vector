@@ -2,11 +2,12 @@
 # Build a listen-test sample set: gen.sh [-s SLOW] <set> "<text>" [engine:voice ...] → $W/<set>/norm/*.pcm
 # (16 kHz s16le mono, loudness-matched to -20 LUFS). Venvs + Piper voices are created on first use.
 set -euo pipefail
+shopt -s inherit_errexit nullglob
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 W=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")/robot/work/voice-samples
 ffmpeg=$(command -v ffmpeg || echo /opt/ffmpeg/ffmpeg)
 slow=1.0
-[[ ${1:-} == -s ]] && { slow=$2; shift 2; }
+[[ ${1:-} == -s ]] && { slow=${2:?-s needs a value}; shift 2; }
 (($# >= 2)) || { echo "usage: gen.sh [-s SLOW] <set> \"<text>\" [engine:voice ...]" >&2; exit 2; }
 set_dir=$W/$1 text=$2; shift 2
 (($#)) || set -- piper:en_US-lessac-high piper:en_GB-cori-high piper:en_GB-jenny_dioco-medium \
@@ -27,10 +28,17 @@ venv() { # venv <engine>: create + install on first use
 piper_model() { # piper_model en_US-lessac-high → local .onnx path, downloaded on first use
   local f=$W/piper-voices/$1.onnx loc=${1%%-*} rest=${1#*-}
   local u=https://huggingface.co/rhasspy/piper-voices/resolve/main/${loc%%_*}/$loc/${rest%-*}/${rest##*-}/$1.onnx
-  [[ -f $f ]] || { mkdir -p "$W/piper-voices" && curl -fsSL -o "$f" "$u" && curl -fsSL -o "$f.json" "$u.json"; }
+  if [[ ! -f $f ]]; then # .onnx lands last, via .part, so a partial download never counts as present
+    mkdir -p "$W/piper-voices"
+    curl -fsSL -o "$f.json" "$u.json" && curl -fsSL -o "$f.part" "$u" && mv "$f.part" "$f" || return 1
+  fi
   echo "$f"
 }
 
+for spec in "$@"; do
+  [[ -v pkgs[${spec%%:*}] && $spec == *:?* ]] || { echo "bad voice spec $spec (engine:voice, engine = ${!pkgs[*]})" >&2; exit 2; }
+done
+rm -rf "$set_dir/raw" "$set_dir/norm"
 mkdir -p "$set_dir/raw" "$set_dir/norm"
 for engine in piper edge kokoro; do
   voices=()
@@ -42,7 +50,7 @@ for engine in piper edge kokoro; do
   ((${#voices[@]})) || continue
   venv "$engine"
   TXT=$text HF_HOME=$W/hf-cache "$W/venv-$engine/bin/python" -I "$here/synth.py" "$engine" "$set_dir/raw" "$slow" "${voices[@]}" 2>&1 |
-    grep -vE 'Warning|warn|WeightNorm|super\(\).__init__' || true
+    { grep -vE 'Warning|warn|WeightNorm|super\(\).__init__' || true; }
 done
 for f in "$set_dir"/raw/*; do
   b=$(basename "${f%.*}")

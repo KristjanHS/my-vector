@@ -2,6 +2,7 @@
 # Play a sample set on Vector: play.sh [-v VOL] <set> [name ...] — Ben announces A, B, … before each sample.
 # Names are norm/ basenames without .pcm (default: all, sorted). Robot facts: robot/env.sh; GUID: wire-pod's botSdkInfo.json.
 set -euo pipefail
+shopt -s nullglob
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
 W=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")/robot/work/voice-samples
@@ -14,6 +15,7 @@ names=("$@")
 if ((!$#)); then
   for f in "$dir"/*.pcm; do names+=("$(basename "$f" .pcm)"); done
 fi
+((${#names[@]} && ${#names[@]} <= 26)) || { echo "need 1-26 samples, got ${#names[@]}" >&2; exit 2; }
 
 probe=$W/bin/voiceprobe
 (cd "$repo/chipper" && go build -o "$probe" ./pkg/myvector/voiceprobe)

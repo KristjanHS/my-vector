@@ -15,7 +15,7 @@ engine, outdir, slow, voices = (
     float(sys.argv[3]),
     sys.argv[4:],
 )
-text = os.environ["TXT"]
+text = os.environ["TXT"].strip() or sys.exit("empty $TXT")
 
 
 def name(v):

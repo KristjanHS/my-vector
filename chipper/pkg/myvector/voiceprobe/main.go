@@ -78,7 +78,7 @@ func say(v *vector.Vector, args []string) error {
 	return nil
 }
 
-// play streams like DoSayText_OpenAI: 1024-byte chunks, paced just under real time (32 ms of audio each).
+// play streams 1024-byte chunks (32 ms of audio) every 30 ms, then waits until the clip has played out.
 func play(v *vector.Vector, args []string) error {
 	fs := flag.NewFlagSet("play", flag.ExitOnError)
 	vol := fs.Uint("vol", 100, "AudioVolume 0-100")
@@ -91,21 +91,27 @@ func play(v *vector.Vector, args []string) error {
 	if err != nil {
 		return err
 	}
-	c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamPrepare{
+	start, end := time.Now(), time.Now().Add(time.Duration(len(pcm))*time.Second/32000+300*time.Millisecond)
+	err = c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamPrepare{
 		AudioStreamPrepare: &vectorpb.ExternalAudioStreamPrepare{AudioFrameRate: 16000, AudioVolume: uint32(*vol)}}})
-	for len(pcm) > 0 {
+	for err == nil && len(pcm) > 0 {
 		n := 1024
 		if len(pcm) < n {
 			n = len(pcm)
 		}
-		c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamChunk{
+		err = c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamChunk{
 			AudioStreamChunk: &vectorpb.ExternalAudioStreamChunk{AudioChunkSizeBytes: uint32(n), AudioChunkSamples: pcm[:n]}}})
 		pcm = pcm[n:]
 		time.Sleep(30 * time.Millisecond)
 	}
-	c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamComplete{
-		AudioStreamComplete: &vectorpb.ExternalAudioStreamComplete{}}})
-	time.Sleep(500 * time.Millisecond)
+	if err == nil {
+		err = c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamComplete{
+			AudioStreamComplete: &vectorpb.ExternalAudioStreamComplete{}}})
+	}
+	if err != nil {
+		return fmt.Errorf("stream after %s: %w", time.Since(start).Round(time.Millisecond), err)
+	}
+	time.Sleep(time.Until(end))
 	return nil
 }
 
@@ -116,6 +122,10 @@ func main() {
 	}
 	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "usage: voiceprobe say|play [flags] <text|file.pcm>")
+		os.Exit(2)
+	}
+	if c := os.Args[1]; c != "say" && c != "play" {
+		fmt.Fprintf(os.Stderr, "voiceprobe: unknown command %q\n", c)
 		os.Exit(2)
 	}
 	v, err := connect(info)
