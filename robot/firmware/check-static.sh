@@ -30,13 +30,14 @@ echo "series/manifest OK (${#series[@]} patches, ${#rows[@]} markers)"
 
 # S5: the smoke test must never command the wheels or the lift.
 smoke=()
-for f in "$here/smoke.sh" "$repo/chipper/pkg/wirepod/sdkapp/fork_smoke.go"; do [[ ! -f $f ]] || smoke+=("$f"); done
-[[ ! -f $here/smoke.sh || ${#smoke[@]} == 2 ]] || die "smoke.sh present but fork_smoke.go missing (S5 would skip it)"
+voice_go=$repo/chipper/pkg/myvector/voice/voice.go # fork_say speaks through it
+for f in "$here/smoke.sh" "$repo/chipper/pkg/wirepod/sdkapp/fork_smoke.go" "$voice_go"; do [[ ! -f $f ]] || smoke+=("$f"); done
+[[ ! -f $here/smoke.sh || ${#smoke[@]} == 3 ]] || die "smoke.sh present but fork_smoke.go or myvector/voice/voice.go missing (S5 would skip it)"
 if ((${#smoke[@]})); then
   hits=$(grep -nE 'move_wheels|move_lift|DriveWheels|DriveStraight|MoveLift' "${smoke[@]}" || true)
   [[ -z $hits ]] || die "smoke code commands motion: $hits"
 fi
-if ((${#smoke[@]} == 2)); then
+if ((${#smoke[@]} == 3)); then
   # S5 allowlist (comment lines skipped). smoke.sh: each `sdk <name>` and api-sdk/<name> names a listed endpoint
   # literally; sdk()'s own api-sdk/$1 is the one non-literal; cloud_intent only in intent(), whose calls pass my_vector_log_*.
   sdk_ok='conn_test|get_battery|assume_behavior_control|release_behavior_control|move_head|fork_robot_state|fork_face|fork_say'
@@ -66,18 +67,21 @@ if ((${#smoke[@]} == 2)); then
     done
     [[ $l != *cloud_intent* || $def == intent ]] || die "S5: smoke.sh:$n: cloud_intent outside intent(): $l"
   done <"${smoke[0]}"
-  # fork_smoke.go: every Conn use is .EventStream / .DisplayFaceImageRGB / .SayText.
-  n=0
-  while IFS= read -r l; do
-    n=$((n + 1))
-    [[ ! $l =~ ^[[:space:]]*// ]] || continue
-    rest=$l
-    while [[ $rest =~ (^|[^[:alnum:]_])Conn(([^[:alnum:]_].*)?)$ ]]; do
-      rest=${BASH_REMATCH[2]}
-      [[ $rest =~ ^\.(EventStream|DisplayFaceImageRGB|SayText)([^[:alnum:]_]|$) ]] ||
-        die "S5: fork_smoke.go:$n: Conn use other than .EventStream/.DisplayFaceImageRGB/.SayText: $l"
-    done
-  done <"${smoke[1]}"
+  # Every Conn use: fork_smoke.go .EventStream / .DisplayFaceImageRGB / .SayText; voice.go .ExternalAudioStreamPlayback / .SayText.
+  conn_ok() { # conn_ok <file> <method ERE>
+    local n=0 l rest
+    while IFS= read -r l; do
+      n=$((n + 1))
+      [[ ! $l =~ ^[[:space:]]*// ]] || continue
+      rest=$l
+      while [[ $rest =~ (^|[^[:alnum:]_])Conn(([^[:alnum:]_].*)?)$ ]]; do
+        rest=${BASH_REMATCH[2]}
+        [[ $rest =~ ^\.($2)([^[:alnum:]_]|$) ]] || die "S5: ${1##*/}:$n: Conn use other than .${2//|/\/.}: $l"
+      done
+    done <"$1"
+  }
+  conn_ok "${smoke[1]}" 'EventStream|DisplayFaceImageRGB|SayText'
+  conn_ok "${smoke[2]}" 'ExternalAudioStreamPlayback|SayText'
 fi
 echo "smoke motion-free OK (${#smoke[@]} files; denylist + endpoint/method allowlist)"
 

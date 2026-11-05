@@ -4,7 +4,7 @@
 # Usage: smoke.sh   → PASS (exit 0); FAIL (1) names the first failing check; SETUP (2) = no ESN/key/SSH/wire-pod link.  (env: ESN, SERVER)
 # Moves only the head: check-static.sh S5 fails on a wheel/lift name in this file or fork_smoke.go (denylist), on any `sdk`/api-sdk
 # endpoint here not in its allowlist or not literal (cloud_intent only via intent my_vector_log_*), and on any Conn method in fork_smoke.go
-# other than EventStream/DisplayFaceImageRGB/SayText.
+# other than EventStream/DisplayFaceImageRGB/SayText (myvector/voice: ExternalAudioStreamPlayback/SayText). A2 speaks in the PC voice (:8091), WARN on fallback.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
@@ -137,8 +137,9 @@ head_to -1 down '<= -0.3840 + 0.1' # MIN_HEAD_ANGLE -22°
 step "A2 face + speech"
 r=$(sdk fork_face); [[ $r == ok ]] || die "A2: fork_face: ${r:0:200}"
 ok "A2 face shown"
-r=$(sdk fork_say 'text=smoke%20test'); [[ $r == FINISHED ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED"
-ok "A2 said 'smoke test'"
+r=$(sdk fork_say 'text=smoke%20test'); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
+[[ $r != 'FINISHED fallback'* ]] && ok "A2 said 'smoke test' in ${r#FINISHED }" ||
+  echo "WARN: A2 said 'smoke test' in the fallback voice (TTS service :8091 down? make tts-enable): ${r#FINISHED fallback: }"
 sdk release_behavior_control >/dev/null
 
 step "A3 log-level intent"
