@@ -1,5 +1,6 @@
 import http.client
 import json
+import socket
 import threading
 from http.server import ThreadingHTTPServer
 
@@ -25,6 +26,13 @@ def test_split_sentences_long_sentence_split_under_cap():
     assert len(parts) > 1
     assert all(len(p) <= server.MAX_SENTENCE for p in parts)
     assert " ".join(parts).split() == long.split()
+
+
+@pytest.mark.parametrize("text", ["a" * 400 + ", short.", "x, " + "b" * 400 + ", y."])
+def test_split_sentences_long_clause_mid_sentence_is_cut(text):
+    parts = server.split_sentences(text)
+    assert all(len(p) <= server.MAX_SENTENCE for p in parts)
+    assert "".join(parts).replace(" ", "") == text.replace(" ", "")
 
 
 def test_split_sentences_no_break_points_hard_cut():
@@ -82,13 +90,13 @@ def test_load_gains_db_to_linear(tmp_path):
 
 
 class FakeEngine:
-    """One 0.1 s tone per call at `rate`; records (voice_id, text, slow)."""
+    """One 0.1 s tone per call at `rate`; records (voice_id, text, slow). Call number `fail_at` (1-based) raises."""
 
-    def __init__(self, rate, fail=False):
-        self.rate, self.fail, self.calls = rate, fail, []
+    def __init__(self, rate, fail_at=0):
+        self.rate, self.fail_at, self.calls = rate, fail_at, []
 
     def synth(self, voice_id, text, slow):
-        if self.fail:
+        if len(self.calls) + 1 == self.fail_at:
             raise RuntimeError("engine down")
         self.calls.append((voice_id, text, slow))
         return 0.1 * np.ones(self.rate // 10, np.float32), self.rate
@@ -148,7 +156,7 @@ def test_tts_bad_request_and_unknown_path(serve):
 
 
 def test_tts_engine_failure_is_500(serve):
-    port = serve({"piper": FakeEngine(22050, fail=True), "kokoro": FakeEngine(24000)})
+    port = serve({"piper": FakeEngine(22050, fail_at=1), "kokoro": FakeEngine(24000)})
     r, data = post(port, {"text": "Hello.", "voice": "cori"})
     assert r.status == 500 and json.loads(data)["error"] == "synthesis failed"
 
@@ -158,3 +166,67 @@ def test_health(serve):
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     c.request("GET", "/health")
     assert json.loads(c.getresponse().read())["voices"] == ["af_bella", "cori"]
+
+
+def raw_chunks(port, body):
+    """POST /tts over a raw socket -> list of HTTP chunk sizes (http.client hides the framing)."""
+    data = json.dumps(body).encode()
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as s:
+        s.sendall(
+            b"POST /tts HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Length: %d\r\n\r\n%s"
+            % (len(data), data)
+        )
+        raw = b""
+        while chunk := s.recv(65536):
+            raw += chunk
+    rest = raw.split(b"\r\n\r\n", 1)[1]
+    sizes = []
+    while True:
+        line, rest = rest.split(b"\r\n", 1)
+        n = int(line, 16)
+        sizes.append(n)
+        if n == 0:
+            return sizes
+        rest = rest[n + 2 :]
+
+
+def test_tts_http_chunk_per_sentence(serve):
+    port = serve({"piper": FakeEngine(22050), "kokoro": FakeEngine(24000)})
+    assert raw_chunks(port, {"text": "One. Two! Three?", "voice": "cori"}) == [
+        3200,
+        3200,
+        3200,
+        0,
+    ]
+
+
+def test_tts_mid_stream_failure_leaves_stream_unterminated(serve):
+    port = serve({"piper": FakeEngine(22050, fail_at=2), "kokoro": FakeEngine(24000)})
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    c.request("POST", "/tts", body=json.dumps({"text": "One. Two.", "voice": "cori"}))
+    r = c.getresponse()
+    assert r.status == 200
+    with pytest.raises(http.client.IncompleteRead):
+        r.read()
+
+
+def test_tts_keep_alive_after_400_and_200(serve):
+    port = serve({"piper": FakeEngine(22050), "kokoro": FakeEngine(24000)})
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    statuses = []
+    for body in ({"text": ""}, {"text": "Hi."}, {"text": "Hi."}):
+        c.request("POST", "/tts", body=json.dumps(body))
+        r = c.getresponse()
+        r.read()
+        statuses.append(r.status)
+    assert statuses == [400, 200, 200]
+    assert (
+        c.sock is not None
+    )  # same socket throughout: http.client drops it when the server closes
+
+
+def test_tts_chunked_request_body_is_411(serve):
+    port = serve({"piper": FakeEngine(22050), "kokoro": FakeEngine(24000)})
+    c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+    c.request("POST", "/tts", body=iter([b'{"text": "hi"}']), encode_chunked=True)
+    assert c.getresponse().status == 411

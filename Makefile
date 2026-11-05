@@ -22,7 +22,7 @@ daemon-enable: ## Install + (re)start wire-pod.service (starts with WSL, restart
 daemon-disable: ## Stop + remove wire-pod.service (make start runs in the foreground again)
 	sudo systemctl disable --now wire-pod
 	sudo rm -f /etc/systemd/system/wire-pod.service
-	sudo nft delete table inet wirepod_guard 2>/dev/null || true
+	systemctl is-active -q myvector-tts || sudo nft delete table inet wirepod_guard 2>/dev/null || true # the TTS port keeps its guard
 	sudo systemctl daemon-reload
 
 tts-setup: ## Create/refresh the TTS venv + voice models in robot/work (no sudo; downloads ~3 GB on first run)
@@ -39,6 +39,7 @@ tts-enable: ## Install + (re)start myvector-tts.service (:8091, runs as you, sta
 tts-disable: ## Stop + remove myvector-tts.service
 	sudo systemctl disable --now myvector-tts
 	sudo rm -f /etc/systemd/system/myvector-tts.service
+	systemctl is-active -q wire-pod || sudo nft delete table inet wirepod_guard 2>/dev/null || true # wire-pod keeps its guard
 	sudo systemctl daemon-reload
 
 check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector + vars fork Go tests

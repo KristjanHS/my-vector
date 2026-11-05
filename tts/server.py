@@ -56,19 +56,25 @@ def _split_long(p):
     out, cur = [], ""
     for c in _CLAUSE_END.split(p):
         if cur and len(cur) + 1 + len(c) > MAX_SENTENCE:
-            out.append(cur)
+            out.extend(_hard_cut(cur))
             cur = c
         else:
             cur = f"{cur} {c}" if cur else c
-    while (
-        len(cur) > MAX_SENTENCE
-    ):  # no clause breaks left: cut at the last space before the cap
-        cut = cur.rfind(" ", 0, MAX_SENTENCE)
-        cut = cut if cut > 0 else MAX_SENTENCE
-        out.append(cur[:cut])
-        cur = cur[cut:].lstrip()
     if cur:
-        out.append(cur)
+        out.extend(_hard_cut(cur))
+    return out
+
+
+def _hard_cut(s):
+    """No clause breaks left: cut at the last space before MAX_SENTENCE (or at it)."""
+    out = []
+    while len(s) > MAX_SENTENCE:
+        cut = s.rfind(" ", 0, MAX_SENTENCE)
+        cut = cut if cut > 0 else MAX_SENTENCE
+        out.append(s[:cut])
+        s = s[cut:].lstrip()
+    if s:
+        out.append(s)
     return out
 
 
@@ -208,6 +214,7 @@ class Synth:
 def make_handler(synth, info):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+        timeout = 30  # idle keep-alive / half-sent request frees its thread
 
         def log_message(self, format, *args):  # noqa: A002 - base class name
             log.info("%s %s", self.address_string(), format % args)
@@ -227,19 +234,25 @@ def make_handler(synth, info):
                 self._json(404, {"error": "not found"})
 
         def do_POST(self):
+            client_close = self.close_connection  # the client's Connection: close
+            self.close_connection = True  # until the body is read: an unread body would parse as the next request
             if self.path != "/tts":
                 self._json(404, {"error": "not found"})
+                return
+            if "Transfer-Encoding" in self.headers:
+                self._json(411, {"error": "send Content-Length, not a chunked body"})
                 return
             try:
                 n = int(self.headers.get("Content-Length", 0))
             except ValueError:
                 n = -1
-            if not 0 <= n <= 4 * MAX_TEXT + 1024:
-                self.close_connection = True
-                self._json(400, {"error": "bad Content-Length"})
+            if not 0 <= n <= 6 * MAX_TEXT + 1024:  # 6 = a \uXXXX-escaped char
+                self._json(413 if n > 0 else 400, {"error": "bad Content-Length"})
                 return
+            body = self.rfile.read(n)
+            self.close_connection = client_close
             try:
-                text, voice, slow = parse_request(self.rfile.read(n))
+                text, voice, slow = parse_request(body)
             except ValueError as e:
                 self._json(400, {"error": str(e)})
                 return

@@ -14,7 +14,7 @@ if [[ ${1:-} == --head ]]; then
 fi
 (cd "$repo" && scripts/upstream-drift.sh "${head[@]}")
 shopt -s nullglob # a pre-R6 commit has no robot/*.sh
-for f in "$dir"/robot/*.sh "$dir"/robot/*/*.sh "$dir"/scripts/*.sh; do bash -n "$f" || { echo "syntax: ${f#"$dir"/}" >&2; exit 1; }; done
+for f in "$dir"/robot/*.sh "$dir"/robot/*/*.sh "$dir"/scripts/*.sh "$dir"/tts/*.sh; do bash -n "$f" || { echo "syntax: ${f#"$dir"/}" >&2; exit 1; }; done
 echo "shell syntax OK"
 "$dir"/robot/firmware/check-static.sh
 (cd "$dir/chipper" && go vet ./pkg/wirepod/sdkapp/)
