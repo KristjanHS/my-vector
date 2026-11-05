@@ -1,0 +1,346 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Thu, 5 Nov 2026 11:39:12 +0200
+Subject: [PATCH] pc-voice
+
+vic-anim TTS provider (B4.2, R15-R18): each line reads /data/data/myvector-voice.json
+{url, voice, slow}; missing/bad file, no url or voice stock speaks Acapela unchanged. Otherwise
+each sentence is one HTTP/1.0 POST /tts to the PC service (slow = file slow x durationScalar,
+clamped 0.5-2.0; 1.5 s to the first response byte), its 16 kHz PCM resampled to Acapela's rate
+because a stream keeps its first chunk's rate. A failed sentence and the rest of the line speak
+in Acapela (R17). Logs my-vector.Voice.
+---
+ .../textToSpeechProvider_vicos.cpp            | 265 ++++++++++++++++++
+ .../textToSpeech/textToSpeechProvider_vicos.h |  15 +
+ 2 files changed, 280 insertions(+)
+
+diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp
+index 973d3bea..b9f2dae9 100644
+--- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp
++++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp
+@@ -24,6 +24,20 @@
+ #include "util/environment/locale.h"
+ #include "util/logging/logging.h"
+ 
++#include <arpa/inet.h>
++#include <netinet/in.h>
++#include <poll.h>
++#include <sys/socket.h>
++#include <unistd.h>
++#include <algorithm>
++#include <cctype>
++#include <cerrno>
++#include <chrono>
++#include <cmath>
++#include <cstdlib>
++#include <cstring>
++#include <fstream>
++
+ /* Interpolate Acapela code fragments */
+ #define USE_LOADINIFILE
+ #include "ic_babile.h"
+@@ -37,6 +51,188 @@ namespace Anki {
+ namespace Vector {
+ namespace TextToSpeech {
+ 
++namespace { // my-vector voice
++constexpr const char* kMyVectorVoiceFile = "/data/data/myvector-voice.json";
++constexpr int kMyVectorPcRate = 16000;          // tts/server.py RATE
++constexpr int kMyVectorFirstByte_ms = 1500;     // R17: connect + first response byte
++constexpr int kMyVectorIdle_ms = 5000;          // between later bytes (server splits sentences over 300 chars)
++constexpr size_t kMyVectorMaxResponse = 16 << 20;
++
++// [begin, end) of each sentence: a .!? run followed by whitespace or the end (so never inside 3.14 or a \tag\).
++std::vector<std::pair<size_t, size_t>> MyVectorSplitSentences(const std::string& t)
++{
++  std::vector<std::pair<size_t, size_t>> out;
++  size_t begin = 0;
++  for (size_t i = 0; i < t.size(); ++i) {
++    const char c = t[i];
++    if (c != '.' && c != '!' && c != '?') { continue; }
++    size_t end = i + 1;
++    while (end < t.size() && (t[end] == '.' || t[end] == '!' || t[end] == '?')) { ++end; }
++    if (end == t.size() || isspace(static_cast<unsigned char>(t[end]))) {
++      out.emplace_back(begin, end);
++      begin = end;
++    }
++    i = end - 1;
++  }
++  if (t.find_first_not_of(" \t\r\n", begin) != std::string::npos) { out.emplace_back(begin, t.size()); }
++  return out;
++}
++
++// Acapela \tags\ dropped, whitespace collapsed, no space before punctuation: what the PC voice reads.
++std::string MyVectorPlainText(const std::string& t)
++{
++  std::string out;
++  bool inTag = false, space = false;
++  for (const char c : t) {
++    if (c == '\\') { inTag = !inTag; continue; }
++    if (inTag) { continue; }
++    if (isspace(static_cast<unsigned char>(c))) { space = true; continue; }
++    if (space && !out.empty() && !strchr(".!?,;:", c)) { out += ' '; }
++    space = false;
++    out += c;
++  }
++  return out;
++}
++
++// Reads kMyVectorVoiceFile; false + why = speak Acapela.
++bool MyVectorLoadVoice(std::string& host, int& port, std::string& path, std::string& voice, float& slow, std::string& why)
++{
++  std::ifstream f(kMyVectorVoiceFile);
++  if (!f) { why = std::string("no ") + kMyVectorVoiceFile; return false; }
++  Json::Value v;
++  Json::Reader reader;
++  if (!reader.parse(f, v) || !v.isObject()) { why = "unparseable voice file"; return false; }
++  const std::string url = v["url"].isString() ? v["url"].asString() : "";
++  voice = v["voice"].isString() ? v["voice"].asString() : "";
++  slow = v["slow"].isNumeric() ? v["slow"].asFloat() : 1.f;
++  if (voice.empty() || voice == "stock") { why = "voice stock"; return false; }
++  if (url.empty()) { why = "no url"; return false; }
++  if (url.compare(0, 7, "http://") != 0) { why = "url not http://: " + url; return false; }
++  const size_t hostEnd = url.find_first_of(":/", 7);
++  host = url.substr(7, hostEnd == std::string::npos ? std::string::npos : hostEnd - 7);
++  port = 80;
++  size_t pathBegin = hostEnd;
++  if (hostEnd != std::string::npos && url[hostEnd] == ':') {
++    pathBegin = url.find('/', hostEnd);
++    port = atoi(url.substr(hostEnd + 1, pathBegin == std::string::npos ? std::string::npos : pathBegin - hostEnd - 1).c_str());
++  }
++  path = pathBegin == std::string::npos ? "" : url.substr(pathBegin);
++  while (!path.empty() && path.back() == '/') { path.pop_back(); }
++  in_addr a;
++  if (inet_pton(AF_INET, host.c_str(), &a) != 1 || port <= 0 || port > 65535) {
++    why = "url host must be IPv4:port: " + url; // numeric only: DNS would not honour the 1.5 s timeout
++    return false;
++  }
++  return true;
++}
++
++// Splits an HTTP response into PCM; decodes chunked (tts/server.py always chunks). False + why on anything else.
++bool MyVectorParseResponse(const std::string& r, std::vector<int16_t>& pcm, std::string& why)
++{
++  const size_t hdrEnd = r.find("\r\n\r\n");
++  if (hdrEnd == std::string::npos) { why = "no HTTP header"; return false; }
++  if (r.compare(0, 5, "HTTP/") != 0 || r.find(' ') == std::string::npos ||
++      r.compare(r.find(' ') + 1, 3, "200") != 0) {
++    why = "status " + r.substr(0, std::min(r.find('\r'), size_t(40)));
++    return false;
++  }
++  std::string hdr = r.substr(0, hdrEnd);
++  std::transform(hdr.begin(), hdr.end(), hdr.begin(), [](unsigned char c) { return static_cast<char>(tolower(c)); });
++  std::string body;
++  size_t pos = hdrEnd + 4;
++  if (hdr.find("\r\ntransfer-encoding: chunked") != std::string::npos) {
++    while (true) {
++      const size_t lineEnd = r.find("\r\n", pos);
++      if (lineEnd == std::string::npos) { why = "stream cut"; return false; }
++      char* endp = nullptr;
++      const unsigned long n = strtoul(r.c_str() + pos, &endp, 16);
++      if (endp == r.c_str() + pos) { why = "bad chunk size"; return false; }
++      if (n == 0) { break; }
++      if (lineEnd + 2 + n + 2 > r.size()) { why = "stream cut"; return false; }
++      body.append(r, lineEnd + 2, n);
++      pos = lineEnd + 2 + n + 2;
++    }
++  } else {
++    body = r.substr(pos); // HTTP/1.0 close-delimited body
++  }
++  if (body.size() % 2 != 0) { why = "odd PCM byte count"; return false; }
++  pcm.resize(body.size() / 2);
++  if (!body.empty()) { memcpy(pcm.data(), body.data(), body.size()); } // s16le; vicos is little-endian
++  return true;
++}
++
++// POST {text, voice, slow} to http://host:port<path>/tts as HTTP/1.0; whole response into resp.
++bool MyVectorPost(const std::string& host, int port, const std::string& path, const std::string& body,
++                  std::string& resp, std::string& why)
++{
++  using Clock = std::chrono::steady_clock;
++  const auto firstByteBy = Clock::now() + std::chrono::milliseconds(kMyVectorFirstByte_ms);
++  const auto msLeft = [&](Clock::time_point by) {
++    return static_cast<int>(std::max<long long>(0,
++      std::chrono::duration_cast<std::chrono::milliseconds>(by - Clock::now()).count()));
++  };
++  const std::string req = "POST " + path + "/tts HTTP/1.0\r\nHost: " + host + ":" + std::to_string(port) +
++    "\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: " + std::to_string(body.size()) +
++    "\r\n\r\n" + body;
++  sockaddr_in sa{};
++  sa.sin_family = AF_INET;
++  sa.sin_port = htons(static_cast<uint16_t>(port));
++  inet_pton(AF_INET, host.c_str(), &sa.sin_addr);
++  const int fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
++  if (fd < 0) { why = std::string("socket: ") + strerror(errno); return false; }
++  const auto fail = [&](const std::string& w) { why = w; close(fd); return false; };
++  const auto waitFor = [&](short ev, int ms) {
++    pollfd p{fd, ev, 0};
++    int rc;
++    do { rc = poll(&p, 1, ms); } while (rc < 0 && errno == EINTR);
++    return rc > 0;
++  };
++  if (connect(fd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) != 0) {
++    if (errno != EINPROGRESS) { return fail(std::string("connect: ") + strerror(errno)); }
++    if (!waitFor(POLLOUT, msLeft(firstByteBy))) { return fail("connect timeout"); }
++    int err = 0;
++    socklen_t len = sizeof(err);
++    getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
++    if (err != 0) { return fail(std::string("connect: ") + strerror(err)); }
++  }
++  for (size_t sent = 0; sent < req.size();) {
++    if (!waitFor(POLLOUT, msLeft(firstByteBy))) { return fail("send timeout"); }
++    const ssize_t n = send(fd, req.data() + sent, req.size() - sent, MSG_NOSIGNAL); // no SIGPIPE in vic-anim
++    if (n < 0 && errno != EAGAIN && errno != EINTR) { return fail(std::string("send: ") + strerror(errno)); }
++    if (n > 0) { sent += static_cast<size_t>(n); }
++  }
++  resp.clear();
++  char buf[8192];
++  while (true) {
++    if (!waitFor(POLLIN, resp.empty() ? msLeft(firstByteBy) : kMyVectorIdle_ms)) {
++      return fail(resp.empty() ? "no response in 1.5 s" : "response stalled");
++    }
++    const ssize_t n = recv(fd, buf, sizeof(buf), 0);
++    if (n == 0) { break; }
++    if (n < 0 && errno != EAGAIN && errno != EINTR) { return fail(std::string("recv: ") + strerror(errno)); }
++    if (n > 0) { resp.append(buf, static_cast<size_t>(n)); }
++    if (resp.size() > kMyVectorMaxResponse) { return fail("response too large"); }
++  }
++  close(fd);
++  return true;
++}
++
++// Linear resample s16 mono; one sentence at a time, so no phase carried between calls.
++std::vector<int16_t> MyVectorResample(const std::vector<int16_t>& in, int fromRate, int toRate)
++{
++  if (fromRate == toRate || in.empty()) { return in; }
++  std::vector<int16_t> out(static_cast<size_t>(static_cast<uint64_t>(in.size()) * toRate / fromRate));
++  for (size_t j = 0; j < out.size(); ++j) {
++    const double x = static_cast<double>(j) * fromRate / toRate;
++    const size_t i = static_cast<size_t>(x);
++    const double f = x - i;
++    const size_t i1 = std::min(i + 1, in.size() - 1);
++    out[j] = static_cast<int16_t>(std::lround(in[i] * (1.0 - f) + in[i1] * f));
++  }
++  return out;
++}
++} // namespace (my-vector voice)
++
+ TextToSpeechProviderImpl::TextToSpeechProviderImpl(const Anim::AnimContext* context, const Json::Value& tts_platform_config)
+ {
+   // Caller must provide context & RNG
+@@ -256,6 +452,71 @@ Result TextToSpeechProviderImpl::GetFirstAudioData(const std::string & text,
+                                                    float pitchScalar,
+                                                    TextToSpeechProviderData & data,
+                                                    bool & done)
++{
++  auto & mv = _myVectorVoice;
++  mv.active = false;
++  std::string why;
++  if (MyVectorLoadVoice(mv.host, mv.port, mv.path, mv.voice, mv.slow, why)) {
++    mv.text = text;
++    mv.sentences = MyVectorSplitSentences(text);
++    mv.next = 0;
++    mv.durationScalar = durationScalar;
++    mv.pitchScalar = pitchScalar;
++    mv.active = !mv.sentences.empty();
++    why = "no sentences";
++  }
++  if (mv.active) {
++    LOG_WARNING("my-vector.Voice", "pc voice=%s %s:%d sentences=%zu slow=%.2f duration=%.2f",
++                mv.voice.c_str(), mv.host.c_str(), mv.port, mv.sentences.size(), mv.slow, durationScalar);
++    return GetNextMyVectorVoiceData(data, done);
++  }
++  LOG_WARNING("my-vector.Voice", "acapela: %s", why.c_str());
++  return GetFirstAcapelaData(text, durationScalar, pitchScalar, data, done);
++}
++
++Result TextToSpeechProviderImpl::GetNextMyVectorVoiceData(TextToSpeechProviderData & data, bool & done)
++{
++  auto & mv = _myVectorVoice;
++  if (mv.next >= mv.sentences.size()) {
++    mv.active = false;
++    done = true;
++    return RESULT_OK;
++  }
++  const auto & s = mv.sentences[mv.next];
++  const std::string say = MyVectorPlainText(mv.text.substr(s.first, s.second - s.first));
++  if (say.empty()) { // a sentence of \tags\ only
++    ++mv.next;
++    return RESULT_OK;
++  }
++  Json::Value req;
++  req["text"] = say;
++  req["voice"] = mv.voice;
++  req["slow"] = std::min(2.f, std::max(0.5f, mv.slow * mv.durationScalar)); // R16; server's range
++  std::string resp, why;
++  std::vector<int16_t> pcm;
++  if (MyVectorPost(mv.host, mv.port, mv.path, Json::FastWriter().write(req), resp, why) &&
++      MyVectorParseResponse(resp, pcm, why)) {
++    ++mv.next;
++    // One rate per stream (StreamingWaveDataInstance drops a changed rate): match Acapela's so a fallback can follow.
++    const int rate = _BAB_voicefreq > 0 ? static_cast<int>(_BAB_voicefreq) : kMyVectorPcRate;
++    pcm = MyVectorResample(pcm, kMyVectorPcRate, rate);
++    if (!pcm.empty()) {
++      data.Init(rate, 1);
++      data.AppendSamples(pcm.data(), pcm.size());
++    }
++    return RESULT_OK;
++  }
++  LOG_WARNING("my-vector.Voice", "acapela from sentence %zu/%zu: %s",
++              mv.next + 1, mv.sentences.size(), why.c_str());
++  mv.active = false; // R17: this sentence and the rest of the line
++  return GetFirstAcapelaData(mv.text.substr(s.first), mv.durationScalar, mv.pitchScalar, data, done);
++}
++
++Result TextToSpeechProviderImpl::GetFirstAcapelaData(const std::string & text,
++                                                     float durationScalar,
++                                                     float pitchScalar,
++                                                     TextToSpeechProviderData & data,
++                                                     bool & done)
+ {
+   LOG_INFO("TextToSpeechProvider.GetFirstAudioData", "text=%s duration=%.2f pitch=%.2f",
+             Anki::Util::HidePersonallyIdentifiableInfo(text.c_str()),
+@@ -340,6 +601,10 @@ Result TextToSpeechProviderImpl::GetFirstAudioData(const std::string & text,
+ 
+ Result TextToSpeechProviderImpl::GetNextAudioData(TextToSpeechProviderData & data, bool & done)
+ {
++  if (_myVectorVoice.active) {
++    return GetNextMyVectorVoiceData(data, done);
++  }
++
+   // If we are draining the TTS buffer, pass nullptr, else pass pointer to remaining text
+   BB_TCHAR * str = (BB_TCHAR *) (_draining ? nullptr: &_str[_strpos]);
+ 
+diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h
+index c0a69008..7cbf6bd1 100644
+--- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h
++++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h
+@@ -21,6 +21,7 @@
+ #include "json/json.h"
+ 
+ #include <string>
++#include <vector>
+ 
+ // Acapela SDK declarations
+ #include "i_babile.h"
+@@ -113,6 +114,20 @@ private:
+   Result Initialize(const std::string & locale);
+   void Cleanup();
+ 
++  // my-vector voice (patch 0010): PC TTS one sentence per POST; after a failure the rest goes to Acapela
++  struct MyVectorVoice {
++    bool active = false;
++    std::string host, path, voice;
++    int port = 0;
++    float slow = 1.f, durationScalar = 1.f, pitchScalar = 1.f;
++    std::string text;
++    std::vector<std::pair<size_t, size_t>> sentences; // [begin, end) into text
++    size_t next = 0;
++  } _myVectorVoice;
++  Result GetFirstAcapelaData(const std::string & text, float durationScalar, float pitchScalar,
++                             TextToSpeechProviderData & data, bool & done);
++  Result GetNextMyVectorVoiceData(TextToSpeechProviderData & data, bool & done);
++
+ }; // class TextToSpeechProviderImpl
+ 
+ } // end namespace TextToSpeech

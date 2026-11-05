@@ -23,3 +23,5 @@
 0009-eye-chimes-off.patch	src	animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp	IsMutedEyeChime( AudioMetaData::GameEvent::EnumToString
 0009-eye-chimes-off.patch	src	animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp	CONSOLE_VAR( bool, kMuteEyeChimes, "Audio.Controller", true );
 0009-eye-chimes-off.patch	bin	bin/vic-anim	my-vector.EyeChimes
+0010-pc-voice.patch	src	animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp	my-vector.Voice
+0010-pc-voice.patch	bin	bin/vic-anim	my-vector.Voice
