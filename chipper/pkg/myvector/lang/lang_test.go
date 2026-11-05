@@ -65,3 +65,18 @@ func TestLangSaveKeepsVoiceKeysAndCaches(t *testing.T) {
 		t.Fatalf("rejected Save changed Current: %q", got)
 	}
 }
+
+// Falsifier for the init-order bug: Current() first runs at package init, before vars.Init moves ApiConfigPath.
+func TestLangCurrentFollowsPath(t *testing.T) {
+	first := tempPath(t)
+	os.WriteFile(first, []byte(`{"lang":"en-US"}`), 0644)
+	if got := Current(); got != English {
+		t.Fatalf("first file: %q", got)
+	}
+	second := filepath.Join(t.TempDir(), "myvectorConfig.json")
+	os.WriteFile(second, []byte(`{"lang":"et-EE"}`), 0644)
+	Path = func() string { return second }
+	if got := Current(); got != Estonian {
+		t.Fatalf("after Path change: %q, want the new file's %q", got, Estonian)
+	}
+}

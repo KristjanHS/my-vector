@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"sync"
 	"sync/atomic"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
@@ -25,7 +26,13 @@ var Supported = []string{English, Estonian}
 // Path is the settings file; vars/fork_lang.go points it beside apiConfig.json (lang must not import vars).
 var Path = func() string { return "myvectorConfig.json" }
 
-var cur atomic.Pointer[string]
+// cached is the language load read from path; a Path change (vars.Init after package init) invalidates it.
+type cached struct{ path, lang string }
+
+var (
+	cur    atomic.Pointer[cached]
+	saveMu sync.Mutex // holds across the file write and cur.Store so both end on the same Save
+)
 
 func Valid(l string) bool {
 	for _, s := range Supported {
@@ -36,18 +43,23 @@ func Valid(l string) bool {
 	return false
 }
 
-// Current is the saved language, read once then cached; a missing, unreadable or invalid one gives Default.
+// Current is the saved language, cached per Path(); a missing, unreadable or invalid one gives Default.
 func Current() string {
-	if p := cur.Load(); p != nil {
-		return *p
+	path := Path()
+	for {
+		old := cur.Load()
+		if old != nil && old.path == path {
+			return old.lang
+		}
+		l := load(path)
+		if cur.CompareAndSwap(old, &cached{path, l}) { // a lost race retries so a concurrent Save wins
+			return l
+		}
 	}
-	l := load()
-	cur.CompareAndSwap(nil, &l)
-	return *cur.Load()
 }
 
-func load() string {
-	b, err := os.ReadFile(Path())
+func load(path string) string {
+	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return Default
 	}
@@ -75,9 +87,12 @@ func Save(l string) error {
 	if !Valid(l) {
 		return fmt.Errorf("lang: one of %v", Supported)
 	}
-	if err := conf.Update(Path(), map[string]any{"lang": l}); err != nil {
+	saveMu.Lock()
+	defer saveMu.Unlock()
+	path := Path()
+	if err := conf.Update(path, map[string]any{"lang": l}); err != nil {
 		return err
 	}
-	cur.Store(&l)
+	cur.Store(&cached{path, l})
 	return nil
 }

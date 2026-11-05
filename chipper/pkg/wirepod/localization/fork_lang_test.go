@@ -1,23 +1,11 @@
 package localization
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
-
-func forkSwitchTo(t *testing.T, l string) {
-	t.Helper()
-	old := lang.Path
-	path := filepath.Join(t.TempDir(), "myvectorConfig.json")
-	lang.Path = func() string { return path }
-	if err := lang.Save(l); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { lang.Save(lang.English); lang.Path = old })
-}
 
 func TestForkGetText(t *testing.T) {
 	oldLang, oldTexts := vars.APIConfig.STT.Language, forkTexts
@@ -25,7 +13,7 @@ func TestForkGetText(t *testing.T) {
 	forkTexts = map[string]string{STR_MINUTE: "minut"}
 	vars.APIConfig.STT.Language = "en-US"
 
-	forkSwitchTo(t, lang.English)
+	lang.UseForTest(t, lang.English)
 	if got := GetText(STR_MINUTE); got != "minute" {
 		t.Errorf("en-US: %q, want upstream %q", got, "minute")
 	}
@@ -35,7 +23,7 @@ func TestForkGetText(t *testing.T) {
 	}
 	vars.APIConfig.STT.Language = "en-US"
 
-	forkSwitchTo(t, lang.Estonian)
+	lang.UseForTest(t, lang.Estonian)
 	if got := GetText(STR_MINUTE); got != "minut" {
 		t.Errorf("et-EE: %q, want fork %q", got, "minut")
 	}
