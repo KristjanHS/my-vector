@@ -1,5 +1,5 @@
-# LLM bench (plan 2026-11-05-estonian-language-mode.md Stage 1.3): answers + speed + VRAM fit, per language.
-# Usage: bench.py [--lang et|en] gen MODEL... | bench.py --lang et ladder | bench.py [--lang et|en] summary   (stdlib; python3 -I)
+# LLM bench (plan 2026-11-05-estonian-language-mode.md Stage 1.3): answers + speed + VRAM, per language; ET fit = stack.py.
+# Usage: bench.py [--lang et|en] gen MODEL... | bench.py [--lang et|en] summary   (stdlib; python3 -I)
 import json
 import re
 import statistics
@@ -13,23 +13,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OLLAMA = "http://localhost:11434"
 TTS = "http://localhost:8091"
-KOKORO_MIB = 666  # Kokoro af_bella 0.65 GiB (R20): resident in every base reading, unloaded in ET mode
-# lang -> (questions file, prompt language line, GPU MiB the rest of the stack needs, GPU MiB that mode frees)
+# lang -> (questions file, prompt language line)
 LANGS = {
-    "et": (
-        "questions.txt",
-        "\n\nAnswer in Estonian.",
-        1341 + 420,
-        KOKORO_MIB,
-    ),  # TalTech STT int8_float16 + Neurokõne max
-    "en": ("questions-en.txt", "", 0, 0),  # vosk STT is CPU; Kokoro already in base
+    "et": ("questions.txt", "\n\nAnswer in Estonian."),
+    "en": ("questions-en.txt", ""),
 }
-EST = "hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-"
-LADDER = (
-    "Q4_K_M",
-    ["Q5_K_S", "Q5_K_M"],
-    ["Q4_K_S", "IQ4_XS"],
-)  # start, up while fit, down until fit (E11)
+WORST_BASE_MIB = 2389  # worst rest-of-stack GPU reading seen (1.3); EN fit = total - (LLM + this + margin)
+MARGIN_MIB = 256
+ERRORS = (
+    urllib.error.URLError,
+    RuntimeError,
+    TimeoutError,
+)  # URLError covers HTTPError
 SENTENCE_END = re.compile(
     r"[.!?]"
 )  # wire-pod StreamingKGSim speaks each chunk at a punctuation mark
@@ -42,8 +37,9 @@ BASE_PROMPT = (
 
 
 def use(lang):
-    global W, ANSWERS, MODELS, SCORES, QUESTIONS, PROMPT, NEED_MIB, FREES_MIB
-    qfile, line, NEED_MIB, FREES_MIB = LANGS[lang]
+    global LANG, W, ANSWERS, MODELS, SCORES, QUESTIONS, PROMPT
+    LANG = lang
+    qfile, line = LANGS[lang]
     W = ROOT / "robot/work/et-llm" / lang
     ANSWERS, MODELS, SCORES = W / "answers.jsonl", W / "models.jsonl", W / "scores.json"
     QUESTIONS, PROMPT = ROOT / "robot/et-llm" / qfile, BASE_PROMPT + line
@@ -61,6 +57,15 @@ def get(path, base=OLLAMA):
         return json.load(r)
 
 
+def errmsg(e):
+    if isinstance(e, urllib.error.HTTPError):
+        try:
+            return e.read().decode()[:200] or str(e)[:200]
+        except OSError:
+            pass
+    return str(e)[:200]
+
+
 def unload_all():
     for m in get("/api/ps")["models"]:
         post("/api/generate", {"model": m["name"], "keep_alive": 0}).read()
@@ -72,16 +77,20 @@ def unload_all():
 
 
 def gpu_mib():
-    out = subprocess.run(
-        [
-            "nvidia-smi",
-            "--query-gpu=memory.used,memory.total",
-            "--format=csv,noheader,nounits",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.split(",")
+    out = (
+        subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.used,memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        .stdout.splitlines()[0]  # single GPU assumed
+        .split(",")
+    )
     return int(out[0]), int(out[1])
 
 
@@ -105,25 +114,45 @@ def kokoro_resident():
         return False
 
 
+def load_error(model, phase, e):
+    msg = errmsg(e)
+    print(f"!! {model} {phase} failed: {msg}")
+    append(MODELS, {"model": model, "error": msg})
+    return "error"
+
+
 def ensure_pulled(model):
-    if model in {m["name"] for m in get("/api/tags")["models"]}:
-        return
-    print(f"   pulling {model}")
-    post("/api/pull", {"model": model, "stream": False}, timeout=7200).read()
+    try:
+        if model in {m["name"] for m in get("/api/tags")["models"]}:
+            return None
+        print(f"   pulling {model}")
+        post("/api/pull", {"model": model, "stream": False}, timeout=7200).read()
+    except (urllib.error.URLError, TimeoutError) as e:
+        return load_error(model, "pull", e)
+    return None
 
 
 def fit(row):
-    """(headroom MiB, verdict): ET mode frees Kokoro, then needs STT + Neurokõne; any CPU spill fails."""
-    if "llm_mib" not in row:
-        return None, "unknown"
+    """(headroom MiB, verdict) for LANG: any CPU spill fails; ET verdict is stack.py's measured peak."""
     if (
-        row.get("size_mib")
-        and row.get("size_vram_mib") is not None
-        and row["size_vram_mib"] < row["size_mib"]
+        "llm_mib" not in row
+        or row.get("size_mib") is None
+        or row.get("size_vram_mib") is None
     ):
+        return None, "unknown"
+    if row.get("size_b") is not None and row.get("size_vram_b") is not None:
+        size, vram = row["size_b"], row["size_vram_b"]
+    else:
+        size, vram = row["size_mib"], row["size_vram_mib"]
+    if vram < size:
         return None, "spill"
-    headroom = row["gpu_total_mib"] - row["gpu_used_mib"] + FREES_MIB - NEED_MIB
+    if LANG == "et":
+        return None, "stack.py"
+    headroom = row["gpu_total_mib"] - (row["llm_mib"] + WORST_BASE_MIB + MARGIN_MIB)
     return headroom, "yes" if headroom >= 0 else "no"
+
+
+REQ_TAG = "re-none"  # resume key for the request body below: reasoning_effort none
 
 
 def ask(model, question):
@@ -182,33 +211,38 @@ def r2(x):
     return round(x, 2) if x is not None else None
 
 
-def run_model(model, qs, done):
-    """Measure one model's fit, then answer every question; returns the fit verdict or 'error'."""
+def done_keys(rows):
+    """(model, qid, ollama, req) of answered rows; legacy rows key on None and never match a live run."""
+    return {
+        (r["model"], r["qid"], r.get("ollama"), r.get("req"))
+        for r in rows
+        if "error" not in r
+    }
+
+
+def run_model(model, qs, done, ver):
+    """Measure one model's load + VRAM, then answer every question; returns the fit verdict or 'error'."""
     print(f"== {model}")
-    unload_all()
     try:
-        ensure_pulled(model)
-    except urllib.error.HTTPError as e:
-        msg = e.read().decode()[:200]
-        print(f"!! {model} pull failed: {msg}")
-        append(MODELS, {"model": model, "error": msg})
-        return "error"
-    base, total = settled_gpu()
-    t0 = time.monotonic()
-    try:
+        unload_all()
+        if ensure_pulled(model) == "error":
+            return "error"
+        base, total = settled_gpu()
+        t0 = time.monotonic()
         post("/api/generate", {"model": model, "keep_alive": "10m"}).read()
-    except urllib.error.HTTPError as e:
-        msg = e.read().decode()[:200]
-        print(f"!! {model} skipped: {msg}")
-        append(MODELS, {"model": model, "error": msg})
-        return "error"
-    load_s = time.monotonic() - t0
-    used, _ = settled_gpu()
-    ps = [m for m in get("/api/ps")["models"] if m["name"] == model]
+        load_s = time.monotonic() - t0
+        warm_s = ask(model, qs[0])[3] if qs else None  # not stored: first-gen buffers
+        used, _ = settled_gpu()
+        ps = [m for m in get("/api/ps")["models"] if m["name"] == model]
+    except ERRORS as e:
+        return load_error(model, "load", e)
     row = {
         "model": model,
-        "ollama": get("/api/version")["version"],
+        "ollama": ver,
         "load_s": round(load_s, 1),
+        "warm_s": r2(warm_s),
+        "size_b": ps[0]["size"] if ps else None,
+        "size_vram_b": ps[0]["size_vram"] if ps else None,
         "size_mib": ps[0]["size"] >> 20 if ps else None,
         "size_vram_mib": ps[0]["size_vram"] >> 20 if ps else None,
         "gpu_base_mib": base,
@@ -220,18 +254,33 @@ def run_model(model, qs, done):
     row["headroom_mib"], row["fit"] = headroom, verdict
     append(MODELS, row)
     print(
-        f"   loaded {load_s:.1f}s, base {base} -> {used}/{total} MiB, LLM {used - base}, headroom {headroom}: {verdict}"
+        f"   loaded {load_s:.1f}s, warm-up {warm_s or 0:.1f}s, base {base} -> {used}/{total} MiB, LLM {used - base}, headroom {headroom}: {verdict}"
     )
     for qid, q in enumerate(qs, 1):
-        if (model, qid) in done:
+        if (model, qid, ver, REQ_TAG) in done:
             continue
-        text, first, sentence, total_s = ask(model, q)
+        ans = {"model": model, "qid": qid, "question": q, "ollama": ver, "req": REQ_TAG}
+        try:
+            text, first, sentence, total_s = ask(model, q)
+        except ERRORS as e:
+            msg = errmsg(e)
+            print(f"!! q{qid} failed: {msg}")
+            append(
+                ANSWERS,
+                ans
+                | {
+                    "answer": "",
+                    "first_token_s": None,
+                    "first_sentence_s": None,
+                    "total_s": None,
+                    "error": msg,
+                },
+            )
+            continue
         append(
             ANSWERS,
-            {
-                "model": model,
-                "qid": qid,
-                "question": q,
+            ans
+            | {
                 "answer": text,
                 "first_token_s": r2(first),
                 "first_sentence_s": r2(sentence),
@@ -251,30 +300,13 @@ def start():
         )
     W.mkdir(parents=True, exist_ok=True)
     qs = [q for q in QUESTIONS.read_text().splitlines() if q.strip()]
-    return qs, {(r["model"], r["qid"]) for r in load_rows(ANSWERS)}
+    return qs, done_keys(load_rows(ANSWERS)), get("/api/version")["version"]
 
 
 def gen(models):
-    qs, done = start()
+    qs, done, ver = start()
     for model in models:
-        run_model(model, qs, done)
-
-
-def ladder():
-    qs, done = start()
-    first, ups, downs = LADDER
-    ok = run_model(EST + first, qs, done) == "yes"
-    pick = first if ok else None
-    for q in ups if ok else downs:
-        v = run_model(EST + q, qs, done)
-        if ok and v != "yes":
-            break
-        if v == "yes":
-            pick = q
-            if not ok:
-                break
-    print(f"== ladder pick: {pick or 'none fits'}")
-    return pick
+        run_model(model, qs, done, ver)
 
 
 def med(xs):
@@ -282,7 +314,15 @@ def med(xs):
 
 
 def summary():
-    answers = load_rows(ANSWERS)
+    answers = {}
+    for a in load_rows(
+        ANSWERS
+    ):  # current req only (legacy rows kept); last good row per question
+        key = (a["model"], a["qid"])
+        if a.get("req", REQ_TAG) == REQ_TAG and (
+            "error" not in a or key not in answers
+        ):
+            answers[key] = a
     scores = json.loads(SCORES.read_text()) if SCORES.exists() else {}
     loads = {}
     for r in load_rows(MODELS):  # last good load wins; an error row only if no good one
@@ -298,7 +338,7 @@ def summary():
                 f"| {model} | – | – | – | – | – | – | – | – | – | error: {ld['error'][:60]} |"
             )
             continue
-        rows = [a for a in answers if a["model"] == model]
+        rows = [a for a in answers.values() if a["model"] == model]
         sc = [
             scores[f"{model}|{a['qid']}"]
             for a in rows
@@ -331,11 +371,9 @@ if __name__ == "__main__":
         and not any(m.startswith("-") for m in args[1:])
     ):
         gen(args[1:])
-    elif args == ["ladder"] and lang == "et":
-        ladder()
     elif args == ["summary"]:
         summary()
     else:
         sys.exit(
-            "usage: bench.py [--lang et|en] gen MODEL... | bench.py --lang et ladder | bench.py [--lang et|en] summary"
+            "usage: bench.py [--lang et|en] gen MODEL... | bench.py [--lang et|en] summary"
         )
