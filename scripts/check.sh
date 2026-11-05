@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, firmware static checks (check-static.sh), patch 0010 host test (tests/pc-voice.sh), go vet of the patched sdkapp,
-# chipper myvector + vars fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir), tts pytest (when the TTS venv exists).
+# chipper myvector + vars + localization fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir), tts pytest (when the TTS venv exists).
 # Usage: check.sh [--head [rev]]   --head checks only that commit (default HEAD) via a git archive copy;
 #   make ship passes its pinned sha so the checked commit is the one it ships.
 set -euo pipefail
@@ -23,6 +23,7 @@ echo "go vet sdkapp OK"
 if [[ -d $dir/chipper/pkg/myvector ]]; then (cd "$dir/chipper" && go test ./pkg/myvector/...); fi
 if [[ -f $dir/chipper/pkg/vars/fork_intents_test.go ]]; then (cd "$dir/chipper" && go test -run Fork ./pkg/vars/); fi
 (cd "$dir/chipper" && go test -run Fork ./pkg/wirepod/ttr/)
+if [[ -f $dir/chipper/pkg/wirepod/localization/fork_lang_test.go ]]; then (cd "$dir/chipper" && go test -run Fork ./pkg/wirepod/localization/); fi
 (cd "$dir/chipper" && go test -tags nolibopusfile -run Fork ./pkg/wirepod/preqs/)
 tts_py=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")/robot/work/tts/venv/bin/python
 if [[ -d $dir/tts/tests && -x $tts_py ]]; then "$tts_py" -m pytest -q -p no:cacheprovider "$dir/tts/tests"

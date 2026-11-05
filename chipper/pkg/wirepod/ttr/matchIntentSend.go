@@ -135,7 +135,7 @@ func customIntentHandler(req interface{}, voiceText string, botSerial string) bo
 						case "!intentName":
 							arg = c.Name
 						case "!locale":
-							arg = vars.APIConfig.STT.Language
+							arg = vars.ForkLanguage()
 						}
 						args = append(args, arg)
 					}

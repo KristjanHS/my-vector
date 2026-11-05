@@ -11,8 +11,9 @@ allowed_edits=(
   .gitignore                             # fork block: *.key, chipper/*.bak, session-certs
   chipper/pkg/wirepod/ttr/kgsim.go       # TopP: forkTopP(...) — Claude rejects top_p (fork_llm.go)
   chipper/pkg/wirepod/ttr/kgsim_cmds.go  # same, on the LLM-commands/camera path; DoSayText -> forkSayText (fork_say.go)
-  chipper/pkg/vars/vars.go               # LoadIntents returns forkFilterIntents(...) (fork_intents.go)
-  chipper/pkg/wirepod/ttr/matchIntentSend.go # ProcessTextAll partial pass: vars.ForkContainsPhrase (whole words)
+  chipper/pkg/vars/vars.go               # LoadIntents returns forkFilterIntents(...) (fork_intents.go); reads intent-data/<ForkLanguage()> (fork_lang.go)
+  chipper/pkg/wirepod/ttr/matchIntentSend.go # ProcessTextAll partial pass: vars.ForkContainsPhrase (whole words); !locale = vars.ForkLanguage()
+  chipper/pkg/wirepod/localization/localization.go # GetText asks forkGetText first (fork_lang.go)
   chipper/pkg/wirepod/preqs/server.go    # sttHandler = forkMicCapture(...) — mic capture for STT scoring (fork_miccap.go)
   chipper/webroot/index.html             # nav link to the fork voice page /myvector/voice (myvector/voice)
 )

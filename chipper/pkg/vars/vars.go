@@ -291,7 +291,7 @@ func LoadIntents() ([]JsonIntent, error) {
 	} else {
 		path = "./"
 	}
-	jsonFile, err := os.ReadFile(path + "intent-data/" + APIConfig.STT.Language + ".json")
+	jsonFile, err := os.ReadFile(path + "intent-data/" + ForkLanguage() + ".json")
 
 	// var matches [][]string
 	// var intents []string
