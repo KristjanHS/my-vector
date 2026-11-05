@@ -220,6 +220,9 @@ var texts = map[string][]string{
 }
 
 func GetText(key string) string {
+	if s, ok := forkGetText(key); ok {
+		return s
+	}
 	var data = texts[key]
 	if data != nil {
 		if vars.APIConfig.STT.Language == "it-IT" {
