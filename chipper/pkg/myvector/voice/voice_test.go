@@ -253,3 +253,22 @@ func TestSpeakPCVoice(t *testing.T) {
 		t.Errorf("service request = %v, SayText calls %d; want af_bella at 0.8 streamed", req, len(r.said))
 	}
 }
+
+func TestSayStallEndsStream(t *testing.T) {
+	service(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write(make([]byte, 2048))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done() // a hung worker between sentences
+	})
+	old := Stall
+	Stall = 200 * time.Millisecond
+	t.Cleanup(func() { Stall = old })
+	start := time.Now()
+	_, got, err := say(t)
+	if err == nil || !strings.Contains(err.Error(), "stalled") || got != "cori" {
+		t.Fatalf("Say = %q, %v; want cori + a stall error", got, err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("Say returned after %s, want ~Stall", d)
+	}
+}

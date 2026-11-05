@@ -157,6 +157,7 @@ func TestSettingsVoicesMatchService(t *testing.T) {
 
 func demo(t *testing.T, ctype, body string, robotErr error) (*httptest.ResponseRecorder, *robot) {
 	t.Helper()
+	service(t, func(w http.ResponseWriter, r *http.Request) { t.Error("service called for stock") })
 	rb := &robot{}
 	h := DemoHandler(func(*http.Request) (context.Context, *vector.Vector, error) {
 		return context.Background(), &vector.Vector{Conn: rb}, robotErr

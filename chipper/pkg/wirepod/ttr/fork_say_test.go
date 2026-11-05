@@ -2,6 +2,8 @@ package wirepod_ttr
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -26,6 +28,11 @@ func TestForkDoSayTextUsesSavedVoice(t *testing.T) {
 	old := voice.SettingsPath
 	voice.SettingsPath = func() string { return path }
 	t.Cleanup(func() { voice.SettingsPath = old })
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("service called for stock") }))
+	t.Cleanup(s.Close)
+	oldURL := voice.URL
+	voice.URL = s.URL
+	t.Cleanup(func() { voice.URL = oldURL })
 	if err := voice.Save(voice.Settings{T1: voice.Stock, Slow: 1.4}); err != nil {
 		t.Fatal(err)
 	}

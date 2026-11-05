@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
@@ -31,7 +32,9 @@ var (
 	URL = envOr("MYVECTOR_TTS_URL", "http://127.0.0.1:8091")
 	// FirstAudio bounds dial + request + headers; the service sends headers with the first sentence.
 	FirstAudio = 3 * time.Second
-	tail       = 300 * time.Millisecond                                                      // wait past the last queued frame
+	// Stall bounds each later read: one sentence's synthesis (Kokoro CPU fallback ~4 s).
+	Stall = 10 * time.Second
+	tail      = 300 * time.Millisecond                                                      // wait past the last queued frame
 	client     = &http.Client{Transport: &http.Transport{IdleConnTimeout: 20 * time.Second}} // server idles out at 30 s
 )
 
@@ -99,16 +102,31 @@ func fetch(ctx context.Context, text, voice string, slow float64) (io.ReadCloser
 		cancel()
 		return nil, fmt.Errorf("tts %d: %s", resp.StatusCode, bytes.Join(bytes.Fields(msg), []byte(" ")))
 	}
-	return body{resp.Body, cancel}, nil
+	b := &body{ReadCloser: resp.Body, cancel: cancel}
+	b.watch = time.AfterFunc(time.Hour, func() { b.stalled.Store(true); cancel() })
+	b.watch.Stop()
+	return b, nil
 }
 
-// body ends the request context with the body.
+// body ends the request context with the body, and cancels it when one Read waits past Stall.
 type body struct {
 	io.ReadCloser
-	cancel context.CancelFunc
+	cancel  context.CancelFunc
+	watch   *time.Timer
+	stalled atomic.Bool
 }
 
-func (b body) Close() error { defer b.cancel(); return b.ReadCloser.Close() }
+func (b *body) Read(p []byte) (int, error) {
+	b.watch.Reset(Stall)
+	n, err := b.ReadCloser.Read(p)
+	b.watch.Stop()
+	if err != nil && b.stalled.Load() {
+		err = fmt.Errorf("tts stalled: no audio for %s", Stall)
+	}
+	return n, err
+}
+
+func (b *body) Close() error { b.watch.Stop(); defer b.cancel(); return b.ReadCloser.Close() }
 
 // readFrame reads up to one frame; io.EOF only at a clean end with nothing read. Not io.ReadFull: its
 // ErrUnexpectedEOF would hide a body cut mid-stream (net/http's own ErrUnexpectedEOF) as a short last frame.
