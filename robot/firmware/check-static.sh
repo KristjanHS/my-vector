@@ -28,7 +28,7 @@ for p in "${series[@]}"; do
 done
 echo "series/manifest OK (${#series[@]} patches, ${#rows[@]} markers)"
 
-# S5: the smoke test must never command the wheels or the lift.
+# S5: smoke + myvector/voice code (live "Test on Vector" demo too) must never command the wheels or the lift.
 smoke=()
 voice_go=() # fork_say speaks through myvector/voice
 for f in "$repo"/chipper/pkg/myvector/voice/*.go; do [[ ! -f $f || $f == *_test.go ]] || voice_go+=("$f"); done # -f: an unmatched glob stays literal
