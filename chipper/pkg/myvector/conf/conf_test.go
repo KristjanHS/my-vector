@@ -35,11 +35,28 @@ func TestUpdateReplacesUnparsable(t *testing.T) {
 
 func TestUpdateFailLeavesNoTemp(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "myvectorConfig.json")
-	os.Mkdir(path, 0755) // rename onto a directory fails
+	os.Mkdir(path, 0755) // reading a directory fails (EISDIR)
 	if err := Update(path, map[string]any{"lang": "en-US"}); err == nil {
 		t.Fatal("Update over a directory succeeded")
 	}
 	if m, _ := filepath.Glob(filepath.Join(filepath.Dir(path), ".myvectorConfig-*")); len(m) != 0 {
 		t.Fatalf("temp files left: %v", m)
+	}
+}
+
+// Falsifier for N2: an unreadable (not missing) file must not be replaced by {} plus kv.
+func TestUpdateUnreadableKeepsFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a 0000 file")
+	}
+	path := filepath.Join(t.TempDir(), "myvectorConfig.json")
+	os.WriteFile(path, []byte(`{"t1":"cori"}`), 0644)
+	os.Chmod(path, 0)
+	if err := Update(path, map[string]any{"lang": "et-EE"}); err == nil {
+		t.Error("Update over an unreadable file succeeded")
+	}
+	os.Chmod(path, 0644)
+	if b, _ := os.ReadFile(path); string(b) != `{"t1":"cori"}` {
+		t.Fatalf("unreadable file rewritten: %q", b)
 	}
 }
