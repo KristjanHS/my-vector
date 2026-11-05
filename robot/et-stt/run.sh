@@ -25,6 +25,8 @@ run stock-turbo-cuda-i8f16 --engine fw --model "$ST" --device cuda --compute int
 run vosk-en-baseline      --engine vosk --model "$ROOT/vosk/models/en-US/model" --device cpu --lang en --dataset fleurs-en
 if [[ -d $W/cv ]]; then
   run taltech-et-cuda-fp16-cv --engine fw --model "$TT" --device cuda --compute float16 --dataset cv-et
+  run taltech-et-cuda-i8f16-cv --engine fw --model "$TT" --device cuda --compute int8_float16 --dataset cv-et
+  run stock-turbo-cuda-i8f16-cv --engine fw --model "$ST" --device cuda --compute int8_float16 --dataset cv-et
 else echo "== CV: pending CV download ($W/cv absent)"; fi
 if [[ -f $W/keys.env ]]; then
   # keys only enter these subshells' environment; values are never printed

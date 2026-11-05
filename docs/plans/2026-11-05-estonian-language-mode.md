@@ -18,7 +18,7 @@
 | E7 | EN or ET stack loaded, never both; each stack (STT + LLM + TTS) ≤ 8 GB VRAM (RTX 3070 Laptop); a candidate that cannot fit its stack is listed, not measured |
 | E8 | Switch is manual only — no language auto-detect (D-RF C dropped) |
 | E9 | STT test audio: FLEURS `et_ee` test (CC-BY-4.0, open) now; Common Voice `et` once the user downloads it from Mozilla Data Collective into `robot/work/et-stt/cv/`; Stage 2.2 commands rescored before Stage 3 |
-| E10 | Keyed free tiers (Azure F0, Google) measured once the user puts keys in gitignored `robot/work/et-stt/keys.env` (never read by Claude); until then rows read "pending keys" |
+| E10 | Keyed free tiers (Azure F0, Google) DROPPED: Azure F0 signup wants a credit card, Google STT a paid billing account — fail E4 |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -125,16 +125,16 @@ Speaking lines under the 8 intents: clock (`GetTTSStringForTime`, digits), weath
 
 ### STT (1.1 R-a)
 
-50 shortest FLEURS `et_ee` test clips (median 7.05 s), beam 5; re-run (CV / keys): `robot/et-stt/run.sh [NAME…]`, view `robot/work/et-stt/venv/bin/python -I robot/et-stt/bench.py summary`.
+50 shortest FLEURS `et_ee` test clips (median 7.05 s) + 50 shortest Common Voice 27.0 `et` test clips (median 2.86 s), beam 5; re-run (CV / keys): `robot/et-stt/run.sh [NAME…]`, view `robot/work/et-stt/venv/bin/python -I robot/et-stt/bench.py summary`.
 
 | rank | option | free | latency med/p90 | score (WER · VRAM peak) | verdict |
 |---|---|---|---|---|---|
-| 1 | TalTech `whisper-large-v3-turbo-et-verbatim`, faster-whisper cuda `int8_float16` | yes, offline | 0.36 / 0.44 s | 8.5 % · 1.31 GB | lead |
-| 2 | same, cuda `float16` (stt-faster `et-large`) | yes, offline | 0.38 / 0.43 s | 7.6 % · 2.28 GB | +1 GB for −0.9 pt |
-| 3 | stock large-v3-turbo cuda `int8_float16` via faster-whisper (proxy for whisper.cpp, not run) | yes, offline | 0.39 / 0.46 s | 18.1 % · 1.31 GB | 2× TalTech WER |
+| 1 | TalTech `whisper-large-v3-turbo-et-verbatim`, faster-whisper cuda `int8_float16` | yes, offline | 0.36 / 0.44 s (CV 0.30 / 0.38) | 8.5 % (CV 13.7 %) · 1.31 GB | lead |
+| 2 | same, cuda `float16` (stt-faster `et-large`) | yes, offline | 0.38 / 0.43 s (CV 0.32 / 0.39) | 7.6 % (CV 13.7 %) · 2.28 GB | +1 GB for −0.9 pt FLEURS, 0 pt CV |
+| 3 | stock large-v3-turbo cuda `int8_float16` via faster-whisper (proxy for whisper.cpp, not run) | yes, offline | 0.39 / 0.46 s | 18.1 % (CV 39.5 %) · 1.31 GB | 2–3× TalTech WER |
 | 4 | TalTech CPU `int8` | yes, offline | 7.15 / 7.69 s | 8.5 % · – (CPU) | fails 2.0 s |
 | – | Vosk et · TartuNLP/TalTech keyless API | — | — | — | no model · no public API |
-| – | Azure F0 · Google v1 `et-EE`; CV `et` | free tier | — | — | pending keys (E10) · pending CV (E9) |
+| – | Azure F0 · Google v1 `et-EE` | card / paid billing | — | — | dropped (E10) |
 | base | Vosk `en-US` on FLEURS `en_us` | yes, offline | 0.02 / 0.04 s | 31.6 % (en) · CPU | today's English |
 
 E7 fit: gemma3:4b 5.8 GB + STT 1.31 GB leaves ≤ 0.9 GB for ET TTS + desktop — R-b/R-c size against it.
@@ -151,4 +151,4 @@ Numbers unsaved (R-b terminal; GPU shared with a sibling job, VRAM = torch runni
 | 4 | XTTS-v2-est (`tartuNLP/XTTS-v2-est`) | yes, offline | 0.78 · 0.73 / 3.4 · 4.1 s | ~2.3 GB · CPML non-commercial | over E7, quality reference |
 | 5 | espeak-ng `et` | yes, offline | – / 0.01 · 0.02 s | 0 · GPL-3 | robotic baseline |
 | ref | Kokoro `af_bella` (English, R20; same run) | yes, offline | 1.45 s (GPU) | 0.65 GB · Apache-2.0 | today's English |
-| – | Neurokõne API · Azure F0 · MMS `est` · Kokoro et | — | — | — | HTTP 408 ×3 (retry `tartu:mari`) · pending keys · no model · no voice |
+| – | Neurokõne API · Azure F0 · MMS `est` · Kokoro et | — | — | — | HTTP 408 ×3 (retry `tartu:mari`) · dropped (E10) · no model · no voice |
