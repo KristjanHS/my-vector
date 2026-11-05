@@ -283,10 +283,8 @@ def run_variant(quant, ctx, kokoro_mib, ver, warm_q):
             raise RuntimeError("pull failed")
         base, total = bench.settled_gpu()
         with Peak() as pk:
-            workers = [
-                Worker(STT_PY, "_stt", STT_MODEL, clip()),
-                Worker(TTS_PY, "_tts", TARTU_DIR),
-            ]
+            workers.append(Worker(STT_PY, "_stt", STT_MODEL, clip()))
+            workers.append(Worker(TTS_PY, "_tts", TARTU_DIR))
             for w in workers:
                 w.ready()
             stt, tts = workers
@@ -337,6 +335,20 @@ def parse(spec):
     return quant, int(ctx) if ctx else None
 
 
+def climb(run_one, rows):
+    """E14 ladder; returns the stopping fit. An error stops it too: never step past an unmeasured quant."""
+    for quant, ctx in LADDER:
+        fit = run_one(quant, ctx)
+        if fit in ("yes", "error"):
+            return fit
+        est = ctx_estimate(rows(), "i1-Q4_K_S", ctx) if ctx else None
+        if est is not None and est >= 0:
+            fit = run_one("i1-Q4_K_S", ctx)
+            if fit in ("yes", "error"):
+                return fit
+    return "no"
+
+
 def run(args):
     kokoro_mib = None
     if args[:1] == ["--kokoro-mib"]:
@@ -357,16 +369,10 @@ def run(args):
             for spec in args:
                 run_variant(*parse(spec), kokoro_mib, ver, warm_q)
             return
-        for quant, ctx in LADDER:
-            fit = run_variant(quant, ctx, kokoro_mib, ver, warm_q)
-            if fit == "yes":
-                return
-            if (
-                ctx
-                and (ctx_estimate(bench.load_rows(OUT), "i1-Q4_K_S", ctx) or -1) >= 0
-            ):
-                if run_variant("i1-Q4_K_S", ctx, kokoro_mib, ver, warm_q) == "yes":
-                    return
+        climb(
+            lambda q, c: run_variant(q, c, kokoro_mib, ver, warm_q),
+            lambda: bench.load_rows(OUT),
+        )
     finally:
         subprocess.run(
             [str(bench.ROOT / "scripts/llm.sh"), "warm"], capture_output=True

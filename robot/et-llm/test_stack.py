@@ -46,5 +46,29 @@ class CtxEstimate(unittest.TestCase):
         self.assertIsNone(stack.ctx_estimate(rows, "i1-Q4_K_S", 2048))
 
 
+class Climb(unittest.TestCase):
+    def climb(self, fits, rows=()):
+        calls = []
+
+        def run_one(q, c):
+            calls.append((q, c))
+            return fits.get((q, c), "no")
+
+        return stack.climb(run_one, lambda: list(rows)), calls
+
+    def test_error_stops_ladder(self):
+        fit, calls = self.climb({("i1-Q4_K_M", None): "error"})
+        self.assertEqual((fit, calls), ("error", [("i1-Q4_K_M", None)]))
+
+    def test_zero_estimate_runs_q4ks_ctx(self):
+        rows = [
+            {"quant": "i1-Q4_K_M", "num_ctx": None, "headroom_mib": -300},
+            {"quant": "i1-Q4_K_M", "num_ctx": 2048, "headroom_mib": -100},
+            {"quant": "i1-Q4_K_S", "num_ctx": None, "headroom_mib": -200},
+        ]
+        fit, calls = self.climb({("i1-Q4_K_S", 2048): "yes"}, rows)
+        self.assertEqual((fit, calls[-1]), ("yes", ("i1-Q4_K_S", 2048)))
+
+
 if __name__ == "__main__":
     unittest.main()
