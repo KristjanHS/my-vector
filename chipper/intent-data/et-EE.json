@@ -1,7 +1,7 @@
 [
  {"name": "intent_names_ask", "keyphrases": ["kes ma olen", "kes mina olen", "mis mu nimi on", "mis minu nimi on", "kas sa tead mu nime", "kas sa tunned mind"], "requiresexact": false},
  {"name": "intent_names_username_extend", "keyphrases": ["mu nimi on", "minu nimi on"], "requiresexact": false},
- {"name": "intent_clock_checktimer", "keyphrases": ["kontrolli taimerit", "palju taimeril", "taimeril aega", "palju aega on jäänud", "palju aega jäänud"], "requiresexact": false},
+ {"name": "intent_clock_checktimer", "keyphrases": ["kontrolli taimerit", "palju taimeril", "taimeril aega", "aega taimeril", "taimeril on jäänud", "taimeril jäänud"], "requiresexact": false},
  {"name": "intent_clock_settimer_extend", "keyphrases": ["taimer*"], "requiresexact": false},
  {"name": "intent_clock_time", "keyphrases": ["mis kell", "palju kell", "kell on", "kellaaeg*"], "requiresexact": false},
  {"name": "intent_weather_extend", "keyphrases": ["ilm", "ilmateade*", "ilmaennustus*", "ilmaprognoos*"], "requiresexact": false},
