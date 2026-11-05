@@ -21,6 +21,10 @@
 | R12 | Slow drives `stock` too: T1 `stock` speaks `SayText(UseVectorVoice: true, DurationScalar: slow)` (B3) |
 | R13 | T1 voice covers `DoSayText` (LLM answers) only; `KGSim` server lines, camera countdown, face message stay stock |
 | R14 | `/myvector/voice` gets "Test on Vector": speaks editable sample text in the page's unsaved voice + slow via `voice.Speak`, shows the voice that spoke |
+| R15 | T2 setting reaches the robot as `/data/data/myvector-voice.json {url, voice, slow}`, pushed over SSH by `robot/firmware/voice-push.sh` on page save + at ship (`settings.sh`) |
+| R16 | T2 shares the one slow slider; robot sends `slow` = saved slow × its own per-line `durationScalar` |
+| R17 | Robot POSTs one sentence per request, 1.5 s timeout each; after a failure the rest of the line speaks in Acapela |
+| R18 | PC URL = new `ROBOT_TTS_URL` in `robot/robot.env` (e.g. `http://<pc-lan-ip>:8091`); file missing/bad or voice `stock` → Acapela |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -82,5 +86,6 @@ works with every LLM provider · offline/private · fork code size (`fork_*.go` 
 | B1 | PC TTS service on :8091 (guard: loopback + Vector): `POST /tts {text, voice, slow}` → chunked 16 kHz s16le PCM, one chunk per sentence; `cori`, `af_bella` warm at start; Kokoro GPU, CPU fallback; fixed per-voice gain to -20 LUFS + peak limit; non-root unit; stubbed pytest in `make check` + live `tts/smoke.sh` | `tts/`, `scripts/myvector-tts.service`, `scripts/wire-pod-guard.nft`, `Makefile` `tts-*` |
 | B2 | T1 voice setting (`cori`·`af_bella`·`stock`) + slow factor, stored in fork config, selectable in the web UI | `chipper/pkg/myvector/voice/` + `fork_*.go` glue in `sdkapp` |
 | B3 | T1 playback: `DoSayText` → `voice.Speak(voice.Current())` (non-`stock` → `voice.Say` → B1 stream; B1 down → R9; `stock` → R12) + R14 demo endpoint `voice.DemoAPI` | `chipper/pkg/myvector/voice/`; `ttr/fork_say.go` (hook in kgsim_cmds.go, drift-listed); `sdkapp/fork_voice.go` |
-| B4 | T2: patch 0010 in vic-anim provider calls B1 with the T2 voice; 1.5 s timeout → Acapela in R9's generic style at 1.2; robot calls B1 on :8091 (guard admits Vector's IP); first `curl` :8091/health from the robot — a Windows firewall rule may be owed, as for Ollama :11434 | `robot/firmware/0010-*.patch`, `series` |
+| B4.1 | T2 field + picker (R8, R16) and push on save (R15) | `chipper/pkg/myvector/voice/`, `robot/firmware/voice-push.sh`, `settings.sh`, `robot/robot.env.example` |
+| B4.2 | patch 0010: vic-anim provider reads R15's file per line, POSIX-socket HTTP/1.0 `POST /tts` per sentence (R17), Acapela fallback (R18); robot `curl` :8091/health first — a Windows firewall rule may be owed | `robot/firmware/0010-*.patch`, `series`, `markers.tsv` |
 | B5 | Verify: listen on Vector per track × voice; LLM answer + "what time is it" both soft female; B1 stopped → stock voice; "Hey Vector" mid PC sentence cuts it (else: cancel `forkSayText` ctx from the KGSim interrupt); gaps between sentences acceptable (else: prefetch the next chunk) | `robot/voice-samples/play.sh`, `make robot-test` |
