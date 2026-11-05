@@ -1,6 +1,6 @@
 # Vector Estonian mode: research, pick, build
 
-**Status**: 🟡 PLANNED 2026-11-05 — Stage 1 next; robot runs wait for the user's go.
+**Status**: 🟡 IN PROGRESS 2026-11-05 — Stage 3 ruled (E15–E18); Stage 4 next; robot runs wait for the user's go.
 **Want**: one switch makes Vector hear, understand, answer and speak Estonian, built-in lines included; English unchanged.
 **Parent**: `2026-11-05-vector-voice-research.md` (docs/plans/) — R1–R23 live there; R2, R4, R6 carry over.
 **Overlap**: `2026-11-05-vector-voice-verify.md` (docs/plans/) stays QUEUED LAST and checks the English PC voice path; this plan must not wait for it. Its V5 rows 1–2 become Stage 10's English regression.
@@ -23,6 +23,10 @@
 | E12 | EN-mode LLM re-pick (user ask): gemma3:4b baseline vs `qwen3.5:4b`, `ministral-3:8b`, `gemma4:e2b-it-qat`, `gemma4:e4b-it-qat` via `bench.py --lang en`; af_bella must fit beside it |
 | E13 | ET fit base = worst base − Kokoro's measured VRAM share (ET stack never loads Kokoro, E7); `stack.py` measures the share with a throwaway second TTS server |
 | E14 | ET no-fit ladder, stop at first pass: Q4_K_M → Q4_K_S → Q4_K_M `num_ctx` 2048 (only ctx variant; Q4_K_S@2048 run only if its estimate from that saving passes; an error stops the ladder) → `i1-IQ4_XS` → `i1-Q3_K_M` |
+| E15 | ET STT = TalTech turbo-et faster-whisper cuda `int8_float16` (`float16` +0.97 GB > ET +537 MiB headroom); EN STT stays Vosk |
+| E16 | EN LLM = `qwen3.5:4b` (mean 4.40 vs gemma3 3.70; vision ✓); becomes the default in 7.1, with reasoning off |
+| E17 | ET voice = Piper `et_EE-news-medium` Mari for T1 and T2 (CPU, 0 VRAM) |
+| E18 | Built-in lines = D2a; switch = D-RF B; toggle = `/myvector/voice` grown into "Language & voice" (language radio + per-language T1/T2) |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -45,14 +49,7 @@
 
 ## Refactor-first assessment
 
-Today language is one global read at startup (`APIConfig.STT.Language` → K1, K5, K7; STT binary fixed by `STT_SERVICE`). E1 needs every consumer to read ONE setting. Folded into Stage 3 (the STT pick decides it).
-
-**[USER DECISION] D-RF — how the switch reaches STT/intents/GetText**
-
-| alt | shape | cost | blocks |
-|---|---|---|---|
-| A | Bolt-on: switch writes `STT.Language` + `STT_SERVICE`, restarts chipper (`sudo` restart from the page) | S; upstream untouched | needs one engine good at both languages, or a restart that changes binary; ~restart gap per switch |
-| B | Fork provider `myvector/lang.Current()` (persisted in `myvectorConfig.json`); `fork_*.go` hooks in `LoadIntents`/`GetText`/STT entry consult it per request; a fork STT router holds the en + et engines | M; ~4 drift-listed hook lines | none; live switch, no restart |
+Today language is one global read at startup (`APIConfig.STT.Language` → K1, K5, K7; STT binary fixed by `STT_SERVICE`). D-RF ruled B (E18): fork provider + `fork_*.go` hooks + fork STT router, live switch.
 
 ## Research stages (each = one commit: findings written into §Deliverable)
 
@@ -73,27 +70,21 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 
 ## Stage 3 — [USER DECISION] picks
 
-| pick | options from | shown with |
-|---|---|---|
-| STT engine (+ en engine stays vosk?) | 1.1 | WER, latency, offline |
-| T1 / T2 Estonian voice | 1.2 + 2.1 | listen scores, first audio |
-| EN LLM model + ET quant (E11) | 1.3 / E12 | EN scores, VRAM headroom, first sentence / total s |
-| Built-in-line method D1/D2a/D2b/D3 | 1.4 | patch size, fallback |
-| Switch UX + D-RF A/B | 1.5 | ASCII page mock |
+Ruled E15–E18 (2026-11-05).
 
 ## Build stages (shape set by Stage 3 where marked)
 
 | id | ruling | edit site | test → `make check` |
 |---|---|---|---|
-| 4.1 | Lang provider: `lang.Current()` / `lang.Save()`, `"lang"` field in `myvectorConfig.json`, default `en-US`, invalid → `en-US` (shape set by D-RF) | `chipper/pkg/myvector/lang/` | `go test ./pkg/myvector/...` (`TestLangDefault`, `TestLangInvalidFallsBack`) — already in gate |
+| 4.1 | Lang provider: `lang.Current()` / `lang.Save()`, `"lang"` field in `myvectorConfig.json`, default `en-US`, invalid → `en-US` | `chipper/pkg/myvector/lang/` | `go test ./pkg/myvector/...` (`TestLangDefault`, `TestLangInvalidFallsBack`) — already in gate |
 | 4.2 | Hook `STT.Language` readers (K7 `GetText`, K5 `LoadIntents`, K9 literals) through 4.1 via `fork_*.go`; drift-list each hook line | `vars/fork_lang.go`, `localization/fork_lang.go`, `scripts/upstream-drift.sh` | `go test -run Fork ./pkg/vars/` (`TestForkLangEnglishUnchanged`) + drift check |
-| 5.1 | Estonian STT engine wired + model fetch into `robot/work/`-style gitignored path (shape set by STT pick) | `chipper/pkg/wirepod/stt/<engine>/` or fork router `fork_stt.go` | new `go test -run Fork ./pkg/wirepod/stt/...` with a stub engine; add the package to `scripts/check.sh` |
+| 5.1 | Estonian STT engine wired + model fetch into `robot/work/`-style gitignored path (E15) | `chipper/pkg/wirepod/stt/<engine>/` or fork router `fork_stt.go` | new `go test -run Fork ./pkg/wirepod/stt/...` with a stub engine; add the package to `scripts/check.sh` |
 | 6.1 | `et-EE` intent table for the 8 `forkAllowedIntents`; per-language `forkDroppedKeyphrases`/`forkAddedKeyphrases` (`map[lang]…`); Estonian stem matching in `ForkContainsPhrase` (kell/kella/kellaaeg) | `vars/fork_intents.go`, `chipper/intent-data/et-EE.json` | `TestForkIntentsEstonian` (10 Stage 2.2 phrases → intent), English table test unchanged |
 | 6.2 | Estonian `GetText` words (numbers for timer, weather locative "Tallinnas") via fork override, not a 14th upstream column | `localization/fork_texts.go` | `TestForkTimerEstonian` ("viieks minutiks" → 300 s), `TestForkWeatherCityEstonian` |
-| 7.1 | LLM language line appended in `CreateAIReq` when `lang = et-EE`; model per Stage 3; send `ReasoningEffort: "none"` only when `Provider == "custom"` (Ollama; qwen3.5/gemma4 think by default — OpenAI rejects it on non-reasoning models) | `ttr/fork_prompt.go` (hook in kgsim.go, drift-listed) | `go test -run Fork ./pkg/wirepod/ttr/` (`TestForkPromptEstonian`, `TestForkPromptEnglishUnchanged`, `TestForkPromptOpenAIOmitsReasoning`) |
-| 8.1 | TTS server: Estonian engine + voice key(s) in `VOICES`, gain to -14 LUFS (R23, `tts/calibrate.py`), Estonian sentence split (shape set by voice pick) | `tts/server.py`, `tts/gains.json`, `tts/requirements.txt` | pytest `tts/tests` (stub engine) + live `tts/smoke.sh` |
-| 8.2 | Per-language T1/T2 in settings (`Settings` gains et pair; `Voices` per lang); page gets the language switch (shape set by UX pick) | `myvector/voice/settings.go`, `settings.html` | `TestSettingsValidate` + `TestSettingsSaveRoundTrip` extended; add pytest `test_voices_match_go` (none today) |
-| 9.1 | Built-in lines in Estonian (shape set by D1/D2/D3): D1/D2 = new patch `0011-*.patch` + `series` + `markers.tsv`; push `lang` in `myvector-voice.json` via `voice-push.sh` | `robot/firmware/`, `voice-push.sh`, `myvector/voice/` | `robot/firmware/check-static.sh`; host test `robot/firmware/tests/et-lines.sh` added to `scripts/check.sh`; `TestPushT2Args` extended |
+| 7.1 | LLM language line appended in `CreateAIReq` when `lang = et-EE`; EN default `qwen3.5:4b` (E16); send `ReasoningEffort: "none"` only when `Provider == "custom"` (Ollama; qwen3.5/gemma4 think by default — OpenAI rejects it on non-reasoning models) | `ttr/fork_prompt.go` (hook in kgsim.go, drift-listed), `scripts/llm.sh` + `docs/llm-trials.md` default model | `go test -run Fork ./pkg/wirepod/ttr/` (`TestForkPromptEstonian`, `TestForkPromptEnglishUnchanged`, `TestForkPromptOpenAIOmitsReasoning`) |
+| 8.1 | TTS server: Estonian engine + voice key(s) in `VOICES`, gain to -14 LUFS (R23, `tts/calibrate.py`), Estonian sentence split; Piper Mari (E17) | `tts/server.py`, `tts/gains.json`, `tts/requirements.txt` | pytest `tts/tests` (stub engine) + live `tts/smoke.sh` |
+| 8.2 | Per-language T1/T2 in settings (`Settings` gains et pair; `Voices` per lang); page grows into "Language & voice" (E18) | `myvector/voice/settings.go`, `settings.html` | `TestSettingsValidate` + `TestSettingsSaveRoundTrip` extended; add pytest `test_voices_match_go` (none today) |
+| 9.1 | Built-in lines in Estonian, D2a (E18): new patch `0011-*.patch` + `series` + `markers.tsv`; push `lang` in `myvector-voice.json` via `voice-push.sh` | `robot/firmware/`, `voice-push.sh`, `myvector/voice/` | `robot/firmware/check-static.sh`; host test `robot/firmware/tests/et-lines.sh` added to `scripts/check.sh`; `TestPushT2Args` extended |
 | 9.2 | [USER] live: apply patch, `make robot-test` (robot/firmware/smoke.sh); "Mis kell on?" in Estonian | robot | smoke exit 0 |
 
 ## Stage 10 — verify + e2e + review
@@ -102,7 +93,7 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 |---|---|---|
 | 10.1 | `make check` green | `scripts/check.sh` |
 | 10.2 | [USER] English regression (switch = en-US): LLM question + "what time is it" in `af_bella`, timer set | robot |
-| 10.3 | [USER] Estonian (switch = et-EE): "Mis kell on?" (built-in, Estonian text + voice), one LLM question answered in Estonian, "Pane taimer viieks minutiks" fires; then flip back to English without restart (if D-RF B/C) | robot |
+| 10.3 | [USER] Estonian (switch = et-EE): "Mis kell on?" (built-in, Estonian text + voice), one LLM question answered in Estonian, "Pane taimer viieks minutiks" fires; then flip back to English without restart | robot |
 | 10.4 | `Agent(code-reviewer)` over the plan's full diff; fix, then archive per `plan-hygiene.md` | — |
 
 ## Deliverable
@@ -159,14 +150,14 @@ Idle GPU (Ollama unloaded), `BENCH=1` → `robot/work/voice-samples/bench-et-{ti
 
 ### LLM (1.3 R-c)
 
-Ollama 0.40.14, `reasoning_effort: "none"`; view `bench.py --lang <lang> summary`. Base (Ollama unloaded, TTS server up) seen 1318–2389 MiB, Windows alone 1144; ET view `stack.py summary` (E13 Kokoro share 783 MiB). EN headroom = total − LLM − 2389 − 256. EN rows = warm-up re-run; scores owed (`score.py en`).
+Ollama 0.40.14, `reasoning_effort: "none"`; view `bench.py --lang <lang> summary`. Base (Ollama unloaded, TTS server up) seen 1318–2389 MiB, Windows alone 1144; ET view `stack.py summary` (E13 Kokoro share 783 MiB). EN headroom = total − LLM − 2389 − 256. EN rows = warm-up re-run; score = blind mean 1–5 (`score.py en`).
 
-| rank | option | free | latency (first sentence med / max · total med) | score (LLM GiB · headroom) | verdict |
+| rank | option | free | latency (first sentence med / max · total med) | score (mean · LLM GiB · headroom) | verdict |
 |---|---|---|---|---|---|
 | ET | EstLLM 8B `i1-Q4_K_M` | yes, offline | stack: STT 0.45 · first sentence 0.30 · TTS 0.48 s | stack peak 7753/8192 · +537 MiB | ET pick (E11) |
 | – | EstLLM 8B `i1-Q4_K_S` / `i1-Q5_K_S` | yes, offline | — | — | not needed (Q4_K_M fits) · Q5 skipped (user); deleted from Ollama |
-| EN | gemma4:e2b-it-qat | yes, offline | 0.23 / 0.66 · 0.26 s | 2.76 · 2720 | user score |
-| EN | gemma4:e4b-it-qat | yes, offline | 0.42 / 1.15 · 0.48 s | 4.16 · 1284 | user score |
-| EN | qwen3.5:4b | yes, offline | 0.26 / 1.22 · 0.85 s | 3.71 · 1748 | user score |
-| ref | gemma3:4b-it-qat (today's EN) | yes, offline | 0.17 / 0.31 · 0.34 s | 4.33 · 1116 | EN baseline |
+| EN | gemma4:e2b-it-qat | yes, offline | 0.23 / 0.66 · 0.26 s | 3.50 · 2.76 · 2720 | lower score |
+| EN | gemma4:e4b-it-qat | yes, offline | 0.42 / 1.15 · 0.48 s | 3.50 · 4.16 · 1284 | lower score |
+| EN | qwen3.5:4b | yes, offline | 0.26 / 1.22 · 0.85 s | 4.40 · 3.71 · 1748 | EN pick (E16) |
+| ref | gemma3:4b-it-qat (today's EN) | yes, offline | 0.17 / 0.31 · 0.34 s | 3.70 · 4.33 · 1116 | EN baseline |
 | – | ministral-3:8b | yes, offline | 0.66 / 9.43 · 5.12 s | 5.44 · spill | out (CPU spill); deleted from Ollama |
