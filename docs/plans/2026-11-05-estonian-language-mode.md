@@ -74,7 +74,7 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 | STT engine (+ en engine stays vosk?) | 1.1 | WER, latency, offline |
 | T1 / T2 Estonian voice | 1.2 + 2.1 | listen scores, first audio |
 | LLM model + prompt line | 1.3 | scores, VRAM |
-| Built-in-line method D1/D2/D3 | 1.4 | patch size, fallback |
+| Built-in-line method D1/D2a/D2b/D3 | 1.4 | patch size, fallback |
 | Switch UX + D-RF A/B | 1.5 | ASCII page mock |
 
 ## Build stages (shape set by Stage 3 where marked)
@@ -111,3 +111,14 @@ Filled by Stages 1.1–1.5: one ranked table per component (STT, T1, T2, LLM, bu
 |---|---|---|---|---|---|
 | 1 | D-RF B: `myvector/lang.Current()` (atomic cache, path injected — `lang` must not import `vars`) + `lang.Switch` swaps ollama via HTTP `keep_alive` and pins ET STT/TTS through `myvectorConfig.json` `lang`; STT via `forkSTTRouter` (`preqs/fork_stt.go`); toggle = `/myvector/voice` grown to "Language & voice" | yes | chipper 0 s; model swap ~15–60 s (unmeasured) | 4 upstream hook lines: `vars.go`, `kgsim.go` (listed), `localization.go`, `preqs/server.go` (new drift entries) | lead |
 | 2 | D-RF A: write `STT.Language` + `STT_SERVICE`, restart chipper | yes | + ~20–60 s `go run` restart (unmeasured) | same GetText/LLM hooks + `start.sh`/`source.sh`; `et-EE` in `STT.Language` breaks `vosk.Init` | reject |
+
+### Built-in lines (1.4 R-d)
+
+Speaking lines under the 8 intents: clock (`GetTTSStringForTime`, digits), weather (`BehaviorDisplayWeather.*`, `{0}` = temp), names/enroll (name + `AlreadyKnow*`, `DontKnow`, `HaveWeMetBefore`), KG `Ready`; timer/photo speak nothing.
+
+| rank | option | free | latency | score | verdict |
+|---|---|---|---|---|---|
+| 1 | D2a: 0010 adds `lang` (~6 robot lines); PC server maps English template → Estonian (keys from en-US `BehaviorStrings.json`) + et number/time normaliser (~100 py lines); set `clock_24_hour` in et mode | yes | same as T2 today | animations kept; PC down → Acapela English text (R17) | lead |
+| 2 | D2b: 0010 sends key + args + `lang` (~10 files, ~120 lines) | yes | same | animations kept | only if D2a templates are ambiguous |
+| 3 | D3: wire-pod speaks clock/weather via T1 (~120 Go lines) | yes | T1 | loses face clock + weather anims; no names/enroll | stopgap |
+| 4 | D1: robot `et-EE` table + `RobotSetting.locale` + rebuild | yes | — | `et-EE` locale nulls Acapela (`_BAB_Obj`, no voice pack) → all Acapela incl. R19 + T1 fallback silent (source-traced, unrun) | reject |
