@@ -104,3 +104,10 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 ## Deliverable
 
 Filled by Stages 1.1–1.5: one ranked table per component (STT, T1, T2, LLM, built-in lines, switch), columns `rank · option · free · latency · score · verdict`.
+
+### Switch (1.5 R-e)
+
+| rank | option | free | latency | score | verdict |
+|---|---|---|---|---|---|
+| 1 | D-RF B: `myvector/lang.Current()` (atomic cache, path injected — `lang` must not import `vars`) + `lang.Switch` swaps ollama via HTTP `keep_alive` and pins ET STT/TTS through `myvectorConfig.json` `lang`; STT via `forkSTTRouter` (`preqs/fork_stt.go`); toggle = `/myvector/voice` grown to "Language & voice" | yes | chipper 0 s; model swap ~15–60 s (unmeasured) | 4 upstream hook lines: `vars.go`, `kgsim.go` (listed), `localization.go`, `preqs/server.go` (new drift entries) | lead |
+| 2 | D-RF A: write `STT.Language` + `STT_SERVICE`, restart chipper | yes | + ~20–60 s `go run` restart (unmeasured) | same GetText/LLM hooks + `start.sh`/`source.sh`; `et-EE` in `STT.Language` breaks `vosk.Init` | reject |
