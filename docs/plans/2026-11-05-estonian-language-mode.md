@@ -65,7 +65,7 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 | id | ruling | edit site |
 |---|---|---|
 | 2.1 | DONE: blind `et-llm` ×18 → liked edge Anu, Piper Mari, Neurokõne mari, Neurokõne vesta; those 4 × time/weather/timer → Piper Mari + Neurokõne mari (T1 and T2) | `robot/voice-samples/play.sh` |
-| 2.2 | DONE: `robot/et-stt/mic-commands.txt` spoken to Vector, captured by `myvector/miccap` into `robot/work/et-stt/mic/`; `run.sh` `*-mic` rows | `robot/work/et-stt/` |
+| 2.2 | DONE: `robot/et-stt/mic-commands.txt` spoken to Vector, captured by `myvector/miccap` (on while `robot/work/et-stt/mic/` exists), scored set moved to `mic-et/`; `run.sh` `*-mic` rows | `robot/work/et-stt/` |
 
 ## Stage 3 — [USER DECISION] picks
 
