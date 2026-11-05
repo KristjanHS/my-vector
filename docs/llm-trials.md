@@ -44,7 +44,7 @@ echo 'OPENAI_API_KEY=sk-...' >> ~/.config/my-vector/keys.env
 
 | # | works on robot? | first words (`ping`) | answer quality | notes |
 |---|-----------------|----------------------|----------------|-------|
-| 1 | | 0.34 s (measured) | | |
+| 1 | yes, answers in ~1 s | 0.34 s (measured) | good, on-topic | Vector's voice hard to hear → wants a soft female voice |
 | 2 | | | | |
 | 3 | | 0.5–0.6 s (measured) | | |
 | 4 | | | | |
