@@ -114,15 +114,23 @@ ok "vic-engine :8888 answers"
 sdk() { curl -s -m 20 "$server/api-sdk/$1?serial=$esn${2:+&$2}" || true; }
 state() { # state <label>: one robot_state sample as JSON, or die
   local s; s=$(sdk fork_robot_state)
-  jq -e '.pose.x != null and .origin_id != null' <<<"$s" >/dev/null 2>&1 || die "robot state ($1): ${s:0:200} (wire-pod lacks fork_smoke.go? restart it)"
+  jq -e '.pose.x != null and .origin_id != null and .wheels_mm_s.l != null and .wheels_mm_s.r != null' <<<"$s" >/dev/null 2>&1 ||
+    die "robot state ($1): ${s:0:200} (wire-pod lacks the current fork_smoke.go? restart it)"
   echo "$s"
 }
 
 step "A4 baseline: wheels, lift bit, pose"
 # A4 start: wheels at rest before anything moves.
 pose_bound_mm=5 # max(5 mm, 3x rest drift); rest drift measured 0 mm over 10 s (2026-11-04)
+# Measured wheel speed, not the ARE_WHEELS_MOVING flag: the flag trips on any encoder speed > 1e-5 mm/s and did so on an
+# unpowered sample while Vector fell asleep after boot (2026-11-05). 5 mm/s is a first guess, not yet measured at rest.
+wheel_bound_mm_s=5
+wheels_still() { # wheels_still <label> <state>: |left| and |right| wheel speed <= the bound, else die
+  jq -e --argjson b "$wheel_bound_mm_s" '[.wheels_mm_s.l, .wheels_mm_s.r] | map(fabs) | max <= $b' <<<"$2" >/dev/null ||
+    die "A4: wheels moving at $1 (bound $wheel_bound_mm_s mm/s): $2"
+}
 s0=$(state start)
-[[ $(jq -r .wheels_moving <<<"$s0") == false ]] || die "A4: wheels moving at start: $s0"
+wheels_still start "$s0"
 # A4 lift bit: ENCODER_LIFT_INVALID (0x400000) set = the lift-lock recalibration loop is live (0002 must not latch syscon's lift_invalid).
 lift_bit() {
   local st; st=$(jq -r .status <<<"$2")
@@ -130,7 +138,7 @@ lift_bit() {
   (((st & 0x400000) == 0)) || die "A4: ENCODER_LIFT_INVALID set at $1 (status $st): recalibration loop"
 }
 lift_bit start "$s0"
-ok "A4 start: wheels at rest, lift encoder bit clear"
+ok "A4 start: wheels at rest ($(jq -r '"\(.wheels_mm_s.l), \(.wheels_mm_s.r)"' <<<"$s0") mm/s), lift encoder bit clear"
 
 step "A1 head to both limits"
 # A1 + A2 under behavior control (default priority), released on exit.
@@ -185,7 +193,7 @@ ok "A3 log-level intent: DEBUG on, back to info"
 step "end checks: A4 base still, docked, log, units"
 # A4 end: the base did not move during the run (head and lift do not change the pose).
 s1=$(state end)
-[[ $(jq -r .wheels_moving <<<"$s1") == false ]] || die "A4: wheels moving at end: $s1"
+wheels_still end "$s1"
 lift_bit end "$s1"
 ok "A4 lift encoder bit clear at start and end"
 [[ $(jq -r .origin_id <<<"$s1") == $(jq -r .origin_id <<<"$s0") ]] || die "A4: pose origin changed (delocalized?): $s0 → $s1"
