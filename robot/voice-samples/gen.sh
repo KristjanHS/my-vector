@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Build a listen-test sample set: gen.sh [-s SLOW] <set> "<text>" [engine:voice ...] → $W/<set>/norm/*.pcm
-# (16 kHz s16le mono, loudness-matched to -20 LUFS). Venvs + Piper voices are created on first use.
+# (16 kHz s16le mono, loudness-matched to -20 LUFS). Venvs, Piper voices + engine assets are created on first use.
+# Voice forms: piper:et_EE-news-medium@Mari (multi-speaker) · xtts:<FLEURS et_ee test clip id | ref .wav>
+# · azure:* needs robot/work/et-stt/keys.env (else skipped). BENCH=1 / DEVICE=cpu|cuda pass through to synth.py.
 set -euo pipefail
 shopt -s inherit_errexit nullglob
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -19,11 +21,17 @@ declare -A pkgs=(
   [edge]="edge-tts==7.3.1"
   [kokoro]="kokoro==0.9.4 misaki[en]==0.9.4 soundfile==0.14.0 torch==2.15.0
     https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+  [tartu]="" [azure]="" [espeak]=""
+  [tartulocal]="tensorflow==2.13.0 librosa==0.11.0 ruamel.yaml==0.17.40 nltk==3.9.2 speechbrain==1.0.2 torch==2.1.2 torchaudio==2.1.2
+    huggingface-hub==0.29.2 pydantic pydantic-settings pyyaml git+https://github.com/TartuNLP/tts_preprocess_et.git@v1.1.0"
+  [xtts]="coqui-tts==0.27.2 torch==2.8.0 torchaudio==2.8.0 git+https://github.com/TartuNLP/tts_preprocess_et.git@v1.1.0"
 )
+declare -A pyv=([tartulocal]=3.11) # TF 2.13 has no 3.12 wheel
+etstt=$(dirname "$W")/et-stt
 venv() { # venv <engine>: create + install on first use
   local v=$W/venv-$1
   # shellcheck disable=SC2086 # pkgs[] is a space-separated package list
-  [[ -x $v/bin/python ]] || { uv venv -q -p 3.12 "$v" && uv pip install -q -p "$v/bin/python" ${pkgs[$1]}; }
+  [[ -x $v/bin/python ]] || { uv venv -q -p "${pyv[$1]:-3.12}" "$v" && { [[ -z ${pkgs[$1]} ]] || uv pip install -q -p "$v/bin/python" ${pkgs[$1]}; }; }
 }
 piper_model() { # piper_model en_US-lessac-high → local .onnx path, downloaded on first use
   local f=$W/piper-voices/$1.onnx loc=${1%%-*} rest=${1#*-}
@@ -34,23 +42,52 @@ piper_model() { # piper_model en_US-lessac-high → local .onnx path, downloaded
   fi
   echo "$f"
 }
+assets() { # assets <engine> → NAME=path env lines for synth.py; downloads the engine's model/binary on first use
+  local d f
+  case $1 in
+    tartulocal) d=$W/tartu/worker
+      [[ -f $d/models/multispeaker/model_weights.hdf5 ]] || {
+        rm -rf "$d" && git clone -q --recurse-submodules -b v3.1.0 https://github.com/TartuNLP/text-to-speech-worker.git "$d" 2>/dev/null &&
+          curl -fsSL -o "$W/tartu/multispeaker.zip" https://github.com/TartuNLP/text-to-speech-worker/releases/download/v3.1.0/multispeaker.zip &&
+          unzip -q -o -d "$d/models" "$W/tartu/multispeaker.zip"; } || return 1
+      echo "TARTU_DIR=$d" ;;
+    xtts) d=$W/xtts-est
+      for f in config.json vocab.json mel_stats.pth dvae.pth model.pth; do # .part: a partial download never counts
+        [[ -f $d/$f ]] || { mkdir -p "$d" && curl -fsSL -o "$d/$f.part" "https://huggingface.co/tartuNLP/XTTS-v2-est/resolve/main/$f" &&
+          mv "$d/$f.part" "$d/$f"; } || return 1
+      done
+      echo "XTTS_DIR=$d" ;;
+    espeak) d=$W/espeak # no sudo: unpack the distro debs
+      [[ -x $d/root/usr/bin/espeak-ng ]] || {
+        mkdir -p "$d/deb" && (cd "$d/deb" && apt-get download -q espeak-ng libespeak-ng1 espeak-ng-data libpcaudio0 libsonic0 >/dev/null) &&
+          for f in "$d"/deb/*.deb; do dpkg -x "$f" "$d/root" || return 1; done; } || return 1
+      echo "ESPEAK_ROOT=$d/root" ;;
+  esac
+}
 
 for spec in "$@"; do
   [[ -v pkgs[${spec%%:*}] && $spec == *:?* ]] || { echo "bad voice spec $spec (engine:voice, engine = ${!pkgs[*]})" >&2; exit 2; }
 done
 rm -rf "$set_dir/raw" "$set_dir/norm"
 mkdir -p "$set_dir/raw" "$set_dir/norm"
-for engine in piper edge kokoro; do
+for engine in piper edge kokoro tartu tartulocal xtts azure espeak; do
   voices=()
   for spec in "$@"; do
     [[ ${spec%%:*} == "$engine" ]] || continue
-    v=${spec#*:}; [[ $engine == piper ]] && v=$(piper_model "$v")
+    v=${spec#*:}; [[ $engine == piper ]] && v=$(piper_model "${v%@*}")${v#"${v%@*}"}
+    [[ $engine == xtts && $v != *.wav ]] && v=$etstt/fleurs/data/et_ee/audio/test/$v.wav
     voices+=("$v")
   done
   ((${#voices[@]})) || continue
+  [[ $engine != azure || -f $etstt/keys.env ]] || { echo "azure: pending keys (no $etstt/keys.env), skipped" >&2; continue; }
   venv "$engine"
-  TXT=$text "$W/venv-$engine/bin/python" -I "$here/synth.py" "$engine" "$set_dir/raw" "$slow" "${voices[@]}" 2>&1 |
-    { grep -vE 'Warning|warn|WeightNorm|super\(\).__init__' || true; }
+  a=$(assets "$engine") extra=()
+  [[ -z $a ]] || mapfile -t extra <<<"$a"
+  run=(env "${extra[@]}" TXT="$text" "$W/venv-$engine/bin/python" -I "$here/synth.py" "$engine" "$set_dir/raw" "$slow" "${voices[@]}")
+  # shellcheck disable=SC2016 # $0/$@ expand in the inner bash
+  [[ $engine == azure ]] && run=(bash -c 'set -a; . "$0"; set +a; exec "$@"' "$etstt/keys.env" "${run[@]}")
+  "${run[@]}" 2>&1 |
+    { grep --line-buffered -vE 'Warning|warn|WeightNorm|super\(\).__init__' || true; }
 done
 for f in "$set_dir"/raw/*; do
   b=$(basename "${f%.*}")

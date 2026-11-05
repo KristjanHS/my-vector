@@ -55,7 +55,7 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 | id | question | method / output |
 |---|---|---|
 | 1.1 R-a STT | Lead: `TalTechNLP/whisper-large-v3-turbo-et-verbatim` (CT2 `ct2/` subfolder, faster-whisper cuda float16 = stt-faster preset `et-large`; reuse = copy that config, stt-faster has no server; its WER/latency/VRAM are unmeasured); also Vosk et?, whisper.cpp, free online (TartuNLP ASR, Azure F0, Google) | harness `robot/et-stt/` (tracked), data/results `robot/work/et-stt/`; 50 FLEURS `et_ee` clips (+ CV `et` when present, E9); table WER · end-of-speech→text s · RAM/VRAM · offline. Targets: WER ≤ 25 %, ≤ 2.0 s (vosk `en-US` baseline measured alongside) |
-| 1.2 R-b TTS | Free Estonian voices: TartuNLP Neurokõne (local model + free API), MMS-TTS `est` (license check), Piper/Kokoro et (expect none), edge-tts `et-EE-AnuNeural` (A5 ToS risk), Azure F0 `et-EE-Anu/Kert`, espeak-ng `et` | add engine adapter(s) to `robot/voice-samples/{gen.sh,synth.py}` (`pkgs[]` + branch); `gen.sh et-<set> "<text>" <engine:voice>…` with a time, a weather, a timer and an LLM sentence; first-audio s on GPU/CPU; VRAM next to Kokoro (R20) |
+| 1.2 R-b TTS | Free Estonian voices: TartuNLP Neurokõne (local model + free API), MMS-TTS `est` (license check), Piper `et_EE-news-medium`, Kokoro et (none), edge-tts `et-EE-AnuNeural` (A5 ToS risk), Azure F0 `et-EE-Anu/Kert`, espeak-ng `et` | add engine adapter(s) to `robot/voice-samples/{gen.sh,synth.py}` (`pkgs[]` + branch); `gen.sh et-<set> "<text>" <engine:voice>…` with a time, a weather, a timer and an LLM sentence; first-audio s on GPU/CPU; VRAM next to Kokoro (R20) |
 | 1.3 R-c LLM | Estonian answer quality: `gemma3:4b-it-qat` vs `gemma3:12b`, EuroLLM-9B, Llammas, qwen3; prompt line "Answer in Estonian"; alt: answer in English + free MT (TartuNLP Neurotõlge) | 10 fixed Estonian questions, each scored 1–5 by the user for language + content; first-token s; VRAM fit with STT+TTS; append to `docs/llm-trials.md` |
 | 1.4 R-d built-in lines | Which robot lines actually speak (inventory K14 + `CreateUtterance` callers); Estonian text path: D1 robot-side `et-EE` table + `RobotSetting.locale` + patched `GetTTSStringForTime`; D2 patch 0010 sends line key/args + `lang`, PC server renders Estonian; D3 wire-pod answers the 8 allowlisted intents itself via T1 | per option: patch size, what Acapela does with `et-EE` locale (no pack → crash/fallback?), behaviour/face animation kept? Fallback when PC down: English Acapela speaking Estonian text = unacceptable → name the fallback |
 | 1.5 R-e switch | Where the toggle lives: extend `/myvector/voice` into language+voice vs new fork page; how STT, intents, GetText, LLM, T1, T2 read one setting; inventory K9 literals + every `STT.Language` reader; live vs restart | table consumer → read site → hook; feeds D-RF |
@@ -64,7 +64,7 @@ Today language is one global read at startup (`APIConfig.STT.Language` → K1, K
 
 | id | ruling | edit site |
 |---|---|---|
-| 2.1 | Play every R-b candidate × the 4 sentences via `play.sh -v 60`; user scores 1–5 per T1 / T2 use | `robot/voice-samples/play.sh` |
+| 2.1 | Play every R-b candidate × the 4 sets via `play.sh -v 60 {et-time,et-weather,et-timer,et-llm}` (18 voices each); user scores 1–5 per T1 / T2 use | `robot/voice-samples/play.sh` |
 | 2.2 | User speaks 10 Estonian commands to Vector ("Mis kell on?", "Pane taimer viieks minutiks", "Mis ilm on Tallinnas?", "Kes ma olen?" + 6 LLM questions); record mic audio, score each STT candidate offline | `robot/work/et-stt/` |
 
 ## Stage 3 — [USER DECISION] picks
@@ -138,3 +138,16 @@ Speaking lines under the 8 intents: clock (`GetTTSStringForTime`, digits), weath
 | base | Vosk `en-US` on FLEURS `en_us` | yes, offline | 0.02 / 0.04 s | 31.6 % (en) · CPU | today's English |
 
 E7 fit: gemma3:4b 5.8 GB + STT 1.31 GB leaves ≤ 0.9 GB for ET TTS + desktop — R-b/R-c size against it.
+
+### TTS (1.2 R-b)
+
+GPU shared with another job during the run — VRAM = torch peak, latencies pessimistic; samples in `robot/work/voice-samples/et-*/norm/`.
+
+| rank | option | free | first audio GPU / CPU (short · llm) | score (VRAM · license) | verdict |
+|---|---|---|---|---|---|
+| 1 | TartuNLP Neurokõne local (`tartulocal:`, 10 speakers) | yes, offline | 0.61 · 1.02 / 1.1 · 2.3 s | 0.12–0.41 GB · worker MIT, weights unstated | co-lead; trim ~0.5 s lead silence |
+| 1 | Piper `et_EE-news-medium` (Mari/Vesta/Albert/Kalev) | yes, offline | – / 0.10 · 0.20 s | 0 · data CC-BY, piper GPL-3 | co-lead |
+| 3 | edge-tts `et-EE-Anu/KertNeural` | keyless, online | 1.1 · 1.2 s | 0 · unofficial endpoint (A5 ToS) | backup only |
+| 4 | XTTS-v2-est (`tartuNLP/XTTS-v2-est`) | yes, offline | 0.78 · 0.73 / 3.4 · 4.1 s | ~2.3 GB · CPML non-commercial | over E7, quality reference |
+| 5 | espeak-ng `et` | yes, offline | – / 0.01 · 0.02 s | 0 · GPL-3 | robotic baseline |
+| – | Neurokõne API · Azure F0 · MMS `est` · Kokoro et | — | — | — | HTTP 408 ×3 (retry `tartu:mari`) · pending keys · no model · no voice |
