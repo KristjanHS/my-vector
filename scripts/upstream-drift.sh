@@ -14,6 +14,8 @@ allowed_edits=(
   chipper/pkg/vars/vars.go               # LoadIntents returns forkFilterIntents(...) (fork_intents.go); reads intent-data/<ForkLanguage()> (fork_lang.go)
   chipper/pkg/wirepod/ttr/matchIntentSend.go # ProcessTextAll partial pass: vars.ForkContainsPhrase (whole words); !locale = vars.ForkLanguage(); voiceText via vars.ForkNormalizeText
   chipper/pkg/wirepod/localization/localization.go # GetText asks forkGetText first (fork_lang.go)
+  chipper/pkg/wirepod/ttr/words2num.go   # words2num input = forkTimerText(...) — et-EE timer forms (fork_timer.go)
+  chipper/pkg/wirepod/ttr/weather.go     # weatherParser apiLocation = forkWeatherLocation(...) — et-EE city word (fork_weather.go)
   chipper/pkg/wirepod/preqs/server.go    # sttHandler = forkMicCapture(forkSTTRouter(...)) — mic capture (fork_miccap.go) + et-EE STT router (fork_stt.go)
   chipper/webroot/index.html             # nav link to the fork voice page /myvector/voice (myvector/voice)
 )
@@ -40,7 +42,8 @@ bad=0
 while IFS= read -r -d '' status && IFS= read -r -d '' path; do
   grep -qxF -- "${path%%/*}" <<<"$roots" || continue # fork-only top level (docs/, robot/, scripts/, ...)
   if [[ $status == A ]]; then
-    [[ $path == chipper/pkg/myvector/* || $(basename "$path") == fork_*.go ]] && continue
+    # et-EE.json: upstream's LoadIntents reads intent-data/<lang>.json, so the fork's table must sit there
+    [[ $path == chipper/pkg/myvector/* || $(basename "$path") == fork_*.go || $path == chipper/intent-data/et-EE.json ]] && continue
     echo "new fork file inside the upstream tree: $path (move it to chipper/pkg/myvector/ or name it fork_*.go)"
   else
     is_allowed "$path" && continue
