@@ -122,3 +122,19 @@ Speaking lines under the 8 intents: clock (`GetTTSStringForTime`, digits), weath
 | 2 | D2b: 0010 sends key + args + `lang` (~10 files, ~120 lines) | yes | same | animations kept | only if D2a templates are ambiguous |
 | 3 | D3: wire-pod speaks clock/weather via T1 (~120 Go lines) | yes | T1 | loses face clock + weather anims; no names/enroll | stopgap |
 | 4 | D1: robot `et-EE` table + `RobotSetting.locale` + rebuild | yes | — | `et-EE` locale nulls Acapela (`_BAB_Obj`, no voice pack) → all Acapela incl. R19 + T1 fallback silent (source-traced, unrun) | reject |
+
+### STT (1.1 R-a)
+
+50 shortest FLEURS `et_ee` test clips (median 7.05 s), beam 5; re-run (CV / keys): `robot/et-stt/run.sh [NAME…]`, view `robot/work/et-stt/venv/bin/python -I robot/et-stt/bench.py summary`.
+
+| rank | option | free | latency med/p90 | score (WER · VRAM peak) | verdict |
+|---|---|---|---|---|---|
+| 1 | TalTech `whisper-large-v3-turbo-et-verbatim`, faster-whisper cuda `int8_float16` | yes, offline | 0.36 / 0.44 s | 8.5 % · 1.31 GB | lead |
+| 2 | same, cuda `float16` (stt-faster `et-large`) | yes, offline | 0.38 / 0.43 s | 7.6 % · 2.28 GB | +1 GB for −0.9 pt |
+| 3 | stock large-v3-turbo cuda `int8_float16` (whisper.cpp stand-in) | yes, offline | 0.39 / 0.46 s | 18.1 % · 1.31 GB | 2× TalTech WER |
+| 4 | TalTech CPU `int8` | yes, offline | 7.15 / 7.69 s | 8.5 % · 0 | fails 2.0 s |
+| – | Vosk et · TartuNLP/TalTech keyless API | — | — | — | no model · no public API |
+| – | Azure F0 · Google v1 `et-EE`; CV `et` | free tier | — | — | pending keys (E10) · pending CV (E9) |
+| base | Vosk `en-US` on FLEURS `en_us` | yes, offline | 0.02 / 0.04 s | 31.6 % (en) · CPU | today's English |
+
+E7 fit: gemma3:4b 5.8 GB + STT 1.31 GB leaves ≤ 0.9 GB for ET TTS + desktop — R-b/R-c size against it.
