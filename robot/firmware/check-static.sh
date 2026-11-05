@@ -69,7 +69,7 @@ if ((${#smoke[@]} >= 3)); then
     done
     [[ $l != *cloud_intent* || $def == intent ]] || die "S5: smoke.sh:$n: cloud_intent outside intent(): $l"
   done <"${smoke[0]}"
-  # Every Conn use: fork_smoke.go .EventStream / .DisplayFaceImageRGB / .SayText; myvector/voice .ExternalAudioStreamPlayback / .SayText.
+  # Every Conn use: fork_smoke.go .EventStream / .DisplayFaceImageRGB / .SayText; myvector/voice .ExternalAudioStreamPlayback / .SayText / .BehaviorControl (Control: same OVERRIDE_BEHAVIORS grant as Assume, no motion).
   conn_ok() { # conn_ok <file> <method ERE>
     local n=0 l rest
     while IFS= read -r l; do
@@ -83,7 +83,7 @@ if ((${#smoke[@]} >= 3)); then
     done <"$1"
   }
   conn_ok "${smoke[1]}" 'EventStream|DisplayFaceImageRGB|SayText'
-  for f in "${voice_go[@]}"; do conn_ok "$f" 'ExternalAudioStreamPlayback|SayText'; done
+  for f in "${voice_go[@]}"; do conn_ok "$f" 'ExternalAudioStreamPlayback|SayText|BehaviorControl'; done
 fi
 echo "smoke motion-free OK (${#smoke[@]} files; denylist + endpoint/method allowlist)"
 
