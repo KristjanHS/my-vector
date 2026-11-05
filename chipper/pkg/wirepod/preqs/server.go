@@ -58,7 +58,7 @@ func New(InitFunc func() error, SttHandler interface{}, voiceProcessor string) (
 
 	// check function type
 	if str, is := SttHandler.(func(sr.SpeechRequest) (string, error)); is {
-		sttHandler = forkMicCapture(str)
+		sttHandler = forkMicCapture(forkSTTRouter(str))
 	} else if str, is := SttHandler.(func(sr.SpeechRequest) (string, map[string]string, error)); is {
 		stiHandler = str
 		isSti = true
