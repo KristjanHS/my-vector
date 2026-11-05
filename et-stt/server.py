@@ -4,9 +4,9 @@ TalTech turbo-et (faster-whisper) holds the GPU only while myvectorConfig.json "
 Env: STT_BIND (127.0.0.1), STT_PORT (8092), STT_MODEL (CT2 dir), STT_DEVICE (cuda), STT_COMPUTE (int8_float16), STT_CONFIG (polled every 5 s).
 """
 
-import gc
 import json
 import logging
+import multiprocessing
 import os
 import sys
 import threading
@@ -49,10 +49,67 @@ def config_lang(path):
     return lang, None
 
 
-def whisper_factory(model, device, compute):
-    from faster_whisper import WhisperModel
+def _whisper_child(conn, model, device, compute):
+    """Child process body: load once, then (audio, language, beam) -> ("ok", text) | ("err", repr) until the pipe closes."""
+    try:
+        from faster_whisper import WhisperModel
 
-    return WhisperModel(str(model), device=device, compute_type=compute)
+        m = WhisperModel(model, device=device, compute_type=compute)
+    except Exception as e:
+        conn.send(("err", f"model load failed: {e!r}"))
+        return
+    conn.send(("ok", None))
+    while True:
+        try:
+            audio, language, beam = conn.recv()
+        except EOFError:
+            return
+        try:
+            segments, _ = m.transcribe(audio, language=language, beam_size=beam)
+            conn.send(("ok", "".join(s.text for s in segments).strip()))
+        except Exception as e:
+            conn.send(("err", repr(e)))
+
+
+class ChildWhisper:
+    """The model in a spawned child: close() exits it, so the CUDA context frees too (an in-process drop kept 145 MiB)."""
+
+    def __init__(self, model, device, compute, target=_whisper_child):
+        ctx = multiprocessing.get_context("spawn")
+        self._conn, child = ctx.Pipe()
+        self._proc = ctx.Process(
+            target=target, args=(child, str(model), device, compute), daemon=True
+        )
+        self._proc.start()
+        child.close()
+        try:
+            self._reply()
+        except Exception:
+            self.close()
+            raise
+
+    def _reply(self):
+        try:
+            status, val = self._conn.recv()
+        except EOFError:
+            self._proc.join(5)
+            raise RuntimeError(
+                f"whisper child exited ({self._proc.exitcode})"
+            ) from None
+        if status == "err":
+            raise RuntimeError(val)
+        return val
+
+    def transcribe(self, audio, language, beam_size):
+        self._conn.send((audio, language, beam_size))
+        return self._reply()
+
+    def close(self):
+        self._conn.close()  # the child's recv sees EOF and returns
+        self._proc.join(10)
+        if self._proc.is_alive():
+            self._proc.kill()
+            self._proc.join()
 
 
 class Recognizer:
@@ -81,32 +138,38 @@ class Recognizer:
             msg
         )  # outside except: the traceback's frames would pin a half-built model
 
+    def _free(self):  # caller holds the lock
+        if self._model is not None:
+            self._model.close()
+            self._model = None
+            log.info("model freed")
+
     def set_active(self, active):
-        """et-EE -> load now (a failure raises; the next poll or request retries); en-US -> free now."""
+        """et-EE -> load now (a failure raises; the next poll retries); en-US -> free now."""
         with self._lock:
             self.active = active
             if active and self._model is None:
                 self._load()
-            elif not active and self._model is not None:
-                self._model = None
-                gc.collect()
-                log.info("model freed")
+            elif not active:
+                self._free()
 
     def transcribe(self, pcm):
+        """Never loads: the caller's poll does (one load attempt per request, plan E21)."""
         audio = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
         with self._lock:
             if not self.active:
                 raise Inactive
             if self._model is None:
-                self._load()
-            model = self._model
-            assert model is not None  # _load sets it or raises
+                raise RuntimeError(
+                    "model not loaded (load failed: see the service log)"
+                )
             if not audio.size:
                 return ""
-            segments, _ = model.transcribe(audio, language="et", beam_size=BEAM)
-            return "".join(
-                s.text for s in segments
-            ).strip()  # segments is lazy: decode inside the lock
+            try:
+                return self._model.transcribe(audio, "et", BEAM)
+            except Exception:
+                self._free()  # a crashed child stays dead: the next poll reloads
+                raise
 
 
 class ConfigWatcher:
@@ -123,7 +186,9 @@ class ConfigWatcher:
                 key = (st.st_mtime_ns, st.st_ino, st.st_size)
             except OSError:
                 key = None
-            if key != self._key:
+            if key != self._key or (
+                self.rec.active and not self.rec.loaded
+            ):  # unloaded et-EE: retry the load
                 lang, err = config_lang(self.path)
                 if err:
                     log.warning("settings unreadable, using %s: %s", ENGLISH, err)
@@ -215,12 +280,14 @@ def main():
         stream=sys.stdout,
     )
     rec = Recognizer(
-        whisper_factory,
+        ChildWhisper,
         os.environ.get("STT_MODEL", MODEL),
         os.environ.get("STT_DEVICE", "cuda"),
         os.environ.get("STT_COMPUTE", "int8_float16"),
     )
-    if "--warm-only" in sys.argv[1:]:  # et-stt/setup.sh: prove the model loads and decodes
+    if (
+        "--warm-only" in sys.argv[1:]
+    ):  # et-stt/setup.sh: prove the model loads and decodes
         rec.set_active(True)
         print(repr(rec.transcribe(np.zeros(RATE, "<i2").tobytes())))
         return

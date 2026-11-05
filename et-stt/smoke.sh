@@ -3,7 +3,7 @@
 # Usage: et-stt/smoke.sh [clip.wav]   (default: the smallest clip in robot/work/et-stt/fleurs/data/et_ee)
 set -euo pipefail
 w=$(cd "$(dirname "$0")/.." && pwd)/robot/work/et-stt
-clip=${1:-$(find "$w/fleurs/data/et_ee" -name '*.wav' -printf '%s %p\n' | sort -n | awk 'NR == 1 { sub(/^[0-9]+ /, ""); print }')} # awk reads all: head would SIGPIPE sort
+clip=${1:-$(find "$w/fleurs/data/et_ee" -name '*.wav' -printf '%s %p\n' 2>/dev/null | sort -n | awk 'NR == 1 { sub(/^[0-9]+ /, ""); print }' || true)} # awk reads all: head would SIGPIPE sort
 [[ -f $clip ]] || { echo "no clip (robot/et-stt/run.sh fetches FLEURS)" >&2; exit 1; }
 curl -fsS http://127.0.0.1:8092/health; echo
 pcm=$(mktemp "$w/smoke.XXXXXX")

@@ -11,31 +11,51 @@ import server
 
 
 class StubModel:
-    def __init__(self, calls):
-        self.calls = calls
+    def __init__(self, st):
+        self.st = st
 
     def transcribe(self, audio, language, beam_size):
-        self.calls.append((audio, language, beam_size))
-        return iter(
-            [
-                types.SimpleNamespace(text=" Mis kell"),
-                types.SimpleNamespace(text=" on?"),
-            ]
-        ), None
+        self.st.calls.append((audio, language, beam_size))
+        if self.st.crash:
+            raise RuntimeError("whisper child exited (-11)")
+        return "Mis kell on?"
+
+    def close(self):
+        self.st.closes += 1
 
 
 @pytest.fixture
 def stub():
-    st = types.SimpleNamespace(loads=0, calls=[], fail=False)
+    st = types.SimpleNamespace(loads=0, closes=0, calls=[], fail=False, crash=False)
 
     def factory(model, device, compute):
         st.loads += 1
         if st.fail:
             raise OSError("no model.bin")
-        return StubModel(st.calls)
+        return StubModel(st)
 
     st.rec = server.Recognizer(factory, "m", "cuda", "int8_float16")
     return st
+
+
+def echo_child(conn, model, device, compute):
+    conn.send(("ok", None))
+    while True:
+        try:
+            audio, language, beam = conn.recv()
+        except EOFError:
+            return
+        conn.send(("ok", f"{model} {language} {beam} {len(audio)}"))
+
+
+def failing_child(conn, model, device, compute):
+    conn.send(("err", "model load failed: OSError('no model.bin')"))
+
+
+def dying_child(conn, model, device, compute):
+    conn.send(("ok", None))
+    conn.recv()
+    os._exit(3)
 
 
 def write_lang(path, lang):
@@ -66,7 +86,7 @@ def test_config_lang_matches_lang_go(tmp_path, body, want):
     assert (err is None) if want[1] is None else (want[1] in err)
 
 
-def test_transcribe_estonian_scales_pcm_and_joins_segments(stub):
+def test_transcribe_estonian_scales_pcm(stub):
     stub.rec.set_active(True)
     pcm = np.array([16384, -32768], "<i2").tobytes()
     assert stub.rec.transcribe(pcm) == "Mis kell on?"
@@ -92,7 +112,40 @@ def test_watcher_loads_on_estonian_and_frees_on_english(tmp_path, stub):
     assert stub.rec.loaded and stub.loads == 1
     write_lang(p, "en-US")
     w.poll()
-    assert not stub.rec.loaded and not stub.rec.active
+    assert not stub.rec.loaded and not stub.rec.active and stub.closes == 1
+
+
+def test_crashed_model_is_freed_and_next_poll_reloads(tmp_path, stub):
+    p = tmp_path / "myvectorConfig.json"
+    write_lang(p, "et-EE")
+    w = server.ConfigWatcher(p, stub.rec)
+    w.poll()
+    stub.crash = True
+    with pytest.raises(RuntimeError, match="exited"):
+        stub.rec.transcribe(b"\0\0")
+    assert not stub.rec.loaded and stub.closes == 1
+    stub.crash = False
+    w.poll()  # config unchanged: the unloaded-et-EE check alone must reload
+    assert stub.rec.loaded and stub.loads == 2
+
+
+def test_child_whisper_round_trip_and_close_exits():
+    m = server.ChildWhisper("m", "cpu", "int8", target=echo_child)
+    assert m.transcribe(np.zeros(3, np.float32), "et", 5) == "m et 5 3"
+    m.close()
+    assert m._proc.exitcode == 0
+
+
+def test_child_whisper_load_error_raises_and_reaps():
+    with pytest.raises(RuntimeError, match="no model.bin"):
+        server.ChildWhisper("m", "cpu", "int8", target=failing_child)
+
+
+def test_child_whisper_death_mid_request_raises():
+    m = server.ChildWhisper("m", "cpu", "int8", target=dying_child)
+    with pytest.raises(RuntimeError, match=r"exited \(3\)"):
+        m.transcribe(np.zeros(1, np.float32), "et", 5)
+    m.close()
 
 
 def test_failed_load_retries_next_poll(tmp_path, stub):
@@ -141,7 +194,8 @@ def test_http_load_failure_is_500(serve):
     serve.stub.fail = True
     write_lang(serve.cfg, "et-EE")
     status, body = serve.post(b"\0\0")
-    assert status == 500 and "no model.bin" in body["error"]
+    assert status == 500 and "not loaded" in body["error"]
+    assert serve.stub.loads == 1  # one load attempt per request
 
 
 @pytest.mark.parametrize(
