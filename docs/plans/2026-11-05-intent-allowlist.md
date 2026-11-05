@@ -12,10 +12,11 @@ with a worn battery Vector stays docked, so movement/cube/game intents only stea
 | R3 | `intent_knowledge_promptquestion` stays: "I have a question" is the only route with follow-up listening | R1 list |
 | R4 | Apply in `LoadIntents` (all 3 callers reload through it) | `chipper/pkg/vars/vars.go` `LoadIntents`: one call before return; add `vars.go` to `allowed_edits` in `scripts/upstream-drift.sh` |
 | R5 | Custom intents + plugins still run first (untouched) | — |
+| R6 | Drop hijack keyphrases from kept intents: weather `whether`/`the other`/`the water`/`no other`; username `names`; photo `capture`; promptquestion `conversation`; settimer `time for`/`time or`/`time of`/`time of for` | `forkDroppedKeyphrases` in `fork_intents.go`; test: "how deep is the water" etc. → no match, real commands still match |
 
 ## Stage 1 — build + verify
 
-- [ ] R1/R4 + `fork_intents_test.go`: filtered names == allowlist; an unknown name in the list fails the test.
-- [ ] `make check`; `go -C chipper test ./pkg/vars/`; red demo on the filter.
+- [x] R1/R4 + `fork_intents_test.go`: filtered names == allowlist; an unknown name in the list fails the test.
+- [x] `make check`; `go -C chipper test ./pkg/vars/`; red demo on the filter.
 - [ ] `make start`; falsifier: "Hey Vector, what should I cook tonight?" → log shows `Making LLM request`, not `intent_greeting_goodnight`.
 - [ ] Code review; update `llm-trials.md` (docs/) step 2 note.
