@@ -1,4 +1,4 @@
-# Template: `make tts-enable` replaces @REPO@/@WORK@/@USER@ and installs it as /etc/systemd/system/myvector-tts.service.
+# Template: `make tts-enable` fills the REPO/WORK/USER @-placeholders and installs it as /etc/systemd/system/myvector-tts.service.
 [Unit]
 Description=my-vector TTS service (cori + af_bella -> 16 kHz PCM on :8091)
 Wants=network-online.target
@@ -12,7 +12,7 @@ User=@USER@
 WorkingDirectory=@REPO@
 ExecStartPre=+/usr/sbin/nft -f @REPO@/scripts/wire-pod-guard.nft
 ExecStart=@WORK@/tts/venv/bin/python -I @REPO@/tts/server.py
-Environment=HF_HOME=@WORK@/voice-samples/hf-cache HF_HUB_OFFLINE=1 TTS_PIPER_DIR=@WORK@/voice-samples/piper-voices
+Environment=HF_HOME=@WORK@/voice-samples/hf-cache HF_HUB_CACHE=@WORK@/voice-samples/hf-cache/hub HF_HUB_OFFLINE=1 TTS_PIPER_DIR=@WORK@/voice-samples/piper-voices
 Restart=on-failure
 RestartSec=5
 

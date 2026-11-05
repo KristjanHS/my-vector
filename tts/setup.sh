@@ -13,4 +13,4 @@ if [[ ! -f $m ]]; then # .onnx lands last, via .part, so a partial download neve
   mkdir -p "${m%/*}"
   curl -fsSL -o "$m.json" "$u.json" && curl -fsSL -o "$m.part" "$u" && mv "$m.part" "$m"
 fi
-HF_HOME=$samples/hf-cache TTS_PIPER_DIR=${m%/*} "$venv/bin/python" -I "$here/server.py" --warm-only
+HF_HOME=$samples/hf-cache HF_HUB_CACHE=$samples/hf-cache/hub TTS_PIPER_DIR=${m%/*} "$venv/bin/python" -I "$here/server.py" --warm-only

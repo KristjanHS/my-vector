@@ -1,6 +1,6 @@
 """Measure each voice's loudness on a reference paragraph (ffmpeg ebur128) and write gains.json for -20 LUFS.
 
-Run with the service venv + the env setup.sh uses: HF_HOME=... TTS_PIPER_DIR=... venv/bin/python -I tts/calibrate.py
+Run with the service venv + the env setup.sh uses: HF_HOME=... HF_HUB_CACHE=... TTS_PIPER_DIR=... venv/bin/python -I tts/calibrate.py
 """
 
 import json
