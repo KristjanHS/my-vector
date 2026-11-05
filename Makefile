@@ -1,4 +1,4 @@
-.PHONY: help start daemon-enable daemon-disable tts-setup tts-enable tts-disable check robot-test ship
+.PHONY: help start daemon-enable daemon-disable tts-setup tts-enable tts-disable stt-setup stt-enable stt-disable check robot-test ship
 # Run from anywhere: make -C ~/projects/my-vector <target>
 # robot/work of the main checkout (venvs + models live there, also when make runs in a worktree)
 WORK := $(shell dirname "$$(git -C $(CURDIR) rev-parse --path-format=absolute --git-common-dir)")/robot/work
@@ -43,6 +43,22 @@ tts-disable: ## Stop + remove myvector-tts.service
 	sudo systemctl disable --now myvector-tts
 	sudo rm -f /etc/systemd/system/myvector-tts.service
 	systemctl is-active -q wire-pod || sudo nft delete table inet wirepod_guard 2>/dev/null || true # wire-pod keeps its guard
+	sudo systemctl daemon-reload
+
+stt-setup: ## Create/refresh the Estonian STT venv + TalTech turbo-et model in robot/work/et-stt (no sudo; downloads ~4 GB on first run)
+	$(CURDIR)/et-stt/setup.sh
+
+stt-enable: ## Install + (re)start myvector-stt.service (127.0.0.1:8092, GPU only while lang = et-EE); asks the sudo password
+	@[ -f $(WORK)/et-stt/models/taltech-et/ct2/model.bin ] || { echo "no STT model: run make stt-setup first"; exit 1; }
+	sed -e 's|@REPO@|$(CURDIR)|g' -e 's|@WORK@|$(WORK)|g' -e 's|@USER@|$(USER)|g' $(CURDIR)/scripts/myvector-stt.service | sudo tee /etc/systemd/system/myvector-stt.service >/dev/null
+	sudo systemctl daemon-reload
+	sudo systemctl enable myvector-stt
+	sudo systemctl restart myvector-stt
+	@echo "logs: journalctl -u myvector-stt -f   live check (switch = et-EE): et-stt/smoke.sh"
+
+stt-disable: ## Stop + remove myvector-stt.service
+	sudo systemctl disable --now myvector-stt
+	sudo rm -f /etc/systemd/system/myvector-stt.service
 	sudo systemctl daemon-reload
 
 check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector + vars fork Go tests
