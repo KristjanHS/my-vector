@@ -1,9 +1,13 @@
 """my-vector TTS service: POST /tts {"text", "voice", "slow"} -> chunked 16 kHz s16le mono PCM, one chunk per sentence.
 
-GET /health -> {"voices": [...], "device": ...}. Models load + warm before the port opens (refused = still starting).
-Env: TTS_BIND (0.0.0.0), TTS_PORT (8091), TTS_PIPER_DIR (Piper .onnx dir), TTS_DEVICE (cuda|cpu), HF_HOME / HF_HUB_CACHE (the one shared HF cache).
+GET /health -> {"voices": [...], "device": ..., "kokoro_loaded": bool}. Piper (+ Kokoro if selected) warm before the port opens.
+Kokoro holds the GPU only while a kokoro voice is wire-pod's T1/T2 (myvectorConfig.json); unselected it loads for one request only.
+Env: TTS_BIND (0.0.0.0), TTS_PORT (8091), TTS_PIPER_DIR (Piper .onnx dir), TTS_DEVICE (cuda|cpu), HF_HOME / HF_HUB_CACHE (the one shared HF cache),
+TTS_VOICE_CONFIG (wire-pod's voice settings, polled every 5 s; default chipper/myvectorConfig.json in this repo).
 """
 
+import contextlib
+import gc
 import itertools
 import json
 import logging
@@ -11,6 +15,7 @@ import os
 import re
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -27,6 +32,11 @@ GAINS_FILE = Path(__file__).with_name("gains.json")  # tts/calibrate.py writes i
 VOICES = {"cori": ("piper", "en_GB-cori-high"), "af_bella": ("kokoro", "af_bella")}
 
 log = logging.getLogger("myvector-tts")
+
+# wire-pod's chipper/pkg/myvector/voice/settings.go: the voice choices beyond VOICES, defaults, slow range
+STOCK, DEFAULT_VOICE, DEFAULT_SLOW = "stock", "cori", 1.2
+VOICE_CONFIG = Path(__file__).resolve().parents[1] / "chipper/myvectorConfig.json"
+CONFIG_POLL_S = 5
 
 _SENT_END = re.compile(r"(?<=[.!?…])[\"')\]]*\s+|\n+")
 _CLAUSE_END = re.compile(r"(?<=[,;:])\s+")
@@ -171,6 +181,14 @@ class KokoroEngine:
         self._pipes = {}
         self._pipeline = KPipeline
 
+    def close(self):
+        """Drop model + pipelines and hand the freed CUDA memory back to the driver."""
+        self._pipes.clear()
+        self._model = None
+        gc.collect()
+        if self.device == "cuda":
+            self._torch.cuda.empty_cache()
+
     def synth(self, voice_id, text, slow):
         lang = voice_id[0]
         if lang not in self._pipes:
@@ -186,13 +204,117 @@ class KokoroEngine:
         return (np.concatenate(parts) if parts else np.zeros(0, np.float32)), 24000
 
 
+class LazyKokoro:
+    """Kokoro resident iff pinned (a kokoro voice selected in wire-pod); unpinned it loads for a request and frees at its end.
+
+    Every load/free runs under `lock` (Synth's), so a free never lands mid-synthesis.
+    """
+
+    def __init__(self, factory, device, lock):
+        self._factory, self.device, self._lock = factory, device, lock
+        self._engine, self.pinned, self._requests = None, False, 0
+
+    @property
+    def loaded(self):
+        return self._engine is not None
+
+    def _load(self):  # caller holds the lock
+        t = time.monotonic()
+        self._engine = self._factory(self.device)
+        self.device = self._engine.device
+        log.info("kokoro loaded on %s in %.1f s", self.device, time.monotonic() - t)
+
+    def _free_if_unused(self):  # caller holds the lock
+        if self._engine is not None and not self.pinned and not self._requests:
+            self._engine.close()
+            self._engine = None
+            log.info("kokoro freed")
+
+    def synth(self, voice_id, text, slow):  # Synth calls this under the lock
+        if self._engine is None:
+            self._load()
+        return self._engine.synth(voice_id, text, slow)
+
+    @contextlib.contextmanager
+    def request(self):
+        """Spans one /tts request: an unpinned engine survives its sentences, then frees once no request holds it."""
+        with self._lock:
+            self._requests += 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._requests -= 1
+                self._free_if_unused()
+
+    def set_pinned(self, pinned):
+        """Selected -> load + warm now (the robot's first line is fast); unselected -> free now (or at the last request's end)."""
+        with self._lock:
+            if pinned == self.pinned:
+                return
+            self.pinned = pinned
+            log.info("kokoro %s", "selected: loading, stays resident" if pinned else "unselected: freeing")
+            if pinned and self._engine is None:
+                self._load()
+                self._engine.synth(next(v for e, v in VOICES.values() if e == "kokoro"), "Hello there.", 1.0)
+            self._free_if_unused()
+
+
+def kokoro_selected(path):
+    """(is a kokoro voice wire-pod's T1 or T2, why-defaults or None). Unreadable/invalid -> defaults, as settings.go Current."""
+    try:
+        cfg = json.loads(Path(path).read_text())
+        if not isinstance(cfg, dict):
+            raise ValueError("not a JSON object")
+        t1, t2 = cfg.get("t1", DEFAULT_VOICE), cfg.get("t2", DEFAULT_VOICE)
+        slow = cfg.get("slow", DEFAULT_SLOW)
+        for v in (t1, t2):
+            if v != STOCK and v not in VOICES:  # also non-strings
+                raise ValueError(f"voice {v!r}")
+        if isinstance(slow, bool) or not isinstance(slow, (int, float)) or not SLOW_MIN <= slow <= SLOW_MAX:
+            raise ValueError(f"slow {slow!r}")
+    except FileNotFoundError:
+        return VOICES[DEFAULT_VOICE][0] == "kokoro", None
+    except (OSError, ValueError) as e:  # JSONDecodeError and UnicodeDecodeError are ValueErrors
+        return VOICES[DEFAULT_VOICE][0] == "kokoro", f"{path}: {e}"
+    return any(VOICES.get(v, ("",))[0] == "kokoro" for v in (t1, t2)), None
+
+
+class ConfigWatcher:
+    """Polls wire-pod's voice config (stat key: mtime, inode, size) and pins/unpins Kokoro on a change."""
+
+    def __init__(self, path, kokoro):
+        self.path, self.kokoro, self._key = Path(path), kokoro, ()
+
+    def poll(self):
+        try:
+            st = self.path.stat()
+            key = (st.st_mtime_ns, st.st_ino, st.st_size)
+        except OSError:
+            key = None
+        if key != self._key:  # one log line per change, not per poll
+            self._key = key
+            pinned, err = kokoro_selected(self.path)
+            if err:
+                log.warning("voice config unreadable, using defaults: %s", err)
+            self.kokoro.set_pinned(pinned)
+
+    def run(self, interval=CONFIG_POLL_S):
+        while True:
+            time.sleep(interval)
+            try:
+                self.poll()
+            except Exception:  # a failed load must not kill the watcher; a request still loads on demand
+                log.exception("kokoro pin/free failed")
+
+
 class Synth:
     """Voice name -> engine; one synthesis at a time (engines are not thread-safe)."""
 
-    def __init__(self, engines, gains):
+    def __init__(self, engines, gains, lock=None):
         self.engines = engines  # {"piper": engine, "kokoro": engine}
         self.gains = gains
-        self._lock = threading.Lock()
+        self._lock = lock or threading.Lock()
 
     def sentence_pcm(self, voice, text, slow):
         engine, voice_id = VOICES[voice]
@@ -201,14 +323,17 @@ class Synth:
         return to_pcm16(audio, rate, self.gains.get(voice, 1.0))
 
     def stream(self, voice, text, slow):
-        for s in split_sentences(text):
-            pcm = self.sentence_pcm(voice, s, slow)
-            if pcm:
-                yield pcm
+        engine = self.engines[VOICES[voice][0]]
+        with getattr(engine, "request", contextlib.nullcontext)():
+            for s in split_sentences(text):
+                pcm = self.sentence_pcm(voice, s, slow)
+                if pcm:
+                    yield pcm
 
-    def warm(self):
-        for voice in VOICES:
-            self.sentence_pcm(voice, "Hello there.", 1.0)
+    def warm(self, engines=None):
+        for voice, (engine, _) in VOICES.items():
+            if engines is None or engine in engines:
+                self.sentence_pcm(voice, "Hello there.", 1.0)
 
 
 def make_handler(synth, info):
@@ -229,7 +354,7 @@ def make_handler(synth, info):
 
         def do_GET(self):
             if self.path == "/health":
-                self._json(200, info)
+                self._json(200, info())
             else:
                 self._json(404, {"error": "not found"})
 
@@ -258,6 +383,12 @@ def make_handler(synth, info):
                 return
             # Headers wait for the first sentence: time-to-first-byte = time-to-first-audio, and a failing voice is a 500.
             chunks = synth.stream(voice, text, slow)
+            try:
+                self._send_stream(chunks)
+            finally:
+                chunks.close()  # ends the stream's Kokoro request span now, even if the client left mid-stream
+
+        def _send_stream(self, chunks):
             try:
                 first = next(chunks, b"")
             except Exception:
@@ -298,13 +429,21 @@ def main():
             / "robot/work/voice-samples/piper-voices"
         ),
     )
-    kokoro = KokoroEngine(os.environ.get("TTS_DEVICE", "cuda"))
-    synth = Synth({"piper": PiperEngine(piper_dir), "kokoro": kokoro}, load_gains())
-    synth.warm()
-    log.info("warm: voices %s, kokoro on %s", sorted(VOICES), kokoro.device)
-    if warm_only:
+    lock = threading.Lock()
+    kokoro = LazyKokoro(KokoroEngine, os.environ.get("TTS_DEVICE", "cuda"), lock)
+    synth = Synth({"piper": PiperEngine(piper_dir), "kokoro": kokoro}, load_gains(), lock)
+    if warm_only:  # tts/setup.sh: prove every model loads
+        synth.warm()
         return
-    info = {"voices": sorted(VOICES), "device": kokoro.device, "rate": RATE}
+    synth.warm({"piper"})
+    watcher = ConfigWatcher(os.environ.get("TTS_VOICE_CONFIG", VOICE_CONFIG), kokoro)
+    watcher.poll()  # a selected Kokoro loads + warms before the port opens
+    threading.Thread(target=watcher.run, daemon=True).start()
+    log.info("warm: piper%s, kokoro on %s", " + kokoro" if kokoro.loaded else "", kokoro.device)
+
+    def info():
+        return {"voices": sorted(VOICES), "device": kokoro.device, "kokoro_loaded": kokoro.loaded, "rate": RATE}
+
     addr = (
         os.environ.get("TTS_BIND", "0.0.0.0"),
         int(os.environ.get("TTS_PORT", "8091")),

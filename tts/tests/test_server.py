@@ -2,6 +2,7 @@ import http.client
 import json
 import socket
 import threading
+import time
 from http.server import ThreadingHTTPServer
 
 import numpy as np
@@ -110,7 +111,7 @@ def serve():
         synth = server.Synth(engines, {v: 1.0 for v in server.VOICES})
         srv = ThreadingHTTPServer(
             ("127.0.0.1", 0),
-            server.make_handler(synth, {"voices": sorted(server.VOICES)}),
+            server.make_handler(synth, lambda: {"voices": sorted(server.VOICES)}),
         )
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         servers.append(srv)
@@ -230,3 +231,131 @@ def test_tts_chunked_request_body_is_411(serve):
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     c.request("POST", "/tts", body=iter([b'{"text": "hi"}']), encode_chunked=True)
     assert c.getresponse().status == 411
+
+
+
+class FakeKokoro(FakeEngine):
+    """FakeEngine with KokoroEngine's load/close surface; `gate` (an Event) holds each synth until set; `events` logs order."""
+
+    def __init__(self, device, events, gate=None):
+        super().__init__(24000)
+        self.device, self.events, self.gate, self.closed = device, events, gate, False
+
+    def synth(self, voice_id, text, slow):
+        self.events.append("synth start")
+        if self.gate:
+            self.gate.wait(10)
+        out = super().synth(voice_id, text, slow)
+        self.events.append("synth end")
+        return out
+
+    def close(self):
+        self.events.append("close")
+        self.closed = True
+
+
+@pytest.fixture
+def lazy():
+    """-> (LazyKokoro, Synth, made, events): every factory call appends a FakeKokoro to made, all log into events."""
+    made, events, lock = [], [], threading.Lock()
+
+    def factory(device):
+        events.append("load")
+        made.append(FakeKokoro(device, events))
+        return made[-1]
+
+    k = server.LazyKokoro(factory, "cuda", lock)
+    return k, server.Synth({"piper": FakeEngine(22050), "kokoro": k}, {}, lock), made, events
+
+
+def test_unselected_request_loads_once_and_frees_at_request_end(lazy):
+    k, synth, made, events = lazy
+    assert not k.loaded
+    assert len(list(synth.stream("af_bella", "One. Two.", 1.0))) == 2
+    assert events == ["load", "synth start", "synth end", "synth start", "synth end", "close"]
+    assert not k.loaded
+    list(synth.stream("cori", "Hi.", 1.0))  # a Piper request never touches Kokoro
+    assert len(made) == 1
+
+
+def test_selected_loads_warm_now_stays_resident_and_frees_on_deselect(lazy):
+    k, synth, made, events = lazy
+    k.set_pinned(True)
+    assert k.loaded and made[0].calls == [("af_bella", "Hello there.", 1.0)]
+    list(synth.stream("af_bella", "Hi.", 1.0))
+    assert k.loaded and len(made) == 1 and not made[0].closed
+    k.set_pinned(False)
+    assert not k.loaded and made[0].closed
+
+
+def test_deselect_mid_synth_frees_after_the_request(lazy):
+    k, synth, made, events = lazy
+    k.set_pinned(True)
+    made[0].gate = gate = threading.Event()
+    t = threading.Thread(target=lambda: list(synth.stream("af_bella", "One. Two.", 1.0)))
+    t.start()
+    while events[-1] != "synth start":
+        time.sleep(0.001)
+    unpin = threading.Thread(target=k.set_pinned, args=(False,))
+    unpin.start()
+    unpin.join(0.2)  # blocked on the lock behind the sentence
+    gate.set()
+    t.join(5)
+    unpin.join(5)
+    warm = ["load", "synth start", "synth end"]
+    assert events == warm + ["synth start", "synth end"] * 2 + ["close"]  # freed after the 2nd sentence, not between
+    assert not k.loaded
+
+
+def test_handler_frees_unselected_kokoro_after_the_response(lazy):
+    k, synth, made, events = lazy
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(synth, lambda: {}))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        r, data = post(srv.server_address[1], {"text": "One. Two.", "voice": "af_bella"})
+        assert r.status == 200 and len(data) == 2 * 1600 * 2
+        assert events[-1] == "close" and not k.loaded
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+@pytest.mark.parametrize(
+    "text, pinned, bad",
+    [
+        ('{"t1": "af_bella", "slow": 1.2}', True, False),
+        ('{"t1": "cori", "t2": "af_bella"}', True, False),
+        ('{"t1": "stock", "t2": "cori"}', False, False),
+        ("{}", False, False),
+        ('{"t1": "af_bella", "t2": "nobody"}', False, True),  # settings.go: any invalid field -> all defaults
+        ('{"t1": "af_bella", "slow": 9}', False, True),
+        ('{"t1": "af_bella"', False, True),
+        ('["af_bella"]', False, True),
+    ],
+)
+def test_kokoro_selected_reads_t1_t2_and_invalid_is_defaults(tmp_path, text, pinned, bad):
+    f = tmp_path / "myvectorConfig.json"
+    f.write_text(text)
+    got, err = server.kokoro_selected(f)
+    assert got is pinned and bool(err) is bad
+
+
+def test_kokoro_selected_missing_file_is_defaults(tmp_path):
+    assert server.kokoro_selected(tmp_path / "none.json") == (False, None)
+
+
+def test_watcher_pins_on_select_and_frees_on_garbled(lazy, tmp_path, caplog):
+    k, synth, made, events = lazy
+    f = tmp_path / "myvectorConfig.json"
+    f.write_text('{"t1": "cori"}')
+    w = server.ConfigWatcher(f, k)
+    w.poll()
+    assert not k.pinned and not k.loaded
+    f.write_text('{"t2": "af_bella"}')
+    w.poll()
+    assert k.pinned and k.loaded
+    f.write_text("garbled{")
+    w.poll()
+    w.poll()  # unchanged file: no second warning
+    assert not k.pinned and not k.loaded
+    assert sum("using defaults" in r.message for r in caplog.records) == 1

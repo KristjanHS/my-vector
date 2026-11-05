@@ -26,6 +26,7 @@
 | R17 | Robot POSTs one sentence per request (1.5 s to first byte, `kMyVectorSentence_ms` cap); after a failure the rest of the line speaks in Acapela |
 | R18 | PC URL = new `ROBOT_TTS_URL` in `robot/robot.env` (e.g. `http://<pc-lan-ip>:8091`); file missing/bad or voice `stock` → Acapela |
 | R19 | Patch 0010 skips wire-pod/SDK-originated SayText (R12/R13 stand): those stay Acapela; only robot-internal lines use T2 |
+| R20 | Kokoro holds VRAM only while a kokoro voice is T1 or T2 (server watches `chipper/myvectorConfig.json`); unselected request loads for that request, frees after |
 
 ## Seams already known (verify, don't re-derive)
 
