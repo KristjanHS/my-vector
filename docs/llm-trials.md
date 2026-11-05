@@ -117,9 +117,9 @@ scripts/llm.sh use claude --commands --intentgraph --remember   # then the step-
 - Larger model later: `scripts/llm.sh models claude`, then e.g. `scripts/llm.sh use claude claude-sonnet-5-5`.
 - Spend: check usage in the Anthropic Console (the workspace that owns the key). A spoken answer is a
   few hundred tokens, so the credit lasts a long time on Haiku.
-- **Key exposure:** wire-pod stores the key in plain text and shows it, with no login, at
-  `http://<this PC>:8080/api/get_kg_api` to anyone on your home network. Keep a spend limit on that
-  workspace. `use ollama` overwrites the stored key; `off` does not.
+- **Key exposure:** wire-pod stores the key in plain text and serves it, with no login, at
+  `:8080/api/get_kg_api`; `scripts/wire-pod-guard.nft` (loaded by wire-pod.service) limits :8080 to this
+  PC. Keep a spend limit on that workspace. `use ollama` overwrites the stored key; `off` does not.
 
 ## 4. OpenAI
 

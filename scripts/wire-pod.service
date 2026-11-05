@@ -9,6 +9,7 @@ StartLimitBurst=5
 [Service]
 Type=simple
 WorkingDirectory=@REPO@
+ExecStartPre=/usr/sbin/nft -f @REPO@/scripts/wire-pod-guard.nft
 ExecStart=@REPO@/chipper/start.sh
 Environment=HOME=/root GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=@REPO@
 Restart=on-failure

@@ -20,6 +20,7 @@ daemon-enable: ## Install + (re)start wire-pod.service (starts with WSL, restart
 daemon-disable: ## Stop + remove wire-pod.service (make start runs in the foreground again)
 	sudo systemctl disable --now wire-pod
 	sudo rm -f /etc/systemd/system/wire-pod.service
+	sudo nft delete table inet wirepod_guard 2>/dev/null || true
 	sudo systemctl daemon-reload
 
 check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector Go tests
