@@ -22,7 +22,7 @@
 | E11 | ET-mode LLM = EstLLM 8B, the only ET model (user pick); quant = largest `i1-*` passing the 1.3 ET stack test (Q4_K_M passed 1.3 → pick; Q5_K_S/Q6_K skipped, user); spill = no fit, speed reported only (user: full-VRAM speed is ok); blind scoring + gemma4-for-ET dropped |
 | E12 | EN-mode LLM re-pick (user ask): gemma3:4b baseline vs `qwen3.5:4b`, `ministral-3:8b`, `gemma4:e2b-it-qat`, `gemma4:e4b-it-qat` via `bench.py --lang en`; af_bella must fit beside it |
 | E13 | ET fit base = worst base − Kokoro's measured VRAM share (ET stack never loads Kokoro, E7); `stack.py` measures the share with a throwaway second TTS server |
-| E14 | ET no-fit ladder, stop at first pass: Q4_K_M → Q4_K_S → Q4_K_M `num_ctx` 2048 (only ctx variant; Q4_K_S@2048 estimated from its saving) → `i1-IQ4_XS` → `i1-Q3_K_M` |
+| E14 | ET no-fit ladder, stop at first pass: Q4_K_M → Q4_K_S → Q4_K_M `num_ctx` 2048 (only ctx variant; Q4_K_S@2048 run only if its estimate from that saving passes; an error stops the ladder) → `i1-IQ4_XS` → `i1-Q3_K_M` |
 
 ## Seams already known (verify, don't re-derive)
 
