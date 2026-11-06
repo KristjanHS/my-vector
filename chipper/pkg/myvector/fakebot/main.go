@@ -1,5 +1,5 @@
 // Command fakebot streams an utterance into wire-pod's chipper gRPC as WireOS vic-cloud does
-// (StreamingIntentGraph) and prints the replies. Exit 0 = a reply (matching -want), 1 = none or
+// (StreamingIntentGraph) and prints its one reply. Exit 0 = a reply (matching -want), 1 = none or
 // a -want mismatch, 2 = setup or transport error.
 //
 //	go run ./pkg/myvector/fakebot -pcm file.pcm [-want intent_clock_time]   # 16 kHz s16le mono
@@ -39,8 +39,8 @@ func frame(pcm []byte) []byte {
 	return append(out, make([]byte, 10*chunk)...)
 }
 
-// run streams pcm as one voice-command utterance and returns every reply until the server closes.
-func run(ctx context.Context, client pb.ChipperGrpcClient, esn string, pcm []byte) ([]*pb.IntentGraphResponse, error) {
+// run streams pcm as one voice-command utterance and returns the first reply (nil: closed without one).
+func run(ctx context.Context, client pb.ChipperGrpcClient, esn string, pcm []byte) (*pb.IntentGraphResponse, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	stream, err := client.StreamingIntentGraph(ctx)
@@ -82,7 +82,7 @@ func run(ctx context.Context, client pb.ChipperGrpcClient, esn string, pcm []byt
 	if err != nil {
 		return nil, err
 	}
-	return []*pb.IntentGraphResponse{r}, nil
+	return r, nil
 }
 
 // voices is the TTS voice per -lang (live-check.sh pairs).
@@ -128,20 +128,12 @@ func describe(r *pb.IntentGraphResponse) []string {
 	return lines
 }
 
-// verdict is the exit code for replies rs: 1 without a reply or without a want-matching intent.
-func verdict(rs []*pb.IntentGraphResponse, want string) int {
-	if len(rs) == 0 {
+// verdict is the exit code for reply r: 1 without a reply or when its intent action is not want.
+func verdict(r *pb.IntentGraphResponse, want string) int {
+	if r == nil || (want != "" && r.GetIntentResult().GetAction() != want) {
 		return 1
 	}
-	if want == "" {
-		return 0
-	}
-	for _, r := range rs {
-		if r.GetIntentResult().GetAction() == want {
-			return 0
-		}
-	}
-	return 1
+	return 0
 }
 
 func setup(err error) {
@@ -188,10 +180,10 @@ func main() {
 		setup(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-	rs, err := run(ctx, pb.NewChipperGrpcClient(conn), *esn, pcm)
+	r, err := run(ctx, pb.NewChipperGrpcClient(conn), *esn, pcm)
 	cancel()
 	conn.Close()
-	for _, r := range rs {
+	if r != nil {
 		for _, l := range describe(r) {
 			fmt.Println(l)
 		}
@@ -199,5 +191,5 @@ func main() {
 	if err != nil {
 		setup(err)
 	}
-	os.Exit(verdict(rs, *want))
+	os.Exit(verdict(r, *want))
 }
