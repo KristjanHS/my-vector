@@ -20,6 +20,7 @@ import (
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 )
 
 // en is English T1, T2 and slow with the Estonian pair at its defaults.
@@ -291,28 +292,28 @@ func TestSettingsETModel(t *testing.T) {
 		}
 		return got
 	}
-	if got := get(); got.ETModel != lang.DefaultETModel || got.DefaultETModel != lang.DefaultETModel {
-		t.Fatalf("GET with no et_model: %q (default %q), want %q", got.ETModel, got.DefaultETModel, lang.DefaultETModel)
+	if got := get(); got.ETModel != llm.DefaultETModel || got.DefaultETModel != llm.DefaultETModel {
+		t.Fatalf("GET with no et_model: %q (default %q), want %q", got.ETModel, got.DefaultETModel, llm.DefaultETModel)
 	}
 	post := func(extra string) *httptest.ResponseRecorder {
 		return serve(http.MethodPost, "application/json", `{"lang":"en-US","t1":"cori","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1`+extra+`}`)
 	}
-	if w := post(`,"et_model":" estllm:test "`); w.Code != 200 || lang.ETModel() != "estllm:test" || get().ETModel != "estllm:test" {
-		t.Fatalf("POST et_model: %d %s, ETModel %q; want estllm:test", w.Code, w.Body, lang.ETModel())
+	if w := post(`,"et_model":" estllm:test "`); w.Code != 200 || llm.ETModel() != "estllm:test" || get().ETModel != "estllm:test" {
+		t.Fatalf("POST et_model: %d %s, ETModel %q; want estllm:test", w.Code, w.Body, llm.ETModel())
 	}
-	if w := post(``); w.Code != 200 || lang.ETModel() != "estllm:test" {
-		t.Fatalf("POST without et_model: %d, ETModel %q; want it kept", w.Code, lang.ETModel())
+	if w := post(``); w.Code != 200 || llm.ETModel() != "estllm:test" {
+		t.Fatalf("POST without et_model: %d, ETModel %q; want it kept", w.Code, llm.ETModel())
 	}
-	for _, bad := range []string{`"estllm: test"`, `"` + strings.Repeat("m", lang.ETModelMax+1) + `"`, `7`} {
+	for _, bad := range []string{`"estllm: test"`, `"` + strings.Repeat("m", llm.ModelMax+1) + `"`, `7`} {
 		if w := serve(http.MethodPost, "application/json", `{"lang":"en-US","t1":"af_bella","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1,"et_model":`+bad+`}`); w.Code != 400 {
 			t.Errorf("et_model %.30s: %d, want 400", bad, w.Code)
 		}
 	}
-	if lang.ETModel() != "estllm:test" || Current().T1 != "cori" {
-		t.Fatalf("a rejected et_model saved: ETModel %q, settings %+v", lang.ETModel(), Current())
+	if llm.ETModel() != "estllm:test" || Current().T1 != "cori" {
+		t.Fatalf("a rejected et_model saved: ETModel %q, settings %+v", llm.ETModel(), Current())
 	}
-	if w := post(`,"et_model":""`); w.Code != 200 || lang.ETModel() != lang.DefaultETModel || get().ETModel != lang.DefaultETModel {
-		t.Fatalf("POST empty et_model: %d, ETModel %q; want the default", w.Code, lang.ETModel())
+	if w := post(`,"et_model":""`); w.Code != 200 || llm.ETModel() != llm.DefaultETModel || get().ETModel != llm.DefaultETModel {
+		t.Fatalf("POST empty et_model: %d, ETModel %q; want the default", w.Code, llm.ETModel())
 	}
 }
 

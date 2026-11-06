@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
@@ -31,8 +32,8 @@ func TestForkPromptEstonian(t *testing.T) {
 	lang.UseForTest(t, lang.Estonian)
 	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
 	r := CreateAIReq("mis kell on?", "esn", false, true)
-	if r.Model != lang.DefaultETModel {
-		t.Errorf("Model = %q, want %q", r.Model, lang.DefaultETModel)
+	if r.Model != llm.DefaultETModel {
+		t.Errorf("Model = %q, want %q", r.Model, llm.DefaultETModel)
 	}
 	if !strings.HasSuffix(r.Messages[0].Content, "\n\nAnswer in Estonian.") {
 		t.Errorf("system prompt lacks the language line: %q", r.Messages[0].Content)
@@ -92,9 +93,9 @@ func TestForkCameraEstonianUnloads(t *testing.T) {
 	}))
 	defer srv.Close()
 	u, _ := url.Parse(srv.URL)
-	old := forkOllamaPort
-	forkOllamaPort = u.Port()
-	t.Cleanup(func() { forkOllamaPort = old })
+	old := llm.OllamaPort
+	llm.OllamaPort = u.Port()
+	t.Cleanup(func() { llm.OllamaPort = old })
 	useKnowledge(t, "custom", srv.URL+"/v1", "qwen3.5:4b")
 
 	for _, c := range []struct {
@@ -103,7 +104,7 @@ func TestForkCameraEstonianUnloads(t *testing.T) {
 		after  []string
 	}{
 		{lang.English, nil, nil},
-		{lang.Estonian, []string{lang.DefaultETModel}, []string{lang.DefaultETModel, "qwen3.5:4b"}},
+		{lang.Estonian, []string{llm.DefaultETModel}, []string{llm.DefaultETModel, "qwen3.5:4b"}},
 	} {
 		lang.UseForTest(t, c.lang)
 		got = nil

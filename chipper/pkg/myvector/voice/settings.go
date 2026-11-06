@@ -21,6 +21,7 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
@@ -189,7 +190,7 @@ type settingsReply struct {
 	Voices  map[string][]string `json:"voices"`
 	SlowMin float64             `json:"slowMin"`
 	SlowMax float64             `json:"slowMax"`
-	// ETModel is lang.ETModel(), the et-EE Ollama model (plan E25); DefaultETModel is what an empty one saves as.
+	// ETModel is llm.ETModel(), the et-EE Ollama model (plan E25); DefaultETModel is what an empty one saves as.
 	ETModel        string `json:"et_model"`
 	DefaultETModel string `json:"defaultEtModel"`
 	// PushError is why a saved T2 did not reach the robot; the save itself stands.
@@ -201,7 +202,7 @@ type settingsReply struct {
 type settingsRequest struct {
 	Settings
 	Lang string `json:"lang"`
-	// ETModel is saved by lang.SaveETModel when present (empty = DefaultETModel); absent keeps the saved one.
+	// ETModel is saved by llm.SaveETModel when present (empty = DefaultETModel); absent keeps the saved one.
 	ETModel *string `json:"et_model"`
 }
 
@@ -210,7 +211,7 @@ func (q *settingsRequest) valid() error {
 		return fmt.Errorf("lang: one of %v", lang.Supported)
 	}
 	if q.ETModel != nil {
-		if err := lang.ValidETModel(*q.ETModel); err != nil {
+		if err := llm.ValidModel(*q.ETModel); err != nil {
 			return err
 		}
 	}
@@ -229,7 +230,7 @@ func save(q *settingsRequest) (intentErr string, err error) {
 		return "", fmt.Errorf("save: %w", err)
 	}
 	if q.ETModel != nil {
-		if err := lang.SaveETModel(*q.ETModel); err != nil {
+		if err := llm.SaveETModel(*q.ETModel); err != nil {
 			return "", fmt.Errorf("save et_model: %w", err)
 		}
 	}
@@ -277,7 +278,7 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(settingsReply{Settings: Current(), Lang: lang.Current(), Langs: lang.Supported, Voices: voices,
-		SlowMin: SlowMin, SlowMax: SlowMax, ETModel: lang.ETModel(), DefaultETModel: lang.DefaultETModel,
+		SlowMin: SlowMin, SlowMax: SlowMax, ETModel: llm.ETModel(), DefaultETModel: llm.DefaultETModel,
 		PushError: pushErr, IntentError: intentErr})
 }
 

@@ -3,7 +3,6 @@ package lang
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -79,71 +78,5 @@ func TestLangCurrentFollowsPath(t *testing.T) {
 	Path = func() string { return second }
 	if got := Current(); got != Estonian {
 		t.Fatalf("after Path change: %q, want the new file's %q", got, Estonian)
-	}
-}
-
-func TestLangETModel(t *testing.T) {
-	for _, c := range []struct{ file, want string }{
-		{``, DefaultETModel}, // no file
-		{`{"lang":"et-EE"}`, DefaultETModel},
-		{`{"et_model":""}`, DefaultETModel},
-		{`{"et_model":7}`, DefaultETModel},
-		{`{"et_model":"estllm:test","lang":"et-EE"}`, "estllm:test"},
-	} {
-		path := tempPath(t)
-		if c.file != "" {
-			os.WriteFile(path, []byte(c.file), 0644)
-		}
-		if got := ETModel(); got != c.want {
-			t.Errorf("%s: ETModel() = %q, want %q", c.file, got, c.want)
-		}
-	}
-	path := tempPath(t)
-	os.WriteFile(path, []byte(`{"et_model":"estllm:kept"}`), 0644)
-	if err := Save(Estonian); err != nil {
-		t.Fatal(err)
-	}
-	if got := ETModel(); got != "estllm:kept" {
-		t.Fatalf("ETModel() after Save = %q", got)
-	}
-}
-
-func TestLangSaveETModel(t *testing.T) {
-	path := tempPath(t)
-	os.WriteFile(path, []byte(`{"lang":"et-EE","t1":"cori"}`), 0644)
-	Current() // warm the cache: SaveETModel must replace it, not leave the old model
-	if err := SaveETModel("  estllm:new  "); err != nil {
-		t.Fatal(err)
-	}
-	if got := ETModel(); got != "estllm:new" {
-		t.Fatalf("ETModel() after SaveETModel = %q, want the trimmed value", got)
-	}
-	b, _ := os.ReadFile(path)
-	if want := "{\n  \"et_model\": \"estllm:new\",\n  \"lang\": \"et-EE\",\n  \"t1\": \"cori\"\n}\n"; string(b) != want {
-		t.Fatalf("file = %q, want %q", b, want)
-	}
-	if Current() != Estonian {
-		t.Fatalf("SaveETModel changed Current to %q", Current())
-	}
-	for _, bad := range []string{"estllm: new", "est\tllm", strings.Repeat("m", ETModelMax+1)} {
-		if err := SaveETModel(bad); err == nil {
-			t.Errorf("SaveETModel(%.20q) accepted", bad)
-		}
-	}
-	if got := ETModel(); got != "estllm:new" {
-		t.Fatalf("a rejected SaveETModel changed ETModel to %q", got)
-	}
-	if err := SaveETModel(strings.Repeat("é", ETModelMax)); err != nil { // the limit is characters, not bytes
-		t.Fatalf("%d characters: %v", ETModelMax, err)
-	}
-	if err := SaveETModel(" "); err != nil {
-		t.Fatal(err)
-	}
-	if got := ETModel(); got != DefaultETModel {
-		t.Fatalf("ETModel() after an empty SaveETModel = %q, want the default", got)
-	}
-	cur.Store(nil) // and the file agrees after a restart
-	if got := ETModel(); got != DefaultETModel {
-		t.Fatalf("ETModel() reloaded after an empty SaveETModel = %q, want the default", got)
 	}
 }
