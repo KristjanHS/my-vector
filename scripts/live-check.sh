@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Live checks without a human voice (backlog §OWED[USER]): live-check.sh <check>; exit 0 PASS, 1 FAIL, 2 setup.
-#   stt   English phrases in af_bella (:8091) → myvector-stt (:8092) en-US; each transcript must match
+#   stt   (saved lang en-US) English phrases in af_bella (:8091) → myvector-stt (:8092) en-US; each transcript must match
+#   route   routeprobe: allowlist, clock + timer intents (en/et), LLM answers per brain; Estonian ones carry ä/õ/ö/ü
 #   picker  saved LLM profiles + Claude Haiku: listed, Test endpoint answers OK; no full Claude key served or in apiConfig.json
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
@@ -57,8 +58,28 @@ check_picker() {
   git -C "$repo" check-ignore -q chipper/myvectorConfig.json && pass "myvectorConfig.json gitignored" || fail "myvectorConfig.json not gitignored"
 }
 
+check_route() {
+  local p=$work/routeprobe et_llm=hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M
+  (cd "$repo/chipper" && go build -o "$p" ./pkg/myvector/routeprobe) || setup "routeprobe does not build"
+  route() { # route <want-regex> <probe args…>: the probe's last line must match
+    local want=$1 out; shift
+    out=$(cd "$repo/chipper" && "$p" "$@" 2>&1 | tail -1)
+    [[ $out =~ $want ]] && pass "${*: -1} → $out" || fail "${*: -1}: want /$want/, got: $out"
+  }
+  route '^llm: \(not asked\)$' -lang en-US "what should i cook tonight"                 # allowlist: not goodnight
+  route '^intent: intent_clock_time$' -lang en-US "what time is it"
+  route '^intent: intent_clock_settimer_extend \{"timer_duration":"600"\}$' -lang en-US "set a timer for ten minutes"
+  route '^intent: intent_clock_settimer_extend \{"timer_duration":"300"\}$' -lang et-EE "pane taimer viieks minutiks"
+  route '^intent: intent_clock_time$' -lang et-EE "mis kell on"
+  route '^llm: .{20,}' -lang en-US -llm -brain ollama:qwen3.5:4b "what should i cook tonight"
+  route '^llm: .{20,}' -lang en-US -llm -brain claude:claude-haiku-5-5 "what should i cook tonight"
+  route '^llm: .*[äõöü]' -lang et-EE -llm -brain "ollama:$et_llm" "mis on eesti pealinn ja miks see on tähtis"
+  route '^llm: .*[äõöü]' -lang et-EE -llm -brain claude:claude-haiku-5-5 "mis on eesti pealinn ja miks see on tähtis"
+}
+
 case ${1:-} in
   stt) check_stt ;;
+  route) check_route ;;
   picker) check_picker ;;
   *) sed -n '2,/^set /p' "$0" | sed '$d'; exit 2 ;;
 esac
