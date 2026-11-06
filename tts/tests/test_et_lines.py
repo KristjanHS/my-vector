@@ -28,6 +28,7 @@ import pytest
         ("Ready", "Valmis"),
         ("Ready \n", "Valmis"),
         ("09:05", "Kell on 9:05"),
+        ("9:05", "Kell on 9:05"),
         ("15:15", "Kell on 15:15"),
         ("00:00", "Kell on 0:00"),
     ],

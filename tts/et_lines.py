@@ -19,7 +19,7 @@ _WEATHER = {
     "sunny": "päikseline",
     "windy": "tuuline",
 }
-_CLOCK = re.compile(r"([01]\d|2[0-3]):([0-5]\d)")
+_CLOCK = re.compile(r"([01]?\d|2[0-3]):([0-5]\d)")
 _WEATHER_RE = re.compile(
     rf"(-?\d+) degrees (?:and ({'|'.join(_WEATHER)})|with (thunderstorms))"
 )
