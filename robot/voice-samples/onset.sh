@@ -14,7 +14,8 @@ F=/data/data/myvector-voice.json
 r() { ssh "${so[@]}" "root@$ip" "$@"; }
 orig=$(r "cat $F") || { echo "FAIL: no $F on the robot (ship / voice-push first)" >&2; exit 2; }
 url=$(sed -n 's/.*"url": *"\([^"]*\)".*/\1/p' <<<"$orig"); slow=$(sed -n 's/.*"slow": *\([0-9.]*\).*/\1/p' <<<"$orig")
-trap 'r "printf %s '"'"'$orig'"'"' > $F"' EXIT
+# shellcheck disable=SC2016 # expands at exit, like a trap string
+on_exit 'r "printf %s '"'"'$orig'"'"' > $F"'
 arms=("$@"); ((${#arms[@]})) || arms=(stock cori af_bella mari refused blackhole)
 for arm in "${arms[@]}"; do
   l=''

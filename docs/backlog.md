@@ -9,9 +9,9 @@
 - STT on Whisper (`2026-11-06-llm-trials-gaps.md`, docs/plans/): `make stt-enable`, `make start`, then en-US "set a 10-minute timer" + 5 questions → `journalctl -u wire-pod | grep 'Transcribed text (en-US)'` right.
 - HA down: `scripts/llm.sh ha-plugin`, `ha-down`, "assist, hello" → Vector says "Home Assistant is not reachable", no wire-pod restart.
 - LLM picker live run: `2026-11-06-llm-picker-page.md` (docs/plans/) Stage 5 §2 checklist (ET→Claude, EN→Ollama, key hygiene, Ollama down).
-- PC voice loudness (V1): T1 `af_bella` −6.6 dB, `cori` −3.5 dB vs stock (`mari` passes) — accept, or open a fix plan.
+- PC voice loudness (V1): T1 `af_bella`/`cori` quieter than stock beyond 3 dB — rule.
 - Voice listening: `2026-11-05-vector-voice-verify.md` (docs/plans/) V5 rows 3–6 (interrupt, sentence gaps, KG Acapela, TTS-down fallback).
 
-## Owed
+## Assistant-owed
 
-- ⚠ T2 lines in `af_bella` always fall back to Acapela (`no response in 1.5 s`; cori/mari ≈0.6 s) · `tts/` af_bella first audio vs `0010-pc-voice.patch` timeout · `RUNS=1 robot/voice-samples/onset.sh af_bella | awk '$2>1{exit 1}'`
+- ⚠ T2 lines in `af_bella` always fall back to Acapela (`no response in 1.5 s`) · `tts/` af_bella first audio vs `0010-pc-voice.patch` timeout · `RUNS=1 robot/voice-samples/onset.sh af_bella | awk '$2=="-"||$2>1{f=1} END{exit f||NR==0}'`
