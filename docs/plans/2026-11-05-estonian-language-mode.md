@@ -105,6 +105,7 @@ Ruled E15–E18 (2026-11-05).
 | 9.2 | DONE: shipped `83b3c01` (smoke PASS); "Mis kell on?" → `intent_clock_time`, robot log `pc voice=mari lang=et-EE` | robot | smoke exit 0 |
 | 9.3 | Live clock reply lacks "Kell on" though `{"text":"22:59","lang":"et-EE"}` → server says it: log each /tts `text`+`lang`, re-ask "Mis kell on?", fit `_CLOCK` to the logged text | `tts/server.py`, `tts/et_lines.py` | pytest `test_et_lines.py` with the logged text |
 | 9.4 | DONE (user ruling 2026-11-06: ET uses the same logic as EN): `knowledge.intentgraph` back on, so unmatched text → LLM in both languages (`preqs/intent.go` `!successMatched`) | `scripts/llm.sh use ollama qwen3.5:4b --intentgraph` | `jq .knowledge.intentgraph chipper/apiConfig.json` = true; live "mis päev täna on?" answered |
+| 9.6 | ET LLM answers lose ä/õ/ü/ö ("Tanase nadalapaeva … oelda"): upstream `removeSpecialCharacters` drops combining marks (NFD + `isMn`) — keep them on et-EE via a fork hook, drift-listed | `ttr/fork_*.go`, `ttr/kgsim.go` + `kgsim_cmds.go` call sites, `scripts/upstream-drift.sh` | `TestForkSpecialCharsEstonianKeepsDiacritics`, English unchanged |
 | 9.5 | `llm.sh use` resets every unpassed flag (7.1's run dropped intentgraph): keep the saved `intentgraph`/`commands_enable`/`save_chat` unless a flag is passed | `scripts/llm.sh`, `docs/llm-trials.md` | `scripts/llm.sh use ollama` twice → `jq .knowledge.intentgraph` stays true |
 
 ## Stage 10 — verify + e2e + review
