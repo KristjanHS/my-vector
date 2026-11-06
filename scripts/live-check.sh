@@ -3,6 +3,9 @@
 #   stt   (saved lang en-US) English phrases in af_bella (:8091) → myvector-stt (:8092) en-US; each transcript must match
 #   route   routeprobe: allowlist, clock + timer intents (en/et), LLM answers per brain; Estonian ones carry ä/õ/ö/ü
 #   picker  saved LLM profiles + Claude Haiku: listed, Test endpoint answers OK; no full Claude key served or in apiConfig.json
+#   clock   (saved lang et-EE) the firmware's clock text (%H:%M / %I:%M) in mari → STT must hear "Kell on …"
+#   ha      HA plugin built against a dead URL (llm.sh ha-plugin probe): "assist, hello" → "Home Assistant is not reachable."
+#   ttsdown (asks sudo; Vector speaks) fork_say with myvector-tts up → the PC voice, stopped → stock; restarts the service
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 tts=${TTS_URL:-http://127.0.0.1:8091} stt=${STT_URL:-http://127.0.0.1:8092}
@@ -58,9 +61,11 @@ check_picker() {
   git -C "$repo" check-ignore -q chipper/myvectorConfig.json && pass "myvectorConfig.json gitignored" || fail "myvectorConfig.json not gitignored"
 }
 
+check_route_build() { (cd "$repo/chipper" && go build -o "$work/routeprobe" ./pkg/myvector/routeprobe) || setup "routeprobe does not build"; }
+
 check_route() {
   local p=$work/routeprobe et_llm=hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M
-  (cd "$repo/chipper" && go build -o "$p" ./pkg/myvector/routeprobe) || setup "routeprobe does not build"
+  check_route_build
   route() { # route <want-regex> <probe args…>: the probe's last line must match
     local want=$1 out; shift
     out=$(cd "$repo/chipper" && "$p" "$@" 2>&1 | tail -1)
@@ -77,8 +82,45 @@ check_route() {
   route '^llm: .*[äõöü]' -lang et-EE -llm -brain claude:claude-haiku-5-5 "mis on eesti pealinn ja miks see on tähtis"
 }
 
+check_clock() {
+  local t got f=$work/clock.pcm
+  for t in 08:05 20:47 12:00; do
+    synth mari et-EE "$t" "$f" || { fail "tts: $t"; continue; }
+    got=$(transcribe et-EE "$f") || { fail "stt (saved lang must be et-EE): $t"; continue; }
+    [[ $got =~ ^Kell\ on\  ]] && pass "clock $t → $got" || fail "clock $t → \"$got\", want Kell on …"
+  done
+}
+
+check_ttsdown() {
+  local api=${WIREPOD_URL:-http://127.0.0.1:8080} esn t1 r
+  esn=$(jq -r '.robots[0].esn // empty' "$repo/chipper/jdocs/botSdkInfo.json" 2>/dev/null) || true
+  [[ -n $esn ]] || setup "no robot in chipper/jdocs/botSdkInfo.json"
+  t1=$(curl -fsS --max-time 5 "$api/myvector/api/voice" | jq -r 'if .lang == "et-EE" then .t1_et else .t1 end') || setup "wire-pod not up"
+  [[ $t1 != stock ]] || setup "T1 is stock for the saved lang: nothing to fall back from"
+  say() { curl -sS --max-time 35 "$api/api-sdk/fork_say?serial=$esn" --data-urlencode "text=$1"; }
+  r=$(say "Test one.") ; [[ $r == "FINISHED $t1" ]] && pass "TTS up → $r" || fail "TTS up: want FINISHED $t1, got $r"
+  sudo systemctl stop myvector-tts || setup "sudo refused"
+  r=$(say "Test two.") ; [[ $r == "FINISHED stock" ]] && pass "TTS down → $r" || fail "TTS down: want FINISHED stock, got $r"
+  sudo systemctl start myvector-tts
+  for _ in {1..60}; do curl -fsS --max-time 2 "$tts/health" >/dev/null 2>&1 && break; sleep 1; done
+  curl -fsS --max-time 2 "$tts/health" >/dev/null && pass "myvector-tts back up" || fail "myvector-tts not healthy after restart"
+}
+
+check_ha() {
+  local so=$work/commandha-dead.so out
+  "$repo/scripts/llm.sh" ha-plugin probe "$so" >/dev/null || setup "HA plugin does not build"
+  check_route_build
+  out=$(cd "$repo/chipper" && "$work/routeprobe" -lang en-US -plugin "$so" "assist, hello" | tail -1)
+  [[ $out == "plugin: Home Assistant is not reachable." ]] && pass "HA down → $out" || fail "HA down: got $out"
+  out=$(cd "$repo/chipper" && "$work/routeprobe" -lang en-US -plugin "$so" "what time is it" | tail -1)
+  [[ $out == "intent: intent_clock_time" ]] && pass "plugin loaded, other intents still route → $out" || fail "with plugin: got $out"
+}
+
 case ${1:-} in
   stt) check_stt ;;
+  ha) check_ha ;;
+  clock) check_clock ;;
+  ttsdown) check_ttsdown ;;
   route) check_route ;;
   picker) check_picker ;;
   *) sed -n '2,/^set /p' "$0" | sed '$d'; exit 2 ;;
