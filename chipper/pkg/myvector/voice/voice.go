@@ -39,6 +39,21 @@ var (
 	client = &http.Client{Transport: &http.Transport{IdleConnTimeout: 20 * time.Second}} // server idles out at 30 s
 )
 
+type firstAudioKey struct{}
+
+// WithFirstAudio is ctx with its own FirstAudio bound, for a caller that would rather wait out a cold model
+// load than fall back (the smoke test).
+func WithFirstAudio(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, firstAudioKey{}, d)
+}
+
+func firstAudio(ctx context.Context) time.Duration {
+	if d, ok := ctx.Value(firstAudioKey{}).(time.Duration); ok {
+		return d
+	}
+	return FirstAudio
+}
+
 func envOr(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
@@ -123,10 +138,11 @@ func fetch(ctx context.Context, text, voice string, slow float64) (io.ReadCloser
 		return nil, err
 	}
 	r.Header.Set("Content-Type", "application/json")
-	timer := time.AfterFunc(FirstAudio, cancel)
+	wait := firstAudio(ctx)
+	timer := time.AfterFunc(wait, cancel)
 	resp, err := client.Do(r)
 	if !timer.Stop() && ctx.Err() == nil {
-		err = fmt.Errorf("no audio from %s within %s", URL, FirstAudio)
+		err = fmt.Errorf("no audio from %s within %s", URL, wait)
 	}
 	if err != nil {
 		cancel()

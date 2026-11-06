@@ -171,7 +171,7 @@ r=$(sdk fork_face); [[ $r == ok ]] || die "A2: fork_face: ${r:0:200}"
 ok "A2 face shown"
 r=$(sdk fork_say 'text=smoke%20test'); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
 [[ $r != 'FINISHED fallback'* ]] && ok "A2 said 'smoke test' in ${r#FINISHED }" ||
-  echo "WARN: A2 said 'smoke test' in the fallback voice (TTS service :8091 down? make tts-enable): ${r#FINISHED fallback: }"
+  echo "WARN: A2 said 'smoke test' in the fallback voice, not the saved language's T1 (TTS service :8091 down? make tts-enable): ${r#FINISHED fallback: }"
 sdk release_behavior_control >/dev/null
 
 step "A3 log-level intent"

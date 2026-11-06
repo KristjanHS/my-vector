@@ -235,6 +235,26 @@ func TestSayFallsBack(t *testing.T) {
 	}
 }
 
+func TestWithFirstAudioWaitsLonger(t *testing.T) {
+	service(t, func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		w.Write(make([]byte, 100))
+	})
+	old := FirstAudio
+	FirstAudio = 100 * time.Millisecond
+	t.Cleanup(func() { FirstAudio = old })
+	r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1)}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	got, err := Say(WithFirstAudio(ctx, time.Second), &vector.Vector{Conn: r}, "smoke test", "cori", 1)
+	if err != nil || got != "cori" {
+		t.Fatalf("Say = %q, %v; want cori (1 s bound outlasts the 300 ms service)", got, err)
+	}
+	if len(r.said) != 0 {
+		t.Errorf("fell back to SayText: %v", r.said)
+	}
+}
+
 func TestSayFallsBackServiceDown(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
