@@ -32,7 +32,7 @@ func forkAIReq(r openai.ChatCompletionRequest) openai.ChatCompletionRequest {
 	ollama := llm.IsOllama(kg)
 	if t, ok := llm.Resolve(llm.Load(), l, kg); ok {
 		r.Model = t.Model
-		r.TopP = forkTopP(r.Model)
+		r.TopP = forkTargetTopP(t.Provider, r.Model)
 		ollama = t.Ollama()
 	}
 	if ollama {
@@ -57,7 +57,7 @@ func forkCameraReq(r *openai.ChatCompletionRequest) func() {
 		r.ReasoningEffort = "none"
 	}
 	if !t.Ollama() || l != lang.Estonian {
-		r.TopP = forkTopP(r.Model)
+		r.TopP = forkTargetTopP(t.Provider, r.Model)
 		return func() {}
 	}
 	base, vision := t.OllamaBase(), llm.VisionModel(c, kg)
@@ -65,6 +65,14 @@ func forkCameraReq(r *openai.ChatCompletionRequest) func() {
 	r.Model = vision
 	r.TopP = forkTopP(r.Model)
 	return func() { forkUnload(base, vision) }
+}
+
+// forkTargetTopP: a Claude target never sends top_p, whatever its model ID.
+func forkTargetTopP(provider, model string) float32 {
+	if provider == llm.Claude {
+		return 0
+	}
+	return forkTopP(model)
 }
 
 // forkUnload asks the Ollama at base to drop model from memory now (native /api/generate, keep_alive 0).

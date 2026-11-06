@@ -132,3 +132,17 @@ func TestForkCameraClaudeDropsTopP(t *testing.T) {
 		t.Errorf("camera request %q top_p %v reasoning %q", r.Model, r.TopP, r.ReasoningEffort)
 	}
 }
+
+// The provider, not the model ID, drops top_p: an alias without the "claude" prefix must not send it.
+func TestForkClaudeAliasDropsTopP(t *testing.T) {
+	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
+	saveLLM(t, lang.English, llm.Config{ClaudeKey: testClaudeKey, Profiles: map[string]llm.Profile{lang.English: {Provider: llm.Claude, Model: "haiku-latest"}}})
+	if r := CreateAIReq("hi", "esn", false, true); r.TopP != 0 {
+		t.Errorf("KG top_p %v", r.TopP)
+	}
+	r := openai.ChatCompletionRequest{Model: "qwen3.5:4b", TopP: 1}
+	forkCameraReq(&r)()
+	if r.TopP != 0 {
+		t.Errorf("camera top_p %v", r.TopP)
+	}
+}

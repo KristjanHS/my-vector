@@ -84,6 +84,7 @@
     function warnings() {
       const w = [];
       if (cur && !cur.kgEnabled) w.push("Knowledge graph is off in wire-pod setup, so no LLM answers.");
+      if (cur && !cur.llmSaved) w.push(`Save hands the brain from wire-pod Knowledge (${cur.knowledge || "unset"}) to the LLM picks above.`);
       if (lists && lists.ollama.error) w.push("Ollama: " + lists.ollama.error);
       if (lists && lists.claude.error) w.push("Claude: " + lists.claude.error);
       if (cur && !cur.claudeKey) w.push("Claude API: add a Claude key below.");

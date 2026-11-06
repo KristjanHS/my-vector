@@ -196,6 +196,9 @@ type settingsReply struct {
 	OllamaURL string                 `json:"ollamaUrl"`
 	ClaudeKey string                 `json:"claudeKey"` // llm.Mask: never the full key
 	KGEnabled bool                   `json:"kgEnabled"`
+	// LLMSaved is false until the page first saves "llm"; till then Knowledge (provider model) is the brain.
+	LLMSaved  bool   `json:"llmSaved"`
+	Knowledge string `json:"knowledge"`
 	// PushError is why a saved T2 did not reach the robot; the save itself stands.
 	PushError string `json:"pushError,omitempty"`
 	// IntentError is why the language switch was rolled back (its intents did not load); the other saves stand.
@@ -311,6 +314,7 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	defaults, _ := llm.Effective(llm.Config{LegacyETModel: c.LegacyETModel}, kg)
 	json.NewEncoder(w).Encode(settingsReply{Settings: Current(), Lang: lang.Current(), Langs: lang.Supported, Voices: voices,
 		SlowMin: SlowMin, SlowMax: SlowMax, LLM: profiles, Defaults: defaults, OllamaURL: url, ClaudeKey: llm.Mask(c.ClaudeKey), KGEnabled: vars.APIConfig.Knowledge.Enable,
+		LLMSaved: c.Profiles != nil, Knowledge: strings.TrimSpace(kg.Provider + " " + kg.Model),
 		PushError: pushErr, IntentError: intentErr})
 }
 

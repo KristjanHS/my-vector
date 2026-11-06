@@ -365,7 +365,7 @@ func TestSettingsPage(t *testing.T) {
 	}
 	// the page picks each language's LLM from both providers and shows a rolled-back switch
 	for _, want := range []string{`<optgroup label="Local (Ollama)"`, `<optgroup label="Claude API"`, `"` + llm.ModelsAPI + `"`, `"` + llm.TestAPI + `"`,
-		`claude_key = ""`, `if (s.intentError)`, `+ s.intentError`} {
+		`claude_key = ""`, `!cur.llmSaved`, `if (s.intentError)`, `+ s.intentError`} {
 		if !strings.Contains(w.Body.String(), want) {
 			t.Errorf("page lacks %s", want)
 		}
@@ -523,7 +523,7 @@ func TestSettingsLLM(t *testing.T) {
 	}
 	got, _ := get()
 	if got.LLM[lang.English] != (llm.Profile{Provider: llm.Ollama, Model: "gemma4:e4b"}) || got.Defaults[lang.Estonian].Model != llm.DefaultETModel ||
-		got.OllamaURL != "http://localhost:11434" || got.ClaudeKey != "" || !got.KGEnabled {
+		got.OllamaURL != "http://localhost:11434" || got.ClaudeKey != "" || !got.KGEnabled || got.LLMSaved || got.Knowledge != "custom gemma4:e4b" {
 		t.Fatalf("GET defaults: %+v", got)
 	}
 	post := func(extra string) *httptest.ResponseRecorder {
@@ -533,7 +533,7 @@ func TestSettingsLLM(t *testing.T) {
 		t.Fatalf("POST claude profile: %d %s", w.Code, w.Body)
 	}
 	got, body := get()
-	if strings.Contains(body, key) || got.ClaudeKey != "sk-ant-…WxYz" || got.LLM[lang.Estonian] != (llm.Profile{Provider: llm.Claude, Model: "claude-haiku-5-5"}) {
+	if strings.Contains(body, key) || got.ClaudeKey != "sk-ant-…WxYz" || !got.LLMSaved || got.LLM[lang.Estonian] != (llm.Profile{Provider: llm.Claude, Model: "claude-haiku-5-5"}) {
 		t.Fatalf("GET after save: key shown %v, %+v", strings.Contains(body, key), got)
 	}
 	if got.Defaults[lang.Estonian] != (llm.Profile{Provider: llm.Ollama, Model: llm.DefaultETModel}) {
