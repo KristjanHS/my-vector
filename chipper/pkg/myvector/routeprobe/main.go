@@ -3,6 +3,7 @@
 //	go run ./pkg/myvector/routeprobe [-lang et-EE] [-audio] [-llm] [-plugins] "text"   # run from chipper/, beside apiConfig.json
 //
 // -lang / -brain test another language / LLM profile from a temp copy of myvectorConfig.json (the saved file is never written).
+// -plugin f.so loads one plugin; build the HA one against a dead URL to test "HA down" (scripts/live-check.sh ha).
 // -audio speaks the text in the language's voice (TTS :8091) and routes the STT (:8092) transcript; STT serves only the SAVED lang.
 // Output lines: "stt: …", then "intent: <name> <params>" | "plugin: <reply>" | "llm: <answer>" | "llm: (not asked)".
 package main
@@ -18,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"plugin"
 	"strings"
 	"time"
 
@@ -45,6 +47,7 @@ func main() {
 	ask := flag.Bool("llm", false, "ask the LLM when no intent matches")
 	brain := flag.String("brain", "", "provider:model for this language's LLM profile, e.g. ollama:qwen3.5:4b")
 	plugins := flag.Bool("plugins", false, "load ./plugins/*.so first (a plugin match RUNS the plugin)")
+	pluginFile := flag.String("plugin", "", "load this one plugin .so (as ttr.LoadPlugins would); a match RUNS it")
 	tts := flag.String("tts", "http://127.0.0.1:8091", "TTS service")
 	stt := flag.String("stt", "http://127.0.0.1:8092", "STT service")
 	flag.Parse()
@@ -67,6 +70,11 @@ func main() {
 	vars.IntentList, _ = vars.LoadIntents()
 	if *plugins {
 		ttr.LoadPlugins()
+	}
+	if *pluginFile != "" {
+		if err := loadPlugin(*pluginFile); err != nil {
+			die(2, "plugin: %v", err)
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -137,6 +145,36 @@ func override(l, brain string) {
 		die(2, "%v", err)
 	}
 	lang.Path = func() string { return p }
+}
+
+// loadPlugin registers one plugin file the way ttr.LoadPlugins registers ./plugins/*.so.
+func loadPlugin(path string) error {
+	p, err := plugin.Open(path)
+	if err != nil {
+		return err
+	}
+	u, err := p.Lookup("Utterances")
+	if err != nil {
+		return err
+	}
+	a, err := p.Lookup("Action")
+	if err != nil {
+		return err
+	}
+	n, err := p.Lookup("Name")
+	if err != nil {
+		return err
+	}
+	us, ok1 := u.(*[]string)
+	af, ok2 := a.(func(string, string, string, string) (string, string))
+	ns, ok3 := n.(*string)
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("%s: Utterances/Action/Name have the wrong types", path)
+	}
+	ttr.PluginUtterances = append(ttr.PluginUtterances, us)
+	ttr.PluginFunctions = append(ttr.PluginFunctions, af)
+	ttr.PluginNames = append(ttr.PluginNames, *ns)
+	return nil
 }
 
 func roundTrip(ctx context.Context, tts, stt, l, text string) (string, error) {
