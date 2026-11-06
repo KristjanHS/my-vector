@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,12 +47,12 @@ func (f *fakeChipper) StreamingIntentGraph(s pb.ChipperGrpc_StreamingIntentGraph
 	return err
 }
 
-func stream(t *testing.T, pcm []byte) (*fakeChipper, []*pb.IntentGraphResponse) {
+func stream(t *testing.T, pcm []byte) (*fakeChipper, *pb.IntentGraphResponse) {
 	t.Helper()
 	return streamTo(t, &fakeChipper{}, pcm)
 }
 
-func streamTo(t *testing.T, f *fakeChipper, pcm []byte) (*fakeChipper, []*pb.IntentGraphResponse) {
+func streamTo(t *testing.T, f *fakeChipper, pcm []byte) (*fakeChipper, *pb.IntentGraphResponse) {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
@@ -66,16 +67,16 @@ func streamTo(t *testing.T, f *fakeChipper, pcm []byte) (*fakeChipper, []*pb.Int
 	t.Cleanup(func() { conn.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	rs, err := run(ctx, pb.NewChipperGrpcClient(conn), "00e1test", pcm)
+	r, err := run(ctx, pb.NewChipperGrpcClient(conn), "00e1test", pcm)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return f, rs
+	return f, r
 }
 
 func TestRunStreamsAsVicCloud(t *testing.T) {
 	pcm := bytes.Repeat([]byte{1, 2}, 5000) // 10000 B: not a chunk multiple
-	f, rs := stream(t, pcm)
+	f, r := stream(t, pcm)
 	if len(f.reqs) == 0 {
 		t.Fatal("no requests")
 	}
@@ -98,14 +99,14 @@ func TestRunStreamsAsVicCloud(t *testing.T) {
 	if !bytes.Equal(got, want) {
 		t.Fatalf("reassembled audio: %d B, want %d B (100 ms zeros + input + 1 s zeros)", len(got), len(want))
 	}
-	if len(rs) != 1 || rs[0].GetIntentResult().GetAction() != "intent_clock_time" {
-		t.Fatalf("replies: %v", rs)
+	if r.GetIntentResult().GetAction() != "intent_clock_time" {
+		t.Fatalf("reply: %v", r)
 	}
 }
 
 func TestRunReturnsOnFirstReply(t *testing.T) {
-	if _, rs := streamTo(t, &fakeChipper{hold: true}, []byte{1, 2}); len(rs) != 1 {
-		t.Fatalf("replies: %v", rs)
+	if _, r := streamTo(t, &fakeChipper{hold: true}, []byte{1, 2}); r == nil {
+		t.Fatal("no reply")
 	}
 }
 
@@ -117,14 +118,14 @@ func TestRunPadsOpusMagic(t *testing.T) {
 }
 
 func TestVerdict(t *testing.T) {
-	rs := []*pb.IntentGraphResponse{{IntentResult: &pb.IntentResult{Action: "intent_clock_time"}}}
+	r := &pb.IntentGraphResponse{IntentResult: &pb.IntentResult{Action: "intent_clock_time"}}
 	for _, c := range []struct {
-		rs   []*pb.IntentGraphResponse
+		r    *pb.IntentGraphResponse
 		want string
 		code int
-	}{{rs, "", 0}, {rs, "intent_clock_time", 0}, {rs, "x", 1}, {nil, "", 1}} {
-		if got := verdict(c.rs, c.want); got != c.code {
-			t.Errorf("verdict(%d replies, %q) = %d, want %d", len(c.rs), c.want, got, c.code)
+	}{{r, "", 0}, {r, "intent_clock_time", 0}, {r, "x", 1}, {nil, "", 1}, {nil, "x", 1}} {
+		if got := verdict(c.r, c.want); got != c.code {
+			t.Errorf("verdict(reply %t, %q) = %d, want %d", c.r != nil, c.want, got, c.code)
 		}
 	}
 }
@@ -166,8 +167,9 @@ func TestSynthServerError(t *testing.T) {
 }
 
 func TestSynthUnknownLang(t *testing.T) {
-	if _, err := synth("http://127.0.0.1:1", "x", "de-DE"); err == nil {
-		t.Fatal("de-DE: want error")
+	_, err := synth("http://127.0.0.1:1", "x", "de-DE")
+	if err == nil || !strings.Contains(err.Error(), "no voice for -lang") {
+		t.Fatalf("de-DE: err = %v, want no voice for -lang", err)
 	}
 }
 
