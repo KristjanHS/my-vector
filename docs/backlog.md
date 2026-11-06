@@ -14,4 +14,3 @@
 
 ## Assistant-owed
 
-- ⚠ T2 lines in `af_bella` always fall back to Acapela (`no response in 1.5 s`) · `tts/` af_bella first audio vs `0010-pc-voice.patch` timeout · `RUNS=1 robot/voice-samples/onset.sh af_bella | awk '$2=="-"||$2>1{f=1} END{exit f||NR==0}'`
