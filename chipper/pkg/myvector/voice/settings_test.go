@@ -133,7 +133,7 @@ func TestSettingsHandler(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != 200 {
 		t.Fatalf("GET: %d %s", w.Code, w.Body)
 	}
-	if got.Settings != Defaults() || strings.Join(got.Voices, ",") != "af_bella,cori,stock" || got.SlowMin != 0.5 || got.SlowMax != 2 {
+	if got.Settings != Defaults() || strings.Join(got.Voices, ",") != "af_bella,cori,mari,stock" || got.SlowMin != 0.5 || got.SlowMax != 2 {
 		t.Fatalf("GET reply: %+v", got)
 	}
 
