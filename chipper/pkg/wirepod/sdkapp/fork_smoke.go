@@ -111,7 +111,7 @@ func forkFace(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
 }
 
-// forkSay speaks ?text= in voice.DefaultVoice and writes "FINISHED <voice>", "FINISHED fallback: <why>" or the error.
+// forkSay speaks ?text= in the saved language's T1 (waiting up to 7 s for PC audio) and writes "FINISHED <voice>", "FINISHED fallback: <why>" or the error.
 func forkSay(w http.ResponseWriter, r *http.Request) {
 	robot, ok := forkRobot(w, r)
 	if !ok {
