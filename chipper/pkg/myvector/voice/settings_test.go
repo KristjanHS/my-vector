@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -222,6 +224,98 @@ func TestSettingsLangSwitchReloadsIntents(t *testing.T) {
 	}
 }
 
+func TestSettingsLangSwitchRollsBackOnIntentError(t *testing.T) {
+	tempSettings(t)
+	var reloads []string
+	fail := errors.New("open ./intent-data/et-EE.json: permission denied")
+	ReloadIntents = func() error { reloads = append(reloads, lang.Current()); return fail } // tempSettings' cleanup restores it
+	pushed := stubPush(t, nil)
+	body := `{"lang":"et-EE","t1":"cori","t2":"af_bella","t1_et":"mari","t2_et":"mari","slow":1}`
+	w := serve(http.MethodPost, "application/json", body)
+	var got settingsReply
+	json.Unmarshal(w.Body.Bytes(), &got)
+	if w.Code != 200 || !strings.Contains(got.IntentError, fail.Error()) || got.Lang != lang.English || lang.Current() != lang.English {
+		t.Fatalf("failed reload: %d %s, lang %s; want 200 with intentError and en-US kept", w.Code, w.Body, lang.Current())
+	}
+	if b, _ := os.ReadFile(lang.Path()); !strings.Contains(string(b), `"lang": "en-US"`) { // the saved one, not just the cache
+		t.Fatalf("file after rollback = %s, want lang en-US", b)
+	}
+	if Current() != en("cori", "af_bella", 1) || len(*pushed) != 1 || (*pushed)[0].T2 != "af_bella" {
+		t.Fatalf("saved %+v, pushed %+v; want the voices saved and the en-US T2 pushed", Current(), *pushed)
+	}
+	ReloadIntents = func() error { reloads = append(reloads, lang.Current()); return nil }
+	if w := serve(http.MethodPost, "application/json", body); w.Code != 200 || lang.Current() != lang.Estonian ||
+		strings.Join(reloads, ",") != "et-EE,et-EE" || strings.Contains(w.Body.String(), "intentError") {
+		t.Fatalf("re-POST: %d %s, lang %s, reloads saw %v; want the switch retried and kept", w.Code, w.Body, lang.Current(), reloads)
+	}
+}
+
+// Two concurrent language switches must end with the intents of the language that stands (saveMu).
+func TestSettingsLangSwitchConcurrent(t *testing.T) {
+	tempSettings(t)
+	var mu sync.Mutex
+	loaded := lang.English
+	ReloadIntents = func() error { // as reloadIntents: read the language, load (slowly), then store
+		l := lang.Current()
+		time.Sleep(time.Duration(rand.Intn(2000)) * time.Microsecond) // so a later reload can finish first
+		mu.Lock()
+		loaded = l
+		mu.Unlock()
+		return nil
+	}
+	PushT2 = func(context.Context, Settings, string) error { return nil }
+	for i := 0; i < 30; i++ {
+		var wg sync.WaitGroup
+		for _, l := range []string{lang.Estonian, lang.English} {
+			wg.Add(1)
+			go func(l string) {
+				defer wg.Done()
+				serve(http.MethodPost, "application/json", `{"lang":"`+l+`","t1":"cori","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1}`)
+			}(l)
+		}
+		wg.Wait()
+		if mu.Lock(); loaded != lang.Current() {
+			t.Fatalf("round %d: lang %s with %s intents", i, lang.Current(), loaded)
+		}
+		mu.Unlock()
+	}
+}
+
+func TestSettingsETModel(t *testing.T) {
+	tempSettings(t)
+	get := func() settingsReply {
+		t.Helper()
+		var got settingsReply
+		if w := serve(http.MethodGet, "", ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil {
+			t.Fatalf("GET: %d %s", w.Code, w.Body)
+		}
+		return got
+	}
+	if got := get(); got.ETModel != lang.DefaultETModel || got.DefaultETModel != lang.DefaultETModel {
+		t.Fatalf("GET with no et_model: %q (default %q), want %q", got.ETModel, got.DefaultETModel, lang.DefaultETModel)
+	}
+	post := func(extra string) *httptest.ResponseRecorder {
+		return serve(http.MethodPost, "application/json", `{"lang":"en-US","t1":"cori","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1`+extra+`}`)
+	}
+	if w := post(`,"et_model":" estllm:test "`); w.Code != 200 || lang.ETModel() != "estllm:test" || get().ETModel != "estllm:test" {
+		t.Fatalf("POST et_model: %d %s, ETModel %q; want estllm:test", w.Code, w.Body, lang.ETModel())
+	}
+	if w := post(``); w.Code != 200 || lang.ETModel() != "estllm:test" {
+		t.Fatalf("POST without et_model: %d, ETModel %q; want it kept", w.Code, lang.ETModel())
+	}
+	for _, bad := range []string{`"estllm: test"`, `"` + strings.Repeat("m", lang.ETModelMax+1) + `"`, `7`} {
+		if w := serve(http.MethodPost, "application/json", `{"lang":"en-US","t1":"af_bella","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1,"et_model":`+bad+`}`); w.Code != 400 {
+			t.Errorf("et_model %.30s: %d, want 400", bad, w.Code)
+		}
+	}
+	if lang.ETModel() != "estllm:test" || Current().T1 != "cori" {
+		t.Fatalf("a rejected et_model saved: ETModel %q, settings %+v", lang.ETModel(), Current())
+	}
+	if w := post(`,"et_model":""`); w.Code != 200 || lang.ETModel() != lang.DefaultETModel || get().ETModel != lang.DefaultETModel {
+		t.Fatalf("POST empty et_model: %d, ETModel %q; want the default", w.Code, lang.ETModel())
+	}
+}
+
 func TestSettingsFor(t *testing.T) {
 	s := Settings{"cori", Stock, "mari", "mari", 1.3}
 	if got := s.For(lang.Estonian); got != (Settings{"mari", "mari", "mari", "mari", 1.3}) {
@@ -301,6 +395,12 @@ func TestSettingsPage(t *testing.T) {
 	PageHandler(w, httptest.NewRequest(http.MethodGet, SettingsPage, nil))
 	if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") || !strings.Contains(w.Body.String(), `"`+SettingsAPI+`"`) {
 		t.Fatalf("page: %s, API path %s missing", w.Header().Get("Content-Type"), SettingsAPI)
+	}
+	// the page edits et_model (E25) and shows a rolled-back switch
+	for _, want := range []string{`id="et_model"`, `et_model: $("et_model").value`, `value: s.et_model`, `if (s.intentError)`, `+ s.intentError`} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Errorf("page lacks %s", want)
+		}
 	}
 }
 

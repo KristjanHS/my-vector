@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
@@ -20,6 +22,8 @@ const (
 	Default  = English
 	// DefaultETModel is the et-EE Ollama model (plan E11, E25) when "et_model" is unset.
 	DefaultETModel = "hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M"
+	// ETModelMax is the longest "et_model" SaveETModel takes, in characters.
+	ETModelMax = 200
 )
 
 // Supported are the switch's languages, Default first.
@@ -113,5 +117,37 @@ func Save(l string) error {
 		return err
 	}
 	cur.Store(&cached{path, l, loadETModel(path)})
+	return nil
+}
+
+// ValidETModel checks an "et_model" for SaveETModel: after trimming, no whitespace and at most ETModelMax characters (empty is fine).
+func ValidETModel(m string) error {
+	m = strings.TrimSpace(m)
+	if strings.IndexFunc(m, unicode.IsSpace) >= 0 {
+		return errors.New("et_model: no whitespace")
+	}
+	if len([]rune(m)) > ETModelMax {
+		return fmt.Errorf("et_model: at most %d characters", ETModelMax)
+	}
+	return nil
+}
+
+// SaveETModel validates and trims m, writes it as "et_model" and makes it ETModel; empty gives DefaultETModel.
+func SaveETModel(m string) error {
+	if err := ValidETModel(m); err != nil {
+		return err
+	}
+	m = strings.TrimSpace(m)
+	saveMu.Lock()
+	defer saveMu.Unlock()
+	path := Path()
+	if err := conf.Update(path, map[string]any{"et_model": m}); err != nil {
+		return err
+	}
+	c := &cached{path, load(path), m}
+	if m == "" {
+		c.etModel = DefaultETModel
+	}
+	cur.Store(c)
 	return nil
 }

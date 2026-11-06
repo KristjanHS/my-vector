@@ -9,7 +9,7 @@
     .voice-box { max-width: 420px; margin: 24px auto; padding: 0 16px; }
     .voice-box label { display: block; margin: 6px 0; }
     .voice-box fieldset { margin: 8px 0; }
-    .voice-box input[type=range] { width: 100%; }
+    .voice-box input[type=range], .voice-box input[type=text] { width: 100%; }
     #status { min-height: 1.4em; }
   </style>
 </head>
@@ -25,6 +25,9 @@
       <h3>Eesti hääled</h3>
       <fieldset><legend>T1: LLM answers</legend><div id="t1_et"></div></fieldset>
       <fieldset><legend>T2: robot's own lines</legend><div id="t2_et"></div></fieldset>
+      <label>Estonian LLM model (Ollama tag; empty = default):
+        <input type="text" id="et_model" maxlength="200" spellcheck="false" autocomplete="off" />
+      </label>
       <label>Slow factor (T1 and T2): <output id="slowOut"></output>
         <input type="range" id="slow" step="0.05" />
       </label>
@@ -55,6 +58,7 @@
       syncSample();
       Object.assign($("slow"), { min: s.slowMin, max: s.slowMax, value: s.slow });
       $("slowOut").textContent = s.slow.toFixed(2);
+      Object.assign($("et_model"), { value: s.et_model, placeholder: s.defaultEtModel });
     }
     async function call(opts, url = api) {
       const r = await fetch(url, opts);
@@ -83,9 +87,12 @@
       e.preventDefault();
       status("Saving…");
       try {
-        const s = await call(post());
+        const s = await call(post({ et_model: $("et_model").value })); // the demo takes no et_model
         show(s);
-        status(s.pushError ? "Saved; robot not updated: " + s.pushError : "Saved; robot updated.");
+        const notes = [];
+        if (s.intentError) notes.push("language not switched: " + s.intentError);
+        notes.push(s.pushError ? "robot not updated: " + s.pushError : "robot updated.");
+        status("Saved; " + notes.join("; "));
       } catch (err) { status("Not saved: " + err.message); }
     });
     call().then(show).catch((err) => status("Could not load: " + err.message));

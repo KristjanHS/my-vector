@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
@@ -188,26 +189,71 @@ type settingsReply struct {
 	Voices  map[string][]string `json:"voices"`
 	SlowMin float64             `json:"slowMin"`
 	SlowMax float64             `json:"slowMax"`
+	// ETModel is lang.ETModel(), the et-EE Ollama model (plan E25); DefaultETModel is what an empty one saves as.
+	ETModel        string `json:"et_model"`
+	DefaultETModel string `json:"defaultEtModel"`
 	// PushError is why a saved T2 did not reach the robot; the save itself stands.
 	PushError string `json:"pushError,omitempty"`
+	// IntentError is why the language switch was rolled back (its intents did not load); the other saves stand.
+	IntentError string `json:"intentError,omitempty"`
 }
 
 type settingsRequest struct {
 	Settings
 	Lang string `json:"lang"`
+	// ETModel is saved by lang.SaveETModel when present (empty = DefaultETModel); absent keeps the saved one.
+	ETModel *string `json:"et_model"`
 }
 
 func (q *settingsRequest) valid() error {
 	if !lang.Valid(q.Lang) {
 		return fmt.Errorf("lang: one of %v", lang.Supported)
 	}
+	if q.ETModel != nil {
+		if err := lang.ValidETModel(*q.ETModel); err != nil {
+			return err
+		}
+	}
 	return q.Validate()
 }
 
-// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings + lang) validates, saves,
-// switches the language (reloading intents) and pushes that language's T2.
+// saveMu holds across a POST's saves, so two concurrent ones cannot end with one's language and the other's intents.
+var saveMu sync.Mutex
+
+// save writes q's settings, et_model and language; a language whose intents do not load is rolled back and
+// returned as intentErr (the old intents stay). err is a failed write.
+func save(q *settingsRequest) (intentErr string, err error) {
+	saveMu.Lock()
+	defer saveMu.Unlock()
+	if err := Save(q.Settings); err != nil {
+		return "", fmt.Errorf("save: %w", err)
+	}
+	if q.ETModel != nil {
+		if err := lang.SaveETModel(*q.ETModel); err != nil {
+			return "", fmt.Errorf("save et_model: %w", err)
+		}
+	}
+	old := lang.Current()
+	if q.Lang == old {
+		return "", nil
+	}
+	if err := lang.Save(q.Lang); err != nil {
+		return "", fmt.Errorf("save lang: %w", err)
+	}
+	if rerr := ReloadIntents(); rerr != nil {
+		intentErr = q.Lang + " intents not loaded, language stays " + old + ": " + rerr.Error()
+		if err := lang.Save(old); err != nil {
+			intentErr += "; rollback failed, language is " + lang.Current() + ": " + err.Error()
+		}
+		logger.Println("myvector voice settings: " + intentErr)
+	}
+	return intentErr, nil
+}
+
+// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings + lang + optional et_model) validates,
+// saves, switches the language (reloading intents; rolled back if they fail) and pushes the current language's T2.
 func SettingsHandler(w http.ResponseWriter, r *http.Request) {
-	pushErr := ""
+	pushErr, intentErr := "", ""
 	switch r.Method {
 	case http.MethodGet:
 	case http.MethodPost:
@@ -215,20 +261,12 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 		if !decode(w, r, &q, q.valid) {
 			return
 		}
-		if err := Save(q.Settings); err != nil {
-			http.Error(w, "save: "+err.Error(), http.StatusInternalServerError)
+		var err error
+		if intentErr, err = save(&q); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if q.Lang != lang.Current() {
-			if err := lang.Save(q.Lang); err != nil {
-				http.Error(w, "save lang: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			if err := ReloadIntents(); err != nil {
-				logger.Println("myvector voice settings: " + q.Lang + " intents not loaded: " + err.Error())
-			}
-		}
-		if err := PushT2(r.Context(), q.Settings, q.Lang); err != nil {
+		if err := PushT2(r.Context(), q.Settings, lang.Current()); err != nil { // after a rollback, the old language's T2
 			pushErr = err.Error()
 			logger.Println("myvector voice settings: saved; robot not updated: " + pushErr)
 		}
@@ -238,7 +276,9 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(settingsReply{Current(), lang.Current(), lang.Supported, voices, SlowMin, SlowMax, pushErr})
+	json.NewEncoder(w).Encode(settingsReply{Settings: Current(), Lang: lang.Current(), Langs: lang.Supported, Voices: voices,
+		SlowMin: SlowMin, SlowMax: SlowMax, ETModel: lang.ETModel(), DefaultETModel: lang.DefaultETModel,
+		PushError: pushErr, IntentError: intentErr})
 }
 
 // decode reads an application/json POST body into v and runs valid on it; on failure it has written the error.
