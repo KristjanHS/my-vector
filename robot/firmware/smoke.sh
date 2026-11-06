@@ -175,7 +175,7 @@ ok "A2 face shown"
 said="Hello! This is Vector's speech test: one, two, three. Can you hear me clearly?"
 if [[ $(curl -s -m 5 "$server/myvector/api/voice" | jq -r .lang 2>/dev/null) == et-EE ]]; then
   et_months=(jaanuar veebruar märts aprill mai juuni juuli august september oktoober november detsember)
-  said="Tere! See on Vectori kõnetest: kell on $(date +%H.%M), täna on $(date +%-d). ${et_months[$(date +%-m) - 1]}. Kõik töötab, kuuled?"
+  said="Tere! See on Vectori kõnetest: kell on $(date +%H.%M), täna on $(date +%-d). ${et_months[$(date +%-m) - 1]}. Kõik töötab, kas sa kuuled?"
 fi
 r=$(sdk_m=35 sdk fork_say "text=$(jq -rn --arg s "$said" '$s|@uri')"); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
 [[ $r != 'FINISHED fallback'* ]] && ok "A2 said '$said' in ${r#FINISHED }" ||
