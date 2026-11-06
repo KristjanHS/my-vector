@@ -193,6 +193,12 @@ type settingsReply struct {
 	// ETModel is llm.ETModel(), the et-EE Ollama model (plan E25); DefaultETModel is what an empty one saves as.
 	ETModel        string `json:"et_model"`
 	DefaultETModel string `json:"defaultEtModel"`
+	// LLM is each language's effective brain (llm.Effective); Defaults is the same with no saved profiles.
+	LLM       map[string]llm.Profile `json:"llm"`
+	Defaults  map[string]llm.Profile `json:"defaults"`
+	OllamaURL string                 `json:"ollamaUrl"`
+	ClaudeKey string                 `json:"claudeKey"` // llm.Mask: never the full key
+	KGEnabled bool                   `json:"kgEnabled"`
 	// PushError is why a saved T2 did not reach the robot; the save itself stands.
 	PushError string `json:"pushError,omitempty"`
 	// IntentError is why the language switch was rolled back (its intents did not load); the other saves stand.
@@ -204,6 +210,34 @@ type settingsRequest struct {
 	Lang string `json:"lang"`
 	// ETModel is saved by llm.SaveETModel when present (empty = DefaultETModel); absent keeps the saved one.
 	ETModel *string `json:"et_model"`
+	// LLM, OllamaURL and ClaudeKey are saved by llm.Save when any is present; absent keeps; ClaudeKey "" clears.
+	LLM       map[string]llm.Profile `json:"llm"`
+	OllamaURL *string                `json:"ollama_url"`
+	ClaudeKey *string                `json:"claude_key"`
+}
+
+func (q *settingsRequest) llmChanged() bool {
+	return q.LLM != nil || q.OllamaURL != nil || q.ClaudeKey != nil
+}
+
+// llmConfig is the saved llm.Config with q's fields over it.
+func (q *settingsRequest) llmConfig() llm.Config {
+	c := llm.Load()
+	if q.LLM != nil {
+		c.Profiles = q.LLM
+	}
+	if q.OllamaURL != nil {
+		c.OllamaURL = *q.OllamaURL
+	}
+	if q.ClaudeKey != nil {
+		c.ClaudeKey = *q.ClaudeKey
+	}
+	return c
+}
+
+func forkKG() llm.KG {
+	k := vars.APIConfig.Knowledge
+	return llm.KG{Provider: k.Provider, Endpoint: k.Endpoint, Model: k.Model}
 }
 
 func (q *settingsRequest) valid() error {
@@ -212,6 +246,11 @@ func (q *settingsRequest) valid() error {
 	}
 	if q.ETModel != nil {
 		if err := llm.ValidModel(*q.ETModel); err != nil {
+			return err
+		}
+	}
+	if q.llmChanged() {
+		if err := llm.Validate(q.llmConfig()); err != nil {
 			return err
 		}
 	}
@@ -234,6 +273,11 @@ func save(q *settingsRequest) (intentErr string, err error) {
 			return "", fmt.Errorf("save et_model: %w", err)
 		}
 	}
+	if q.llmChanged() {
+		if err := llm.Save(q.llmConfig()); err != nil {
+			return "", fmt.Errorf("save llm: %w", err)
+		}
+	}
 	old := lang.Current()
 	if q.Lang == old {
 		return "", nil
@@ -251,7 +295,7 @@ func save(q *settingsRequest) (intentErr string, err error) {
 	return intentErr, nil
 }
 
-// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings + lang + optional et_model) validates,
+// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings + lang + optional et_model, llm, ollama_url, claude_key) validates,
 // saves, switches the language (reloading intents; rolled back if they fail) and pushes the current language's T2.
 func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	pushErr, intentErr := "", ""
@@ -277,8 +321,12 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	c, kg := llm.Load(), forkKG()
+	profiles, url := llm.Effective(c, kg)
+	defaults, _ := llm.Effective(llm.Config{LegacyETModel: c.LegacyETModel}, kg)
 	json.NewEncoder(w).Encode(settingsReply{Settings: Current(), Lang: lang.Current(), Langs: lang.Supported, Voices: voices,
 		SlowMin: SlowMin, SlowMax: SlowMax, ETModel: llm.ETModel(), DefaultETModel: llm.DefaultETModel,
+		LLM: profiles, Defaults: defaults, OllamaURL: url, ClaudeKey: llm.Mask(c.ClaudeKey), KGEnabled: vars.APIConfig.Knowledge.Enable,
 		PushError: pushErr, IntentError: intentErr})
 }
 
@@ -289,7 +337,7 @@ func decode(w http.ResponseWriter, r *http.Request, v any, valid func() error) b
 		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
 		return false
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
 	dec.DisallowUnknownFields()
 	err := dec.Decode(v)
 	if err == nil {

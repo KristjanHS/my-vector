@@ -242,10 +242,14 @@ func Save(c Config) error {
 	if err := Validate(c); err != nil {
 		return err
 	}
-	ps := map[string]Profile{}
+	var ps map[string]Profile // nil Profiles stays legacy ("llm": null)
+	if c.Profiles != nil {
+		ps = map[string]Profile{}
+	}
 	for l, p := range c.Profiles {
 		ps[l] = Profile{p.Provider, strings.TrimSpace(p.Model)}
 	}
 	u := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(c.OllamaURL), "/"), "/v1")
+	defer clearCache()
 	return conf.Update(lang.Path(), map[string]any{"llm": ps, "ollama_url": u, "claude_key": strings.TrimSpace(c.ClaudeKey)})
 }

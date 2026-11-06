@@ -21,6 +21,7 @@ import (
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
 // en is English T1, T2 and slow with the Estonian pair at its defaults.
@@ -532,5 +533,54 @@ func TestDemoHandlerRejects(t *testing.T) {
 	DemoHandler(nil)(w, httptest.NewRequest(http.MethodGet, DemoAPI, nil))
 	if w.Code != 405 {
 		t.Errorf("GET: %d, want 405", w.Code)
+	}
+}
+
+func TestSettingsLLM(t *testing.T) {
+	tempSettings(t)
+	old := vars.APIConfig.Knowledge
+	t.Cleanup(func() { vars.APIConfig.Knowledge = old })
+	vars.APIConfig.Knowledge.Provider, vars.APIConfig.Knowledge.Endpoint, vars.APIConfig.Knowledge.Model = "custom", "http://localhost:11434/v1", "gemma4:e4b"
+	vars.APIConfig.Knowledge.Enable = true
+	const key = "sk-ant-0123456789abcdefWxYz"
+	get := func() (settingsReply, string) {
+		t.Helper()
+		var got settingsReply
+		w := serve(http.MethodGet, "", "")
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil {
+			t.Fatalf("GET: %d %s", w.Code, w.Body)
+		}
+		return got, w.Body.String()
+	}
+	got, _ := get()
+	if got.LLM[lang.English] != (llm.Profile{Provider: llm.Ollama, Model: "gemma4:e4b"}) || got.Defaults[lang.Estonian].Model != llm.DefaultETModel ||
+		got.OllamaURL != "http://localhost:11434" || got.ClaudeKey != "" || !got.KGEnabled {
+		t.Fatalf("GET defaults: %+v", got)
+	}
+	post := func(extra string) *httptest.ResponseRecorder {
+		return serve(http.MethodPost, "application/json", `{"lang":"en-US","t1":"cori","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1`+extra+`}`)
+	}
+	if w := post(`,"claude_key":"` + key + `","llm":{"en-US":{"provider":"ollama","model":"qwen3.5:4b"},"et-EE":{"provider":"claude","model":"claude-haiku-5-5"}}`); w.Code != 200 {
+		t.Fatalf("POST claude profile: %d %s", w.Code, w.Body)
+	}
+	got, body := get()
+	if strings.Contains(body, key) || got.ClaudeKey != "sk-ant-…WxYz" || got.LLM[lang.Estonian] != (llm.Profile{Provider: llm.Claude, Model: "claude-haiku-5-5"}) {
+		t.Fatalf("GET after save: key shown %v, %+v", strings.Contains(body, key), got)
+	}
+	if got.Defaults[lang.Estonian] != (llm.Profile{Provider: llm.Ollama, Model: llm.DefaultETModel}) {
+		t.Fatalf("defaults follow the saved profile: %+v", got.Defaults)
+	}
+	if w := post(``); w.Code != 200 || llm.Load().ClaudeKey != key {
+		t.Fatalf("POST without llm fields: %d, key %q kept?", w.Code, llm.Load().ClaudeKey)
+	}
+	before, _ := os.ReadFile(lang.Path())
+	if w := post(`,"claude_key":""`); w.Code != 400 { // et-EE still uses Claude
+		t.Fatalf("clearing the key under a Claude profile: %d, want 400", w.Code)
+	}
+	if after, _ := os.ReadFile(lang.Path()); string(after) != string(before) {
+		t.Fatalf("a rejected POST changed the file:\n%s", after)
+	}
+	if w := post(`,"claude_key":"","llm":{"et-EE":{"provider":"ollama","model":"estllm:x"}}`); w.Code != 200 || llm.Load().ClaudeKey != "" {
+		t.Fatalf("clear key with the profile moved off Claude: %d %s", w.Code, w.Body)
 	}
 }
