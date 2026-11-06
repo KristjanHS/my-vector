@@ -9,3 +9,4 @@
 
 ## Assistant-owed
 
+- ⚠ `live-check.sh clock` 12:00 flaky (STT heard "Keel on kaksteist") · `check_clock` · `scripts/live-check.sh clock` passes 3/3 five runs in a row.

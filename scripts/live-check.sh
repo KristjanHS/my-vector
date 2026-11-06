@@ -24,8 +24,26 @@ transcribe() { # transcribe <lang> <file.pcm> → text
   curl -fsS --max-time 120 -H 'Content-Type: application/octet-stream' --data-binary @"$2" "$stt/stt?lang=$1" | jq -r '.text // ""'
 }
 norm() { tr '[:upper:]' '[:lower:]' | tr -d '[:punct:]' | tr -s ' ' | sed 's/^ //; s/ $//'; }
+need_lang() { # need_lang <lang>: STT serves only the saved language
+  local api=${WIREPOD_URL:-http://127.0.0.1:8080} got
+  got=$(curl -fsS --max-time 5 "$api/myvector/api/voice" | jq -r '.lang // empty') || setup "wire-pod not up at $api"
+  [[ $got == "$1" ]] || setup "saved lang is ${got:-unset}, this check needs $1 (switch it in the web UI)"
+}
+# routeprobe must write nothing under chipper/ (vars.ReadConfig rewrites apiConfig.json): mtimes before/after
+mtimes() { (cd "$repo/chipper" && stat -c '%n %.9Y' apiConfig.json myvectorConfig.json jdocs/*.json 2>/dev/null) || true; }
+same_mtimes() { # same_mtimes <before>
+  local now; now=$(mtimes)
+  [[ $now == "$1" ]] && pass "chipper/ config + jdocs untouched" ||
+    fail "chipper/ files changed during the check: $(diff <(echo "$1") <(echo "$now") | grep '^>' | tr '\n' ' ')"
+}
+probe() { # probe <args…>: runs routeprobe in chipper/; out = its stdout+stderr; returns its status
+  local rc=0
+  out=$(cd "$repo/chipper" && "$work/routeprobe" "$@" 2>&1) || rc=$?
+  return "$rc"
+}
 
 check_stt() {
+  need_lang en-US
   curl -fsS --max-time 5 "$tts/health" >/dev/null || setup "TTS not up at $tts"
   local phrases=("set a ten minute timer" "what is the capital of france" "how far away is the moon"
     "what should i cook tonight" "tell me a fun fact about octopuses" "what is the weather like on mars") p f got
@@ -40,7 +58,7 @@ check_stt() {
 }
 
 check_picker() {
-  local api=${WIREPOD_URL:-http://127.0.0.1:8080} v models l p m r
+  local api=${WIREPOD_URL:-http://127.0.0.1:8080} v models l p m r body
   v=$(curl -fsS --max-time 5 "$api/myvector/api/voice") || setup "wire-pod not up at $api"
   models=$(curl -fsS --max-time 30 "$api/myvector/api/llm/models")
   [[ $(jq -r '.ollama.error // empty' <<<"$models") == "" ]] && pass "ollama list reachable" || fail "ollama list: $(jq -r .ollama.error <<<"$models")"
@@ -56,7 +74,8 @@ check_picker() {
   # key hygiene: no full key outside the gitignored fork config
   [[ $(grep -c sk-ant "$repo/chipper/apiConfig.json" 2>/dev/null || true) == 0 ]] && pass "apiConfig.json holds no Claude key" || fail "apiConfig.json holds a Claude key"
   for r in /api/get_kg_api /myvector/api/voice; do
-    curl -fsS --max-time 5 "$api$r" | grep -qE 'sk-ant-[A-Za-z0-9_-]{20,}' && fail "full key served by $r" || pass "no full key in $r"
+    body=$(curl -fsS --max-time 5 "$api$r") || { fail "fetch $r"; continue; }
+    grep -qE 'sk-ant-[A-Za-z0-9_-]{20,}' <<<"$body" && fail "full key served by $r" || pass "no full key in $r"
   done
   git -C "$repo" check-ignore -q chipper/myvectorConfig.json && pass "myvectorConfig.json gitignored" || fail "myvectorConfig.json not gitignored"
 }
@@ -64,26 +83,39 @@ check_picker() {
 check_route_build() { (cd "$repo/chipper" && go build -o "$work/routeprobe" ./pkg/myvector/routeprobe) || setup "routeprobe does not build"; }
 
 check_route() {
-  local p=$work/routeprobe et_llm=hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M
+  local et_llm=hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M before out
   check_route_build
+  before=$(mtimes)
   route() { # route <want-regex> <probe args…>: the probe's last line must match
-    local want=$1 out; shift
-    out=$(cd "$repo/chipper" && "$p" "$@" 2>&1 | tail -1)
-    [[ $out =~ $want ]] && pass "${*: -1} → $out" || fail "${*: -1}: want /$want/, got: $out"
+    local want=$1 last; shift
+    probe "$@" || { fail "${*: -1}: routeprobe exit $?: $(tail -3 <<<"$out" | tr '\n' ' ')"; return; }
+    last=$(tail -1 <<<"$out")
+    [[ $last =~ $want ]] && pass "${*: -1} → $last" || fail "${*: -1}: want /$want/, got: $last"
+  }
+  route_llm() { # route_llm <lang> <brain> <want-regex> <text>: "llm-target:" names -brain's provider + model; the answer matches
+    local l=$1 brain=$2 want=$3 target last
+    probe -lang "$l" -llm -brain "$brain" "$4" || { fail "$l $brain: routeprobe exit $?: $(tail -3 <<<"$out" | tr '\n' ' ')"; return; }
+    target=$(grep '^llm-target: ' <<<"$out" || true)
+    [[ $target == "llm-target: ${brain%%:*} ${brain#*:}" ]] && pass "$l $target" ||
+      fail "$l $brain: want llm-target: ${brain%%:*} ${brain#*:}, got: ${target:-none}"
+    last=$(tail -1 <<<"$out")
+    [[ $last =~ $want ]] && pass "$l $4 → $last" || fail "$l $brain $4: want /$want/, got: $last"
   }
   route '^llm: \(not asked\)$' -lang en-US "what should i cook tonight"                 # allowlist: not goodnight
   route '^intent: intent_clock_time$' -lang en-US "what time is it"
   route '^intent: intent_clock_settimer_extend \{"timer_duration":"600"\}$' -lang en-US "set a timer for ten minutes"
   route '^intent: intent_clock_settimer_extend \{"timer_duration":"300"\}$' -lang et-EE "pane taimer viieks minutiks"
   route '^intent: intent_clock_time$' -lang et-EE "mis kell on"
-  route '^llm: .{20,}' -lang en-US -llm -brain ollama:qwen3.5:4b "what should i cook tonight"
-  route '^llm: .{20,}' -lang en-US -llm -brain claude:claude-haiku-5-5 "what should i cook tonight"
-  route '^llm: .*[äõöü]' -lang et-EE -llm -brain "ollama:$et_llm" "mis on eesti pealinn ja miks see on tähtis"
-  route '^llm: .*[äõöü]' -lang et-EE -llm -brain claude:claude-haiku-5-5 "mis on eesti pealinn ja miks see on tähtis"
+  route_llm en-US ollama:qwen3.5:4b '^llm: .{20,}' "what should i cook tonight"
+  route_llm en-US claude:claude-haiku-5-5 '^llm: .{20,}' "what should i cook tonight"
+  route_llm et-EE "ollama:$et_llm" '^llm: .*[äõöü]' "mis on eesti pealinn ja miks see on tähtis"
+  route_llm et-EE claude:claude-haiku-5-5 '^llm: .*[äõöü]' "mis on eesti pealinn ja miks see on tähtis"
+  same_mtimes "$before"
 }
 
 check_clock() {
   local t got f=$work/clock.pcm
+  need_lang et-EE
   for t in 08:05 20:47 12:00; do
     synth mari et-EE "$t" "$f" || { fail "tts: $t"; continue; }
     got=$(transcribe et-EE "$f") || { fail "stt (saved lang must be et-EE): $t"; continue; }
@@ -98,22 +130,30 @@ check_ttsdown() {
   t1=$(curl -fsS --max-time 5 "$api/myvector/api/voice" | jq -r 'if .lang == "et-EE" then .t1_et else .t1 end') || setup "wire-pod not up"
   [[ $t1 != stock ]] || setup "T1 is stock for the saved lang: nothing to fall back from"
   say() { curl -sS --max-time 35 "$api/api-sdk/fork_say?serial=$esn" --data-urlencode "text=$1"; }
-  r=$(say "Test one.") ; [[ $r == "FINISHED $t1" ]] && pass "TTS up → $r" || fail "TTS up: want FINISHED $t1, got $r"
+  r=$(say "Test one.") || r="curl failed: $?"
+  [[ $r == "FINISHED $t1" ]] && pass "TTS up → $r" || fail "TTS up: want FINISHED $t1, got $r"
   sudo systemctl stop myvector-tts || setup "sudo refused"
-  r=$(say "Test two.") ; [[ $r == "FINISHED stock" ]] && pass "TTS down → $r" || fail "TTS down: want FINISHED stock, got $r"
-  sudo systemctl start myvector-tts
+  trap 'sudo systemctl start myvector-tts' EXIT # restart even if what follows aborts
+  # voice.Say falls back to SayText: fork_say writes "FINISHED fallback: <why>" (voice.Fallback + ": " + why)
+  r=$(say "Test two.") || r="curl failed: $?"
+  [[ $r =~ ^FINISHED\ fallback:\  ]] && pass "TTS down → $r" || fail "TTS down: want FINISHED fallback: …, got $r"
+  sudo systemctl start myvector-tts && trap - EXIT
   for _ in {1..60}; do curl -fsS --max-time 2 "$tts/health" >/dev/null 2>&1 && break; sleep 1; done
   curl -fsS --max-time 2 "$tts/health" >/dev/null && pass "myvector-tts back up" || fail "myvector-tts not healthy after restart"
 }
 
 check_ha() {
-  local so=$work/commandha-dead.so out
+  local so=$work/commandha-dead.so out last before
   "$repo/scripts/llm.sh" ha-plugin probe "$so" >/dev/null || setup "HA plugin does not build"
   check_route_build
-  out=$(cd "$repo/chipper" && "$work/routeprobe" -lang en-US -plugin "$so" "assist, hello" | tail -1)
-  [[ $out == "plugin: Home Assistant is not reachable." ]] && pass "HA down → $out" || fail "HA down: got $out"
-  out=$(cd "$repo/chipper" && "$work/routeprobe" -lang en-US -plugin "$so" "what time is it" | tail -1)
-  [[ $out == "intent: intent_clock_time" ]] && pass "plugin loaded, other intents still route → $out" || fail "with plugin: got $out"
+  before=$(mtimes)
+  if probe -lang en-US -plugin "$so" "assist, hello"; then last=$(tail -1 <<<"$out")
+    [[ $last == "plugin: Home Assistant is not reachable." ]] && pass "HA down → $last" || fail "HA down: got $last"
+  else fail "HA down: routeprobe exit $?: $(tail -3 <<<"$out" | tr '\n' ' ')"; fi
+  if probe -lang en-US -plugin "$so" "what time is it"; then last=$(tail -1 <<<"$out")
+    [[ $last == "intent: intent_clock_time" ]] && pass "plugin loaded, other intents still route → $last" || fail "with plugin: got $last"
+  else fail "with plugin: routeprobe exit $?: $(tail -3 <<<"$out" | tr '\n' ' ')"; fi
+  same_mtimes "$before"
 }
 
 case ${1:-} in
