@@ -38,14 +38,14 @@ func tempSettings(t *testing.T) string {
 	return path
 }
 
-// stubReload makes ReloadIntents count its calls.
-func stubReload(t *testing.T) *int {
+// stubReload makes ReloadIntents record lang.Current() at each call — the language the real one would load intents for.
+func stubReload(t *testing.T) *[]string {
 	t.Helper()
-	n := 0
+	var seen []string
 	old := ReloadIntents
-	ReloadIntents = func() error { n++; return nil }
+	ReloadIntents = func() error { seen = append(seen, lang.Current()); return nil }
 	t.Cleanup(func() { ReloadIntents = old })
-	return &n
+	return &seen
 }
 
 // stubPush makes PushT2 record its Settings and return err.
@@ -205,18 +205,20 @@ func TestSettingsLangSwitchReloadsIntents(t *testing.T) {
 	tempSettings(t)
 	reloads, pushed := stubReload(t), stubPush(t, nil)
 	body := `{"lang":"et-EE","t1":"cori","t2":"af_bella","t1_et":"mari","t2_et":"mari","slow":1}`
-	if w := serve(http.MethodPost, "application/json", body); w.Code != 200 || lang.Current() != lang.Estonian || *reloads != 1 {
-		t.Fatalf("switch to et-EE: %d %s, lang %s, %d reloads; want et-EE, 1 reload", w.Code, w.Body, lang.Current(), *reloads)
+	// reloads is the language current at each reload: the new one, so the reload follows lang.Save
+	if w := serve(http.MethodPost, "application/json", body); w.Code != 200 || lang.Current() != lang.Estonian ||
+		strings.Join(*reloads, ",") != "et-EE" {
+		t.Fatalf("switch to et-EE: %d %s, lang %s, reloads saw %v; want et-EE, 1 reload seeing et-EE", w.Code, w.Body, lang.Current(), *reloads)
 	}
 	if len(*pushed) != 1 || (*pushed)[0].T2 != "mari" {
 		t.Fatalf("pushed %+v, want the et-EE T2 mari", *pushed)
 	}
-	if w := serve(http.MethodPost, "application/json", body); w.Code != 200 || *reloads != 1 {
-		t.Fatalf("same lang again: %d, %d reloads; want no reload", w.Code, *reloads)
+	if w := serve(http.MethodPost, "application/json", body); w.Code != 200 || len(*reloads) != 1 {
+		t.Fatalf("same lang again: %d, reloads saw %v; want no reload", w.Code, *reloads)
 	}
 	if w := serve(http.MethodPost, "application/json", strings.Replace(body, "et-EE", "en-US", 1)); w.Code != 200 ||
-		lang.Current() != lang.English || *reloads != 2 || (*pushed)[2].T2 != "af_bella" {
-		t.Fatalf("back to en-US: %d, lang %s, %d reloads, pushed %+v", w.Code, lang.Current(), *reloads, *pushed)
+		lang.Current() != lang.English || strings.Join(*reloads, ",") != "et-EE,en-US" || (*pushed)[2].T2 != "af_bella" {
+		t.Fatalf("back to en-US: %d, lang %s, reloads saw %v, pushed %+v; want reloads et-EE,en-US", w.Code, lang.Current(), *reloads, *pushed)
 	}
 }
 
