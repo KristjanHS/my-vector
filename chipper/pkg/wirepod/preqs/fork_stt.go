@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 	sr "github.com/kercre123/wire-pod/chipper/pkg/wirepod/speechrequest"
 )
 
-// forkSTTURL is the myvector-stt service (et-stt/server.py): 16 kHz s16le mono PCM in, {"text"} out.
+// forkSTTURL is the myvector-stt service (et-stt/server.py): 16 kHz s16le mono PCM in, {"text"} out; ?lang= picks the model.
 var forkSTTURL = "http://127.0.0.1:8092/stt"
 
 // 60 s covers a request that waits for the model load (plan E21).
@@ -32,32 +33,28 @@ var forkSTTCollect = func(req sr.SpeechRequest) ([]byte, error) {
 	}
 }
 
-// forkSTTRouter keeps h for English; lang et-EE goes to myvector-stt, and its failure is an error, never h (plan E20).
+// forkSTTRouter sends every lang to myvector-stt (?lang=); its failure is an error, never h (Vosk), as plan E20 ruled for
+// et-EE. h == nil (no STT configured upstream) still returns nil.
 func forkSTTRouter(h func(sr.SpeechRequest) (string, error)) func(sr.SpeechRequest) (string, error) {
 	if h == nil {
 		return nil
 	}
-	return func(req sr.SpeechRequest) (string, error) {
-		if lang.Current() != lang.Estonian {
-			return h(req)
-		}
-		return forkEstonianSTT(req)
-	}
+	return func(req sr.SpeechRequest) (string, error) { return forkServiceSTT(req, lang.Current()) }
 }
 
-func forkEstonianSTT(req sr.SpeechRequest) (string, error) {
+func forkServiceSTT(req sr.SpeechRequest, l string) (string, error) {
 	pcm, err := forkSTTCollect(req)
 	if err != nil {
 		return "", err
 	}
-	resp, err := forkSTTClient.Post(forkSTTURL, "application/octet-stream", bytes.NewReader(pcm))
+	resp, err := forkSTTClient.Post(forkSTTURL+"?lang="+url.QueryEscape(l), "application/octet-stream", bytes.NewReader(pcm))
 	if err != nil {
-		return "", fmt.Errorf("et STT unavailable: %w", err)
+		return "", fmt.Errorf("%s STT unavailable: %w", l, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if err != nil {
-		return "", fmt.Errorf("et STT read: %w", err)
+		return "", fmt.Errorf("%s STT read: %w", l, err)
 	}
 	var out struct {
 		Text  string `json:"text"`
@@ -65,12 +62,12 @@ func forkEstonianSTT(req sr.SpeechRequest) (string, error) {
 	}
 	jerr := json.Unmarshal(body, &out)
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("et STT %s: %s", resp.Status, out.Error)
+		return "", fmt.Errorf("%s STT %s: %s", l, resp.Status, out.Error)
 	}
 	if jerr != nil {
-		return "", fmt.Errorf("et STT reply: %w", jerr)
+		return "", fmt.Errorf("%s STT reply: %w", l, jerr)
 	}
 	text := strings.ToLower(strings.TrimSpace(out.Text))
-	logger.Println("Bot " + req.Device + " Transcribed text (et-EE): " + text)
+	logger.Println("Bot " + req.Device + " Transcribed text (" + l + "): " + text)
 	return text, nil
 }

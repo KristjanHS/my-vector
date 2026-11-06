@@ -25,30 +25,25 @@ func forkSTTStub(t *testing.T, url string) (func(sr.SpeechRequest) (string, erro
 	return func(sr.SpeechRequest) (string, error) { calls++; return "what time is it", nil }, &calls
 }
 
-func TestForkSTTRouterEnglishUsesWrapped(t *testing.T) {
-	lang.UseForTest(t, lang.English)
-	vosk, calls := forkSTTStub(t, "http://127.0.0.1:1/stt")
-	forkSTTCollect = func(sr.SpeechRequest) ([]byte, error) { t.Fatal("English read audio for et STT"); return nil, nil }
-	text, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
-	if err != nil || text != "what time is it" || *calls != 1 {
-		t.Fatalf("got %q, %v, vosk calls %d", text, err, *calls)
-	}
-}
-
-func TestForkSTTRouterEstonianPosts(t *testing.T) {
-	lang.UseForTest(t, lang.Estonian)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		if r.Method != http.MethodPost || r.URL.Path != "/stt" || !bytes.Equal(body, forkTestPCM) {
-			t.Errorf("got %s %s body %v", r.Method, r.URL.Path, body)
+func TestForkSTTRouterPostsLang(t *testing.T) {
+	for _, c := range []struct{ lang, reply, want string }{
+		{lang.English, `{"text": " What time is it? "}`, "what time is it?"},
+		{lang.Estonian, `{"text": " Mis kell ÕHTUL on? "}`, "mis kell õhtul on?"},
+	} {
+		lang.UseForTest(t, c.lang)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			if r.Method != http.MethodPost || r.URL.Path != "/stt" || r.URL.Query().Get("lang") != c.lang || !bytes.Equal(body, forkTestPCM) {
+				t.Errorf("%s: got %s %s body %v", c.lang, r.Method, r.URL, body)
+			}
+			io.WriteString(w, c.reply)
+		}))
+		vosk, calls := forkSTTStub(t, srv.URL+"/stt")
+		text, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
+		srv.Close()
+		if err != nil || text != c.want || *calls != 0 {
+			t.Fatalf("%s: got %q, %v, vosk calls %d", c.lang, text, err, *calls)
 		}
-		io.WriteString(w, `{"text": " Mis kell ÕHTUL on? "}`)
-	}))
-	defer srv.Close()
-	vosk, calls := forkSTTStub(t, srv.URL+"/stt")
-	text, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
-	if err != nil || text != "mis kell õhtul on?" || *calls != 0 {
-		t.Fatalf("got %q, %v, vosk calls %d", text, err, *calls)
 	}
 }
 
@@ -66,14 +61,16 @@ func TestForkSTTRouterEstonianServerError(t *testing.T) {
 	}
 }
 
-func TestForkSTTRouterEstonianUnreachable(t *testing.T) {
-	lang.UseForTest(t, lang.Estonian)
+func TestForkSTTRouterUnreachableNeverFallsBack(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	url := srv.URL + "/stt"
 	srv.Close()
-	vosk, calls := forkSTTStub(t, url)
-	_, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
-	if err == nil || !strings.Contains(err.Error(), "et STT unavailable") || *calls != 0 {
-		t.Fatalf("got %v, vosk calls %d", err, *calls)
+	for _, l := range []string{lang.English, lang.Estonian} {
+		lang.UseForTest(t, l)
+		vosk, calls := forkSTTStub(t, url)
+		_, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
+		if err == nil || !strings.Contains(err.Error(), l+" STT unavailable") || *calls != 0 {
+			t.Fatalf("%s: got %v, vosk calls %d", l, err, *calls)
+		}
 	}
 }

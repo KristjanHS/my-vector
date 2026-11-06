@@ -75,8 +75,8 @@ Then ask Vector a question (see "How to ask" above). Things to try:
 What can go wrong:
 
 - **First answer never comes** — the model was still loading after a Windows Ollama restart. Run `warm` first.
-- **Answer fits a different question** — that is speech-to-text (Vosk), not the LLM. The log shows the
-  transcribed text; if Vosk often mishears, switching wire-pod's STT to Whisper is a separate project.
+- **Answer fits a different question** — that is speech-to-text (myvector-stt, large-v3-turbo for English),
+  not the LLM. The log shows the transcribed text: `journalctl -u wire-pod | grep 'Transcribed text'`.
 
 ## 2. Ollama + robot actions + camera
 
