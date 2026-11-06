@@ -10,13 +10,17 @@ RUNS=${RUNS:-3}
 WORD=${WORD:-bla-bla-bla-bla-bla-bla-bla-bla-bla-bla} # console args split on spaces: one word only
 OUT=$main/robot/work/voice-samples/onset; mkdir -p "$OUT"; rm -f "$OUT"/*.wav
 F=/data/data/myvector-voice.json
+arms=("$@"); ((${#arms[@]})) || arms=(stock cori af_bella mari refused blackhole)
+# Under et-EE the PC frees Kokoro per request (tts/server.py kokoro_selected): af_bella's cold load misses the 1.5 s cut.
+if [[ " ${arms[*]} " == *" af_bella "* ]] && grep -q '"lang": *"et-EE"' "$main/chipper/myvectorConfig.json" 2>/dev/null; then
+  echo "FAIL: af_bella arm needs PC lang en-US (now et-EE) — switch language in the web UI" >&2; exit 2
+fi
 # shellcheck disable=SC2029 # expanding on the client is the point
 r() { ssh "${so[@]}" "root@$ip" "$@"; }
 orig=$(r "cat $F") || { echo "FAIL: no $F on the robot (ship / voice-push first)" >&2; exit 2; }
 url=$(sed -n 's/.*"url": *"\([^"]*\)".*/\1/p' <<<"$orig"); slow=$(sed -n 's/.*"slow": *\([0-9.]*\).*/\1/p' <<<"$orig")
 # shellcheck disable=SC2016 # expands at exit, like a trap string
 on_exit 'r "printf %s '"'"'$orig'"'"' > $F"'
-arms=("$@"); ((${#arms[@]})) || arms=(stock cori af_bella mari refused blackhole)
 for arm in "${arms[@]}"; do
   l=''
   case $arm in
