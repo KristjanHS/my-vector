@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): volume, 24h clock + Celsius, no-auto-update, T2 voice file, /data fill guard.
+# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): volume, 24h clock + Celsius + Tallinn time zone, no-auto-update, T2 voice file, /data fill guard.
 # Usage: settings.sh   idempotent: reads first, sets only what differs. Exit 0 = all in place; 1 = a WARN line printed; 2 = SETUP (robot/env.sh).  (env: ESN, SERVER)
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -7,6 +7,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 . "$here/../env.sh"
 settings=/data/data/com.anki.victor/persistent/jdocs/vic.RobotSettings.json
 volume=4 # master_volume: MUTE 0 … HIGH 5; quiet idle comes from the per-bus patches, not from this
+tz=Europe/Tallinn # robot clock + time_zone jdoc (user ruling 2026-11-06; onboarding left America/Los_Angeles)
 flag=/data/data/user-do-not-auto-update
 conf=$robot_dir/../chipper/myvectorConfig.json # voice.SettingsPath: wire-pod (cwd chipper/) saves it beside apiConfig.json
 jdocs=$robot_dir/../chipper/jdocs/jdocs.json # vars.JdocsPath (unpackaged wire-pod)
@@ -18,7 +19,7 @@ ssh_() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 ssh_ true 2>/dev/null || { warn "settings: SSH to $ip failed; nothing checked"; exit 1; }
 
 # A field of the robot's own settings jdoc (wire-pod's chipper/jdocs copy goes stale: it missed a 4→1 set); empty if unreadable.
-robot_setting() { ssh_ "sed -n 's/.*\"$1\" *: *\([a-z0-9]*\).*/\1/p' $settings" 2>/dev/null; }
+robot_setting() { ssh_ "sed -n 's/.*\"$1\" *: *\"\{0,1\}\([A-Za-z0-9_/+-]*\).*/\1/p' $settings" 2>/dev/null; }
 # The same field in wire-pod's copy (vic.RobotSettings in $jdocs; intentparam's weather units + clock read it); empty if unreadable.
 wirepod_setting() {
   jq -r --arg t "vic:$esn" --arg f "$1" '.[] | select(.thing == $t and .name == "vic.RobotSettings")
@@ -48,6 +49,7 @@ ensure volume master_volume "$volume" "volume?serial=$esn&volume=$volume"
 # E32: 24h clock + Celsius in every language (the ET clock/weather lines assume them).
 ensure clock_24_hour clock_24_hour true "time_format_24?serial=$esn" "the clock"
 ensure temp_is_fahrenheit temp_is_fahrenheit false "temp_c?serial=$esn" "weather units"
+ensure time_zone time_zone "$tz" "timezone?serial=$esn&timezone=$tz"
 
 case $(ssh_ "[ -e $flag ] && echo present || { touch $flag && echo created; }" 2>/dev/null) in
   present) ok "no-auto-update: $flag present" ;;

@@ -57,6 +57,7 @@ case $* in
   *master_volume*) echo 4 ;;
   *clock_24_hour*) echo true ;;
   *temp_is_fahrenheit*) echo false ;;
+  *time_zone*) echo Europe/Tallinn ;;
   *user-do-not-auto-update*) echo present ;;
 esac
 STUB
