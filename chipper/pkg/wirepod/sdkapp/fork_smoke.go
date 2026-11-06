@@ -125,6 +125,13 @@ func forkSay(w http.ResponseWriter, r *http.Request) {
 	// 7 s first-audio wait + smoke.sh's longest phrase (~10 s at slow 1.2) + a Stall's slack; under its fork_say curl -m 35
 	ctx, cancel := context.WithTimeout(robot.Ctx, 30*time.Second)
 	defer cancel()
+	// SayText (stock T1 and the fallback) is refused without behavior control, as in voice.DemoHandler
+	release, err := voice.Control(ctx, robot.Vector)
+	if err != nil {
+		fmt.Fprint(w, "error: robot control: "+err.Error())
+		return
+	}
+	defer release()
 	// The saved language's T1 at the saved speed; 7 s outlasts a cold Kokoro load (6.6 s seen) before falling back.
 	used, err := voice.Speak(voice.WithFirstAudio(ctx, 7*time.Second), robot.Vector, text, voice.Current().For(lang.Current()))
 	if err != nil {
