@@ -1,3 +1,4 @@
+import contextlib
 import gc
 import http.client
 import inspect
@@ -106,6 +107,35 @@ def test_to_pcm16_gain_and_peak_limit():
     assert abs(out.max() / 32767 - 0.2) < 0.01
     loud = np.frombuffer(server.to_pcm16(quiet, 16000, gain=20.0), "<i2")
     assert abs(loud.max() / 32767 - server.PEAK) < 0.01
+
+
+def test_trim_silence_keeps_the_head_and_tail_pads_around_speech():
+    rate = 24000
+    x = np.zeros(int(1.5 * rate), np.float32)
+    x[int(0.45 * rate) : int(0.70 * rate)] = 0.1  # -20 dBFS speech, Kokoro-like 0.45 s lead / 0.8 s tail
+    x[: int(0.1 * rate)] = 0.001  # -60 dBFS hiss stays under the floor
+    y = server.trim_silence(x, rate)
+    assert y.size == int(0.55 * rate)  # 0.05 head + 0.25 speech + 0.25 tail
+    assert y[int(0.05 * rate) - 1] == 0 and y[int(0.05 * rate)] == np.float32(0.1)
+    assert y[int(0.30 * rate) - 1] == np.float32(0.1) and not y[int(0.30 * rate) :].any()
+
+
+def test_trim_silence_leaves_all_quiet_and_tiny_audio_alone():
+    quiet = np.full(2400, 0.001, np.float32)
+    assert server.trim_silence(quiet, 24000) is quiet
+    tiny = np.ones(100, np.float32)
+    assert server.trim_silence(tiny, 24000) is tiny
+
+
+def test_kokoro_synth_trims_its_silence():
+    lead, tail = np.zeros(int(0.45 * 24000), np.float32), np.zeros(int(0.82 * 24000), np.float32)
+    speech = np.full(2400, 0.1, np.float32)
+    part = types.SimpleNamespace(audio=types.SimpleNamespace(cpu=lambda: types.SimpleNamespace(numpy=lambda: np.r_[lead, speech, tail])))
+    eng = object.__new__(server.KokoroEngine)
+    eng._pipes = {"a": lambda text, voice, speed: [part]}
+    eng._torch = types.SimpleNamespace(inference_mode=contextlib.nullcontext)
+    audio, rate = eng.synth("af_bella", "Hi.", 1.0)
+    assert rate == 24000 and audio.size == int(0.30 * 24000) + speech.size
 
 
 def test_limiter_only_dips_around_the_peak():
