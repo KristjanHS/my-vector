@@ -170,7 +170,8 @@ step "A2 face + speech"
 r=$(sdk fork_face); [[ $r == ok ]] || die "A2: fork_face: ${r:0:200}"
 ok "A2 face shown"
 # The phrase in wire-pod's current language (fork_say speaks that language's T1); English if the voice API is unreadable.
-said='smoke test'
+# Each shows a TTS property by ear: exclamation, colon/comma pauses, a number list, question rise, several streamed sentences.
+said="Hello! This is Vector's speech test: one, two, three. Can you hear me clearly?"
 [[ $(curl -s -m 5 "$server/myvector/api/voice" | jq -r .lang 2>/dev/null) == et-EE ]] && said='Tere, kõik töötab'
 r=$(sdk fork_say "text=$(jq -rn --arg s "$said" '$s|@uri')"); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
 [[ $r != 'FINISHED fallback'* ]] && ok "A2 said '$said' in ${r#FINISHED }" ||
