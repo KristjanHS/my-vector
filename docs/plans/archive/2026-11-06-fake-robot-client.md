@@ -1,6 +1,6 @@
 # Plan: fakebot — stream an utterance into chipper gRPC as the robot does
 
-Status: 📝 DRAFT · 2026-11-06 · sibling of the text→intent route probe (not this plan)
+Status: ✅ SHIPPED · 2026-11-06 · `robot/work/live-check/fakebot` (`go build -o … ./pkg/myvector/fakebot`)
 
 ## Contract (ruled from recon)
 | id | ruling | edit site |
