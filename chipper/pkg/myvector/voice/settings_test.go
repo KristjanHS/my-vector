@@ -9,21 +9,43 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
+	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 )
 
+// en is English T1, T2 and slow with the Estonian pair at its defaults.
+func en(t1, t2 string, slow float64) Settings {
+	return Settings{t1, t2, DefaultETVoice, DefaultETVoice, slow}
+}
+
+// tempSettings isolates the voice settings and the language (en-US) and stubs PushT2 and ReloadIntents.
 func tempSettings(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "myvectorConfig.json")
 	old := SettingsPath
 	SettingsPath = func() string { return path }
 	t.Cleanup(func() { SettingsPath = old })
+	lang.UseForTest(t, lang.English)
 	stubPush(t, nil)
+	stubReload(t)
 	return path
+}
+
+// stubReload makes ReloadIntents count its calls.
+func stubReload(t *testing.T) *int {
+	t.Helper()
+	n := 0
+	old := ReloadIntents
+	ReloadIntents = func() error { n++; return nil }
+	t.Cleanup(func() { ReloadIntents = old })
+	return &n
 }
 
 // stubPush makes PushT2 record its Settings and return err.
@@ -41,16 +63,21 @@ func TestSettingsValidate(t *testing.T) {
 		s  Settings
 		ok bool
 	}{
-		{Settings{"cori", "cori", 1.2}, true},
-		{Settings{"af_bella", Stock, SlowMin}, true},
-		{Settings{Stock, "af_bella", SlowMax}, true},
-		{Settings{"", "cori", 1}, false},
-		{Settings{"cori", "", 1}, false},
-		{Settings{"bella", "cori", 1}, false},
-		{Settings{"cori", "bella", 1}, false},
-		{Settings{"cori", "cori", 0.49}, false},
-		{Settings{"cori", "cori", 2.01}, false},
-		{Settings{"cori", "cori", math.NaN()}, false},
+		{en("cori", "cori", 1.2), true},
+		{en("af_bella", Stock, SlowMin), true},
+		{en(Stock, "af_bella", SlowMax), true},
+		{en("", "cori", 1), false},
+		{en("cori", "", 1), false},
+		{en("bella", "cori", 1), false},
+		{en("cori", "bella", 1), false},
+		{en("mari", "cori", 1), false}, // Estonian-only
+		{en("cori", "mari", 1), false},
+		{Settings{"cori", "cori", "af_bella", "mari", 1}, false}, // E30: the et pair is mari only
+		{Settings{"cori", "cori", "mari", Stock, 1}, false},
+		{Settings{"cori", "cori", "", "mari", 1}, false},
+		{en("cori", "cori", 0.49), false},
+		{en("cori", "cori", 2.01), false},
+		{en("cori", "cori", math.NaN()), false},
 	} {
 		if err := c.s.Validate(); (err == nil) != c.ok {
 			t.Errorf("Validate(%+v) = %v, want ok=%v", c.s, err, c.ok)
@@ -60,7 +87,7 @@ func TestSettingsValidate(t *testing.T) {
 
 func TestSettingsCurrentDefaults(t *testing.T) {
 	path := tempSettings(t)
-	if got := Current(); got != (Settings{"af_bella", "af_bella", 1.2}) {
+	if got := Current(); got != (Settings{"af_bella", "af_bella", "mari", "mari", 1.2}) {
 		t.Fatalf("missing file: %+v", got)
 	}
 	for _, bad := range []string{`{`, `{"t1":"bella","slow":1}`, `{"t1":"cori","slow":9}`, `{"t1":"cori","t2":"bella","slow":1}`} {
@@ -70,21 +97,24 @@ func TestSettingsCurrentDefaults(t *testing.T) {
 		}
 	}
 	os.WriteFile(path, []byte(`{"t1":"cori"}`), 0644) // a pre-T2 file
-	if got := Current(); got != (Settings{"cori", DefaultVoice, DefaultSlow}) {
+	if got := Current(); got != (en("cori", DefaultVoice, DefaultSlow)) {
 		t.Errorf("partial file: %+v", got)
 	}
 }
 
 func TestSettingsSaveRoundTrip(t *testing.T) {
 	tempSettings(t)
-	want := Settings{Stock, "af_bella", 1.5}
-	if err := Save(want); err != nil {
+	want := Settings{Stock, "af_bella", "mari", "mari", 1.5}
+	if err := Save(Settings{"cori", "cori", "mari", "mari", 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(want); err != nil { // overwrites every key
 		t.Fatal(err)
 	}
 	if got := Current(); got != want {
 		t.Fatalf("Current() = %+v, want %+v", got, want)
 	}
-	if err := Save(Settings{"cori", "bella", 1}); err == nil {
+	if err := Save(en("cori", "bella", 1)); err == nil {
 		t.Fatal("Save accepted an unknown voice")
 	}
 	if got := Current(); got != want {
@@ -94,13 +124,13 @@ func TestSettingsSaveRoundTrip(t *testing.T) {
 
 func TestSettingsSaveKeepsLang(t *testing.T) {
 	path := tempSettings(t)
-	os.WriteFile(path, []byte(`{"lang":"et-EE","t1":"cori"}`), 0644)
-	if err := Save(Settings{Stock, "af_bella", 1.5}); err != nil {
+	os.WriteFile(path, []byte(`{"lang":"et-EE","et_model":"m","t1":"cori"}`), 0644)
+	if err := Save(en(Stock, "af_bella", 1.5)); err != nil {
 		t.Fatal(err)
 	}
 	var got map[string]any
 	b, _ := os.ReadFile(path)
-	if json.Unmarshal(b, &got); got["lang"] != "et-EE" || got["t1"] != Stock {
+	if json.Unmarshal(b, &got); got["lang"] != "et-EE" || got["et_model"] != "m" || got["t1"] != Stock || got["t1_et"] != "mari" {
 		t.Fatalf("file = %s", b)
 	}
 }
@@ -133,13 +163,15 @@ func TestSettingsHandler(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != 200 {
 		t.Fatalf("GET: %d %s", w.Code, w.Body)
 	}
-	if got.Settings != Defaults() || strings.Join(got.Voices, ",") != "af_bella,cori,mari,stock" || got.SlowMin != 0.5 || got.SlowMax != 2 {
+	if got.Settings != Defaults() || got.Lang != "en-US" || strings.Join(got.Langs, ",") != "en-US,et-EE" ||
+		strings.Join(got.Voices["en-US"], ",") != "af_bella,cori,stock" || strings.Join(got.Voices["et-EE"], ",") != "mari" ||
+		got.SlowMin != 0.5 || got.SlowMax != 2 {
 		t.Fatalf("GET reply: %+v", got)
 	}
 
 	pushed := stubPush(t, nil)
-	w = serve(http.MethodPost, "application/json; charset=utf-8", `{"t1":"af_bella","t2":"stock","slow":0.8}`)
-	if w.Code != 200 || Current() != (Settings{"af_bella", Stock, 0.8}) || strings.Contains(w.Body.String(), "pushError") {
+	w = serve(http.MethodPost, "application/json; charset=utf-8", `{"lang":"en-US","t1":"af_bella","t2":"stock","t1_et":"mari","t2_et":"mari","slow":0.8}`)
+	if w.Code != 200 || Current() != en("af_bella", Stock, 0.8) || strings.Contains(w.Body.String(), "pushError") {
 		t.Fatalf("POST: %d %s, saved %+v", w.Code, w.Body, Current())
 	}
 	if len(*pushed) != 1 || (*pushed)[0] != Current() {
@@ -150,9 +182,11 @@ func TestSettingsHandler(t *testing.T) {
 		method, ctype, body string
 		code                int
 	}{
-		{http.MethodPost, "application/json", `{"t1":"bella","t2":"cori","slow":1}`, 400},
-		{http.MethodPost, "application/json", `{"t1":"cori","t2":"bella","slow":1}`, 400},
-		{http.MethodPost, "application/json", `{"t1":"cori","slow":1}`, 400},
+		{http.MethodPost, "application/json", `{"lang":"en-US","t1":"bella","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1}`, 400},
+		{http.MethodPost, "application/json", `{"lang":"en-US","t1":"cori","t2":"bella","t1_et":"mari","t2_et":"mari","slow":1}`, 400},
+		{http.MethodPost, "application/json", `{"lang":"en-US","t1":"cori","t2":"cori","t1_et":"mari","slow":1}`, 400},
+		{http.MethodPost, "application/json", `{"t1":"cori","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1}`, 400},
+		{http.MethodPost, "application/json", `{"lang":"fi-FI","t1":"cori","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1}`, 400},
 		{http.MethodPost, "application/json", `{"t1":"cori","slow":1,"x":1}`, 400},
 		{http.MethodPost, "application/json", `{"t1":"cori","slow":"1"}`, 400},
 		{http.MethodPost, "text/plain", `{"t1":"cori","slow":1}`, 415},
@@ -162,18 +196,47 @@ func TestSettingsHandler(t *testing.T) {
 			t.Errorf("%s %s %s: %d, want %d", c.method, c.ctype, c.body, w.Code, c.code)
 		}
 	}
-	if Current() != (Settings{"af_bella", Stock, 0.8}) || len(*pushed) != 1 {
+	if Current() != en("af_bella", Stock, 0.8) || len(*pushed) != 1 || lang.Current() != lang.English {
 		t.Fatalf("a rejected request changed the settings to %+v or pushed: %+v", Current(), *pushed)
+	}
+}
+
+func TestSettingsLangSwitchReloadsIntents(t *testing.T) {
+	tempSettings(t)
+	reloads, pushed := stubReload(t), stubPush(t, nil)
+	body := `{"lang":"et-EE","t1":"cori","t2":"af_bella","t1_et":"mari","t2_et":"mari","slow":1}`
+	if w := serve(http.MethodPost, "application/json", body); w.Code != 200 || lang.Current() != lang.Estonian || *reloads != 1 {
+		t.Fatalf("switch to et-EE: %d %s, lang %s, %d reloads; want et-EE, 1 reload", w.Code, w.Body, lang.Current(), *reloads)
+	}
+	if len(*pushed) != 1 || (*pushed)[0].T2 != "mari" {
+		t.Fatalf("pushed %+v, want the et-EE T2 mari", *pushed)
+	}
+	if w := serve(http.MethodPost, "application/json", body); w.Code != 200 || *reloads != 1 {
+		t.Fatalf("same lang again: %d, %d reloads; want no reload", w.Code, *reloads)
+	}
+	if w := serve(http.MethodPost, "application/json", strings.Replace(body, "et-EE", "en-US", 1)); w.Code != 200 ||
+		lang.Current() != lang.English || *reloads != 2 || (*pushed)[2].T2 != "af_bella" {
+		t.Fatalf("back to en-US: %d, lang %s, %d reloads, pushed %+v", w.Code, lang.Current(), *reloads, *pushed)
+	}
+}
+
+func TestSettingsFor(t *testing.T) {
+	s := Settings{"cori", Stock, "mari", "mari", 1.3}
+	if got := s.For(lang.Estonian); got != (Settings{"mari", "mari", "mari", "mari", 1.3}) {
+		t.Errorf("For(et-EE) = %+v", got)
+	}
+	if got := s.For(lang.English); got != s {
+		t.Errorf("For(en-US) = %+v, want unchanged", got)
 	}
 }
 
 func TestSettingsHandlerPushFailKeepsSave(t *testing.T) {
 	tempSettings(t)
 	stubPush(t, errors.New("SETUP: no ROBOT_TTS_URL"))
-	w := serve(http.MethodPost, "application/json", `{"t1":"cori","t2":"af_bella","slow":1.1}`)
+	w := serve(http.MethodPost, "application/json", `{"lang":"en-US","t1":"cori","t2":"af_bella","t1_et":"mari","t2_et":"mari","slow":1.1}`)
 	var got settingsReply
 	json.Unmarshal(w.Body.Bytes(), &got)
-	if w.Code != 200 || got.PushError != "SETUP: no ROBOT_TTS_URL" || Current() != (Settings{"cori", "af_bella", 1.1}) {
+	if w.Code != 200 || got.PushError != "SETUP: no ROBOT_TTS_URL" || Current() != en("cori", "af_bella", 1.1) {
 		t.Fatalf("POST: %d %s, saved %+v; want 200 with pushError and the save kept", w.Code, w.Body, Current())
 	}
 }
@@ -193,7 +256,7 @@ func fakeScript(t *testing.T, body string) {
 func TestPushT2Args(t *testing.T) {
 	args := filepath.Join(t.TempDir(), "args")
 	fakeScript(t, `echo "$@" >`+args)
-	if err := pushT2(context.Background(), Settings{"cori", "af_bella", 1.25}); err != nil {
+	if err := pushT2(context.Background(), en("cori", "af_bella", 1.25)); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(args); string(b) != "af_bella 1.25\n" {
@@ -236,16 +299,31 @@ func TestSettingsPage(t *testing.T) {
 	}
 }
 
-// Voices (minus Stock) must be the TTS service's voices, or a pick would 400 there.
+// Every language's voices (minus Stock) must be the TTS service's voices, or a pick would 400 there.
 func TestSettingsVoicesMatchService(t *testing.T) {
 	src, err := os.ReadFile("../../../../tts/server.py")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, v := range Voices {
-		if in := strings.Contains(string(src), `"`+v+`": (`); in == (v == Stock) {
-			t.Errorf("voice %q: in tts/server.py VOICES = %v", v, in)
+	m := regexp.MustCompile(`(?s)\nVOICES = \{\n(.*?)\n\}`).FindSubmatch(src)
+	if m == nil {
+		t.Fatal("no VOICES dict in tts/server.py")
+	}
+	var service, ours []string
+	for _, k := range regexp.MustCompile(`(?m)^\s*"([^"]+)": \(`).FindAllSubmatch(m[1], -1) {
+		service = append(service, string(k[1]))
+	}
+	for _, l := range lang.Supported {
+		for _, v := range VoicesFor(l) {
+			if v != Stock {
+				ours = append(ours, v)
+			}
 		}
+	}
+	sort.Strings(service)
+	sort.Strings(ours)
+	if strings.Join(ours, ",") != strings.Join(service, ",") {
+		t.Errorf("voices minus stock %v, tts/server.py VOICES %v", ours, service)
 	}
 }
 
@@ -284,6 +362,37 @@ func TestDemoHandlerSpeaksUnsavedSelection(t *testing.T) {
 	}
 }
 
+func TestDemoHandlerSpeaksLanguageT1(t *testing.T) {
+	tempSettings(t)
+	lang.UseForTest(t, lang.Estonian)
+	var asked []any
+	service(t, func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req)
+		asked = append(asked, req["voice"])
+		w.Write(make([]byte, 100))
+	})
+	for _, c := range []struct{ body, voice string }{
+		{`{"t1":"stock","slow":1,"text":"tere"}`, "mari"}, // lang omitted: the current et-EE, t1_et defaulted
+		{`{"lang":"en-US","t1":"stock","t1_et":"mari","slow":1,"text":"hi"}`, "stock"},
+	} {
+		rb := &robot{needControl: true, grant: true, verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1), completeOnEnd: true}
+		h := DemoHandler(func(*http.Request) (context.Context, *vector.Vector, error) {
+			return context.Background(), &vector.Vector{Conn: rb}, nil
+		})
+		r := httptest.NewRequest(http.MethodPost, DemoAPI, strings.NewReader(c.body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h(w, r)
+		if w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"voice":"`+c.voice+`"}` {
+			t.Errorf("%s: %d %s, want %s", c.body, w.Code, w.Body, c.voice)
+		}
+	}
+	if len(asked) != 1 || asked[0] != "mari" {
+		t.Errorf("service asked for %v, want mari once", asked)
+	}
+}
+
 func TestDemoHandlerControlNotGranted(t *testing.T) {
 	old := ControlWait
 	ControlWait = 50 * time.Millisecond
@@ -304,6 +413,7 @@ func TestDemoHandlerRejects(t *testing.T) {
 		{"application/json", `{"t1":"stock","slow":1,"text":"` + strings.Repeat("é", DemoMaxText+1) + `"}`, nil, 400},
 		{"application/json", `{"t1":"bella","slow":1,"text":"hi"}`, nil, 400},
 		{"application/json", `{"t1":"stock","slow":1,"text":"hi","x":1}`, nil, 400},
+		{"application/json", `{"t1":"stock","slow":1,"text":"hi","lang":"fi-FI"}`, nil, 400},
 		{"text/plain", `{"t1":"stock","slow":1,"text":"hi"}`, nil, 415},
 		{"application/json", `{"t1":"stock","slow":1,"text":"hi"}`, errors.New("no robot"), 502},
 	} {

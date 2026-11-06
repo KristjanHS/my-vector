@@ -2,6 +2,7 @@ package wirepod_ttr
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/voice"
 	"google.golang.org/grpc"
 )
@@ -28,19 +30,31 @@ func TestForkDoSayTextUsesSavedVoice(t *testing.T) {
 	old := voice.SettingsPath
 	voice.SettingsPath = func() string { return path }
 	t.Cleanup(func() { voice.SettingsPath = old })
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("service called for stock") }))
+	var asked []string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct{ Voice string }
+		json.NewDecoder(r.Body).Decode(&req)
+		asked = append(asked, req.Voice)
+		http.Error(w, "no", http.StatusInternalServerError) // Speak falls back to SayText
+	}))
 	t.Cleanup(s.Close)
 	oldURL := voice.URL
 	voice.URL = s.URL
 	t.Cleanup(func() { voice.URL = oldURL })
-	if err := voice.Save(voice.Settings{T1: voice.Stock, T2: voice.Stock, Slow: 1.4}); err != nil {
+	if err := voice.Save(voice.Settings{T1: voice.Stock, T2: voice.Stock, T1ET: "mari", T2ET: "mari", Slow: 1.4}); err != nil {
 		t.Fatal(err)
 	}
+	lang.UseForTest(t, lang.English)
 	r := &sayRobot{}
 	if err := DoSayText("hello", &vector.Vector{Conn: r}); err != nil {
 		t.Fatal(err)
 	}
-	if len(r.said) != 1 || !r.said[0].UseVectorVoice || r.said[0].DurationScalar != float32(1.4) || r.said[0].Text != "hello" {
-		t.Errorf("SayText = %v, want the saved stock voice at slow 1.4", r.said)
+	if len(r.said) != 1 || !r.said[0].UseVectorVoice || r.said[0].DurationScalar != float32(1.4) || r.said[0].Text != "hello" || len(asked) != 0 {
+		t.Errorf("SayText = %v, service asked %v; want the saved stock voice at slow 1.4", r.said, asked)
+	}
+	lang.UseForTest(t, lang.Estonian)
+	DoSayText("tere", &vector.Vector{Conn: &sayRobot{}})
+	if len(asked) != 1 || asked[0] != "mari" {
+		t.Errorf("et-EE: service asked %v, want the saved T1 mari", asked)
 	}
 }
