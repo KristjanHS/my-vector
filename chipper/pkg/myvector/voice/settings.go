@@ -124,7 +124,7 @@ func Save(s Settings) error {
 var PushTimeout = 15 * time.Second
 
 var (
-	// PushT2 writes s's T2 + slow to the robot (plan R15); tests replace it so none runs SSH.
+	// PushT2 writes language l's T2 + slow + l to the robot (plan R15, E31); tests replace it so none runs SSH.
 	PushT2 = pushT2
 	// ReloadIntents reloads wire-pod's intents after a language switch; tests replace it.
 	ReloadIntents = reloadIntents
@@ -160,15 +160,15 @@ func reloadIntents() error {
 	return err
 }
 
-// pushT2 runs voice-push.sh <t2> <slow>; its error carries the script's last output line.
-func pushT2(ctx context.Context, s Settings) error {
+// pushT2 runs voice-push.sh <l's t2> <slow> <l>; its error carries the script's last output line.
+func pushT2(ctx context.Context, s Settings, l string) error {
 	script, err := pushScript()
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, PushTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, script, s.T2, strconv.FormatFloat(s.Slow, 'g', -1, 64))
+	cmd := exec.CommandContext(ctx, script, s.For(l).T2, strconv.FormatFloat(s.Slow, 'g', -1, 64), l)
 	cmd.WaitDelay = time.Second // an orphaned ssh holding the output pipe must not outlive the timeout
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
@@ -228,7 +228,7 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 				logger.Println("myvector voice settings: " + q.Lang + " intents not loaded: " + err.Error())
 			}
 		}
-		if err := PushT2(r.Context(), q.Settings.For(q.Lang)); err != nil {
+		if err := PushT2(r.Context(), q.Settings, q.Lang); err != nil {
 			pushErr = err.Error()
 			logger.Println("myvector voice settings: saved; robot not updated: " + pushErr)
 		}

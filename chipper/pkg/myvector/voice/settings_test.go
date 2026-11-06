@@ -48,12 +48,12 @@ func stubReload(t *testing.T) *[]string {
 	return &seen
 }
 
-// stubPush makes PushT2 record its Settings and return err.
+// stubPush makes PushT2 record the Settings it was given, as For its language, and return err.
 func stubPush(t *testing.T, err error) *[]Settings {
 	t.Helper()
 	var pushed []Settings
 	old := PushT2
-	PushT2 = func(_ context.Context, s Settings) error { pushed = append(pushed, s); return err }
+	PushT2 = func(_ context.Context, s Settings, l string) error { pushed = append(pushed, s.For(l)); return err }
 	t.Cleanup(func() { PushT2 = old })
 	return &pushed
 }
@@ -258,17 +258,20 @@ func fakeScript(t *testing.T, body string) {
 func TestPushT2Args(t *testing.T) {
 	args := filepath.Join(t.TempDir(), "args")
 	fakeScript(t, `echo "$@" >`+args)
-	if err := pushT2(context.Background(), en("cori", "af_bella", 1.25)); err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := os.ReadFile(args); string(b) != "af_bella 1.25\n" {
-		t.Fatalf("voice-push.sh args %q, want T2 and slow", b)
+	s := Settings{"cori", "af_bella", "mari", "mari", 1.25}
+	for l, want := range map[string]string{lang.English: "af_bella 1.25 en-US\n", lang.Estonian: "mari 1.25 et-EE\n"} {
+		if err := pushT2(context.Background(), s, l); err != nil {
+			t.Fatal(err)
+		}
+		if b, _ := os.ReadFile(args); string(b) != want {
+			t.Fatalf("%s: voice-push.sh args %q, want %q (the language's T2, slow, lang)", l, b, want)
+		}
 	}
 }
 
 func TestPushT2ErrorHasLastLine(t *testing.T) {
 	fakeScript(t, `echo checking; echo "SETUP: no ROBOT_TTS_URL" >&2; exit 2`)
-	err := pushT2(context.Background(), Defaults())
+	err := pushT2(context.Background(), Defaults(), lang.English)
 	if err == nil || !strings.HasSuffix(err.Error(), ": SETUP: no ROBOT_TTS_URL") {
 		t.Fatalf("err = %v, want the script's last line", err)
 	}
@@ -280,7 +283,7 @@ func TestPushT2Timeout(t *testing.T) {
 	t.Cleanup(func() { PushTimeout = old })
 	fakeScript(t, `sleep 30 & wait`) // the orphaned sleep keeps the output pipe open, as a hung ssh would
 	start := time.Now()
-	err := pushT2(context.Background(), Defaults())
+	err := pushT2(context.Background(), Defaults(), lang.English)
 	if err == nil || !strings.Contains(err.Error(), "no answer") || time.Since(start) > 5*time.Second {
 		t.Fatalf("err = %v after %v, want a timeout within 5 s", err, time.Since(start))
 	}

@@ -1,4 +1,4 @@
-"""my-vector TTS service: POST /tts {"text", "voice", "slow", "boost_db"} -> chunked 16 kHz s16le mono PCM, one chunk per sentence.
+"""my-vector TTS service: POST /tts {"text", "voice", "slow", "boost_db", "lang"} -> chunked 16 kHz s16le mono PCM, one chunk per sentence.
 
 GET /health -> {"voices": [...], "device": ..., "kokoro_loaded": bool}. Piper (+ Kokoro if selected) warm before the port opens.
 Kokoro holds the GPU only while a kokoro voice is wire-pod's T1/T2 (myvectorConfig.json); unselected it loads for one request only.
@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # `python -I` leaves the script dir off sys.path
+import et_lines  # noqa: E402
 import et_text  # noqa: E402
 
 RATE = 16000
@@ -153,7 +154,7 @@ def load_gains(path=GAINS_FILE):
 
 
 def parse_request(body):
-    """Validate a /tts JSON body -> (text, voice, slow, boost_db). Raises ValueError with a client-facing message."""
+    """Validate a /tts JSON body -> (text, voice, slow, boost_db, lang or None). Raises ValueError with a client-facing message."""
     try:
         req = json.loads(body or b"{}")
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -180,7 +181,10 @@ def parse_request(body):
         raise ValueError("boost_db: number required") from None
     if boost != boost:
         raise ValueError("boost_db: number required")
-    return text, voice, min(max(slow, SLOW_MIN), SLOW_MAX), min(max(boost, 0.0), BOOST_MAX)
+    lang = req.get("lang")
+    if lang is not None and (not isinstance(lang, str) or lang not in LANG_VOICES):
+        raise ValueError(f"lang: one of {sorted(LANG_VOICES)}")
+    return text, voice, min(max(slow, SLOW_MIN), SLOW_MAX), min(max(boost, 0.0), BOOST_MAX), lang
 
 
 class PiperEngine:
@@ -404,9 +408,11 @@ class Synth:
             audio, rate = self.engines[engine].synth(voice_id, text, slow)
         return to_pcm16(audio, rate, self.gains.get(voice, 1.0) * 10 ** (boost_db / 20))
 
-    def stream(self, voice, text, slow, boost_db=0.0):
+    def stream(self, voice, text, slow, boost_db=0.0, robot_lang=None):
         name, voice_id = VOICES[voice]
         engine = self.engines[name]
+        if robot_lang == "et-EE":  # the robot's built-in lines arrive in English (plan E31)
+            text = et_lines.translate(text)
         lang = "et" if voice_id.startswith("et_") else "en"
         if lang == "et":
             text = et_text.normalize(text)
@@ -463,12 +469,12 @@ def make_handler(synth, info):
             body = self.rfile.read(n)
             self.close_connection = client_close
             try:
-                text, voice, slow, boost = parse_request(body)
+                text, voice, slow, boost, robot_lang = parse_request(body)
             except ValueError as e:
                 self._json(400, {"error": str(e)})
                 return
             # Headers wait for the first sentence: time-to-first-byte = time-to-first-audio, and a failing voice is a 500.
-            chunks = synth.stream(voice, text, slow, boost)
+            chunks = synth.stream(voice, text, slow, boost, robot_lang)
             try:
                 self._send_stream(chunks)
             finally:
