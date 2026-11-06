@@ -3,15 +3,19 @@
 // a -want mismatch, 2 = setup or transport error.
 //
 //	go run ./pkg/myvector/fakebot -pcm file.pcm [-want intent_clock_time]   # 16 kHz s16le mono
+//	go run ./pkg/myvector/fakebot -say "what time is it" [-want …]          # af_bella via $TTS_URL
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -83,6 +87,25 @@ func run(ctx context.Context, client pb.ChipperGrpcClient, esn string, pcm []byt
 	}
 }
 
+// synth returns the fork TTS service's 16 kHz s16le PCM for text.
+func synth(url, text string) ([]byte, error) {
+	body, _ := json.Marshal(map[string]string{"text": text, "voice": "af_bella", "lang": "en-US"})
+	c := http.Client{Timeout: 60 * time.Second}
+	resp, err := c.Post(url+"/tts", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tts %s: %s", url, resp.Status)
+	}
+	pcm, err := io.ReadAll(resp.Body)
+	if err == nil && len(pcm) == 0 {
+		err = fmt.Errorf("tts %s: empty audio", url)
+	}
+	return pcm, err
+}
+
 func describe(r *pb.IntentGraphResponse) []string {
 	var lines []string
 	if r.ResponseType == pb.IntentGraphMode_KNOWLEDGE_GRAPH {
@@ -125,13 +148,24 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:443", "chipper gRPC host:port")
 	esn := flag.String("esn", "", "DeviceId (default: robots[0].esn of $BOTINFO / jdocs/botSdkInfo.json)")
 	pcmPath := flag.String("pcm", "", "16 kHz s16le mono file to stream")
+	say := flag.String("say", "", "text to synthesize and stream instead of -pcm")
+	ttsURL := os.Getenv("TTS_URL")
+	if ttsURL == "" {
+		ttsURL = "http://127.0.0.1:8091"
+	}
 	want := flag.String("want", "", "exit 1 unless a reply carries this intent action")
 	timeout := flag.Duration("timeout", 60*time.Second, "whole-run deadline")
 	flag.Parse()
-	if *pcmPath == "" {
-		setup(errors.New("need -pcm"))
+	var pcm []byte
+	var err error
+	switch {
+	case (*pcmPath == "") == (*say == ""):
+		err = errors.New("need exactly one of -pcm, -say")
+	case *say != "":
+		pcm, err = synth(ttsURL, *say)
+	default:
+		pcm, err = os.ReadFile(*pcmPath)
 	}
-	pcm, err := os.ReadFile(*pcmPath)
 	if err != nil {
 		setup(err)
 	}
