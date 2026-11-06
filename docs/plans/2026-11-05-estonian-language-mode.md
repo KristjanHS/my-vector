@@ -1,6 +1,6 @@
 # Vector Estonian mode: research, pick, build
 
-**Status**: 🟡 IN PROGRESS 2026-11-05 — Stages 1–8 done; Stage 9.1 (built-in lines, patch 0011) next; robot runs wait for the user's go.
+**Status**: 🟡 IN PROGRESS 2026-11-05 — Stages 1–9.1 done; 9.2 live (user: `make ship` + "Mis kell on?") next; robot runs wait for the user's go.
 **Want**: one switch makes Vector hear, understand, answer and speak Estonian, built-in lines included; English unchanged.
 **Parent**: `2026-11-05-vector-voice-research.md` (docs/plans/) — R1–R23 live there; R2, R4, R6 carry over.
 **Overlap**: `2026-11-05-vector-voice-verify.md` (docs/plans/) stays QUEUED LAST and checks the English PC voice path; this plan must not wait for it. Its V5 rows 1–2 become Stage 10's English regression.
