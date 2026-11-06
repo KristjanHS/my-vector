@@ -4,14 +4,16 @@ Date: Fri, 6 Nov 2026 20:22:56 +0200
 Subject: [PATCH] night-window
 
 Good-night window 21:00-09:00 robot local time (SleepTracker night/morning console vars; morning default 7 -> 9).
-Inside it: light sleep turns deep (no sound or lights-on wake, no ReactToSoundAsleep), idle-awake goes straight back
-to sleep (SleepReason NightWindow), and person checks wait for morning. Voice (trigger word), timers, SDK, touch and
-pick-up still wake him. Kill switch: console var kSleepCycle_NightWindow. Logs my-vector.NightWindow.
+Inside it: light sleep turns deep (no sound or lights-on wake, no ReactToSoundAsleep); idle-awake with no pending
+intent goes straight back to deep sleep without a get-in anim (SleepReason NightWindow); person checks wait for
+morning and are kept 15 min out, so he wakes soon after 09:00. Voice (trigger word), timers, SDK, touch and pick-up
+still wake him. Kill switch: console var kSleepCycle_NightWindow (resets on engine restart; morning hour stays 9).
+Logs my-vector.NightWindow.
 ---
  .../behaviorComponent/sleepingTypes.clad      |  3 ++
- .../behaviors/sleeping/behaviorSleepCycle.cpp | 33 ++++++++++++++++++-
+ .../behaviors/sleeping/behaviorSleepCycle.cpp | 48 ++++++++++++++++++-
  .../behaviorComponent/sleepTracker.cpp        |  3 +-
- 3 files changed, 37 insertions(+), 2 deletions(-)
+ 3 files changed, 51 insertions(+), 3 deletions(-)
 
 diff --git a/clad/src/clad/types/behaviorComponent/sleepingTypes.clad b/clad/src/clad/types/behaviorComponent/sleepingTypes.clad
 index f641e04e..18575392 100644
@@ -28,21 +30,25 @@ index f641e04e..18575392 100644
  
  enum uint_8 SleepReactionType {
 diff --git a/engine/aiComponent/behaviorComponent/behaviors/sleeping/behaviorSleepCycle.cpp b/engine/aiComponent/behaviorComponent/behaviors/sleeping/behaviorSleepCycle.cpp
-index cad706ae..c00df2c4 100644
+index cad706ae..0e7715d0 100644
 --- a/engine/aiComponent/behaviorComponent/behaviors/sleeping/behaviorSleepCycle.cpp
 +++ b/engine/aiComponent/behaviorComponent/behaviors/sleeping/behaviorSleepCycle.cpp
-@@ -88,6 +88,10 @@ CONSOLE_VAR(bool, kSleepCycle_EnableWiggleWhileSleeping, CONSOLE_GROUP, true);
+@@ -88,6 +88,14 @@ CONSOLE_VAR(bool, kSleepCycle_EnableWiggleWhileSleeping, CONSOLE_GROUP, true);
  CONSOLE_VAR(bool, kSleepCycleForceSleep, CONSOLE_GROUP, false);
  
  CONSOLE_VAR(bool, kSleepCycleForceLightSleep, CONSOLE_GROUP, false);
 +
 +// my-vector night window: inside SleepTracker::IsNightTime() sleep is always deep (no sound/light wake or reaction),
-+// awake-and-idle goes straight back to sleep, and no person checks run. Only voice, timer, SDK, touch and pick-up wake him.
++// awake-and-idle goes straight back to sleep (silently, no get-in), and person checks wait for morning. Only voice,
++// timer, SDK, touch and pick-up wake him. Console vars reset on a vic-engine restart; this one doesn't undo the morning hour.
 +CONSOLE_VAR(bool, kSleepCycle_NightWindow, CONSOLE_GROUP, true);
++// Inside the window the next person check is this close: it waits for morning anyway, so it runs soon after the window
++// ends (a 4 h deep-sleep interval set at 08:30 would keep him asleep until 12:30).
++CONSOLE_VAR(f32, kSleepCycle_NightPersonCheckDelay_s, CONSOLE_GROUP, 15 * 60.0f);
  // The amount of time that the robot must be on the charger but not actually charging
  // because of overheating battery before he is forced to go to sleep.
  CONSOLE_VAR(f32, kSleepCycle_TooLongOnChargerNotChargingDuration_sec, CONSOLE_GROUP, 5 * 60.f);
-@@ -580,10 +584,25 @@ void BehaviorSleepCycle::BehaviorUpdate()
+@@ -580,10 +588,25 @@ void BehaviorSleepCycle::BehaviorUpdate()
        }
      }
  
@@ -54,7 +60,7 @@ index cad706ae..c00df2c4 100644
 +        _dVars.reactionState == SleepReactionType::NotReacting ) {
 +      LOG_INFO("my-vector.NightWindow", "light sleep -> deep sleep");
 +      SetState(SleepStateID::DeepSleep);
-+      _dVars.nextPersonCheckTime_s = currTime_s + kSleepCycle_DeepSleep_PersonCheckInterval_s;
++      _dVars.nextPersonCheckTime_s = currTime_s + kSleepCycle_NightPersonCheckDelay_s;
 +      SendGoToSleepDasEvent(SleepReason::NightWindow);
 +      return;
 +    }
@@ -69,17 +75,23 @@ index cad706ae..c00df2c4 100644
            currTime_s >= _dVars.nextPersonCheckTime_s ) {
          LOG_INFO("BehaviorSleepCycle.TimeForPersonCheck",
                   "In state '%s', reached t=%f (>= %f), time to do a person check",
-@@ -703,6 +722,18 @@ bool BehaviorSleepCycle::GoToSleepIfNeeded()
+@@ -703,6 +726,24 @@ bool BehaviorSleepCycle::GoToSleepIfNeeded()
      return true;
    }
  
-+  // my-vector night window: idle and awake at night (after a voice command, a reboot or a touch) -> back to sleep at
-+  // once, skipping the wokeRecently grace; deep sleep since it is night. Busy features (voice, SDK, timer) finish first.
-+  if( kSleepCycle_NightWindow && GetBEI().GetSleepTracker().IsNightTime() ) {
++  // my-vector night window: idle and awake at night (after a voice command, a reboot or a touch) -> back to deep sleep
++  // at once, skipping the wokeRecently grace. No get-in anim: a flapping touch sensor would otherwise add a get-in to
++  // every wake-up anim all night. Busy features (voice, SDK, timer) and a pending intent finish first.
++  if( kSleepCycle_NightWindow && GetBEI().GetSleepTracker().IsNightTime() &&
++      !uic.IsAnyUserIntentPending() ) {
 +    const ActiveFeature feature = GetBehaviorComp<ActiveFeatureComponent>().GetActiveFeature();
 +    if( feature == ActiveFeature::Observing || feature == ActiveFeature::ObservingOnCharger ) {
 +      LOG_INFO("my-vector.NightWindow", "awake at night -> sleep");
-+      TransitionToLightOrDeepSleep();
++      GetBEI().GetSleepTracker().EnsureSleepDebtAtLeast( kSleepCycle_MinSleepDebt_s );
++      const bool playSleepGetIn = false;
++      SleepTransitionHelper(SleepStateID::DeepSleep, playSleepGetIn);
++      _dVars.nextPersonCheckTime_s = BaseStationTimer::getInstance()->GetCurrentTimeInSeconds() +
++                                     kSleepCycle_NightPersonCheckDelay_s;
 +      SendGoToSleepDasEvent(SleepReason::NightWindow);
 +      return true;
 +    }
@@ -88,6 +100,19 @@ index cad706ae..c00df2c4 100644
    const float currTime_s = BaseStationTimer::getInstance()->GetCurrentTimeInSeconds();
    const bool wokeRecently = _dVars.lastWakeUpTime_s > 0.0f &&
      ( currTime_s - _dVars.lastWakeUpTime_s ) <= kSleepCycle_RecentSleepLength_s;
+@@ -996,8 +1037,11 @@ void BehaviorSleepCycle::TransitionToDeepSleep()
+ {
+   SleepTransitionHelper(SleepStateID::DeepSleep);
+ 
++  // my-vector night window: the check waits for morning, so keep it close (kSleepCycle_NightPersonCheckDelay_s)
++  const bool nightWindow = kSleepCycle_NightWindow && GetBEI().GetSleepTracker().IsNightTime();
+   const float currTime_s = BaseStationTimer::getInstance()->GetCurrentTimeInSeconds();
+-  _dVars.nextPersonCheckTime_s = currTime_s + kSleepCycle_DeepSleep_PersonCheckInterval_s;
++  _dVars.nextPersonCheckTime_s = currTime_s + ( nightWindow ? kSleepCycle_NightPersonCheckDelay_s
++                                                            : kSleepCycle_DeepSleep_PersonCheckInterval_s );
+ }
+ 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 diff --git a/engine/aiComponent/behaviorComponent/sleepTracker.cpp b/engine/aiComponent/behaviorComponent/sleepTracker.cpp
 index 1802ec20..c2644f98 100644
 --- a/engine/aiComponent/behaviorComponent/sleepTracker.cpp
