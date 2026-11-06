@@ -411,6 +411,7 @@ class Synth:
     def stream(self, voice, text, slow, boost_db=0.0, robot_lang=None):
         name, voice_id = VOICES[voice]
         engine = self.engines[name]
+        log.info("tts voice=%s lang=%s text=%r", voice, robot_lang, text[:200])  # repr: a stray space/NBSP shows
         if robot_lang == "et-EE":  # the robot's built-in lines arrive in English (plan E31)
             text = et_lines.translate(text)
         lang = "et" if voice_id.startswith("et_") else "en"
