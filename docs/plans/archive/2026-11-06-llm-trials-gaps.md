@@ -1,6 +1,6 @@
 # LLM trials: work `docs/llm-trials.md` names but nothing implements
 
-**Status**: RULED 2026-11-06 — build all four, in order G2 → G1 → G3 → G4.
+**Status**: ✅ SHIPPED 2026-11-06 — G1, G2, G4 built; G3 dropped (endpoint ignores `reasoning_effort`).
 **Source**: `docs/llm-trials.md` audited against `scripts/llm.sh` and `chipper/pkg/wirepod/ttr/` on 2026-11-06.
 
 | id | ruling | edit site | falsifier |
