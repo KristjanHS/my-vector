@@ -47,6 +47,9 @@ func forkCameraReq(r *openai.ChatCompletionRequest) func() {
 	l, c, kg := lang.Current(), llm.Load(), forkKG()
 	t, ok := llm.Resolve(c, l, kg)
 	if !ok {
+		if kg.Provider == "openai" && kg.Model != "" {
+			r.Model = kg.Model // upstream DoGetImage hardcodes GPT4oMini for openai
+		}
 		if llm.IsOllama(kg) {
 			r.ReasoningEffort = "none"
 		}

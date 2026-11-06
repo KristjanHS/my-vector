@@ -146,3 +146,13 @@ func TestForkClaudeAliasDropsTopP(t *testing.T) {
 		t.Errorf("camera top_p %v", r.TopP)
 	}
 }
+
+func TestForkCameraLegacyOpenAIModel(t *testing.T) {
+	useKnowledge(t, "openai", "", "gpt-4.1")
+	lang.UseForTest(t, lang.English)
+	r := openai.ChatCompletionRequest{Model: openai.GPT4oMini}
+	forkCameraReq(&r)()
+	if r.Model != "gpt-4.1" {
+		t.Errorf("camera model %q", r.Model)
+	}
+}
