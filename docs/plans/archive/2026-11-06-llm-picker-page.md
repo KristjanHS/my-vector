@@ -1,6 +1,6 @@
 # Plan: Language, brain & voice page (per-language LLM profiles)
 
-Status: OPEN · 2026-11-06 · from `/qimpag` questions round (user ruled placement, lang→LLM rule, Claude transport, layout)
+Status: ✅ SHIPPED · 2026-11-06 (live checklist → docs/backlog.md §OWED[USER]) · from `/qimpag` questions round (user ruled placement, lang→LLM rule, Claude transport, layout)
 
 ## Contract (ruled; not reopened)
 - `/myvector/voice` retitled **"Language, brain & voice"**: top = active-language toggle `[EN | ET]` + **Save**; grid rows **LLM / Answer voice (T1) / Robot lines voice (T2)** × columns **EN | ET**; then speed slider + inline test row (text + ▶); collapsed **▸ Claude key / Ollama URL**. Compact.
