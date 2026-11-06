@@ -92,7 +92,7 @@ func isMn(r rune) bool {
 func removeSpecialCharacters(str string) string {
 
 	// these two lines create a transformation that decomposes characters, removes non-spacing marks (like diacritics), and then recomposes the characters, effectively removing special characters
-	t := transform.Chain(norm.NFD, transform.RemoveFunc(isMn), norm.NFC)
+	t := transform.Chain(norm.NFD, transform.RemoveFunc(forkMarkFilter()), norm.NFC) // my-vector: et-EE keeps ä ö ü š ž (fork_marks.go)
 	result, _, _ := transform.String(t, str)
 
 	// Define the regular expression to match special characters
@@ -258,6 +258,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 	case "openai":
 		c = openai.NewClient(vars.APIConfig.Knowledge.Key)
 	}
+	c = forkClient(c)
 	speakReady := make(chan string)
 	successIntent := make(chan bool)
 

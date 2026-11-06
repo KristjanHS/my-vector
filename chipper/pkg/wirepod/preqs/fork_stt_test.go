@@ -2,6 +2,7 @@ package processreqs
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,30 +26,47 @@ func forkSTTStub(t *testing.T, url string) (func(sr.SpeechRequest) (string, erro
 	return func(sr.SpeechRequest) (string, error) { calls++; return "what time is it", nil }, &calls
 }
 
-func TestForkSTTRouterEnglishUsesWrapped(t *testing.T) {
-	lang.UseForTest(t, lang.English)
-	vosk, calls := forkSTTStub(t, "http://127.0.0.1:1/stt")
-	forkSTTCollect = func(sr.SpeechRequest) ([]byte, error) { t.Fatal("English read audio for et STT"); return nil, nil }
-	text, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
-	if err != nil || text != "what time is it" || *calls != 1 {
-		t.Fatalf("got %q, %v, vosk calls %d", text, err, *calls)
+func TestForkSTTRouterPostsLang(t *testing.T) {
+	for _, c := range []struct{ lang, reply, want string }{
+		{lang.English, `{"text": " What time is it? "}`, "what time is it"},
+		{lang.Estonian, `{"text": " Mis kell ÕHTUL on? "}`, "mis kell õhtul on?"},
+	} {
+		lang.UseForTest(t, c.lang)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			if r.Method != http.MethodPost || r.URL.Path != "/stt" || r.URL.Query().Get("lang") != c.lang || !bytes.Equal(body, forkTestPCM) {
+				t.Errorf("%s: got %s %s body %v", c.lang, r.Method, r.URL, body)
+			}
+			io.WriteString(w, c.reply)
+		}))
+		vosk, calls := forkSTTStub(t, srv.URL+"/stt")
+		text, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
+		srv.Close()
+		if err != nil || text != c.want || *calls != 0 {
+			t.Fatalf("%s: got %q, %v, vosk calls %d", c.lang, text, err, *calls)
+		}
 	}
 }
 
-func TestForkSTTRouterEstonianPosts(t *testing.T) {
-	lang.UseForTest(t, lang.Estonian)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		if r.Method != http.MethodPost || r.URL.Path != "/stt" || !bytes.Equal(body, forkTestPCM) {
-			t.Errorf("got %s %s body %v", r.Method, r.URL.Path, body)
+// English gets Vosk's shape for upstream's parsers (timer regex, weather location); Estonian text is only lowercased + trimmed.
+func TestForkSTTVoskShape(t *testing.T) {
+	for _, c := range []struct{ lang, text, want string }{
+		{lang.English, "Set a 10-minute timer, please!", "set a 10 minute timer please"},
+		{lang.English, "What's the weather in Paris, France?", "what's the weather in paris france"},
+		{lang.English, "1.5 minutes. It’s 3.", "1.5 minutes it's 3"},
+		{lang.English, " Hi...  there\t— you ", "hi there you"},
+		{lang.Estonian, " Mis kell ÕHTUL on? ", "mis kell õhtul on?"},
+	} {
+		lang.UseForTest(t, c.lang)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(map[string]string{"text": c.text})
+		}))
+		vosk, _ := forkSTTStub(t, srv.URL+"/stt")
+		text, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
+		srv.Close()
+		if err != nil || text != c.want {
+			t.Errorf("%s %q: got %q, %v; want %q", c.lang, c.text, text, err, c.want)
 		}
-		io.WriteString(w, `{"text": " Mis kell ÕHTUL on? "}`)
-	}))
-	defer srv.Close()
-	vosk, calls := forkSTTStub(t, srv.URL+"/stt")
-	text, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
-	if err != nil || text != "mis kell õhtul on?" || *calls != 0 {
-		t.Fatalf("got %q, %v, vosk calls %d", text, err, *calls)
 	}
 }
 
@@ -66,14 +84,16 @@ func TestForkSTTRouterEstonianServerError(t *testing.T) {
 	}
 }
 
-func TestForkSTTRouterEstonianUnreachable(t *testing.T) {
-	lang.UseForTest(t, lang.Estonian)
+func TestForkSTTRouterUnreachableNeverFallsBack(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	url := srv.URL + "/stt"
 	srv.Close()
-	vosk, calls := forkSTTStub(t, url)
-	_, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
-	if err == nil || !strings.Contains(err.Error(), "et STT unavailable") || *calls != 0 {
-		t.Fatalf("got %v, vosk calls %d", err, *calls)
+	for _, l := range []string{lang.English, lang.Estonian} {
+		lang.UseForTest(t, l)
+		vosk, calls := forkSTTStub(t, url)
+		_, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
+		if err == nil || !strings.Contains(err.Error(), l+" STT unavailable") || *calls != 0 {
+			t.Fatalf("%s: got %v, vosk calls %d", l, err, *calls)
+		}
 	}
 }

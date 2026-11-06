@@ -3,68 +3,129 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Wire-Pod - Language &amp; voice</title>
+  <title>Wire-Pod - Language, brain &amp; voice</title>
   <link rel="stylesheet" type="text/css" href="/css/style.css" />
   <style>
-    .voice-box { max-width: 420px; margin: 24px auto; padding: 0 16px; }
-    .voice-box label { display: block; margin: 6px 0; }
-    .voice-box fieldset { margin: 8px 0; }
-    .voice-box input[type=range] { width: 100%; }
-    #status { min-height: 1.4em; }
+    .voice-box { max-width: 640px; margin: 24px auto; padding: 0 16px; }
+    .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .top h2 { margin: 0; flex: 1; }
+    .seg label { display: inline-block; margin: 0 2px; }
+    .grid { width: 100%; border-collapse: collapse; margin: 12px 0; }
+    .grid th { text-align: left; font-weight: normal; white-space: nowrap; padding-right: 8px; }
+    .grid td { padding: 3px 4px; }
+    .grid select { width: 100%; min-width: 0; }
+    .llm { display: flex; gap: 4px; }
+    .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+    .row input[type=text], .row input[type=password], .row input[type=range] { flex: 1; min-width: 0; }
+    details { margin: 10px 0; }
+    #status, #warn { min-height: 1.4em; margin: 4px 0; }
+    #warn { color: #b35c00; }
   </style>
 </head>
 <body>
   <div class="voice-box">
     <p><a href="/">&larr; Wire-Pod</a></p>
-    <h2>Language &amp; voice</h2>
     <form id="form">
-      <fieldset><legend>Language</legend><div id="lang"></div></fieldset>
-      <h3>English voices</h3>
-      <fieldset><legend>T1: LLM answers</legend><div id="t1"></div></fieldset>
-      <fieldset><legend>T2: robot's own lines (time, weather…)</legend><div id="t2"></div></fieldset>
-      <h3>Eesti hääled</h3>
-      <fieldset><legend>T1: LLM answers</legend><div id="t1_et"></div></fieldset>
-      <fieldset><legend>T2: robot's own lines</legend><div id="t2_et"></div></fieldset>
-      <label>Slow factor (T1 and T2): <output id="slowOut"></output>
-        <input type="range" id="slow" step="0.05" />
-      </label>
-      <label>Sample text:
-        <textarea id="sample" rows="3" maxlength="599" style="width: 100%">Hi, I'm Vector. It's a lovely day, and I'm happy to help. What would you like to know?</textarea>
-      </label>
-      <button type="button" id="test">Test the selected language's T1 on Vector</button>
-      <button type="submit">Save</button>
+      <div class="top">
+        <h2>Language, brain &amp; voice</h2>
+        <span class="seg" id="lang"></span>
+        <button type="submit">Save</button>
+      </div>
+      <table class="grid">
+        <tr><th><button type="button" id="refresh" title="Reload the model lists">&#8635;</button></th><th>EN</th><th>ET</th></tr>
+        <tr><th>LLM</th>
+          <td><div class="llm"><select id="llm_en-US"><optgroup label="Local (Ollama)" data-provider="ollama"></optgroup><optgroup label="Claude API" data-provider="claude"></optgroup></select><button type="button" data-test="en-US">Test</button></div></td>
+          <td><div class="llm"><select id="llm_et-EE"><optgroup label="Local (Ollama)" data-provider="ollama"></optgroup><optgroup label="Claude API" data-provider="claude"></optgroup></select><button type="button" data-test="et-EE">Test</button></div></td></tr>
+        <tr><th>Answer (T1)</th><td><select id="t1"></select></td><td><select id="t1_et"></select></td></tr>
+        <tr><th>Robot (T2)</th><td><select id="t2"></select></td><td><select id="t2_et"></select></td></tr>
+      </table>
+      <div class="row">Speed <input type="range" id="slow" step="0.05" /> <output id="slowOut"></output></div>
+      <div class="row">
+        <input type="text" id="sample" maxlength="599" value="Hi, I'm Vector. It's a lovely day, and I'm happy to help. What would you like to know?" />
+        <button type="button" id="speak" title="Speak the active language's T1 on Vector">&#9654;</button>
+      </div>
+      <details>
+        <summary>Claude key / Ollama URL</summary>
+        <div class="row">Claude key <input type="password" id="claude_key" autocomplete="off" spellcheck="false" maxlength="200" /> <button type="button" id="clearKey">clear</button></div>
+        <div class="row">Ollama URL <input type="text" id="ollama_url" maxlength="200" spellcheck="false" /></div>
+      </details>
     </form>
     <p id="status"></p>
+    <p id="warn"></p>
   </div>
   <script>
-    const api = "/myvector/api/voice";
+    const api = "/myvector/api/voice", modelsApi = "/myvector/api/llm/models", testApi = "/myvector/api/llm/test";
     const $ = (id) => document.getElementById(id);
     const status = (t) => { $("status").textContent = t; };
-    const names = { "en-US": "English", "et-EE": "Eesti" };
+    const short = { "en-US": "EN", "et-EE": "ET" };
     const samples = { "en-US": $("sample").value, "et-EE": "Tere, mina olen Vector. Täna on ilus päev. Millega saan aidata?" };
-    const radios = (id, values, checked, label = (v) => v) => $(id).replaceChildren(...values.map((v) => {
-      const l = document.createElement("label");
-      const r = Object.assign(document.createElement("input"), { type: "radio", name: id, value: v, checked: v === checked });
-      l.append(r, " " + label(v));
-      return l;
-    }));
+    let cur = null, lists = null, clearKey = false;
+    const opt = (value, text = value) => Object.assign(document.createElement("option"), { value, textContent: text });
     const pick = (t) => { const r = document.querySelector(`input[name=${t}]:checked`); return r && r.value; };
+    function choice(l) { // the dropdown's {provider, model}; the group gives the provider
+      const o = $("llm_" + l).selectedOptions[0];
+      return o ? { provider: o.parentElement.dataset.provider, model: o.value } : cur.llm[l];
+    }
+    function fillLLM(l, want) {
+      const [local, claude] = $("llm_" + l).querySelectorAll("optgroup");
+      const o = (lists && lists.ollama) || { models: [] }, c = (lists && lists.claude) || { models: [], keySet: !!cur.claudeKey };
+      local.replaceChildren(...o.models.map((m) => opt(m)));
+      claude.replaceChildren(...c.models.map((m) => opt(m.id, m.name || m.id)));
+      claude.disabled = !c.keySet;
+      claude.label = c.keySet ? "Claude API" : "Claude API — add a Claude key below";
+      const group = want.provider === "claude" ? claude : local;
+      let sel = [...group.children].find((x) => x.value === want.model);
+      if (!sel) {
+        const why = !lists ? "" : want.provider === "claude" ? " (not listed)" : o.error ? " (Ollama unreachable)" : " (not installed)";
+        group.append(sel = opt(want.model, want.model + why));
+      }
+      sel.selected = true;
+    }
+    function warnings() {
+      const w = [];
+      if (cur && !cur.kgEnabled) w.push("Knowledge graph is off in wire-pod setup, so no LLM answers.");
+      if (cur && !cur.llmSaved) w.push(`Save hands the brain from wire-pod Knowledge (${cur.knowledge || "unset"}) to the LLM picks above.`);
+      if (lists && lists.ollama.error) w.push("Ollama: " + lists.ollama.error);
+      if (lists && lists.claude.error) w.push("Claude: " + lists.claude.error);
+      if (cur && !cur.claudeKey) w.push("Claude API: add a Claude key below.");
+      $("warn").textContent = w.join(" ");
+    }
     function show(s) {
-      radios("lang", s.langs, s.lang, (l) => names[l] || l);
-      for (const [t, l] of [["t1", "en-US"], ["t2", "en-US"], ["t1_et", "et-EE"], ["t2_et", "et-EE"]]) radios(t, s.voices[l], s[t]);
+      cur = s;
+      $("lang").replaceChildren(...s.langs.map((l) => {
+        const lab = document.createElement("label");
+        lab.append(Object.assign(document.createElement("input"), { type: "radio", name: "lang", value: l, checked: l === s.lang }), " " + (short[l] || l));
+        return lab;
+      }));
+      for (const [t, l] of [["t1", "en-US"], ["t2", "en-US"], ["t1_et", "et-EE"], ["t2_et", "et-EE"]]) {
+        $(t).replaceChildren(...s.voices[l].map((v) => opt(v)));
+        $(t).value = s[t];
+      }
+      for (const l of s.langs) fillLLM(l, s.llm[l]);
       syncSample();
       Object.assign($("slow"), { min: s.slowMin, max: s.slowMax, value: s.slow });
       $("slowOut").textContent = s.slow.toFixed(2);
+      $("ollama_url").value = s.ollamaUrl;
+      Object.assign($("claude_key"), { value: "", placeholder: s.claudeKey || "not set" });
+      clearKey = false;
+      warnings();
     }
     async function call(opts, url = api) {
       const r = await fetch(url, opts);
       if (!r.ok) throw new Error((await r.text()).trim());
       return r.json();
     }
+    const json = (body) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     function post(extra) {
-      return { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lang: pick("lang"), t1: pick("t1"), t2: pick("t2"), t1_et: pick("t1_et"), t2_et: pick("t2_et"),
-          slow: Number($("slow").value), ...extra }) };
+      return json({ lang: pick("lang"), t1: $("t1").value, t2: $("t2").value, t1_et: $("t1_et").value, t2_et: $("t2_et").value,
+        slow: Number($("slow").value), ...extra });
+    }
+    async function loadModels(refresh) {
+      const keep = cur && Object.fromEntries(cur.langs.map((l) => [l, choice(l)]));
+      try { lists = await call(undefined, modelsApi + (refresh ? "?refresh=1" : "")); }
+      catch (err) { lists = { ollama: { models: [], error: err.message }, claude: { models: [], keySet: !!cur.claudeKey } }; }
+      for (const l of cur.langs) fillLLM(l, keep[l]);
+      warnings();
     }
     function syncSample() { // swap the sample only while it still holds a default
       const l = pick("lang");
@@ -72,23 +133,43 @@
     }
     $("lang").addEventListener("change", syncSample);
     $("slow").addEventListener("input", (e) => { $("slowOut").textContent = Number(e.target.value).toFixed(2); });
-    $("test").addEventListener("click", async () => {
-      $("test").disabled = true;
+    $("refresh").addEventListener("click", () => loadModels(true));
+    $("clearKey").addEventListener("click", () => {
+      clearKey = true;
+      Object.assign($("claude_key"), { value: "", placeholder: "cleared on Save" });
+    });
+    for (const b of document.querySelectorAll("[data-test]")) b.addEventListener("click", async () => {
+      const l = b.dataset.test, c = choice(l);
+      b.disabled = true;
+      status(`Testing ${short[l]} ${c.model}…`);
+      try { const r = await call(json({ lang: l, ...c }), testApi); status(`${short[l]} ${c.model}: ${r.reply} (${r.ms} ms)`); }
+      catch (err) { status(`${short[l]} test failed: ` + err.message); }
+      finally { b.disabled = false; }
+    });
+    $("speak").addEventListener("click", async () => {
+      $("speak").disabled = true;
       status("Speaking on Vector…");
       try { status("Spoke: " + (await call(post({ text: $("sample").value }), api + "/test")).voice); }
       catch (err) { status("Test failed: " + err.message); }
-      finally { $("test").disabled = false; }
+      finally { $("speak").disabled = false; }
     });
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
       status("Saving…");
+      const extra = { llm: Object.fromEntries(cur.langs.map((l) => [l, choice(l)])), ollama_url: $("ollama_url").value };
+      if (clearKey) extra.claude_key = "";
+      else if ($("claude_key").value.trim()) extra.claude_key = $("claude_key").value.trim();
       try {
-        const s = await call(post());
+        const s = await call(post(extra)); // blank key = keep; the demo takes no llm fields
         show(s);
-        status(s.pushError ? "Saved; robot not updated: " + s.pushError : "Saved; robot updated.");
+        loadModels(false);
+        const notes = [];
+        if (s.intentError) notes.push("language not switched: " + s.intentError);
+        notes.push(s.pushError ? "robot not updated: " + s.pushError : "robot updated.");
+        status("Saved; " + notes.join("; "));
       } catch (err) { status("Not saved: " + err.message); }
     });
-    call().then(show).catch((err) => status("Could not load: " + err.message));
+    call().then((s) => { show(s); loadModels(false); }).catch((err) => status("Could not load: " + err.message));
   </script>
 </body>
 </html>

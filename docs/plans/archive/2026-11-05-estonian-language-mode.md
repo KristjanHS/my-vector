@@ -1,6 +1,6 @@
 # Vector Estonian mode: research, pick, build
 
-**Status**: 🟡 IN PROGRESS 2026-11-05 — Stages 1–8 done; Stage 9.1 (built-in lines, patch 0011) next; robot runs wait for the user's go.
+**Status**: ✅ SHIPPED 2026-11-06 — all stages on `main`, 10.4 review fixed; live robot checks 9.3/10.2/10.3 → `docs/backlog.md` §OWED[USER].
 **Want**: one switch makes Vector hear, understand, answer and speak Estonian, built-in lines included; English unchanged.
 **Parent**: `2026-11-05-vector-voice-research.md` (docs/plans/) — R1–R23 live there; R2, R4, R6 carry over.
 **Overlap**: `2026-11-05-vector-voice-verify.md` (docs/plans/) stays QUEUED LAST and checks the English PC voice path; this plan must not wait for it. Its V5 rows 1–2 become Stage 10's English regression.
@@ -37,8 +37,12 @@
 | E26 | ET camera keeps getImage: unload the ET model, photo turn on `Knowledge.Model` (vision), unload it after (`keep_alive: 0`) — one LLM resident |
 | E27 | Ollama = Provider `custom` ∧ endpoint port 11434 (claude/gemini presets are `custom` too); gates ET model, `reasoning_effort: none`, unloads |
 | E28 | ET voice key = `mari` → Piper `et_EE-news-medium@Mari` only (Vesta/Albert/Kalev not exposed); `@speaker` parsed in `PiperEngine`, one model load |
-| E29 | ET normaliser in 8.1 (`tts/et_text.py`, `et_*` voices only): `HH.MM`/`HH:MM` → `14 null 5`; day 1–31 `.` + month form → ordinal in the month's case (viies november, viiendal novembril); other ordinals/years untouched; 9.1 reuses it |
+| E29 | ET normaliser in 8.1 (`tts/et_text.py`, `et_*` voices only): `HH.MM`/`HH:MM` → `14 null 5`, `HH:00` → `H` (`9:00` → `9`); day 1–31 `.` + month form → ordinal in the month's case (viies november, viiendal novembril); other ordinals/years untouched; 9.1 reuses it |
 | E30 | ET voice list = `mari` only (stock = Acapela English reading Estonian, rejected in 1.4); one `slow` shared by both languages |
+| E31 | Patch 0010 (amended in place — `tests/pc-voice.sh` wants one patch on the provider): robot reads `lang` (`en-US`/`et-EE`, else omitted) from `myvector-voice.json`, sends it in the `/tts` body; PC translates ONLY on `lang` = `et-EE`; no `lang` = today's behaviour |
+| E32 | Robot = 24h clock + Celsius in every language; `settings.sh` enforces it (`/api-sdk/time_format_24`, `/api-sdk/temp_c`), not the language switch |
+| E33 | ET built-in table (names base form, unmatched text unchanged): clock `HH:MM` → "Kell on HH:MM"; `{0} kraadi ja pilves/külm/sajab vihma/sajab lund/tähine öö/päikseline/tuuline`, `{0} kraadi ja äike`; ±1 → kraad; `-5` → miinus 5 |
+| E34 | ET enroll/misc: "Kas me oleme varem kohtunud, {0}?", "Mul on juba tuttav nimega {0}" (a/an), "Ma tunnen sind juba!", "Sa oled {0}, mitte {1}", "Ma ei tea", "Valmis"; how-old/messages out |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -96,8 +100,13 @@ Ruled E15–E18 (2026-11-05).
 | 7.1 | DONE: `CreateAIReq` → `forkAIReq`: et-EE appends "Answer in Estonian." (bench line) + model `lang.ETModel()` on Ollama (E25, E27); Ollama gets `ReasoningEffort: "none"`; `DoGetImage` → `forkCameraReq` (E26); EN default `qwen3.5:4b` (E16), then `scripts/llm.sh use ollama qwen3.5:4b` live | `ttr/fork_prompt.go` (hooks in kgsim.go, kgsim_cmds.go), `myvector/lang/lang.go`, `scripts/llm.sh` + `docs/llm-trials.md` | `go test -run Fork ./pkg/wirepod/ttr/` (`TestForkPromptEstonian`, `TestForkPromptEnglishUnchanged`, `TestForkPromptOpenAIOmitsReasoning`, `TestForkCameraEstonianUnloads`) + `TestLangETModel` |
 | 8.1 | DONE: TTS server: `mari` in `VOICES` (E28) + Go `Voices`, gain to -14 LUFS (R23, `tts/calibrate.py`), ET normaliser (E29), split: ET abbreviations + no split after `<digit>.` before a lowercase word | `tts/server.py`, `tts/et_text.py`, `tts/gains.json`, `tts/smoke.sh`, `myvector/voice/settings.go` | pytest `tts/tests` (stub engine, `test_et_text.py`) + `TestSettingsVoicesMatchService` + live `tts/smoke.sh` |
 | 8.2 | DONE: Per-language voices (E30): `Settings` gains `T1ET`/`T2ET` (`t1_et`/`t2_et`), `VoicesFor(lang)` (en: af_bella·cori·stock; et: mari), `Active()` = pair for `lang.Current()`; POST body gains `lang` → `lang.Save` + `vars.IntentList, _ = vars.LoadIntents()` + push the active T2; TTS server pins Kokoro from the active pair (reads `lang`); page = "Language & voice" (language radio + per-language T1/T2). ttr `words2num` already re-inits per call — no hook | `myvector/voice/{settings.go,settings.html,voice.go}`, `ttr/fork_say.go` if it reads T1, `tts/server.py` `kokoro_selected` | `TestSettingsValidate`, `TestSettingsSaveRoundTrip`, `TestSettingsVoicesMatchService` (union of `VoicesFor` − stock = VOICES) extended; new `TestSettingsLangSwitchReloadsIntents`, pytest `kokoro_selected` et-EE case |
-| 9.1 | Built-in lines in Estonian, D2a (E18): new patch `0011-*.patch` + `series` + `markers.tsv`; push `lang` in `myvector-voice.json` via `voice-push.sh` | `robot/firmware/`, `voice-push.sh`, `myvector/voice/` | `robot/firmware/check-static.sh`; host test `robot/firmware/tests/et-lines.sh` added to `scripts/check.sh`; `TestPushT2Args` extended |
-| 9.2 | [USER] live: apply patch, `make robot-test` (robot/firmware/smoke.sh); "Mis kell on?" in Estonian | robot | smoke exit 0 |
+| 9.1a | PC side (E31–E34): `tts/et_lines.py` `translate(text)`; `parse_request` takes optional `lang`, `stream` translates on et-EE; `voice-push.sh <voice> <slow> <lang>` + `pushT2` pass `lang`; `settings.sh` 24h + Celsius | `tts/{et_lines.py,server.py}`, `robot/firmware/{voice-push.sh,settings.sh}`, `myvector/voice/settings.go` | pytest `tts/tests/test_et_lines.py` + `test_server.py` lang cases; `TestPushT2Args` extended |
+| 9.1b | Robot side (E31): `0010-pc-voice.patch` amended via `apply.sh` + `--export` (`MyVectorLoadVoice` reads `lang`, POST body adds it) + a `markers.tsv` row | `robot/firmware/`, `robot/work/wire-os-victor` | `robot/firmware/check-static.sh`; host test `tests/pc-voice.sh` asserts `lang` in the body |
+| 9.2 | DONE: shipped `83b3c01` (smoke PASS); "Mis kell on?" → `intent_clock_time`, robot log `pc voice=mari lang=et-EE` | robot | smoke exit 0 |
+| 9.3 | DONE in code: /tts logs `text`+`lang`; `_CLOCK` takes 1-digit hours ("9:05"). [USER] live "Mis kell on?" → `journalctl -u myvector-tts \| grep 'tts voice='`; text ≠ `H:MM` → fit `_CLOCK` to it | `tts/server.py`, `tts/et_lines.py` | pytest `test_et_lines.py` ("9:05" case; logged text if it differs) |
+| 9.4 | DONE (user ruling 2026-11-06: ET uses the same logic as EN): `knowledge.intentgraph` back on, so unmatched text → LLM in both languages (`preqs/intent.go` `!successMatched`) | `scripts/llm.sh use ollama qwen3.5:4b --intentgraph` | `jq .knowledge.intentgraph chipper/apiConfig.json` = true; live "mis päev täna on?" answered |
+| 9.6 | DONE: ET LLM answers lose ä/õ/ü/ö ("Tanase nadalapaeva … oelda"): upstream `removeSpecialCharacters` drops combining marks (NFD + `isMn`) — keep them on et-EE via a fork hook, drift-listed | `ttr/fork_*.go`, `ttr/kgsim.go` + `kgsim_cmds.go` call sites, `scripts/upstream-drift.sh` | `TestForkSpecialCharsEstonianKeepsDiacritics`, English unchanged |
+| 9.5 | DONE: `llm.sh use` resets every unpassed flag (7.1's run dropped intentgraph): keep the saved `intentgraph`/`commands_enable`/`save_chat` unless a flag is passed | `scripts/llm.sh`, `docs/llm-trials.md` | `scripts/llm.sh use ollama` twice → `jq .knowledge.intentgraph` stays true |
 
 ## Stage 10 — verify + e2e + review
 

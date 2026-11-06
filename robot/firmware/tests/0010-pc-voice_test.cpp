@@ -137,24 +137,39 @@ int main(int argc, char** argv)
 
   // voice file: fixed cases, then every tts-urls.txt row (voice-push.sh runs the same rows in pc-voice.sh)
   {
-    const auto load = [&](const char* json, std::string& h, int& po, std::string& pa, std::string& vo, float& sl) {
+    const auto load = [&](const char* json, std::string& h, int& po, std::string& pa, std::string& vo, float& sl, std::string& la) {
       if (json) { FILE* f = fopen(MV_TEST_VOICE_FILE, "w"); fputs(json, f); fclose(f); } else { remove(MV_TEST_VOICE_FILE); }
-      return MyVectorLoadVoice(h, po, pa, vo, sl, why);
+      return MyVectorLoadVoice(h, po, pa, vo, sl, la, why);
     };
-    std::string h, pa, vo;
+    std::string h, pa, vo, la;
     int po = 0;
     float sl = 0;
-    CHECK(!load(nullptr, h, po, pa, vo, sl) && why.find("no ") == 0);
-    CHECK(!load("{nope", h, po, pa, vo, sl) && why == "unparseable voice file");
-    CHECK(!load("{\"url\":\"http://1.2.3.4:8091\",\"voice\":\"stock\"}", h, po, pa, vo, sl) && why == "voice stock");
-    CHECK(!load("{\"url\":\"\",\"voice\":\"cori\"}", h, po, pa, vo, sl) && why == "no url");
-    CHECK(load("{\"url\":\"http://192.168.1.5:8091/\",\"voice\":\"cori\",\"slow\":1.3}", h, po, pa, vo, sl));
+    CHECK(!load(nullptr, h, po, pa, vo, sl, la) && why.find("no ") == 0);
+    CHECK(!load("{nope", h, po, pa, vo, sl, la) && why == "unparseable voice file");
+    CHECK(!load("{\"url\":\"http://1.2.3.4:8091\",\"voice\":\"stock\"}", h, po, pa, vo, sl, la) && why == "voice stock");
+    CHECK(!load("{\"url\":\"\",\"voice\":\"cori\"}", h, po, pa, vo, sl, la) && why == "no url");
+    CHECK(load("{\"url\":\"http://192.168.1.5:8091/\",\"voice\":\"cori\",\"slow\":1.3}", h, po, pa, vo, sl, la));
     CHECK(h == "192.168.1.5" && po == 8091 && pa.empty() && vo == "cori" && sl > 1.29f && sl < 1.31f);
-    CHECK(load("{\"url\":\"http://10.0.0.2/x/\",\"voice\":\"af_bella\"}", h, po, pa, vo, sl));
+    CHECK(load("{\"url\":\"http://10.0.0.2/x/\",\"voice\":\"af_bella\"}", h, po, pa, vo, sl, la));
     CHECK(h == "10.0.0.2" && po == 80 && pa == "/x" && sl == 1.f);
     // R19 origin gate on that valid file: robot-internal lines use the PC, SDK SayText stays Acapela
-    CHECK(MyVectorPcLine(false, h, po, pa, vo, sl, why));
-    CHECK(!MyVectorPcLine(true, h, po, pa, vo, sl, why) && why == "sdk SayText (R19)");
+    CHECK(MyVectorPcLine(false, h, po, pa, vo, sl, la, why));
+    CHECK(!MyVectorPcLine(true, h, po, pa, vo, sl, la, why) && why == "sdk SayText (R19)");
+    // E31 lang: en-US/et-EE go into the /tts body; anything else or absent loads fine with no lang field
+    const auto body = [&](const std::string& lang) {
+      Json::Value b;
+      Json::Reader().parse(MyVectorRequestBody("Hi.", "cori", 3.f, lang), b);
+      return b;
+    };
+    CHECK(load("{\"url\":\"http://10.0.0.2:8091\",\"voice\":\"cori\",\"lang\":\"et-EE\"}", h, po, pa, vo, sl, la) && la == "et-EE");
+    Json::Value b = body(la);
+    CHECK(b["lang"].asString() == "et-EE" && b["text"].asString() == "Hi." && b["voice"].asString() == "cori" && b["slow"].asFloat() == 2.f);
+    CHECK(load("{\"url\":\"http://10.0.0.2:8091\",\"voice\":\"cori\",\"lang\":\"en-US\"}", h, po, pa, vo, sl, la) && la == "en-US");
+    CHECK(load("{\"url\":\"http://10.0.0.2:8091\",\"voice\":\"cori\",\"lang\":\"xx\"}", h, po, pa, vo, sl, la) && la.empty());
+    CHECK(!body(la).isMember("lang"));
+    la = "et-EE";
+    CHECK(load("{\"url\":\"http://10.0.0.2:8091\",\"voice\":\"cori\"}", h, po, pa, vo, sl, la) && la.empty());
+    CHECK(!body(la).isMember("lang") && body(la).isMember("voice"));
     std::ifstream urls(argv[1]);
     std::string want, url;
     int rows = 0;
@@ -164,7 +179,7 @@ int main(int argc, char** argv)
       Json::Value v;
       v["url"] = url;
       v["voice"] = "af_bella";
-      const bool got = load(Json::FastWriter().write(v).c_str(), h, po, pa, vo, sl);
+      const bool got = load(Json::FastWriter().write(v).c_str(), h, po, pa, vo, sl, la);
       if (got != (want == "ok")) { printf("FAIL tts-urls.txt: firmware %s %s (%s)\n", got ? "accepts" : "rejects", url.c_str(), got ? "" : why.c_str()); }
       CHECK(got == (want == "ok"));
       ++rows;

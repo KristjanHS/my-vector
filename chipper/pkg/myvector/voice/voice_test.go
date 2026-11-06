@@ -297,7 +297,7 @@ func TestSpeakStock(t *testing.T) {
 		t.Fatalf("Speak = %q, %v; want stock, nil", got, err)
 	}
 	if len(r.said) != 1 || !r.said[0].UseVectorVoice || r.said[0].DurationScalar != float32(1.3) || r.said[0].Text != "hi" {
-		t.Errorf("SayText = %v, want R12 (robot voice at slow 1.3)", r.said)
+		t.Errorf("SayText = %v, want R12 (Acapela at slow 1.3)", r.said)
 	}
 }
 

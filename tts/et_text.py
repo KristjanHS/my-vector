@@ -71,9 +71,10 @@ _DAY_MONTH = re.compile(r"(?<![\d.,])([1-9]|[12]\d|3[01])\.(\s+)([a-zõäöüš�
 
 
 def _time(m):
-    mm = m.group(2)
-    minutes = "null null" if mm == "00" else f"null {mm[1]}" if mm[0] == "0" else mm
-    return f"{int(m.group(1))} {minutes}"
+    hour, mm = int(m.group(1)), m.group(2)
+    if mm == "00":
+        return str(hour)
+    return f"{hour} {f'null {mm[1]}' if mm[0] == '0' else mm}"
 
 
 def _day_month(m):

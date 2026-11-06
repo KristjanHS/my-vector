@@ -8,6 +8,9 @@ Almost everything runs through **`scripts/llm.sh`**. It changes wire-pod's LLM s
 running server's web API (no restart), and `ping` sends a request built like wire-pod's (same
 endpoint, key and model), so you see the answer and its latency without talking to the robot.
 
+⚠ Once the **Language, brain & voice** page (`/myvector/voice`) is saved, its per-language LLM (Ollama or
+Claude) wins: `scripts/llm.sh use` no longer changes the brain. Delete `"llm"` from `chipper/myvectorConfig.json` to go back.
+
 | # | option | cost | what it adds |
 |---|--------|------|--------------|
 | 1 | Local Ollama (your Windows Ollama) | free | plain Q&A, private — same setup as the dev.to "WirePod + Gemma" write-up |
@@ -67,12 +70,13 @@ Then ask Vector a question (see "How to ask" above). Things to try:
 - Another installed model: `scripts/llm.sh models ollama`, then e.g. `scripts/llm.sh use ollama cas/mistral-7b-instruct-v0.3:latest`.
   Avoid `deepseek-r1` (it "thinks out loud", and Vector would read that out) and the coder models.
 - `scripts/llm.sh use ollama --intentgraph` to skip the "I have a question" step.
+  `--commands`/`--intentgraph`/`--remember` stick: a later `use` keeps them; `--no-intentgraph` (etc.) turns one off.
 
 What can go wrong:
 
 - **First answer never comes** — the model was still loading after a Windows Ollama restart. Run `warm` first.
-- **Answer fits a different question** — that is speech-to-text (Vosk), not the LLM. The log shows the
-  transcribed text; if Vosk often mishears, switching wire-pod's STT to Whisper is a separate project.
+- **Answer fits a different question** — that is speech-to-text (myvector-stt, large-v3-turbo for English),
+  not the LLM. The log shows the transcribed text: `journalctl -u wire-pod | grep 'Transcribed text'`.
 
 ## 2. Ollama + robot actions + camera
 
@@ -115,8 +119,8 @@ scripts/llm.sh use claude --commands --intentgraph --remember   # then the step-
 ```
 
 - **"Low effort":** wire-pod sends no thinking/effort settings, so Claude answers straight away
-  without extended thinking. That is the cheapest and fastest mode already. A real effort dial would
-  need a code change.
+  without extended thinking. That is the cheapest and fastest mode already. The endpoint
+  (`api.anthropic.com/v1/chat/completions`) ignores `reasoning_effort` — even `"bogus"` returns 200.
 - Larger model later: `scripts/llm.sh models claude`, then e.g. `scripts/llm.sh use claude claude-sonnet-5-5`.
 - Spend: check usage in the Anthropic Console (the workspace that owns the key). A spoken answer is a
   few hundred tokens, so the credit lasts a long time on Haiku.

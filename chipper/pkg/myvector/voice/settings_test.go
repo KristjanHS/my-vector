@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,12 +13,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
 // en is English T1, T2 and slow with the Estonian pair at its defaults.
@@ -48,12 +52,12 @@ func stubReload(t *testing.T) *[]string {
 	return &seen
 }
 
-// stubPush makes PushT2 record its Settings and return err.
+// stubPush makes PushT2 record the Settings it was given, as For its language, and return err.
 func stubPush(t *testing.T, err error) *[]Settings {
 	t.Helper()
 	var pushed []Settings
 	old := PushT2
-	PushT2 = func(_ context.Context, s Settings) error { pushed = append(pushed, s); return err }
+	PushT2 = func(_ context.Context, s Settings, l string) error { pushed = append(pushed, s.For(l)); return err }
 	t.Cleanup(func() { PushT2 = old })
 	return &pushed
 }
@@ -222,6 +226,63 @@ func TestSettingsLangSwitchReloadsIntents(t *testing.T) {
 	}
 }
 
+func TestSettingsLangSwitchRollsBackOnIntentError(t *testing.T) {
+	tempSettings(t)
+	var reloads []string
+	fail := errors.New("open ./intent-data/et-EE.json: permission denied")
+	ReloadIntents = func() error { reloads = append(reloads, lang.Current()); return fail } // tempSettings' cleanup restores it
+	pushed := stubPush(t, nil)
+	body := `{"lang":"et-EE","t1":"cori","t2":"af_bella","t1_et":"mari","t2_et":"mari","slow":1}`
+	w := serve(http.MethodPost, "application/json", body)
+	var got settingsReply
+	json.Unmarshal(w.Body.Bytes(), &got)
+	if w.Code != 200 || !strings.Contains(got.IntentError, fail.Error()) || got.Lang != lang.English || lang.Current() != lang.English {
+		t.Fatalf("failed reload: %d %s, lang %s; want 200 with intentError and en-US kept", w.Code, w.Body, lang.Current())
+	}
+	if b, _ := os.ReadFile(lang.Path()); !strings.Contains(string(b), `"lang": "en-US"`) { // the saved one, not just the cache
+		t.Fatalf("file after rollback = %s, want lang en-US", b)
+	}
+	if Current() != en("cori", "af_bella", 1) || len(*pushed) != 1 || (*pushed)[0].T2 != "af_bella" {
+		t.Fatalf("saved %+v, pushed %+v; want the voices saved and the en-US T2 pushed", Current(), *pushed)
+	}
+	ReloadIntents = func() error { reloads = append(reloads, lang.Current()); return nil }
+	if w := serve(http.MethodPost, "application/json", body); w.Code != 200 || lang.Current() != lang.Estonian ||
+		strings.Join(reloads, ",") != "et-EE,et-EE" || strings.Contains(w.Body.String(), "intentError") {
+		t.Fatalf("re-POST: %d %s, lang %s, reloads saw %v; want the switch retried and kept", w.Code, w.Body, lang.Current(), reloads)
+	}
+}
+
+// Two concurrent language switches must end with the intents of the language that stands (saveMu).
+func TestSettingsLangSwitchConcurrent(t *testing.T) {
+	tempSettings(t)
+	var mu sync.Mutex
+	loaded := lang.English
+	ReloadIntents = func() error { // as reloadIntents: read the language, load (slowly), then store
+		l := lang.Current()
+		time.Sleep(time.Duration(rand.Intn(2000)) * time.Microsecond) // so a later reload can finish first
+		mu.Lock()
+		loaded = l
+		mu.Unlock()
+		return nil
+	}
+	PushT2 = func(context.Context, Settings, string) error { return nil }
+	for i := 0; i < 30; i++ {
+		var wg sync.WaitGroup
+		for _, l := range []string{lang.Estonian, lang.English} {
+			wg.Add(1)
+			go func(l string) {
+				defer wg.Done()
+				serve(http.MethodPost, "application/json", `{"lang":"`+l+`","t1":"cori","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1}`)
+			}(l)
+		}
+		wg.Wait()
+		if mu.Lock(); loaded != lang.Current() {
+			t.Fatalf("round %d: lang %s with %s intents", i, lang.Current(), loaded)
+		}
+		mu.Unlock()
+	}
+}
+
 func TestSettingsFor(t *testing.T) {
 	s := Settings{"cori", Stock, "mari", "mari", 1.3}
 	if got := s.For(lang.Estonian); got != (Settings{"mari", "mari", "mari", "mari", 1.3}) {
@@ -258,17 +319,20 @@ func fakeScript(t *testing.T, body string) {
 func TestPushT2Args(t *testing.T) {
 	args := filepath.Join(t.TempDir(), "args")
 	fakeScript(t, `echo "$@" >`+args)
-	if err := pushT2(context.Background(), en("cori", "af_bella", 1.25)); err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := os.ReadFile(args); string(b) != "af_bella 1.25\n" {
-		t.Fatalf("voice-push.sh args %q, want T2 and slow", b)
+	s := Settings{"cori", "af_bella", "mari", "mari", 1.25}
+	for l, want := range map[string]string{lang.English: "af_bella 1.25 en-US\n", lang.Estonian: "mari 1.25 et-EE\n"} {
+		if err := pushT2(context.Background(), s, l); err != nil {
+			t.Fatal(err)
+		}
+		if b, _ := os.ReadFile(args); string(b) != want {
+			t.Fatalf("%s: voice-push.sh args %q, want %q (the language's T2, slow, lang)", l, b, want)
+		}
 	}
 }
 
 func TestPushT2ErrorHasLastLine(t *testing.T) {
 	fakeScript(t, `echo checking; echo "SETUP: no ROBOT_TTS_URL" >&2; exit 2`)
-	err := pushT2(context.Background(), Defaults())
+	err := pushT2(context.Background(), Defaults(), lang.English)
 	if err == nil || !strings.HasSuffix(err.Error(), ": SETUP: no ROBOT_TTS_URL") {
 		t.Fatalf("err = %v, want the script's last line", err)
 	}
@@ -280,7 +344,7 @@ func TestPushT2Timeout(t *testing.T) {
 	t.Cleanup(func() { PushTimeout = old })
 	fakeScript(t, `sleep 30 & wait`) // the orphaned sleep keeps the output pipe open, as a hung ssh would
 	start := time.Now()
-	err := pushT2(context.Background(), Defaults())
+	err := pushT2(context.Background(), Defaults(), lang.English)
 	if err == nil || !strings.Contains(err.Error(), "no answer") || time.Since(start) > 5*time.Second {
 		t.Fatalf("err = %v after %v, want a timeout within 5 s", err, time.Since(start))
 	}
@@ -298,6 +362,16 @@ func TestSettingsPage(t *testing.T) {
 	PageHandler(w, httptest.NewRequest(http.MethodGet, SettingsPage, nil))
 	if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") || !strings.Contains(w.Body.String(), `"`+SettingsAPI+`"`) {
 		t.Fatalf("page: %s, API path %s missing", w.Header().Get("Content-Type"), SettingsAPI)
+	}
+	// the page picks each language's LLM from both providers and shows a rolled-back switch
+	for _, want := range []string{`<optgroup label="Local (Ollama)"`, `<optgroup label="Claude API"`, `"` + llm.ModelsAPI + `"`, `"` + llm.TestAPI + `"`,
+		`claude_key = ""`, `!cur.llmSaved`, `if (s.intentError)`, `+ s.intentError`} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Errorf("page lacks %s", want)
+		}
+	}
+	if strings.Contains(w.Body.String(), `id="et_model"`) {
+		t.Error("page still has the et_model field")
 	}
 }
 
@@ -428,5 +502,54 @@ func TestDemoHandlerRejects(t *testing.T) {
 	DemoHandler(nil)(w, httptest.NewRequest(http.MethodGet, DemoAPI, nil))
 	if w.Code != 405 {
 		t.Errorf("GET: %d, want 405", w.Code)
+	}
+}
+
+func TestSettingsLLM(t *testing.T) {
+	tempSettings(t)
+	old := vars.APIConfig.Knowledge
+	t.Cleanup(func() { vars.APIConfig.Knowledge = old })
+	vars.APIConfig.Knowledge.Provider, vars.APIConfig.Knowledge.Endpoint, vars.APIConfig.Knowledge.Model = "custom", "http://localhost:11434/v1", "gemma4:e4b"
+	vars.APIConfig.Knowledge.Enable = true
+	const key = "sk-ant-0123456789abcdefWxYz"
+	get := func() (settingsReply, string) {
+		t.Helper()
+		var got settingsReply
+		w := serve(http.MethodGet, "", "")
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil {
+			t.Fatalf("GET: %d %s", w.Code, w.Body)
+		}
+		return got, w.Body.String()
+	}
+	got, _ := get()
+	if got.LLM[lang.English] != (llm.Profile{Provider: llm.Ollama, Model: "gemma4:e4b"}) || got.Defaults[lang.Estonian].Model != llm.DefaultETModel ||
+		got.OllamaURL != "http://localhost:11434" || got.ClaudeKey != "" || !got.KGEnabled || got.LLMSaved || got.Knowledge != "custom gemma4:e4b" {
+		t.Fatalf("GET defaults: %+v", got)
+	}
+	post := func(extra string) *httptest.ResponseRecorder {
+		return serve(http.MethodPost, "application/json", `{"lang":"en-US","t1":"cori","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1`+extra+`}`)
+	}
+	if w := post(`,"claude_key":"` + key + `","llm":{"en-US":{"provider":"ollama","model":"qwen3.5:4b"},"et-EE":{"provider":"claude","model":"claude-haiku-5-5"}}`); w.Code != 200 {
+		t.Fatalf("POST claude profile: %d %s", w.Code, w.Body)
+	}
+	got, body := get()
+	if strings.Contains(body, key) || got.ClaudeKey != "sk-ant-…WxYz" || !got.LLMSaved || got.LLM[lang.Estonian] != (llm.Profile{Provider: llm.Claude, Model: "claude-haiku-5-5"}) {
+		t.Fatalf("GET after save: key shown %v, %+v", strings.Contains(body, key), got)
+	}
+	if got.Defaults[lang.Estonian] != (llm.Profile{Provider: llm.Ollama, Model: llm.DefaultETModel}) {
+		t.Fatalf("defaults follow the saved profile: %+v", got.Defaults)
+	}
+	if w := post(``); w.Code != 200 || llm.Load().ClaudeKey != key {
+		t.Fatalf("POST without llm fields: %d, key %q kept?", w.Code, llm.Load().ClaudeKey)
+	}
+	before, _ := os.ReadFile(lang.Path())
+	if w := post(`,"claude_key":""`); w.Code != 400 { // et-EE still uses Claude
+		t.Fatalf("clearing the key under a Claude profile: %d, want 400", w.Code)
+	}
+	if after, _ := os.ReadFile(lang.Path()); string(after) != string(before) {
+		t.Fatalf("a rejected POST changed the file:\n%s", after)
+	}
+	if w := post(`,"claude_key":"","llm":{"et-EE":{"provider":"ollama","model":"estllm:x"}}`); w.Code != 200 || llm.Load().ClaudeKey != "" {
+		t.Fatalf("clear key with the profile moved off Claude: %d %s", w.Code, w.Body)
 	}
 }

@@ -6,15 +6,23 @@ import (
 	"net/http"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/voice"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
-// Fork voice settings (plan B2) and demo (R14), on the default mux the web UI serves.
+// Fork voice settings (plan B2), demo (R14) and LLM lists/test, on the default mux the web UI serves.
 func init() {
 	http.HandleFunc(voice.SettingsPage, voice.PageHandler)
 	http.HandleFunc(voice.SettingsAPI, voice.SettingsHandler)
 	http.HandleFunc(voice.DemoAPI, voice.DemoHandler(forkVoiceRobot))
+	http.HandleFunc(llm.ModelsAPI, llm.ModelsHandler(forkLLMKG))
+	http.HandleFunc(llm.TestAPI, llm.TestHandler(forkLLMKG))
+}
+
+func forkLLMKG() llm.KG {
+	k := vars.APIConfig.Knowledge
+	return llm.KG{Provider: k.Provider, Endpoint: k.Endpoint, Model: k.Model}
 }
 
 // forkVoiceRobot is the ?serial= robot, or the only paired one.
