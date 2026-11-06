@@ -11,9 +11,9 @@ WORD=${WORD:-bla-bla-bla-bla-bla-bla-bla-bla-bla-bla} # console args split on sp
 OUT=$main/robot/work/voice-samples/onset; mkdir -p "$OUT"; rm -f "$OUT"/*.wav
 F=/data/data/myvector-voice.json
 arms=("$@"); ((${#arms[@]})) || arms=(stock cori af_bella mari refused blackhole)
-# Under et-EE the PC frees Kokoro per request (tts/server.py kokoro_selected): af_bella's cold load misses the 1.5 s cut.
-if [[ " ${arms[*]} " == *" af_bella "* ]] && grep -q '"lang": *"et-EE"' "$main/chipper/myvectorConfig.json" 2>/dev/null; then
-  echo "FAIL: af_bella arm needs PC lang en-US (now et-EE) — switch language in the web UI" >&2; exit 2
+# Unpinned Kokoro cold-loads per request and misses the 1.5 s cut: ask the server's own kokoro_selected (tts/server.py).
+if [[ " ${arms[*]} " == *" af_bella "* ]] && ! "$main/robot/work/tts/venv/bin/python" -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import server; sys.exit(not server.kokoro_selected(sys.argv[2])[0])' "$main/tts" "${TTS_VOICE_CONFIG:-$main/chipper/myvectorConfig.json}"; then
+  echo "FAIL: af_bella arm needs Kokoro pinned — web UI: language English, af_bella as a voice" >&2; exit 2
 fi
 # shellcheck disable=SC2029 # expanding on the client is the point
 r() { ssh "${so[@]}" "root@$ip" "$@"; }
