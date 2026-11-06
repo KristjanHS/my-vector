@@ -103,6 +103,8 @@ Ruled E15–E18 (2026-11-05).
 | 9.1a | PC side (E31–E34): `tts/et_lines.py` `translate(text)`; `parse_request` takes optional `lang`, `stream` translates on et-EE; `voice-push.sh <voice> <slow> <lang>` + `pushT2` pass `lang`; `settings.sh` 24h + Celsius | `tts/{et_lines.py,server.py}`, `robot/firmware/{voice-push.sh,settings.sh}`, `myvector/voice/settings.go` | pytest `tts/tests/test_et_lines.py` + `test_server.py` lang cases; `TestPushT2Args` extended |
 | 9.1b | Robot side (E31): `0010-pc-voice.patch` amended via `apply.sh` + `--export` (`MyVectorLoadVoice` reads `lang`, POST body adds it) + a `markers.tsv` row | `robot/firmware/`, `robot/work/wire-os-victor` | `robot/firmware/check-static.sh`; host test `tests/pc-voice.sh` asserts `lang` in the body |
 | 9.2 | DONE: shipped `83b3c01` (smoke PASS); "Mis kell on?" → `intent_clock_time`, robot log `pc voice=mari lang=et-EE` | robot | smoke exit 0 |
+| 9.3 | Live clock reply lacks "Kell on" though `{"text":"22:59","lang":"et-EE"}` → server says it: log each /tts `text`+`lang`, re-ask "Mis kell on?", fit `_CLOCK` to the logged text | `tts/server.py`, `tts/et_lines.py` | pytest `test_et_lines.py` with the logged text |
+| 9.4 | ET open questions (2026-11-06): unmatched et-EE → LLM via fork hook, English unchanged; user note "Estonian should use a grammar check similar to Vosk's for English" — confirm meaning at the next questions round (snap near-miss commands, e.g. "mis käil on?", before the LLM fallback?) | `preqs/fork_*.go` (hook in `intent_graph.go` `!successMatched`, drift-listed), `vars/fork_intents.go` | `TestForkUnmatchedEstonianToLLM`, English unmatched unchanged |
 
 ## Stage 10 — verify + e2e + review
 
