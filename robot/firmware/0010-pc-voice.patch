@@ -13,15 +13,17 @@ line speak in Acapela (R17). Logs my-vector.Voice. Host test: robot/firmware/tes
 
 R19: SDK SayText (wire-pod) stays Acapela: sdkComponent sets the new TextToSpeechPrepare.sdkOrigin, vic-anim passes it to the provider, which skips the PC voice (log 'acapela: sdk SayText (R19)'). Built-in lines (time, weather, behaviours) keep T2.
 B5: the KnowledgeGraph response line (wire-pod's streaming placeholder) also sets sdkOrigin via BehaviorTextToSpeechLoop::SetTextToSay - PC voice put +0.5-0.64 s before its first sound, PC down +1.5 s.
+
+Unprocessed: a line the PC voice starts plays with the Unprocessed switch, not the line's Default_Processed - that robot-voice effect made the PC voice sound robotic on built-in lines (time, weather). A line that falls back to Acapela at its first sentence keeps its style; a later-sentence fallback plays unprocessed.
 ---
- .../textToSpeech/textToSpeechComponent.cpp    |  14 +-
+ .../textToSpeech/textToSpeechComponent.cpp    |  19 +-
  .../textToSpeech/textToSpeechComponent.h      |   6 +-
- .../textToSpeech/textToSpeechProvider.cpp     |   5 +-
- .../textToSpeech/textToSpeechProvider.h       |   3 +-
+ .../textToSpeech/textToSpeechProvider.cpp     |  10 +-
+ .../textToSpeech/textToSpeechProvider.h       |   6 +-
  .../textToSpeech/textToSpeechProvider_mac.cpp |   4 +-
- .../textToSpeech/textToSpeechProvider_mac.h   |   3 +-
+ .../textToSpeech/textToSpeechProvider_mac.h   |   4 +-
  .../textToSpeechProvider_vicos.cpp            | 282 +++++++++++++++++-
- .../textToSpeech/textToSpeechProvider_vicos.h |  18 +-
+ .../textToSpeech/textToSpeechProvider_vicos.h |  19 +-
  .../behaviorTextToSpeechLoop.cpp              |   5 +-
  .../behaviorTextToSpeechLoop.h                |   3 +-
  .../behaviorKnowledgeGraphQuestion.cpp        |   3 +-
@@ -29,10 +31,10 @@ B5: the KnowledgeGraph response line (wire-pod's streaming placeholder) also set
  .../textToSpeech/textToSpeechCoordinator.cpp  |   4 +-
  .../textToSpeech/textToSpeechCoordinator.h    |   3 +-
  .../robotInterface/messageEngineToRobot.clad  |   1 +
- 15 files changed, 335 insertions(+), 22 deletions(-)
+ 15 files changed, 350 insertions(+), 22 deletions(-)
 
 diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
-index 9f3df6f6..783e876c 100644
+index 9f3df6f6..5867579f 100644
 --- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
 +++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
 @@ -124,7 +124,8 @@ Result TextToSpeechComponent::CreateSpeech(const TTSID_t ttsID,
@@ -63,7 +65,19 @@ index 9f3df6f6..783e876c 100644
      if (RESULT_OK != result) {
        LOG_ERROR("TextToSpeechComponent.CreateSpeech", "Unable to get first audio data (error %d)", result);
        PushEvent({ttsID, TextToSpeechState::Invalid, 0.f});
-@@ -393,10 +394,11 @@ Result TextToSpeechComponent::GetFirstAudioData(const std::string & text,
+@@ -195,6 +196,11 @@ Result TextToSpeechComponent::CreateSpeech(const TTSID_t ttsID,
+         LOG_DEBUG("TextToSpeechComponent.CreateSpeech", "TTSID %d has been cancelled", ttsID);
+         return;
+       }
++      // my-vector (0010): the PC voice is already a finished voice - Default_Processed's robot effect makes it sound
++      // robotic. Set before Playable: PrepareAudioEngine reads style and refuses a Preparing bundle.
++      if (_pvdr->MyVectorPcVoice()) {
++        bundle->style = AudioTtsProcessingStyle::Unprocessed;
++      }
+       if (!sentPlayable && waveData->GetNumberOfFramesReceived() >= kMinPlayableFrames) {
+           LOG_DEBUG("TextToSpeechComponent.CreateSpeech", "TTSID %d audio is ready to play", ttsID);
+           const f32 duration_ms = GetEstimatedDuration_ms(ttsStr) * durationScalar;
+@@ -393,10 +399,11 @@ Result TextToSpeechComponent::GetFirstAudioData(const std::string & text,
                                                  float durationScalar,
                                                  float pitchScalar,
                                                  const StreamingWaveDataPtr & data,
@@ -77,7 +91,7 @@ index 9f3df6f6..783e876c 100644
  
    if (RESULT_OK != result) {
      LOG_ERROR("TextToSpeechComponent.GetFirstAudioData", "Unable to get first audio data (error %d)", result);
-@@ -550,7 +552,7 @@ void TextToSpeechComponent::HandleMessage(const RobotInterface::TextToSpeechPrep
+@@ -550,7 +557,7 @@ void TextToSpeechComponent::HandleMessage(const RobotInterface::TextToSpeechPrep
              HidePersonallyIdentifiableInfo(text.c_str()));
  
    // Enqueue request on worker thread
@@ -111,10 +125,22 @@ index 030bcb8b..4cbeae16 100644
    // Set up Audio Engine to play text's audio data
    // out_duration_ms provides approximate duration of event before processing in audio engine
 diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider.cpp b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider.cpp
-index 6598affd..6bb1c0db 100644
+index 6598affd..a879bff8 100644
 --- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider.cpp
 +++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider.cpp
-@@ -61,11 +61,12 @@ Result TextToSpeechProvider::GetFirstAudioData(const std::string & text,
+@@ -50,6 +50,11 @@ TextToSpeechProvider::~TextToSpeechProvider()
+   // Nothing to do here
+ }
+ 
++bool TextToSpeechProvider::MyVectorPcVoice() const
++{
++  return _impl != nullptr && _impl->MyVectorPcVoice();
++}
++
+ Result TextToSpeechProvider::SetLocale(const std::string & locale)
+ {
+   // Forward to implementation
+@@ -61,11 +66,12 @@ Result TextToSpeechProvider::GetFirstAudioData(const std::string & text,
                                                 float durationScalar,
                                                 float pitchScalar,
                                                 TextToSpeechProviderData & data,
@@ -130,16 +156,19 @@ index 6598affd..6bb1c0db 100644
  
  Result TextToSpeechProvider::GetNextAudioData(TextToSpeechProviderData & data, bool & done)
 diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider.h b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider.h
-index d514208b..e7bbfba8 100644
+index d514208b..01d9a748 100644
 --- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider.h
 +++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider.h
-@@ -102,7 +102,8 @@ public:
+@@ -102,7 +102,11 @@ public:
                             float durationScalar,
                             float pitchScalar,
                             TextToSpeechProviderData & data,
 -                           bool & done);
 +                           bool & done,
 +                           bool sdkOrigin = false); // my-vector (0010): SDK SayText skips the PC voice
++
++  // my-vector (0010): true while the PC voice speaks the line GetFirstAudioData started (it plays without the robot-voice effect)
++  bool MyVectorPcVoice() const;
  
    // Get next chunk of TTS audio.
    // Returns RESULT_OK on success, else error code.
@@ -160,16 +189,17 @@ index e642f735..545cf835 100644
      /* Log an error, return an error */
      LOG_ERROR("TextToSpeechProvider.GetFirstAudioData.NoProvider",
 diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_mac.h b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_mac.h
-index 3bc7d5ba..9983fdd1 100644
+index 3bc7d5ba..6c464a7a 100644
 --- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_mac.h
 +++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_mac.h
-@@ -55,7 +55,8 @@ public:
+@@ -55,7 +55,9 @@ public:
                             float durationScalar,
                             float pitchScalar,
                             TextToSpeechProviderData & data,
 -                           bool & done);
 +                           bool & done,
 +                           bool sdkOrigin = false); // my-vector (0010): SDK SayText skips the PC voice
++  bool MyVectorPcVoice() const { return false; } // my-vector (0010)
  
    // Get next chunk of TTS audio.
    // Returns RESULT_OK on success, else error code.
@@ -488,7 +518,7 @@ index 973d3bea..e3cadf92 100644
    BB_TCHAR * str = (BB_TCHAR *) (_draining ? nullptr: &_str[_strpos]);
  
 diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h
-index c0a69008..c20a4f42 100644
+index c0a69008..457b3417 100644
 --- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h
 +++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h
 @@ -21,6 +21,7 @@
@@ -499,17 +529,18 @@ index c0a69008..c20a4f42 100644
  
  // Acapela SDK declarations
  #include "i_babile.h"
-@@ -55,7 +56,8 @@ public:
+@@ -55,7 +56,9 @@ public:
                             float durationScalar,
                             float pitchScalar,
                             TextToSpeechProviderData & data,
 -                           bool & done);
 +                           bool & done,
 +                           bool sdkOrigin = false); // my-vector (0010): SDK SayText skips the PC voice
++  bool MyVectorPcVoice() const { return _myVectorVoice.active; } // my-vector (0010)
  
    // Get next chunk of TTS audio.
    // Returns RESULT_OK on success, else error code.
-@@ -113,6 +115,20 @@ private:
+@@ -113,6 +116,20 @@ private:
    Result Initialize(const std::string & locale);
    void Cleanup();
  
