@@ -11,9 +11,9 @@ Status: 📝 DRAFT · 2026-11-06 · sibling of the text→intent route probe (no
 | C4 | First message = vic-cloud's fields: `DeviceId`=ESN, `Session`=`uuid.New().String()[:16]`, `LanguageCode_ENGLISH_US`, `AudioEncoding_LINEAR_PCM`, `RobotMode_VOICE_COMMAND`, `InputAudio`=chunk 0 (server ignores `LangString`; the fork lang file picks STT) | `fakebot/main.go` |
 | C5 | Server sniffs Opus by `InputAudio[0]==0x4f` (`OpusDetect`), not `AudioEncoding` → always prepend 100 ms zeros | `fakebot/main.go` |
 | C6 | Chunks 3200 B (100 ms, proto comment) at real-time pace; append 1 s zeros so `DetectEndOfSpeech` (`inactiveNumMax`) fires before `CloseSend` | `fakebot/main.go` |
-| C7 | Print each `IntentGraphResponse` until EOF: `intent <Action> <Parameters>` / `kg "<SpokenText>"`, plus `QueryText`; exit 0 got one, 1 none / `-want` mismatch, 2 SETUP | `fakebot/main.go` |
+| C7 | Read ONE `IntentGraphResponse` (vic-cloud `responseRoutine` `respOnce`; wire-pod holds the stream open through the LLM reply): `intent <Action> <Parameters>` / `kg "<SpokenText>"`, plus `QueryText`; exit 0 got one, 1 none / `-want` mismatch, 2 SETUP | `fakebot/main.go` |
 | C8 | ESN: `-esn`, default `robots[0].esn` of `jdocs/botSdkInfo.json` (`BOTINFO` override, as voiceprobe); never in tracked files | `botinfo` (Stage 1) |
-| C9 | Input: `-pcm file` (16 kHz s16le mono, e.g. miccap `.pcm`) or `-say text` → POST `$TTS_URL/tts` (default `http://127.0.0.1:8091`) `{"text","voice":"af_bella","lang":"en-US"}`; PCM only, Opus out of scope | `fakebot/main.go` |
+| C9 | Input: `-pcm file` (16 kHz s16le mono, e.g. miccap `.pcm`) or `-say text` → POST `$TTS_URL/tts` (default `http://127.0.0.1:8091`) `{"text","voice","lang"}`, `-lang` en-US→af_bella / et-EE→mari (must equal the saved lang); PCM only, Opus out of scope | `fakebot/main.go` |
 
 ## Refactor-first assessment
 | id | ruling | edit site |
@@ -50,3 +50,4 @@ Status: 📝 DRAFT · 2026-11-06 · sibling of the text→intent route probe (no
 |---|---|---|
 | U1 | Robot may speak in e2e 3.iii at volume 1 (user, 2026-11-06) | Stage 4 |
 | U2 | e2e runs with miccap off (capture dir absent); 3.ii skips when `robot/work/et-stt/mic/` has no `.pcm` | Stage 4 |
+| A1 | Saved lang et-EE → 3.i/3.iii ran as `-lang et-EE -say "mis kell on"` / `"mis on Prantsusmaa pealinn"`; built binary, not `go run` (it masks exit 2) | Stage 4 |
