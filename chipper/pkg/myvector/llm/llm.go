@@ -105,14 +105,6 @@ func ValidModel(m string) error {
 	return nil
 }
 
-// SaveETModel validates and trims m and writes it as "et_model"; empty gives DefaultETModel.
-func SaveETModel(m string) error {
-	if err := ValidModel(m); err != nil {
-		return err
-	}
-	return conf.Update(lang.Path(), map[string]any{"et_model": strings.TrimSpace(m)})
-}
-
 // Effective is what the page shows: each language's saved profile or its default, and the Ollama URL.
 func Effective(c Config, kg KG) (map[string]Profile, string) {
 	p := map[string]Profile{

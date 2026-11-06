@@ -44,38 +44,6 @@ func TestLLMETModel(t *testing.T) {
 	}
 }
 
-func TestLLMSaveETModel(t *testing.T) {
-	path := tempPath(t)
-	os.WriteFile(path, []byte(`{"lang":"et-EE","t1":"cori"}`), 0644)
-	if err := SaveETModel("  estllm:new  "); err != nil {
-		t.Fatal(err)
-	}
-	if got := ETModel(); got != "estllm:new" {
-		t.Fatalf("ETModel() after SaveETModel = %q, want the trimmed value", got)
-	}
-	b, _ := os.ReadFile(path)
-	if want := "{\n  \"et_model\": \"estllm:new\",\n  \"lang\": \"et-EE\",\n  \"t1\": \"cori\"\n}\n"; string(b) != want {
-		t.Fatalf("file = %q, want %q", b, want)
-	}
-	for _, bad := range []string{"estllm: new", "est\tllm", strings.Repeat("m", ModelMax+1)} {
-		if err := SaveETModel(bad); err == nil {
-			t.Errorf("SaveETModel(%.20q) accepted", bad)
-		}
-	}
-	if got := ETModel(); got != "estllm:new" {
-		t.Fatalf("a rejected SaveETModel changed ETModel to %q", got)
-	}
-	if err := SaveETModel(strings.Repeat("é", ModelMax)); err != nil { // the limit is characters, not bytes
-		t.Fatalf("%d characters: %v", ModelMax, err)
-	}
-	if err := SaveETModel(" "); err != nil {
-		t.Fatal(err)
-	}
-	if got := ETModel(); got != DefaultETModel {
-		t.Fatalf("ETModel() after an empty SaveETModel = %q, want the default", got)
-	}
-}
-
 const ollamaV1 = "http://localhost:11434/v1"
 
 func TestLLMResolveLegacy(t *testing.T) {
@@ -160,6 +128,7 @@ func TestLLMSaveRejects(t *testing.T) {
 		"language":       {Profiles: map[string]Profile{"fr-FR": {Ollama, "m"}}},
 		"empty model":    {Profiles: map[string]Profile{lang.English: {Ollama, " "}}},
 		"model space":    {Profiles: map[string]Profile{lang.English: {Ollama, "a b"}}},
+		"model too long": {Profiles: map[string]Profile{lang.English: {Ollama, strings.Repeat("m", ModelMax+1)}}},
 		"claude no key":  {Profiles: map[string]Profile{lang.Estonian: {Claude, "claude-haiku-5-5"}}},
 		"short key":      {ClaudeKey: "sk-short"},
 		"key whitespace": {ClaudeKey: "sk-ant-0123456789 abcdefWxYz"},

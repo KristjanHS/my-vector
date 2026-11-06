@@ -283,41 +283,6 @@ func TestSettingsLangSwitchConcurrent(t *testing.T) {
 	}
 }
 
-func TestSettingsETModel(t *testing.T) {
-	tempSettings(t)
-	get := func() settingsReply {
-		t.Helper()
-		var got settingsReply
-		if w := serve(http.MethodGet, "", ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil {
-			t.Fatalf("GET: %d %s", w.Code, w.Body)
-		}
-		return got
-	}
-	if got := get(); got.ETModel != llm.DefaultETModel || got.DefaultETModel != llm.DefaultETModel {
-		t.Fatalf("GET with no et_model: %q (default %q), want %q", got.ETModel, got.DefaultETModel, llm.DefaultETModel)
-	}
-	post := func(extra string) *httptest.ResponseRecorder {
-		return serve(http.MethodPost, "application/json", `{"lang":"en-US","t1":"cori","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1`+extra+`}`)
-	}
-	if w := post(`,"et_model":" estllm:test "`); w.Code != 200 || llm.ETModel() != "estllm:test" || get().ETModel != "estllm:test" {
-		t.Fatalf("POST et_model: %d %s, ETModel %q; want estllm:test", w.Code, w.Body, llm.ETModel())
-	}
-	if w := post(``); w.Code != 200 || llm.ETModel() != "estllm:test" {
-		t.Fatalf("POST without et_model: %d, ETModel %q; want it kept", w.Code, llm.ETModel())
-	}
-	for _, bad := range []string{`"estllm: test"`, `"` + strings.Repeat("m", llm.ModelMax+1) + `"`, `7`} {
-		if w := serve(http.MethodPost, "application/json", `{"lang":"en-US","t1":"af_bella","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1,"et_model":`+bad+`}`); w.Code != 400 {
-			t.Errorf("et_model %.30s: %d, want 400", bad, w.Code)
-		}
-	}
-	if llm.ETModel() != "estllm:test" || Current().T1 != "cori" {
-		t.Fatalf("a rejected et_model saved: ETModel %q, settings %+v", llm.ETModel(), Current())
-	}
-	if w := post(`,"et_model":""`); w.Code != 200 || llm.ETModel() != llm.DefaultETModel || get().ETModel != llm.DefaultETModel {
-		t.Fatalf("POST empty et_model: %d, ETModel %q; want the default", w.Code, llm.ETModel())
-	}
-}
-
 func TestSettingsFor(t *testing.T) {
 	s := Settings{"cori", Stock, "mari", "mari", 1.3}
 	if got := s.For(lang.Estonian); got != (Settings{"mari", "mari", "mari", "mari", 1.3}) {
@@ -398,11 +363,15 @@ func TestSettingsPage(t *testing.T) {
 	if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") || !strings.Contains(w.Body.String(), `"`+SettingsAPI+`"`) {
 		t.Fatalf("page: %s, API path %s missing", w.Header().Get("Content-Type"), SettingsAPI)
 	}
-	// the page edits et_model (E25) and shows a rolled-back switch
-	for _, want := range []string{`id="et_model"`, `et_model: $("et_model").value`, `value: s.et_model`, `if (s.intentError)`, `+ s.intentError`} {
+	// the page picks each language's LLM from both providers and shows a rolled-back switch
+	for _, want := range []string{`<optgroup label="Local (Ollama)"`, `<optgroup label="Claude API"`, `"` + llm.ModelsAPI + `"`, `"` + llm.TestAPI + `"`,
+		`claude_key = ""`, `if (s.intentError)`, `+ s.intentError`} {
 		if !strings.Contains(w.Body.String(), want) {
 			t.Errorf("page lacks %s", want)
 		}
+	}
+	if strings.Contains(w.Body.String(), `id="et_model"`) {
+		t.Error("page still has the et_model field")
 	}
 }
 

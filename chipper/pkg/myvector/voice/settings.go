@@ -190,9 +190,6 @@ type settingsReply struct {
 	Voices  map[string][]string `json:"voices"`
 	SlowMin float64             `json:"slowMin"`
 	SlowMax float64             `json:"slowMax"`
-	// ETModel is llm.ETModel(), the et-EE Ollama model (plan E25); DefaultETModel is what an empty one saves as.
-	ETModel        string `json:"et_model"`
-	DefaultETModel string `json:"defaultEtModel"`
 	// LLM is each language's effective brain (llm.Effective); Defaults is the same with no saved profiles.
 	LLM       map[string]llm.Profile `json:"llm"`
 	Defaults  map[string]llm.Profile `json:"defaults"`
@@ -208,8 +205,6 @@ type settingsReply struct {
 type settingsRequest struct {
 	Settings
 	Lang string `json:"lang"`
-	// ETModel is saved by llm.SaveETModel when present (empty = DefaultETModel); absent keeps the saved one.
-	ETModel *string `json:"et_model"`
 	// LLM, OllamaURL and ClaudeKey are saved by llm.Save when any is present; absent keeps; ClaudeKey "" clears.
 	LLM       map[string]llm.Profile `json:"llm"`
 	OllamaURL *string                `json:"ollama_url"`
@@ -244,11 +239,6 @@ func (q *settingsRequest) valid() error {
 	if !lang.Valid(q.Lang) {
 		return fmt.Errorf("lang: one of %v", lang.Supported)
 	}
-	if q.ETModel != nil {
-		if err := llm.ValidModel(*q.ETModel); err != nil {
-			return err
-		}
-	}
 	if q.llmChanged() {
 		if err := llm.Validate(q.llmConfig()); err != nil {
 			return err
@@ -260,18 +250,13 @@ func (q *settingsRequest) valid() error {
 // saveMu holds across a POST's saves, so two concurrent ones cannot end with one's language and the other's intents.
 var saveMu sync.Mutex
 
-// save writes q's settings, et_model and language; a language whose intents do not load is rolled back and
+// save writes q's settings, LLM profiles and language; a language whose intents do not load is rolled back and
 // returned as intentErr (the old intents stay). err is a failed write.
 func save(q *settingsRequest) (intentErr string, err error) {
 	saveMu.Lock()
 	defer saveMu.Unlock()
 	if err := Save(q.Settings); err != nil {
 		return "", fmt.Errorf("save: %w", err)
-	}
-	if q.ETModel != nil {
-		if err := llm.SaveETModel(*q.ETModel); err != nil {
-			return "", fmt.Errorf("save et_model: %w", err)
-		}
 	}
 	if q.llmChanged() {
 		if err := llm.Save(q.llmConfig()); err != nil {
@@ -295,7 +280,7 @@ func save(q *settingsRequest) (intentErr string, err error) {
 	return intentErr, nil
 }
 
-// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings + lang + optional et_model, llm, ollama_url, claude_key) validates,
+// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings + lang + optional llm, ollama_url, claude_key) validates,
 // saves, switches the language (reloading intents; rolled back if they fail) and pushes the current language's T2.
 func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	pushErr, intentErr := "", ""
@@ -325,8 +310,7 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	profiles, url := llm.Effective(c, kg)
 	defaults, _ := llm.Effective(llm.Config{LegacyETModel: c.LegacyETModel}, kg)
 	json.NewEncoder(w).Encode(settingsReply{Settings: Current(), Lang: lang.Current(), Langs: lang.Supported, Voices: voices,
-		SlowMin: SlowMin, SlowMax: SlowMax, ETModel: llm.ETModel(), DefaultETModel: llm.DefaultETModel,
-		LLM: profiles, Defaults: defaults, OllamaURL: url, ClaudeKey: llm.Mask(c.ClaudeKey), KGEnabled: vars.APIConfig.Knowledge.Enable,
+		SlowMin: SlowMin, SlowMax: SlowMax, LLM: profiles, Defaults: defaults, OllamaURL: url, ClaudeKey: llm.Mask(c.ClaudeKey), KGEnabled: vars.APIConfig.Knowledge.Enable,
 		PushError: pushErr, IntentError: intentErr})
 }
 
