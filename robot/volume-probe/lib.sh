@@ -19,6 +19,7 @@ cap_stop() { ((capturing)) || return 0; curl -s -m 5 -o /dev/null "${C}SetWriteA
 # shellcheck disable=SC2154 # h: the trap's own loop variable
 trap 'cap_stop; for h in "${exit_hooks[@]}"; do eval "$h" || true; done' EXIT
 cap_on() { ssh "${so[@]}" "root@$ip" "rm -f $D/*.wav"; capturing=1; curl -s -o /dev/null "${C}SetWriteAudioOutputCapture&args=true"; }
-cap_off() { cap_stop; sleep 1.1; scp -q "${so[@]}" "root@$ip:$D/*.wav" "$1"; }
+# A copy failure (e.g. diskguard removed a capture over 50 MB, ~13 min) is loud: a stale $1 from an earlier run would read as new.
+cap_off() { cap_stop; sleep 1.1; rm -f "$1"; scp -q "${so[@]}" "root@$ip:$D/*.wav" "$1" || echo "WARN: no capture copied to $1" >&2; }
 hold() { curl -s "$A/assume_behavior_control?serial=$serial&priority=high" >/dev/null; sleep 3; }
 release() { reset_rtpcs; curl -s "$A/release_behavior_control?serial=$serial" >/dev/null; }

@@ -8,11 +8,14 @@ for f in "$d"/*.wav; do
   [ -f "$f" ] || continue
   kb=$(du -k "$f" | cut -f1)
   [ "$kb" -gt "$max_kb" ] || continue
-  curl -s -m 5 -o /dev/null 'http://127.0.0.1:8889/consolefunccall?func=SetWriteAudioOutputCapture&args=false'
-  sleep 2
-  : >"$f" # truncate first: frees the blocks even if vic-anim still holds the file open
-  rm -f "$f"
-  logger -t myvector-diskguard "removed $f ($kb KB > $max_kb KB): output capture turned off"
+  : >"$f" # truncate: frees the blocks even while vic-anim writes on (the file goes sparse; du counts real blocks, so a later run catches it)
+  # Unlink only once capture is confirmed off: an open, unlinked file would keep filling /data where no glob or find can see it.
+  if curl -sf -m 5 -o /dev/null 'http://127.0.0.1:8889/consolefunccall?func=SetWriteAudioOutputCapture&args=false'; then
+    sleep 2; : >"$f"; rm -f "$f"
+    logger -t myvector-diskguard "removed $f ($kb KB > $max_kb KB): output capture turned off"
+  else
+    logger -t myvector-diskguard "WARN: capture-off call failed; truncated $f ($kb KB), left in place"
+  fi
 done
-use=$(df /data | awk 'NR == 2 { sub("%", "", $5); print $5 }')
+use=$(df -P /data | awk 'NR == 2 { sub("%", "", $5); print $5 }')
 [ "${use:-0}" -lt 90 ] || logger -t myvector-diskguard "WARN: /data ${use}% used"
