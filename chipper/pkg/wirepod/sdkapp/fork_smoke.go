@@ -4,7 +4,7 @@ package sdkapp
 // upstream "/api-sdk/" catch-all, so no upstream file changes.
 // Never commands the wheels or lift: check-static.sh S5 fails on a wheel/lift
 // name here or in myvector/voice (denylist) and on any Conn method but EventStream,
-// DisplayFaceImageRGB and SayText here, ExternalAudioStreamPlayback/SayText there (allowlist).
+// DisplayFaceImageRGB and SayText here, ExternalAudioStreamPlayback/SayText/BehaviorControl there (allowlist).
 
 import (
 	"context"
@@ -122,7 +122,8 @@ func forkSay(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "error: text must be 1-599 characters")
 		return
 	}
-	// 7 s first-audio wait + smoke.sh's longest phrase (~10 s at slow 1.2) + a Stall's slack; under its fork_say curl -m 35
+	// 7 s first-audio wait + smoke.sh's longest phrase (~10 s at slow 1.2) + a Stall's slack; under its fork_say curl -m 35.
+	// The control grant spends from this too (up to voice.ControlWait); it is near-instant on the charger or when smoke.sh already holds control.
 	ctx, cancel := context.WithTimeout(robot.Ctx, 30*time.Second)
 	defer cancel()
 	// SayText (stock T1 and the fallback) is refused without behavior control, as in voice.DemoHandler
