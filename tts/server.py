@@ -34,6 +34,7 @@ PEAK = 0.97  # limiter ceiling (float full scale)
 BOOST_MAX = 18.0  # dB; boost_db is clamped to 0..BOOST_MAX
 LIMIT_BLOCK = 32  # samples (2 ms) per limiter gain step
 LIMIT_RELEASE_S = 0.06  # limiter gain recovery time constant
+TRIM_FLOOR_DB, TRIM_HEAD_S, TRIM_TAIL_S = -40.0, 0.05, 0.25  # Kokoro's ~0.45 s lead / 0.82 s tail silence -> these pads
 GAINS_FILE = Path(__file__).with_name("gains.json")  # tts/calibrate.py writes it
 
 # voice name -> (engine, engine voice id); Piper id = model[@speaker]; an `et_` model gets Estonian text rules
@@ -130,6 +131,19 @@ def limit(x, ceiling=PEAK):
     # linear between block centres: both ends are under the bound for the samples between them
     gs = np.interp(np.arange(x.size), np.arange(n) * LIMIT_BLOCK + (LIMIT_BLOCK - 1) / 2, g)
     return x * gs.astype(np.float32)
+
+
+def trim_silence(x, rate, floor_db=TRIM_FLOOR_DB, head_s=TRIM_HEAD_S, tail_s=TRIM_TAIL_S):
+    """Keep `head_s` before the first and `tail_s` after the last 10 ms window whose RMS tops `floor_db`; all-quiet -> unchanged."""
+    w = max(1, rate // 100)
+    n = x.size // w
+    if not n:
+        return x
+    rms = np.sqrt(np.mean(np.square(x[: n * w].reshape(n, w), dtype=np.float64), axis=1))
+    loud = np.flatnonzero(rms > 10 ** (floor_db / 20))
+    if not loud.size:
+        return x
+    return x[max(0, loud[0] * w - int(head_s * rate)) : (loud[-1] + 1) * w + int(tail_s * rate)]
 
 
 def to_pcm16(audio, rate, gain=1.0):
@@ -250,7 +264,7 @@ class KokoroEngine:
                 for r in self._pipes[lang](text, voice=voice_id, speed=1 / slow)
                 if r.audio is not None
             ]
-        return (np.concatenate(parts) if parts else np.zeros(0, np.float32)), 24000
+        return (trim_silence(np.concatenate(parts), 24000) if parts else np.zeros(0, np.float32)), 24000
 
 
 def reclaim_memory():
