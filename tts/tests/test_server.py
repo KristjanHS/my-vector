@@ -56,7 +56,7 @@ def test_stream_translates_robot_lines_on_et_ee_only():
     assert [c[1] for c in piper.calls] == ["9 null 5", "9 null 5", "Kell on 9 null 5"]
 
 
-def test_piper_engine_speaker_from_voice_id_one_load_per_model():
+def test_piper_engine_speaker_and_noise_from_voice_id_one_load_per_model():
     loads, configs = [], []
 
     class Voice:
@@ -72,7 +72,11 @@ def test_piper_engine_speaker_from_voice_id_one_load_per_model():
     eng.synth("et_EE-news-medium@Mari", "Tere.", 1.2)
     eng.synth("et_EE-news-medium", "Tere.", 1.0)
     assert loads == ["/m/et_EE-news-medium.onnx"]
-    assert configs == [{"speaker_id": 2, "length_scale": 1.2}, {"speaker_id": None, "length_scale": 1.0}]
+    # mari's noise override; a voice id without one keeps the model's own noise
+    assert configs == [
+        {"speaker_id": 2, "length_scale": 1.2, "noise_scale": 0.4, "noise_w_scale": 0.6},
+        {"speaker_id": None, "length_scale": 1.0},
+    ]
 
 
 def test_split_sentences_long_sentence_split_under_cap():

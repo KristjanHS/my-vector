@@ -43,6 +43,9 @@ VOICES = {
     "af_bella": ("kokoro", "af_bella"),
     "mari": ("piper", "et_EE-news-medium@Mari"),
 }
+# Piper id -> (noise_scale, noise_w_scale) instead of the model's 0.667/0.8: at the default, STT heard mari's
+# "Kell" as "Keel"/"Teil" in 10/60 takes, at 0.4/0.6 in 3/60 (tts/noise_sweep.py)
+PIPER_NOISE = {"et_EE-news-medium@Mari": (0.4, 0.6)}
 
 log = logging.getLogger("myvector-tts")
 
@@ -216,7 +219,9 @@ class PiperEngine:
             self._voices[model] = self._load(str(self._dir / f"{model}.onnx"))
         v = self._voices[model]
         sid = v.config.speaker_id_map[speaker] if speaker else None
-        chunks = list(v.synthesize(text, syn_config=self._cfg(speaker_id=sid, length_scale=slow)))
+        noise = PIPER_NOISE.get(voice_id)
+        extra = dict(noise_scale=noise[0], noise_w_scale=noise[1]) if noise else {}
+        chunks = list(v.synthesize(text, syn_config=self._cfg(speaker_id=sid, length_scale=slow, **extra)))
         if not chunks:
             return np.zeros(0, np.float32), v.config.sample_rate
         return np.concatenate([c.audio_float_array for c in chunks]), chunks[
