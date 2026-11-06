@@ -127,3 +127,56 @@ func TestLLMLoad(t *testing.T) {
 		t.Error("no llm key: Profiles not nil")
 	}
 }
+
+func TestLLMResolveSaved(t *testing.T) {
+	old := AnthropicBase
+	AnthropicBase = "https://claude.test"
+	t.Cleanup(func() { AnthropicBase = old })
+	kg := KG{"custom", ollamaV1, "qwen3.5:4b"}
+	c := Config{OllamaURL: "http://pc:11434", ClaudeKey: "sk-ant-0123456789abcdefWxYz", Profiles: map[string]Profile{
+		lang.English: {Ollama, "gemma4:e4b"}, lang.Estonian: {Claude, "claude-haiku-5-5"}}}
+	if got, ok := Resolve(c, lang.English, kg); !ok || got != (Target{Ollama, "http://pc:11434/v1", "ollama", "gemma4:e4b"}) {
+		t.Errorf("en: %+v %v", got, ok)
+	}
+	if got, ok := Resolve(c, lang.Estonian, kg); !ok || got != (Target{Claude, "https://claude.test/v1", c.ClaudeKey, "claude-haiku-5-5"}) {
+		t.Errorf("et: %+v %v", got, ok)
+	}
+	c.ClaudeKey = "" // a hand edit
+	if _, ok := Resolve(c, lang.Estonian, kg); ok {
+		t.Error("claude profile without a key resolved")
+	}
+	c.Profiles = map[string]Profile{} // saved, but neither language set: defaults on the Ollama URL
+	if got, ok := Resolve(c, lang.Estonian, KG{}); !ok || got != (Target{Ollama, "http://pc:11434/v1", "ollama", DefaultETModel}) {
+		t.Errorf("et default: %+v %v", got, ok)
+	}
+}
+
+func TestLLMSaveRejects(t *testing.T) {
+	path := tempPath(t)
+	os.WriteFile(path, []byte(`{"lang":"en-US"}`), 0644)
+	key := "sk-ant-0123456789abcdefWxYz"
+	for name, c := range map[string]Config{
+		"provider":       {Profiles: map[string]Profile{lang.English: {"gemini", "g"}}},
+		"language":       {Profiles: map[string]Profile{"fr-FR": {Ollama, "m"}}},
+		"empty model":    {Profiles: map[string]Profile{lang.English: {Ollama, " "}}},
+		"model space":    {Profiles: map[string]Profile{lang.English: {Ollama, "a b"}}},
+		"claude no key":  {Profiles: map[string]Profile{lang.Estonian: {Claude, "claude-haiku-5-5"}}},
+		"short key":      {ClaudeKey: "sk-short"},
+		"key whitespace": {ClaudeKey: "sk-ant-0123456789 abcdefWxYz"},
+		"url scheme":     {OllamaURL: "ftp://pc:11434"},
+		"url host":       {OllamaURL: "http://"},
+	} {
+		if err := Save(c); err == nil {
+			t.Errorf("%s: Save accepted %+v", name, c)
+		}
+	}
+	if b, _ := os.ReadFile(path); string(b) != `{"lang":"en-US"}` {
+		t.Fatalf("a rejected Save wrote %s", b)
+	}
+	if err := Save(Config{OllamaURL: " http://pc:11434/v1/ ", ClaudeKey: key, Profiles: map[string]Profile{lang.Estonian: {Claude, " claude-haiku-5-5 "}}}); err != nil {
+		t.Fatal(err)
+	}
+	if c := Load(); c.OllamaURL != "http://pc:11434" || c.ClaudeKey != key || c.Profiles[lang.Estonian] != (Profile{Claude, "claude-haiku-5-5"}) {
+		t.Errorf("saved %+v", c)
+	}
+}

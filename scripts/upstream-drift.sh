@@ -9,8 +9,8 @@ cd "$(git rev-parse --show-toplevel)"
 allowed_edits=(
   chipper/pkg/wirepod/sdkapp/bcassume.go # busy-spin fix while behavior control is held
   .gitignore                             # fork block: *.key, chipper/*.bak, session-certs
-  chipper/pkg/wirepod/ttr/kgsim.go       # TopP: forkTopP(...) — Claude rejects top_p (fork_llm.go); CreateAIReq returns forkAIReq(...) (fork_prompt.go); removeSpecialCharacters strips with forkMarkFilter() (fork_marks.go)
-  chipper/pkg/wirepod/ttr/kgsim_cmds.go  # same, on the LLM-commands/camera path; DoSayText -> forkSayText (fork_say.go); DoGetImage defers forkCameraReq(...) (fork_prompt.go)
+  chipper/pkg/wirepod/ttr/kgsim.go       # TopP: forkTopP(...) — Claude rejects top_p (fork_llm.go); CreateAIReq returns forkAIReq(...) (fork_prompt.go); c = forkClient(c) after the provider switch (fork_client.go); removeSpecialCharacters strips with forkMarkFilter() (fork_marks.go)
+  chipper/pkg/wirepod/ttr/kgsim_cmds.go  # same incl. forkClient, on the LLM-commands/camera path; DoSayText -> forkSayText (fork_say.go); DoGetImage defers forkCameraReq(...) (fork_prompt.go)
   chipper/pkg/vars/vars.go               # LoadIntents returns forkFilterIntents(...) (fork_intents.go); reads intent-data/<ForkLanguage()> (fork_lang.go)
   chipper/pkg/wirepod/ttr/matchIntentSend.go # ProcessTextAll partial pass: vars.ForkContainsPhrase (whole words); !locale = vars.ForkLanguage(); voiceText via vars.ForkNormalizeText
   chipper/pkg/wirepod/localization/localization.go # GetText asks forkGetText first (fork_lang.go)

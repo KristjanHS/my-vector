@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
@@ -22,8 +21,8 @@ func forkKG() llm.KG {
 	return llm.KG{Provider: k.Provider, Endpoint: k.Endpoint, Model: k.Model}
 }
 
-// forkAIReq: et-EE adds forkETLine to the system prompt; the llm.Resolve target sets the model (E25).
-// Ollama always gets reasoning_effort none (qwen3.5/gemma4 think by default; OpenAI rejects it).
+// forkAIReq: et-EE adds forkETLine to the system prompt; the llm.Resolve target sets the model (E25) and its
+// top_p (CreateAIReq set it for the Knowledge model). Ollama gets reasoning_effort none (qwen3.5/gemma4 think by default).
 func forkAIReq(r openai.ChatCompletionRequest) openai.ChatCompletionRequest {
 	l := lang.Current()
 	if l == lang.Estonian && len(r.Messages) > 0 && r.Messages[0].Role == openai.ChatMessageRoleSystem {
@@ -33,6 +32,7 @@ func forkAIReq(r openai.ChatCompletionRequest) openai.ChatCompletionRequest {
 	ollama := llm.IsOllama(kg)
 	if t, ok := llm.Resolve(llm.Load(), l, kg); ok {
 		r.Model = t.Model
+		r.TopP = forkTopP(r.Model)
 		ollama = t.Ollama()
 	}
 	if ollama {
@@ -41,27 +41,34 @@ func forkAIReq(r openai.ChatCompletionRequest) openai.ChatCompletionRequest {
 	return r
 }
 
-// forkCameraReq readies the getImage follow-up; defer the returned func. et-EE on Ollama (E26): the ET
-// model is unloaded first and r.Model (the vision model) after, so one LLM stays resident.
+// forkCameraReq readies the getImage follow-up; defer the returned func. et-EE on Ollama (E26): the ET model is
+// unloaded first and the vision model (llm.VisionModel) after, both at the target's Ollama, so one LLM stays resident.
 func forkCameraReq(r *openai.ChatCompletionRequest) func() {
-	kg := forkKG()
-	if !llm.IsOllama(kg) {
+	l, c, kg := lang.Current(), llm.Load(), forkKG()
+	t, ok := llm.Resolve(c, l, kg)
+	if !ok {
+		if llm.IsOllama(kg) {
+			r.ReasoningEffort = "none"
+		}
 		return func() {}
 	}
-	r.ReasoningEffort = "none"
-	l := lang.Current()
-	t, ok := llm.Resolve(llm.Load(), l, kg)
-	if !ok || l != lang.Estonian {
+	r.Model = t.Model
+	if t.Ollama() {
+		r.ReasoningEffort = "none"
+	}
+	if !t.Ollama() || l != lang.Estonian {
+		r.TopP = forkTopP(r.Model)
 		return func() {}
 	}
-	forkUnload(t.Model)
-	m := r.Model
-	return func() { forkUnload(m) }
+	base, vision := t.OllamaBase(), llm.VisionModel(c, kg)
+	forkUnload(base, t.Model)
+	r.Model = vision
+	r.TopP = forkTopP(r.Model)
+	return func() { forkUnload(base, vision) }
 }
 
-// forkUnload asks Ollama to drop model from memory now (native /api/generate, keep_alive 0).
-func forkUnload(model string) {
-	base := strings.TrimSuffix(strings.TrimRight(vars.APIConfig.Knowledge.Endpoint, "/"), "/v1")
+// forkUnload asks the Ollama at base to drop model from memory now (native /api/generate, keep_alive 0).
+func forkUnload(base, model string) {
 	body, _ := json.Marshal(map[string]any{"model": model, "keep_alive": 0})
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Post(base+"/api/generate", "application/json", bytes.NewReader(body))
 	if err != nil {

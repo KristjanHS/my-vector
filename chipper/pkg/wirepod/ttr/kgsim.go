@@ -258,6 +258,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 	case "openai":
 		c = openai.NewClient(vars.APIConfig.Knowledge.Key)
 	}
+	c = forkClient(c)
 	speakReady := make(chan string)
 	successIntent := make(chan bool)
 

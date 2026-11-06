@@ -10,8 +10,10 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/sashabaranov/go-openai"
 )
 
 const (
@@ -138,8 +140,112 @@ func Effective(c Config, kg KG) (map[string]Profile, string) {
 // Resolve is language l's Target; false leaves the request on wire-pod's Knowledge as-is.
 // Legacy (nothing saved): en-US → false; et-EE → the ET model on Knowledge's endpoint, only when that is Ollama.
 func Resolve(c Config, l string, kg KG) (Target, bool) {
-	if l != lang.Estonian || !IsOllama(kg) {
-		return Target{}, false
+	if c.Profiles == nil {
+		if l != lang.Estonian || !IsOllama(kg) {
+			return Target{}, false
+		}
+		return Target{Ollama, kg.Endpoint, "ollama", c.etModel()}, true
 	}
-	return Target{Ollama, kg.Endpoint, "ollama", c.etModel()}, true
+	ps, u := Effective(c, kg)
+	p, ok := ps[l]
+	switch {
+	case !ok || p.Model == "":
+		return Target{}, false
+	case p.Provider == Ollama:
+		return Target{Ollama, u + "/v1", "ollama", p.Model}, true
+	case p.Provider == Claude && c.ClaudeKey == "":
+		logger.Println("myvector llm: " + l + " claude profile has no key — using wire-pod Knowledge")
+		return Target{}, false
+	case p.Provider == Claude:
+		return Target{Claude, AnthropicBase + "/v1", c.ClaudeKey, p.Model}, true
+	}
+	return Target{}, false
+}
+
+// VisionModel is the Ollama model an et-EE photo question uses (E26): the en-US one when that is Ollama.
+func VisionModel(c Config, kg KG) string {
+	if p, _ := Effective(c, kg); p[lang.English].Provider == Ollama && p[lang.English].Model != "" {
+		return p[lang.English].Model
+	}
+	return DefaultENModel
+}
+
+// OllamaBase is t's Ollama root, for its native /api routes.
+func (t Target) OllamaBase() string {
+	return strings.TrimSuffix(strings.TrimRight(t.BaseURL, "/"), "/v1")
+}
+
+// NewClient is an OpenAI-compatible client for t (Claude takes the key as a Bearer token).
+func NewClient(t Target) *openai.Client {
+	cfg := openai.DefaultConfig(t.Key)
+	cfg.BaseURL = t.BaseURL
+	return openai.NewClientWithConfig(cfg)
+}
+
+// Validate checks a Config for Save; Profiles must hold only supported languages.
+func Validate(c Config) error {
+	for l, p := range c.Profiles {
+		if !lang.Valid(l) {
+			return fmt.Errorf("llm: language %q: one of %v", l, lang.Supported)
+		}
+		if p.Provider != Ollama && p.Provider != Claude {
+			return fmt.Errorf("llm %s: provider %q: ollama or claude", l, p.Provider)
+		}
+		if strings.TrimSpace(p.Model) == "" {
+			return fmt.Errorf("llm %s: model is empty", l)
+		}
+		if err := ValidModel(p.Model); err != nil {
+			return fmt.Errorf("llm %s: %w", l, err)
+		}
+		if p.Provider == Claude && strings.TrimSpace(c.ClaudeKey) == "" {
+			return fmt.Errorf("llm %s: a Claude model needs a Claude key", l)
+		}
+	}
+	if err := ValidKey(c.ClaudeKey); err != nil {
+		return err
+	}
+	return ValidOllamaURL(c.OllamaURL)
+}
+
+// ValidKey: empty (unset) or, trimmed, 20–200 printable ASCII characters without whitespace.
+func ValidKey(k string) error {
+	k = strings.TrimSpace(k)
+	if k == "" {
+		return nil
+	}
+	if len(k) < 20 || len(k) > 200 {
+		return errors.New("claude_key: 20 to 200 characters")
+	}
+	for _, r := range k {
+		if r <= ' ' || r > '~' {
+			return errors.New("claude_key: printable ASCII, no whitespace")
+		}
+	}
+	return nil
+}
+
+// ValidOllamaURL: empty (default) or an http(s) URL with a host, at most 200 characters.
+func ValidOllamaURL(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	u, err := url.Parse(s)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || len(s) > 200 {
+		return errors.New("ollama_url: an http(s) URL with a host, at most 200 characters")
+	}
+	return nil
+}
+
+// Save validates c and writes "llm", "ollama_url" and "claude_key" together (the URL without a trailing / or /v1).
+func Save(c Config) error {
+	if err := Validate(c); err != nil {
+		return err
+	}
+	ps := map[string]Profile{}
+	for l, p := range c.Profiles {
+		ps[l] = Profile{p.Provider, strings.TrimSpace(p.Model)}
+	}
+	u := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(c.OllamaURL), "/"), "/v1")
+	return conf.Update(lang.Path(), map[string]any{"llm": ps, "ollama_url": u, "claude_key": strings.TrimSpace(c.ClaudeKey)})
 }
