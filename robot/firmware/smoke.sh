@@ -87,6 +87,12 @@ step "docked, clean vic-robot log"
 # P2: docked before the checks.
 docked before
 
+# P1: /data has room. Full, syslog-ng stalls and the log check below finds no Startup line (2026-11-05: an 822 MB output capture).
+use=$(ssh_ "df /data | awk 'NR == 2 { sub(\"%\", \"\", \$5); print \$5 }'") || setup "lost SSH to $ip"
+[[ $use =~ ^[0-9]+$ ]] || setup "df /data on $ip gave '$use', not a percentage"
+((use < 90)) || die "/data ${use}% full; biggest (KB): $(ssh_ 'find /data -xdev -type f -exec du -k {} + 2>/dev/null | sort -n | tail -3' | tr '\n' ' ')"
+ok "/data ${use}% used"
+
 # P1: since the running vic-robot's last Startup lift calibration: no crash lines, no recalibration loop (3 within 60 s).
 logcheck() {
   local log
