@@ -114,12 +114,19 @@ check_route() {
 }
 
 check_clock() {
-  local t got f=$work/clock.pcm
+  local t got f=$work/clock.pcm take heard
   need_lang et-EE
+  # each take is a fresh Piper sample: ~1 in 20 blurs "Kell" for STT (tts/server.py PIPER_NOISE) → up to 3 takes
   for t in 08:05 20:47 12:00; do
-    synth mari et-EE "$t" "$f" || { fail "tts: $t"; continue; }
-    got=$(transcribe et-EE "$f") || { fail "stt (saved lang must be et-EE): $t"; continue; }
-    [[ $got =~ ^Kell\ on\  ]] && pass "clock $t → $got" || fail "clock $t → \"$got\", want Kell on …"
+    heard=() got=
+    for take in 1 2 3; do
+      synth mari et-EE "$t" "$f" || { heard+=("tts failed"); continue; }
+      got=$(transcribe et-EE "$f") || { heard+=("stt failed (saved lang must be et-EE)"); continue; }
+      heard+=("$got")
+      [[ $got =~ ^Kell\ on\  ]] && break
+    done
+    [[ $got =~ ^Kell\ on\  ]] && pass "clock $t → $got (take $take)" ||
+      fail "clock $t → $(printf '"%s" ' "${heard[@]}")want Kell on …"
   done
 }
 
