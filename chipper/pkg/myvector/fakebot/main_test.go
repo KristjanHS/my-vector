@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	pb "github.com/digital-dream-labs/api/go/chipperpb"
 	"google.golang.org/grpc"
@@ -18,10 +19,12 @@ import (
 
 func init() { pace = 0 }
 
-// fakeChipper records every request, then replies with one intent once the client closes.
+// fakeChipper records every request, then replies with one intent once the client closes;
+// hold keeps the stream open after the reply, as wire-pod does while the LLM speaks.
 type fakeChipper struct {
 	pb.UnimplementedChipperGrpcServer
 	reqs []*pb.StreamingIntentGraphRequest
+	hold bool
 }
 
 func (f *fakeChipper) StreamingIntentGraph(s pb.ChipperGrpc_StreamingIntentGraphServer) error {
@@ -35,13 +38,22 @@ func (f *fakeChipper) StreamingIntentGraph(s pb.ChipperGrpc_StreamingIntentGraph
 		}
 		f.reqs = append(f.reqs, r)
 	}
-	return s.Send(&pb.IntentGraphResponse{ResponseType: pb.IntentGraphMode_INTENT, IsFinal: true,
+	err := s.Send(&pb.IntentGraphResponse{ResponseType: pb.IntentGraphMode_INTENT, IsFinal: true,
 		IntentResult: &pb.IntentResult{Action: "intent_clock_time", QueryText: "what time is it"}})
+	if err == nil && f.hold {
+		<-s.Context().Done()
+	}
+	return err
 }
 
 func stream(t *testing.T, pcm []byte) (*fakeChipper, []*pb.IntentGraphResponse) {
 	t.Helper()
-	lis, f := bufconn.Listen(1<<20), &fakeChipper{}
+	return streamTo(t, &fakeChipper{}, pcm)
+}
+
+func streamTo(t *testing.T, f *fakeChipper, pcm []byte) (*fakeChipper, []*pb.IntentGraphResponse) {
+	t.Helper()
+	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
 	pb.RegisterChipperGrpcServer(srv, f)
 	go srv.Serve(lis)
@@ -52,7 +64,9 @@ func stream(t *testing.T, pcm []byte) (*fakeChipper, []*pb.IntentGraphResponse) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	rs, err := run(context.Background(), pb.NewChipperGrpcClient(conn), "00e1test", pcm)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rs, err := run(ctx, pb.NewChipperGrpcClient(conn), "00e1test", pcm)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +103,12 @@ func TestRunStreamsAsVicCloud(t *testing.T) {
 	}
 }
 
+func TestRunReturnsOnFirstReply(t *testing.T) {
+	if _, rs := streamTo(t, &fakeChipper{hold: true}, []byte{1, 2}); len(rs) != 1 {
+		t.Fatalf("replies: %v", rs)
+	}
+}
+
 func TestRunPadsOpusMagic(t *testing.T) {
 	f, _ := stream(t, []byte{0x4f, 0x67, 0x67, 0x53})
 	if a := f.reqs[0].InputAudio; len(a) == 0 || a[0] == 0x4f {
@@ -121,7 +141,7 @@ func TestSynthPostsAfBella(t *testing.T) {
 		w.Write(pcm)
 	}))
 	defer ts.Close()
-	got, err := synth(ts.URL, "what time is it")
+	got, err := synth(ts.URL, "what time is it", "en-US")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,8 +160,14 @@ func TestSynthServerError(t *testing.T) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
 	defer ts.Close()
-	if _, err := synth(ts.URL, "x"); err == nil {
+	if _, err := synth(ts.URL, "x", "en-US"); err == nil {
 		t.Fatal("TTS 500: want error")
+	}
+}
+
+func TestSynthUnknownLang(t *testing.T) {
+	if _, err := synth("http://127.0.0.1:1", "x", "de-DE"); err == nil {
+		t.Fatal("de-DE: want error")
 	}
 }
 

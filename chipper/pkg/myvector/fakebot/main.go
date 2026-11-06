@@ -3,7 +3,7 @@
 // a -want mismatch, 2 = setup or transport error.
 //
 //	go run ./pkg/myvector/fakebot -pcm file.pcm [-want intent_clock_time]   # 16 kHz s16le mono
-//	go run ./pkg/myvector/fakebot -say "what time is it" [-want …]          # af_bella via $TTS_URL
+//	go run ./pkg/myvector/fakebot -say "what time is it" [-lang en-US] [-want …]   # TTS via $TTS_URL
 package main
 
 import (
@@ -74,22 +74,27 @@ func run(ctx context.Context, client pb.ChipperGrpcClient, esn string, pcm []byt
 		stream.CloseSend()
 	}()
 	defer func() { cancel(); <-sent }()
-	var out []*pb.IntentGraphResponse
-	for {
-		r, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			return out, nil
-		}
-		if err != nil {
-			return out, err
-		}
-		out = append(out, r)
+	// vic-cloud reads ONE reply (responseRoutine's respOnce); wire-pod holds the stream open while the LLM speaks.
+	r, err := stream.Recv()
+	if errors.Is(err, io.EOF) {
+		return nil, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	return []*pb.IntentGraphResponse{r}, nil
 }
 
-// synth returns the fork TTS service's 16 kHz s16le PCM for text.
-func synth(url, text string) ([]byte, error) {
-	body, _ := json.Marshal(map[string]string{"text": text, "voice": "af_bella", "lang": "en-US"})
+// voices is the TTS voice per -lang (live-check.sh pairs).
+var voices = map[string]string{"en-US": "af_bella", "et-EE": "mari"}
+
+// synth returns the fork TTS service's 16 kHz s16le PCM for text in lang.
+func synth(url, text, lang string) ([]byte, error) {
+	voice, ok := voices[lang]
+	if !ok {
+		return nil, fmt.Errorf("no voice for -lang %q", lang)
+	}
+	body, _ := json.Marshal(map[string]string{"text": text, "voice": voice, "lang": lang})
 	c := http.Client{Timeout: 60 * time.Second}
 	resp, err := c.Post(url+"/tts", "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -149,6 +154,7 @@ func main() {
 	esn := flag.String("esn", "", "DeviceId (default: robots[0].esn of $BOTINFO / jdocs/botSdkInfo.json)")
 	pcmPath := flag.String("pcm", "", "16 kHz s16le mono file to stream")
 	say := flag.String("say", "", "text to synthesize and stream instead of -pcm")
+	lang := flag.String("lang", "en-US", "-say language: en-US (af_bella) or et-EE (mari); must be wire-pod's saved lang")
 	ttsURL := os.Getenv("TTS_URL")
 	if ttsURL == "" {
 		ttsURL = "http://127.0.0.1:8091"
@@ -162,7 +168,7 @@ func main() {
 	case (*pcmPath == "") == (*say == ""):
 		err = errors.New("need exactly one of -pcm, -say")
 	case *say != "":
-		pcm, err = synth(ttsURL, *say)
+		pcm, err = synth(ttsURL, *say, *lang)
 	default:
 		pcm, err = os.ReadFile(*pcmPath)
 	}
