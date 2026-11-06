@@ -1,6 +1,6 @@
 """my-vector STT service: POST /stt?lang=<en-US|et-EE> (16 kHz s16le mono PCM body) -> {"text"}; GET /health -> {"lang", "loaded", "device"}.
 
-One faster-whisper model on the GPU: myvectorConfig.json "lang"'s (TalTech turbo-et or MODEL_EN); a ?lang= that differs -> 409.
+One faster-whisper model on the GPU: myvectorConfig.json "lang"'s (TalTech turbo-et or MODEL_EN); a ?lang= that differs -> 409; a missing ?lang= means et-EE (back-compat with an older wire-pod).
 Env: STT_BIND (127.0.0.1), STT_PORT (8092), STT_MODEL / STT_MODEL_EN (CT2 dirs), STT_DEVICE (cuda), STT_COMPUTE (int8_float16), STT_CONFIG (polled every 5 s).
 """
 
@@ -176,7 +176,7 @@ class Recognizer:
 
 
 class ConfigWatcher:
-    """Polls wire-pod's settings (stat key: mtime, inode, size) and (de)activates the recognizer on a change."""
+    """Polls wire-pod's settings (stat key: mtime, inode, size) and swaps the recognizer's model (set_lang) on a change."""
 
     def __init__(self, path, recognizer):
         self.path, self.rec, self._key = Path(path), recognizer, ()

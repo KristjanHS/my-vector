@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
@@ -68,6 +69,28 @@ func forkServiceSTT(req sr.SpeechRequest, l string) (string, error) {
 		return "", fmt.Errorf("%s STT reply: %w", l, jerr)
 	}
 	text := strings.ToLower(strings.TrimSpace(out.Text))
+	if l == lang.English {
+		text = forkVoskShape(text)
+	}
 	logger.Println("Bot " + req.Device + " Transcribed text (" + l + "): " + text)
 	return text, nil
+}
+
+// forkVoskShape turns Whisper's English into Vosk's shape, which upstream's timer/weather parsers expect: letters, digits,
+// apostrophes and single spaces only ("10-minute timer, please!" -> "10 minute timer please"); a '.' between digits stays.
+func forkVoskShape(s string) string {
+	r := []rune(s)
+	for i, c := range r {
+		if c == '’' { // Whisper's typographic apostrophe
+			r[i], c = '\'', '\''
+		}
+		keep := unicode.IsLetter(c) || unicode.IsDigit(c) || c == '\'' || c == ' '
+		if c == '.' && i > 0 && i+1 < len(r) && unicode.IsDigit(r[i-1]) && unicode.IsDigit(r[i+1]) {
+			keep = true
+		}
+		if !keep {
+			r[i] = ' '
+		}
+	}
+	return strings.Join(strings.Fields(string(r)), " ")
 }

@@ -2,6 +2,7 @@ package processreqs
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,7 +28,7 @@ func forkSTTStub(t *testing.T, url string) (func(sr.SpeechRequest) (string, erro
 
 func TestForkSTTRouterPostsLang(t *testing.T) {
 	for _, c := range []struct{ lang, reply, want string }{
-		{lang.English, `{"text": " What time is it? "}`, "what time is it?"},
+		{lang.English, `{"text": " What time is it? "}`, "what time is it"},
 		{lang.Estonian, `{"text": " Mis kell ÕHTUL on? "}`, "mis kell õhtul on?"},
 	} {
 		lang.UseForTest(t, c.lang)
@@ -43,6 +44,28 @@ func TestForkSTTRouterPostsLang(t *testing.T) {
 		srv.Close()
 		if err != nil || text != c.want || *calls != 0 {
 			t.Fatalf("%s: got %q, %v, vosk calls %d", c.lang, text, err, *calls)
+		}
+	}
+}
+
+// English gets Vosk's shape for upstream's parsers (timer regex, weather location); Estonian text is only lowercased + trimmed.
+func TestForkSTTVoskShape(t *testing.T) {
+	for _, c := range []struct{ lang, text, want string }{
+		{lang.English, "Set a 10-minute timer, please!", "set a 10 minute timer please"},
+		{lang.English, "What's the weather in Paris, France?", "what's the weather in paris france"},
+		{lang.English, "1.5 minutes. It’s 3.", "1.5 minutes it's 3"},
+		{lang.English, " Hi...  there\t— you ", "hi there you"},
+		{lang.Estonian, " Mis kell ÕHTUL on? ", "mis kell õhtul on?"},
+	} {
+		lang.UseForTest(t, c.lang)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(map[string]string{"text": c.text})
+		}))
+		vosk, _ := forkSTTStub(t, srv.URL+"/stt")
+		text, err := forkSTTRouter(vosk)(sr.SpeechRequest{})
+		srv.Close()
+		if err != nil || text != c.want {
+			t.Errorf("%s %q: got %q, %v; want %q", c.lang, c.text, text, err, c.want)
 		}
 	}
 }
