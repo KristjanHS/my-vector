@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): volume, no-auto-update, T2 voice file.
+# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): volume, no-auto-update, T2 voice file, /data fill guard.
 # Usage: settings.sh   idempotent: reads first, sets only what differs. Exit 0 = all in place; 1 = a WARN line printed; 2 = SETUP (robot/env.sh).  (env: ESN, SERVER)
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -42,4 +42,10 @@ conf_field() { sed -n "s/.*\"$1\": *\"\{0,1\}\([a-z_0-9.]*\).*/\1/p" "$conf" 2>/
 t2=$(conf_field t2) slow=$(conf_field slow)
 if out=$("$here/voice-push.sh" "${t2:-af_bella}" "${slow:-1.2}" 2>&1); then ok "${out#ok: }"
 else warn "T2 voice: not pushed: ${out##*$'\n'}"; fi
+
+# /data fill guard (robot/diskguard): it lives on the rootfs, so a reflash drops it; this re-installs it.
+dg=$here/../diskguard/apply.sh
+if [[ ! -f $dg ]]; then warn "diskguard: $dg missing (older sha?); not installed"
+elif out=$(bash "$dg" 2>&1); then ok "${out//$'\n'/; }"
+else warn "diskguard: ${out//$'\n'/; }"; fi
 exit $rc
