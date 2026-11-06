@@ -8,6 +8,9 @@ Almost everything runs through **`scripts/llm.sh`**. It changes wire-pod's LLM s
 running server's web API (no restart), and `ping` sends a request built like wire-pod's (same
 endpoint, key and model), so you see the answer and its latency without talking to the robot.
 
+⚠ Once the **Language, brain & voice** page (`/myvector/voice`) is saved, its per-language LLM (Ollama or
+Claude) wins: `scripts/llm.sh use` no longer changes the brain. Delete `"llm"` from `chipper/myvectorConfig.json` to go back.
+
 | # | option | cost | what it adds |
 |---|--------|------|--------------|
 | 1 | Local Ollama (your Windows Ollama) | free | plain Q&A, private — same setup as the dev.to "WirePod + Gemma" write-up |
