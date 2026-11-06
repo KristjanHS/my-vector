@@ -6,7 +6,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
 . "$here/../env.sh"
 settings=/data/data/com.anki.victor/persistent/jdocs/vic.RobotSettings.json
-volume=4 # master_volume: MUTE 0 … HIGH 5; quiet idle comes from the per-bus patches, not from this
+volume=1 # master_volume: MUTE 0 … HIGH 5 (user ruling 2026-11-06: 1, the voice disturbs the next room)
 tz=Europe/Tallinn # robot clock + time_zone jdoc (user ruling 2026-11-06; onboarding left America/Los_Angeles)
 flag=/data/data/user-do-not-auto-update
 conf=$robot_dir/../chipper/myvectorConfig.json # voice.SettingsPath: wire-pod (cwd chipper/) saves it beside apiConfig.json

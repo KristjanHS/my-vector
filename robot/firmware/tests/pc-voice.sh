@@ -43,7 +43,7 @@ timeout 30 "$tmp/t" "$here/tts-urls.txt" || rc=$?
 ((rc == 0)) || die "0010-pc-voice_test.cpp exit $rc"
 
 # voice-push.sh + settings.sh in a throwaway robot/ (GIT_DIR=/nonexistent: env.sh falls back to the copy's own robot.env).
-# Stub robot (ssh runs settings.sh's sed on robot_jdoc's file): clock 24h, Celsius, volume 4; the voice file lands in $vp/voice.json, curl calls in $vp/curl.log.
+# Stub robot (ssh runs settings.sh's sed on robot_jdoc's file): clock 24h, Celsius, volume 1; the voice file lands in $vp/voice.json, curl calls in $vp/curl.log.
 vp=$tmp/vp
 mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/bin" "$vp/chipper/jdocs"
 cp "$fw/../env.sh" "$vp/robot/"
@@ -66,7 +66,7 @@ printf '#!/bin/sh\n' >"$vp/bin/sleep"
 chmod +x "$vp/bin/ssh" "$vp/bin/curl" "$vp/bin/sleep"
 # robot_jdoc <time_zone>: the robot's pretty-printed vic.RobotSettings.json that the ssh stub's sed reads.
 robot_jdoc() {
-  printf '{\n   "clock_24_hour" : true,\n   "master_volume" : 4,\n   "temp_is_fahrenheit" : false,\n   "time_zone" : "%s",\n}\n' "$1" \
+  printf '{\n   "clock_24_hour" : true,\n   "master_volume" : 1,\n   "temp_is_fahrenheit" : false,\n   "time_zone" : "%s",\n}\n' "$1" \
     >"$vp/vic.RobotSettings.json"
 }
 robot_jdoc Europe/Tallinn
