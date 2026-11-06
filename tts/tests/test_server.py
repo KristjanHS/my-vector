@@ -470,6 +470,13 @@ def test_handler_frees_unselected_kokoro_after_the_response(lazy):
         ('["cori"]', True, True),
         ('{"t1": {}, "t2": "cori"}', True, True),
         ('{"t1": "cori", "t2": ["cori"]}', True, True),
+        ('{"t1": "mari", "t2": "cori"}', True, True),  # mari is Estonian-only
+        ('{"lang": "en-US", "t1": "af_bella", "t1_et": "mari"}', True, False),
+        ('{"lang": "et-EE", "t1": "af_bella", "t2": "af_bella"}', False, False),  # E7: the ET stack never pins Kokoro
+        ('{"lang": "fi-FI", "t1": "cori", "t2": "af_bella"}', True, False),  # unsupported lang -> en-US
+        ('{"lang": "et-EE", "t1_et": "af_bella"}', False, True),  # E30: et pair is mari only -> defaults (mari)
+        ('{"lang": "et-EE", "t2_et": "stock"}', False, True),
+        ('{"lang": "en-US", "t1": "cori", "t2": "cori", "t1_et": "af_bella"}', True, True),  # any invalid field -> defaults
     ],
 )
 def test_kokoro_selected_reads_t1_t2_and_invalid_is_defaults(tmp_path, text, pinned, bad):

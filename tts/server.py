@@ -46,6 +46,12 @@ log = logging.getLogger("myvector-tts")
 
 # wire-pod's chipper/pkg/myvector/voice/settings.go: the voice choices beyond VOICES, defaults, slow range
 STOCK, DEFAULT_VOICE, DEFAULT_SLOW = "stock", "af_bella", 1.2
+ET_VOICES = {v for v, (_, vid) in VOICES.items() if vid.startswith("et_")}
+# settings.go voices: language -> (its T1/T2 config keys, default voice, choices); lang.go: anything but et-EE is en-US
+LANG_VOICES = {
+    "en-US": (("t1", "t2"), DEFAULT_VOICE, (set(VOICES) - ET_VOICES) | {STOCK}),
+    "et-EE": (("t1_et", "t2_et"), "mari", ET_VOICES),
+}
 VOICE_CONFIG = Path(__file__).resolve().parents[1] / "chipper/myvectorConfig.json"
 CONFIG_POLL_S = 5
 
@@ -330,23 +336,26 @@ class LazyKokoro:
 
 
 def kokoro_selected(path):
-    """(is a kokoro voice wire-pod's T1 or T2, why-defaults or None). Unreadable/invalid -> defaults, as settings.go Current."""
+    """(is a kokoro voice the active language's T1 or T2, why-defaults or None); invalid -> defaults, as settings.go Current."""
+    lang = "en-US"
     try:
         cfg = json.loads(Path(path).read_text())
         if not isinstance(cfg, dict):
             raise ValueError("not a JSON object")
-        t1, t2 = cfg.get("t1", DEFAULT_VOICE), cfg.get("t2", DEFAULT_VOICE)
+        lang = "et-EE" if cfg.get("lang") == "et-EE" else "en-US"
+        for keys, default, choices in LANG_VOICES.values():
+            for v in (cfg.get(k, default) for k in keys):
+                if not isinstance(v, str) or v not in choices:  # a dict/list would TypeError on `in`
+                    raise ValueError(f"voice {v!r}")
         slow = cfg.get("slow", DEFAULT_SLOW)
-        for v in (t1, t2):
-            if not isinstance(v, str) or (v != STOCK and v not in VOICES):  # a dict/list would TypeError on `in`
-                raise ValueError(f"voice {v!r}")
         if isinstance(slow, bool) or not isinstance(slow, (int, float)) or not SLOW_MIN <= slow <= SLOW_MAX:
             raise ValueError(f"slow {slow!r}")
     except FileNotFoundError:
         return VOICES[DEFAULT_VOICE][0] == "kokoro", None
     except (OSError, ValueError) as e:  # JSONDecodeError and UnicodeDecodeError are ValueErrors
-        return VOICES[DEFAULT_VOICE][0] == "kokoro", f"{path}: {e}"
-    return any(VOICES.get(v, ("",))[0] == "kokoro" for v in (t1, t2)), None
+        return VOICES[LANG_VOICES[lang][1]][0] == "kokoro", f"{path}: {e}"
+    keys, default, _ = LANG_VOICES[lang]
+    return any(VOICES.get(cfg.get(k, default), ("",))[0] == "kokoro" for k in keys), None
 
 
 class ConfigWatcher:

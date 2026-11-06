@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Wire-Pod - Voice</title>
+  <title>Wire-Pod - Language &amp; voice</title>
   <link rel="stylesheet" type="text/css" href="/css/style.css" />
   <style>
     .voice-box { max-width: 420px; margin: 24px auto; padding: 0 16px; }
@@ -16,17 +16,22 @@
 <body>
   <div class="voice-box">
     <p><a href="/">&larr; Wire-Pod</a></p>
-    <h2>Voices</h2>
+    <h2>Language &amp; voice</h2>
     <form id="form">
+      <fieldset><legend>Language</legend><div id="lang"></div></fieldset>
+      <h3>English voices</h3>
       <fieldset><legend>T1: LLM answers</legend><div id="t1"></div></fieldset>
       <fieldset><legend>T2: robot's own lines (time, weather…)</legend><div id="t2"></div></fieldset>
+      <h3>Eesti hääled</h3>
+      <fieldset><legend>T1: LLM answers</legend><div id="t1_et"></div></fieldset>
+      <fieldset><legend>T2: robot's own lines</legend><div id="t2_et"></div></fieldset>
       <label>Slow factor (T1 and T2): <output id="slowOut"></output>
         <input type="range" id="slow" step="0.05" />
       </label>
       <label>Sample text:
         <textarea id="sample" rows="3" maxlength="599" style="width: 100%">Hi, I'm Vector. It's a lovely day, and I'm happy to help. What would you like to know?</textarea>
       </label>
-      <button type="button" id="test">Test T1 on Vector</button>
+      <button type="button" id="test">Test the selected language's T1 on Vector</button>
       <button type="submit">Save</button>
     </form>
     <p id="status"></p>
@@ -35,15 +40,19 @@
     const api = "/myvector/api/voice";
     const $ = (id) => document.getElementById(id);
     const status = (t) => { $("status").textContent = t; };
+    const names = { "en-US": "English", "et-EE": "Eesti" };
+    const samples = { "en-US": $("sample").value, "et-EE": "Tere, mina olen Vector. Täna on ilus päev. Millega saan aidata?" };
+    const radios = (id, values, checked, label = (v) => v) => $(id).replaceChildren(...values.map((v) => {
+      const l = document.createElement("label");
+      const r = Object.assign(document.createElement("input"), { type: "radio", name: id, value: v, checked: v === checked });
+      l.append(r, " " + label(v));
+      return l;
+    }));
+    const pick = (t) => { const r = document.querySelector(`input[name=${t}]:checked`); return r && r.value; };
     function show(s) {
-      for (const t of ["t1", "t2"]) {
-        $(t).replaceChildren(...s.voices.map((v) => {
-          const l = document.createElement("label");
-          const r = Object.assign(document.createElement("input"), { type: "radio", name: t, value: v, checked: v === s[t] });
-          l.append(r, " " + v);
-          return l;
-        }));
-      }
+      radios("lang", s.langs, s.lang, (l) => names[l] || l);
+      for (const [t, l] of [["t1", "en-US"], ["t2", "en-US"], ["t1_et", "et-EE"], ["t2_et", "et-EE"]]) radios(t, s.voices[l], s[t]);
+      syncSample();
       Object.assign($("slow"), { min: s.slowMin, max: s.slowMax, value: s.slow });
       $("slowOut").textContent = s.slow.toFixed(2);
     }
@@ -53,10 +62,15 @@
       return r.json();
     }
     function post(extra) {
-      const pick = (t) => { const r = document.querySelector(`input[name=${t}]:checked`); return r && r.value; };
       return { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ t1: pick("t1"), t2: pick("t2"), slow: Number($("slow").value), ...extra }) };
+        body: JSON.stringify({ lang: pick("lang"), t1: pick("t1"), t2: pick("t2"), t1_et: pick("t1_et"), t2_et: pick("t2_et"),
+          slow: Number($("slow").value), ...extra }) };
     }
+    function syncSample() { // swap the sample only while it still holds a default
+      const l = pick("lang");
+      if (Object.values(samples).includes($("sample").value) && samples[l]) $("sample").value = samples[l];
+    }
+    $("lang").addEventListener("change", syncSample);
     $("slow").addEventListener("input", (e) => { $("slowOut").textContent = Number(e.target.value).toFixed(2); });
     $("test").addEventListener("click", async () => {
       $("test").disabled = true;
