@@ -80,3 +80,29 @@ func TestLangCurrentFollowsPath(t *testing.T) {
 		t.Fatalf("after Path change: %q, want the new file's %q", got, Estonian)
 	}
 }
+
+func TestLangETModel(t *testing.T) {
+	for _, c := range []struct{ file, want string }{
+		{``, DefaultETModel}, // no file
+		{`{"lang":"et-EE"}`, DefaultETModel},
+		{`{"et_model":""}`, DefaultETModel},
+		{`{"et_model":7}`, DefaultETModel},
+		{`{"et_model":"estllm:test","lang":"et-EE"}`, "estllm:test"},
+	} {
+		path := tempPath(t)
+		if c.file != "" {
+			os.WriteFile(path, []byte(c.file), 0644)
+		}
+		if got := ETModel(); got != c.want {
+			t.Errorf("%s: ETModel() = %q, want %q", c.file, got, c.want)
+		}
+	}
+	path := tempPath(t)
+	os.WriteFile(path, []byte(`{"et_model":"estllm:kept"}`), 0644)
+	if err := Save(Estonian); err != nil {
+		t.Fatal(err)
+	}
+	if got := ETModel(); got != "estllm:kept" {
+		t.Fatalf("ETModel() after Save = %q", got)
+	}
+}

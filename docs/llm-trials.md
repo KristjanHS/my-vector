@@ -57,12 +57,13 @@ Your Windows Ollama is reachable from WSL at `localhost:11434` (mirrored network
 needs to be opened up.
 
 ```bash
-scripts/llm.sh warm                         # load gemma3:4b-it-qat (first load ~60 s; then it stays loaded)
+scripts/llm.sh warm                         # load qwen3.5:4b (first load ~60 s; then it stays loaded)
 scripts/llm.sh use ollama                   # save + ping; expect an answer within ~1 s
 ```
 
 Then ask Vector a question (see "How to ask" above). Things to try:
 
+- Default `qwen3.5:4b` (blind mean 4.40 vs `gemma3:4b-it-qat` 3.70; wire-pod sends it `reasoning_effort: none`).
 - Another installed model: `scripts/llm.sh models ollama`, then e.g. `scripts/llm.sh use ollama cas/mistral-7b-instruct-v0.3:latest`.
   Avoid `deepseek-r1` (it "thinks out loud", and Vector would read that out) and the coder models.
 - `scripts/llm.sh use ollama --intentgraph` to skip the "I have a question" step.
@@ -77,7 +78,7 @@ What can go wrong:
 
 The **VectorSoul** project (camera → local Gemma → spoken answer) is gone: `chatde/vector-gemma4` and
 `chatura-dev/vector-gemma4` both return 404 as of 2026-11-05. wire-pod's built-in "LLM commands" cover
-the same idea, and `gemma3:4b` can read images.
+the same idea, and `qwen3.5:4b` can read images.
 
 ```bash
 scripts/llm.sh use ollama --commands --intentgraph --remember

@@ -1,6 +1,6 @@
 # Vector Estonian mode: research, pick, build
 
-**Status**: 🟡 IN PROGRESS 2026-11-05 — Stages 1–6 done; Stage 7.1 (LLM language line) next; robot runs wait for the user's go.
+**Status**: 🟡 IN PROGRESS 2026-11-05 — Stages 1–7 done; Stage 8.1 (TTS Piper Mari) next; robot runs wait for the user's go.
 **Want**: one switch makes Vector hear, understand, answer and speak Estonian, built-in lines included; English unchanged.
 **Parent**: `2026-11-05-vector-voice-research.md` (docs/plans/) — R1–R23 live there; R2, R4, R6 carry over.
 **Overlap**: `2026-11-05-vector-voice-verify.md` (docs/plans/) stays QUEUED LAST and checks the English PC voice path; this plan must not wait for it. Its V5 rows 1–2 become Stage 10's English regression.
@@ -33,6 +33,9 @@
 | E22 | ET stem match = opt-in `*` suffix on a keyphrase (`taimer*` = any word starting `taimer`); unmarked phrases stay whole-word; ä/õ/ö/ü/š/ž are word letters |
 | E23 | ET timer = numbers 1–99 + units in nominative/genitive/-ks forms, "pool tundi" = 30 min, digits; `forkTimerText` rewrites to `"<n> second"` before upstream words2num (its `\w` regex is ASCII-only) |
 | E24 | ET weather city = exonym table (~20 names) → inessive-strip fallback, ≤2 geocoder guesses (Tartus → Tartu; Tallinnas → Tallinna, Tallinn) → no city = home location |
+| E25 | ET model = `et_model` in `myvectorConfig.json` (`lang.ETModel()`, default EstLLM `i1-Q4_K_M` tag), sent only on Ollama in et-EE; 8.2's page edits it |
+| E26 | ET camera keeps getImage: unload the ET model, photo turn on `Knowledge.Model` (vision), unload it after (`keep_alive: 0`) — one LLM resident |
+| E27 | Ollama = Provider `custom` ∧ endpoint port 11434 (claude/gemini presets are `custom` too); gates ET model, `reasoning_effort: none`, unloads |
 
 ## Seams already known (verify, don't re-derive)
 
@@ -87,7 +90,7 @@ Ruled E15–E18 (2026-11-05).
 | 5.1 | Estonian STT (E15, E19–E21): `forkSTTRouter` wraps the Vosk handler; `et-stt/server.py` + `et-stt/setup.sh` (model fetch into `robot/work/et-stt/`) + `make stt-setup/stt-enable/stt-disable` | `preqs/fork_stt.go`, `preqs/server.go` (drift-listed), `et-stt/`, `scripts/myvector-stt.service`, `Makefile` | `go test -run Fork ./pkg/wirepod/preqs/` (`TestForkSTTRouter*`, httptest stub) + pytest `et-stt/tests` in `scripts/check.sh` + live `et-stt/smoke.sh` |
 | 6.1 | DONE: `et-EE` intent table for the 8 `forkAllowedIntents` (fork-authored, so the English drop/add tables stay as-is); `ForkNormalizeText` trims ET end punctuation in `ProcessTextAll`; Estonian stem matching in `ForkContainsPhrase` (E22); specific intents first ("mis mu nimi on" → names_ask, check-timer before set-timer) | `vars/fork_intents.go`, `chipper/intent-data/et-EE.json` | `TestForkIntentsEstonian` (10 Stage 2.2 phrases → intent, as the ET router emits them: lowercased, Whisper punctuation kept — "mis kell on?"), English table test unchanged |
 | 6.2 | DONE: Estonian `GetText` words ("nimi on", forecast days) via fork override, not a 14th upstream column; timer forms (E23) + weather city (E24) | `localization/fork_texts.go` | `TestForkTimerEstonian` ("viieks minutiks" → 300 s), `TestForkWeatherCityEstonian` |
-| 7.1 | LLM language line appended in `CreateAIReq` when `lang = et-EE`; EN default `qwen3.5:4b` (E16); send `ReasoningEffort: "none"` only when `Provider == "custom"` (Ollama; qwen3.5/gemma4 think by default — OpenAI rejects it on non-reasoning models) | `ttr/fork_prompt.go` (hook in kgsim.go, drift-listed), `scripts/llm.sh` + `docs/llm-trials.md` default model | `go test -run Fork ./pkg/wirepod/ttr/` (`TestForkPromptEstonian`, `TestForkPromptEnglishUnchanged`, `TestForkPromptOpenAIOmitsReasoning`) |
+| 7.1 | DONE: `CreateAIReq` → `forkAIReq`: et-EE appends "Answer in Estonian." (bench line) + model `lang.ETModel()` on Ollama (E25, E27); Ollama gets `ReasoningEffort: "none"`; `DoGetImage` → `forkCameraReq` (E26); EN default `qwen3.5:4b` (E16), then `scripts/llm.sh use ollama qwen3.5:4b` live | `ttr/fork_prompt.go` (hooks in kgsim.go, kgsim_cmds.go), `myvector/lang/lang.go`, `scripts/llm.sh` + `docs/llm-trials.md` | `go test -run Fork ./pkg/wirepod/ttr/` (`TestForkPromptEstonian`, `TestForkPromptEnglishUnchanged`, `TestForkPromptOpenAIOmitsReasoning`, `TestForkCameraEstonianUnloads`) + `TestLangETModel` |
 | 8.1 | TTS server: Estonian engine + voice key(s) in `VOICES`, gain to -14 LUFS (R23, `tts/calibrate.py`), Estonian sentence split; Piper Mari (E17) | `tts/server.py`, `tts/gains.json`, `tts/requirements.txt` | pytest `tts/tests` (stub engine) + live `tts/smoke.sh` |
 | 8.2 | Per-language T1/T2 in settings (`Settings` gains et pair; `Voices` per lang); page grows into "Language & voice" (E18); the switch handler calls `lang.Save` then re-runs `vars.LoadIntents()` and ttr `initializeTextToNumberwithCurrentLocalization()` (both built once) | `myvector/voice/settings.go`, `settings.html` | `TestSettingsValidate` + `TestSettingsSaveRoundTrip` extended; add pytest `test_voices_match_go` (none today) |
 | 9.1 | Built-in lines in Estonian, D2a (E18): new patch `0011-*.patch` + `series` + `markers.tsv`; push `lang` in `myvector-voice.json` via `voice-push.sh` | `robot/firmware/`, `voice-push.sh`, `myvector/voice/` | `robot/firmware/check-static.sh`; host test `robot/firmware/tests/et-lines.sh` added to `scripts/check.sh`; `TestPushT2Args` extended |
