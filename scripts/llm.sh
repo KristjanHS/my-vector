@@ -85,11 +85,11 @@ print(json.dumps({"enable":True,"provider":e["P"],"endpoint":e["E"],"model":e["M
   ping
 }
 
-# Smoke test of kgsim.go's request: same endpoint, key, model, stream, temperature and top_p rule;
+# Smoke test of kgsim.go's request: same endpoint, key, model, stream, temperature, top_p and reasoning rule;
 # no command prompt, chat history or 2048-token cap. Key goes through the environment, never argv.
 ping() {
   local q=${1:-Why is the sky blue? Answer in one sentence.}
-  get_kg | Q=$q python3 -I -c 'import json,os,sys,time,urllib.request
+  get_kg | Q=$q python3 -I -c 'import json,os,sys,time,urllib.parse,urllib.request
 c=json.load(sys.stdin)
 if not c.get("enable"): sys.exit("LLM is off — run: scripts/llm.sh use PRESET")
 base={"openai":"https://api.openai.com/v1","together":"https://api.together.xyz/v1"}.get(c["provider"],c.get("endpoint","")).rstrip("/")
@@ -98,6 +98,7 @@ sysmsg=c.get("openai_prompt") or "You are a helpful, animated robot called Vecto
 body={"model":model,"stream":True,"temperature":1,"max_completion_tokens":300,
       "messages":[{"role":"system","content":sysmsg},{"role":"user","content":os.environ["Q"]}]}
 if not model.lower().startswith("claude"): body["top_p"]=1
+if c["provider"]=="custom" and urllib.parse.urlparse(base).port==11434: body["reasoning_effort"]="none"  # forkAIReq (fork_prompt.go)
 req=urllib.request.Request(base+"/chat/completions",json.dumps(body).encode(),
     {"Content-Type":"application/json","Authorization":"Bearer "+c.get("key","")})
 print("->", c["provider"], base, "model="+model)
