@@ -2,16 +2,22 @@
 //
 //	go run ./pkg/myvector/routeprobe [-lang et-EE] [-audio] [-llm] [-plugins] "text"   # run from chipper/, beside apiConfig.json
 //
-// -lang / -brain test another language / LLM profile from a temp copy of myvectorConfig.json (the saved file is never written).
+// Nothing under chipper/ is written: apiConfig.json, myvectorConfig.json and jdocs/jdocs.json are read from temp copies
+// (vars.ReadConfig rewrites apiConfig.json on every start), removed on exit.
+// -lang / -brain test another language / LLM profile (they edit the temp copy of myvectorConfig.json).
+// -plugins / -plugin f.so / -custom RUN code on a match: plugin Action funcs, and customIntents.json's exec commands and
+// Lua scripts (against the real robot). Without -custom, custom intents are not loaded.
 // -plugin f.so loads one plugin; build the HA one against a dead URL to test "HA down" (scripts/live-check.sh ha).
 // -audio speaks the text in the language's voice (TTS :8091) and routes the STT (:8092) transcript; STT serves only the SAVED lang.
-// Output lines: "stt: …", then "intent: <name> <params>" | "plugin: <reply>" | "llm: <answer>" | "llm: (not asked)".
+// Output lines: "stt: …", then "intent: <name> <params>" | "plugin: <reply>" | "llm: (not asked)" |
+// "llm-target: <provider> <model>" + "llm: <answer as spoken>" | "intent: intent_system_unmatched (LLM off: …)".
 package main
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -41,6 +47,15 @@ func (s *stream) Send(r *pb.IntentGraphResponse) error { s.sent = append(s.sent,
 
 var voices = map[string]string{"en-US": "af_bella", "et-EE": "mari"}
 
+// tmp holds the copies of the files vars.Init and the handlers would write; cleanup removes it (die calls it too).
+var tmp string
+
+func cleanup() {
+	if tmp != "" {
+		os.RemoveAll(tmp)
+	}
+}
+
 func main() {
 	l := flag.String("lang", "", "en-US or et-EE (default: the saved language)")
 	audio := flag.Bool("audio", false, "route the TTS→STT round trip of the text")
@@ -48,6 +63,7 @@ func main() {
 	brain := flag.String("brain", "", "provider:model for this language's LLM profile, e.g. ollama:qwen3.5:4b")
 	plugins := flag.Bool("plugins", false, "load ./plugins/*.so first (a plugin match RUNS the plugin)")
 	pluginFile := flag.String("plugin", "", "load this one plugin .so (as ttr.LoadPlugins would); a match RUNS it")
+	custom := flag.Bool("custom", false, "load customIntents.json (a match RUNS its exec command / Lua script)")
 	tts := flag.String("tts", "http://127.0.0.1:8091", "TTS service")
 	stt := flag.String("stt", "http://127.0.0.1:8092", "STT service")
 	flag.Parse()
@@ -56,7 +72,12 @@ func main() {
 		os.Exit(2)
 	}
 	logger.Init() // wire-pod's log lines only with DEBUG_LOGGING=true
+	defer cleanup()
+	isolate()
 	vars.Init()
+	if !*custom {
+		vars.CustomIntents, vars.CustomIntentsExist = nil, false
+	}
 	if *l != "" && !lang.Valid(*l) {
 		die(2, "lang: one of %v", lang.Supported)
 	}
@@ -109,18 +130,76 @@ func main() {
 		fmt.Println("llm: (not asked)")
 		return
 	}
-	a, err := ttr.ForkProbeLLM(ctx, text, esn)
+	target, a, err := ttr.ForkProbeLLM(ctx, text, esn)
+	if errors.Is(err, ttr.ErrForkLLMOff) {
+		fmt.Printf("intent: intent_system_unmatched (%v)\n", err) // what production sends instead
+		return
+	}
+	if target != "" {
+		fmt.Println("llm-target: " + target)
+	}
 	if err != nil {
 		die(1, "llm: %v", err)
 	}
 	fmt.Println("llm: " + strings.Join(strings.Fields(a), " "))
 }
 
-// override points lang.Path at a temp copy of the settings file with "lang" = l and, given brain, llm[l] = brain.
+// isolate points vars.ApiConfigPath, lang.Path and vars.JdocsPath at temp copies of the files (run from chipper/).
+// vars.ReadConfig rewrites apiConfig.json and, when env STT_SERVICE differs from it, blanks STT.provider; the copy takes that.
+func isolate() {
+	src := vars.ApiConfigPath
+	b, err := os.ReadFile(src)
+	if err != nil {
+		die(2, "%v (run from chipper/)", err)
+	}
+	var c struct {
+		STT struct {
+			Service string `json:"provider"`
+		} `json:"STT"`
+	}
+	if err := json.Unmarshal(b, &c); err != nil {
+		die(2, "%s: %v", src, err)
+	}
+	if os.Getenv("STT_SERVICE") == "" { // as start.sh exports it from source.sh: the file's own provider
+		os.Setenv("STT_SERVICE", c.STT.Service)
+	}
+	if tmp, err = os.MkdirTemp("", "routeprobe"); err != nil {
+		die(2, "%v", err)
+	}
+	langSrc := lang.Path() // beside apiConfig.json (vars/fork_lang.go); follows ApiConfigPath to the copy below
+	vars.ApiConfigPath = filepath.Join(tmp, "apiConfig.json")
+	copyFile(src, vars.ApiConfigPath, true)
+	copyFile(langSrc, lang.Path(), false)
+	j := filepath.Join(tmp, "jdocs.json")
+	copyFile(vars.JdocsPath, j, false)
+	vars.JdocsPath = j
+}
+
+// copyFile copies src to dst (0600: the copies hold keys); a missing src is fatal only when must.
+func copyFile(src, dst string, must bool) {
+	b, err := os.ReadFile(src)
+	if errors.Is(err, os.ErrNotExist) && !must {
+		return
+	}
+	if err != nil {
+		die(2, "%v", err)
+	}
+	if err := os.WriteFile(dst, b, 0o600); err != nil {
+		die(2, "%v", err)
+	}
+}
+
+// override points lang.Path at a new temp file: the settings copy with "lang" = l and, given brain, llm[l] = brain.
 func override(l, brain string) {
 	m := map[string]any{}
-	if b, err := os.ReadFile(lang.Path()); err == nil {
-		json.Unmarshal(b, &m)
+	b, err := os.ReadFile(lang.Path())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		die(2, "%v", err)
+	}
+	if err == nil {
+		if err := json.Unmarshal(b, &m); err != nil {
+			die(2, "%s: %v", lang.Path(), err)
+		}
 	}
 	m["lang"] = l
 	if brain != "" {
@@ -135,9 +214,9 @@ func override(l, brain string) {
 		profiles[l] = map[string]string{"provider": p, "model": model}
 		m["llm"] = profiles
 	}
-	b, _ := json.Marshal(m)
-	dir, err := os.MkdirTemp("", "routeprobe")
-	if err != nil {
+	b, _ = json.Marshal(m)
+	dir := filepath.Join(tmp, "override") // a new Path: lang caches Current per Path
+	if err := os.Mkdir(dir, 0o700); err != nil {
 		die(2, "%v", err)
 	}
 	p := filepath.Join(dir, "myvectorConfig.json")
@@ -222,5 +301,6 @@ func params(p map[string]string) string {
 
 func die(code int, f string, a ...any) {
 	fmt.Fprintf(os.Stderr, f+"\n", a...)
+	cleanup()
 	os.Exit(code)
 }

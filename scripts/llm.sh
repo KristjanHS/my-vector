@@ -185,11 +185,11 @@ print(json.dumps(b))' | curl -fsS -m 60 "$HA_URL/api/conversation/process" -H "A
 }
 
 ha_plugin() {
-  local so=$ROOT/chipper/plugins/commandha.so src=$WORK/ha-plugin-src build=$WORK/ha-plugin
-  if [[ ${1:-build} == remove ]]; then
+  local so=$ROOT/chipper/plugins/commandha.so src=$WORK/ha-plugin-src build=$WORK/ha-plugin mode=${1:-build}
+  if [[ $mode == remove ]]; then
     rm -f "$so"; echo "removed $so — run: make start"; return
   fi
-  if [[ $1 == probe ]]; then # HA down on purpose: a dead URL, dummy token/agent, built outside chipper/plugins
+  if [[ $mode == probe ]]; then # HA down on purpose: a dead URL, dummy token/agent, built outside chipper/plugins
     so=${2:-$ROOT/robot/work/live-check/commandha-dead.so} build=$WORK/ha-plugin-probe
     local HA_URL=http://127.0.0.1:9 HA_TOKEN=probe HA_AGENT=probe
   else
@@ -198,7 +198,7 @@ ha_plugin() {
   fi
   [[ -d $src ]] || git clone -q --depth 1 https://github.com/NonaSuomy/WirePodVectorCommandHomeAssistant "$src"
   echo "plugin source $(git -C "$src" log --oneline -1)"
-  [[ $1 == probe ]] || ha_say "Hello" >/dev/null || die "HA did not answer with HA_TOKEN/HA_AGENT — fix that first (scripts/llm.sh ha-agents)"
+  [[ $mode == probe ]] || ha_say "Hello" >/dev/null || die "HA did not answer with HA_TOKEN/HA_AGENT — fix that first (scripts/llm.sh ha-agents)"
   mkdir -p "$build" "$(dirname "$so")"
   # Fill the placeholders the upstream file asks you to edit by hand; switch on its agent_id lines.
   sed -e "s#http://HAIPHERE:8123#$HA_URL#" -e "s#LongLiveTokenHere#$HA_TOKEN#" \
@@ -210,7 +210,7 @@ ha_plugin() {
   ! grep -q 'panic(' "$build/commandha.go" || die "panic patch did not apply — upstream file changed (an unreachable HA would restart wire-pod)"
   (cd "$build" && CGO_ENABLED=1 "$GO" build -buildmode=plugin -o "$so" commandha.go)
   chmod 600 "$so"
-  [[ $1 == probe ]] && { echo "built $so"; return; }
+  [[ $mode == probe ]] && { echo "built $so"; return; }
   echo "built $so — run: make start, then check the log for: Action func in plugin commandha.so is OK"
 }
 
