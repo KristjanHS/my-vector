@@ -43,7 +43,7 @@ trap 'rm -rf "$head"' EXIT
 # robot/env.sh: settings.sh + smoke.sh source it from $pd/.. ; ls-tree drops it (and voice/) for an older sha, which has none.
 # shellcheck disable=SC2046 # unquoted on purpose: empty for an older sha
 git -C "$repo" archive "$full" robot/firmware chipper/pkg/wirepod/sdkapp/fork_smoke.go \
-  $(git -C "$repo" ls-tree --name-only "$full" robot/env.sh chipper/pkg/myvector/voice) |
+  $(git -C "$repo" ls-tree --name-only "$full" robot/env.sh robot/diskguard chipper/pkg/myvector/voice) |
   tar -x -C "$head"
 pd=$head/robot/firmware
 if ((deploy)); then
