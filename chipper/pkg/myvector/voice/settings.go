@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	Stock            = "stock"  // the robot's own voice; slow sets its DurationScalar (plan R12)
+	Stock            = "stock"  // the robot's own Acapela voice, without the robot-voice effect since patch 0010; slow sets its DurationScalar (plan R12)
 	DefaultSlow      = 1.2      // plan R11
 	SlowMin, SlowMax = 0.5, 2.0 // tts/server.py SLOW_MIN, SLOW_MAX
 	SettingsAPI      = "/myvector/api/voice"

@@ -17,7 +17,7 @@
 
 | # | check on Vector | correct looks like | if wrong |
 |---|---|---|---|
-| 1 | Ask an LLM question with T1 = `af_bella`, then `cori`, then `stock` (page `/myvector/voice`) | soft female for both PC voices, about as loud as stock | V1 gap → decide in a new plan |
+| 1 | Ask an LLM question with T1 = `af_bella`, then `cori`, then `stock` (page `/myvector/voice`) | soft female for both PC voices, about as loud as stock (stock plays without the robot-voice effect since patch 0010 — baseline moved) | V1 gap → decide in a new plan |
 | 2 | "Hey Vector, what time is it?" with T2 = `af_bella` | soft female, same voice as T1 | `grep 'acapela' /var/log/messages` |
 | 3 | Say "Hey Vector" mid PC sentence | the sentence stops | cancel `forkSayText` ctx from the KGSim interrupt |
 | 4 | Long LLM answer | gaps between sentences acceptable | prefetch the next chunk in `voice.Say` |

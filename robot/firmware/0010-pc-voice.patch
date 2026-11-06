@@ -34,7 +34,7 @@ Unprocessed: every vic-anim TTS line plays with the Unprocessed switch whatever 
  15 files changed, 339 insertions(+), 23 deletions(-)
 
 diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
-index 9f3df6f6..731c2805 100644
+index 9f3df6f6..c595c34d 100644
 --- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
 +++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
 @@ -124,7 +124,8 @@ Result TextToSpeechComponent::CreateSpeech(const TTSID_t ttsID,
@@ -84,7 +84,7 @@ index 9f3df6f6..731c2805 100644
  void TextToSpeechComponent::SetAudioProcessingStyle(AudioTtsProcessingStyle style)
  {
 +  // my-vector (0010): every line Unprocessed - Default_Processed is Wwise's robot-voice effect, which made the PC
-+  // voices sound robotic; Acapela (stock, fallbacks) plays clean too. The requested style is only logged.
++  // voices sound robotic; Acapela (stock, KG placeholder, fallbacks) plays clean too. The requested style is only logged.
 +  (void) style;
    const auto switchGroup = AudioMetaData::SwitchState::SwitchGroupType::Robot_Vic_External_Processing;
    _audioController->SetSwitchState(
