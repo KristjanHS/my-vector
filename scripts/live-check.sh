@@ -3,7 +3,7 @@
 #   stt   (saved lang en-US) English phrases in af_bella (:8091) → myvector-stt (:8092) en-US; each transcript must match
 #   route   routeprobe: allowlist, clock + timer intents (en/et), LLM answers per brain; Estonian ones carry ä/õ/ö/ü
 #   picker  saved LLM profiles + Claude Haiku: listed, Test endpoint answers OK; no full Claude key served or in apiConfig.json
-#   clock   (saved lang et-EE) the firmware's clock text (%H:%M / %I:%M) in mari → STT must hear "Kell on …"
+#   clock   (saved lang et-EE) the firmware's clock text (%H:%M / %I:%M) in mari → STT must hear "Kell on …" in one of 3 takes
 #   ha      HA plugin built against a dead URL (llm.sh ha-plugin probe): "assist, hello" → "Home Assistant is not reachable."
 #   ttsdown (asks sudo; Vector speaks) fork_say with myvector-tts up → the PC voice, stopped → stock; restarts the service
 set -euo pipefail
@@ -116,12 +116,12 @@ check_route() {
 check_clock() {
   local t got f=$work/clock.pcm take heard
   need_lang et-EE
-  # each take is a fresh Piper sample: ~1 in 20 blurs "Kell" for STT (tts/server.py PIPER_NOISE) → up to 3 takes
+  # each take is a fresh Piper sample that can blur "Kell" (tts/server.py PIPER_NOISE) → up to 3 takes; a service error FAILs at once
   for t in 08:05 20:47 12:00; do
     heard=() got=
     for take in 1 2 3; do
-      synth mari et-EE "$t" "$f" || { heard+=("tts failed"); continue; }
-      got=$(transcribe et-EE "$f") || { heard+=("stt failed (saved lang must be et-EE)"); continue; }
+      synth mari et-EE "$t" "$f" || { heard+=("tts failed"); break; }
+      got=$(transcribe et-EE "$f") || { got= heard+=("stt failed (saved lang must be et-EE)"); break; }
       heard+=("$got")
       [[ $got =~ ^Kell\ on\  ]] && break
     done

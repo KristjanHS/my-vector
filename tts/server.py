@@ -43,8 +43,7 @@ VOICES = {
     "af_bella": ("kokoro", "af_bella"),
     "mari": ("piper", "et_EE-news-medium@Mari"),
 }
-# Piper id -> (noise_scale, noise_w_scale) instead of the model's 0.667/0.8: at the default, STT heard mari's
-# "Kell" as "Keel"/"Teil" in 10/60 takes, at 0.4/0.6 in 3/60 (tts/noise_sweep.py)
+# Piper id -> (noise_scale, noise_w_scale) over the model's own; re-pick with tts/noise_sweep.py
 PIPER_NOISE = {"et_EE-news-medium@Mari": (0.4, 0.6)}
 
 log = logging.getLogger("myvector-tts")
