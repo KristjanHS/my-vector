@@ -169,9 +169,12 @@ head_to -1 down '<= -0.3840 + 0.1' # MIN_HEAD_ANGLE -22°
 step "A2 face + speech"
 r=$(sdk fork_face); [[ $r == ok ]] || die "A2: fork_face: ${r:0:200}"
 ok "A2 face shown"
-r=$(sdk fork_say 'text=smoke%20test'); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
-[[ $r != 'FINISHED fallback'* ]] && ok "A2 said 'smoke test' in ${r#FINISHED }" ||
-  echo "WARN: A2 said 'smoke test' in the fallback voice, not the saved language's T1 (TTS service :8091 down? make tts-enable): ${r#FINISHED fallback: }"
+# The phrase in wire-pod's current language (fork_say speaks that language's T1); English if the voice API is unreadable.
+said='smoke test'
+[[ $(curl -s -m 5 "$server/myvector/api/voice" | jq -r .lang 2>/dev/null) == et-EE ]] && said=suitsutest
+r=$(sdk fork_say "text=${said// /%20}"); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
+[[ $r != 'FINISHED fallback'* ]] && ok "A2 said '$said' in ${r#FINISHED }" ||
+  echo "WARN: A2 said '$said' in the fallback voice, not the saved language's T1 (TTS service :8091 down? make tts-enable): ${r#FINISHED fallback: }"
 sdk release_behavior_control >/dev/null
 
 step "A3 log-level intent"
