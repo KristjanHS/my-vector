@@ -14,6 +14,7 @@
 #   scripts/llm.sh ha-agents                    list HA conversation agents (needs HA_TOKEN)
 #   scripts/llm.sh ha-say [TEXT]                ask HA's agent (HA_AGENT) directly, like the plugin does
 #   scripts/llm.sh ha-plugin [build|remove]     build/remove the NonaSuomy "assist ..." wire-pod plugin
+#   scripts/llm.sh ha-plugin probe [OUT.so]     build it against a dead HA URL, outside chipper/plugins (live-check.sh ha)
 #
 # Keys come from the environment or ~/.config/my-vector/keys.env (outside the repo; LLM_KEYS overrides):
 #   ANTHROPIC_API_KEY  OPENAI_API_KEY  TOGETHER_API_KEY  GEMINI_API_KEY  HA_TOKEN  [HA_URL] [HA_AGENT]
@@ -188,12 +189,17 @@ ha_plugin() {
   if [[ ${1:-build} == remove ]]; then
     rm -f "$so"; echo "removed $so — run: make start"; return
   fi
-  need_key HA_TOKEN
-  [[ -n ${HA_AGENT:-} ]] || die "set HA_AGENT (pick one from: scripts/llm.sh ha-agents) — without it HA uses its non-LLM default agent"
+  if [[ $1 == probe ]]; then # HA down on purpose: a dead URL, dummy token/agent, built outside chipper/plugins
+    so=${2:-$ROOT/robot/work/live-check/commandha-dead.so} build=$WORK/ha-plugin-probe
+    local HA_URL=http://127.0.0.1:9 HA_TOKEN=probe HA_AGENT=probe
+  else
+    need_key HA_TOKEN
+    [[ -n ${HA_AGENT:-} ]] || die "set HA_AGENT (pick one from: scripts/llm.sh ha-agents) — without it HA uses its non-LLM default agent"
+  fi
   [[ -d $src ]] || git clone -q --depth 1 https://github.com/NonaSuomy/WirePodVectorCommandHomeAssistant "$src"
   echo "plugin source $(git -C "$src" log --oneline -1)"
-  ha_say "Hello" >/dev/null || die "HA did not answer with HA_TOKEN/HA_AGENT — fix that first (scripts/llm.sh ha-agents)"
-  mkdir -p "$build"
+  [[ $1 == probe ]] || ha_say "Hello" >/dev/null || die "HA did not answer with HA_TOKEN/HA_AGENT — fix that first (scripts/llm.sh ha-agents)"
+  mkdir -p "$build" "$(dirname "$so")"
   # Fill the placeholders the upstream file asks you to edit by hand; switch on its agent_id lines.
   sed -e "s#http://HAIPHERE:8123#$HA_URL#" -e "s#LongLiveTokenHere#$HA_TOKEN#" \
       -e "s#//AgentID string#AgentID string#" -e "s#//agentID := \"AgentIDHere\"#agentID := \"$HA_AGENT\"#" \
@@ -204,6 +210,7 @@ ha_plugin() {
   ! grep -q 'panic(' "$build/commandha.go" || die "panic patch did not apply — upstream file changed (an unreachable HA would restart wire-pod)"
   (cd "$build" && CGO_ENABLED=1 "$GO" build -buildmode=plugin -o "$so" commandha.go)
   chmod 600 "$so"
+  [[ $1 == probe ]] && { echo "built $so"; return; }
   echo "built $so — run: make start, then check the log for: Action func in plugin commandha.so is OK"
 }
 
