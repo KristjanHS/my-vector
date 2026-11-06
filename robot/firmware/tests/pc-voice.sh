@@ -43,7 +43,7 @@ timeout 30 "$tmp/t" "$here/tts-urls.txt" || rc=$?
 ((rc == 0)) || die "0010-pc-voice_test.cpp exit $rc"
 
 # voice-push.sh + settings.sh in a throwaway robot/ (GIT_DIR=/nonexistent: env.sh falls back to the copy's own robot.env).
-# Stub robot: clock 24h, Celsius, volume 4; the voice file lands in $vp/voice.json, curl calls in $vp/curl.log.
+# Stub robot (ssh runs settings.sh's sed on robot_jdoc's file): clock 24h, Celsius, volume 4; the voice file lands in $vp/voice.json, curl calls in $vp/curl.log.
 vp=$tmp/vp
 mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/bin" "$vp/chipper/jdocs"
 cp "$fw/../env.sh" "$vp/robot/"
@@ -51,13 +51,10 @@ cp "$fw/voice-push.sh" "$fw/settings.sh" "$vp/robot/firmware/"
 printf '#!/bin/sh\necho diskguard stub\n' >"$vp/robot/diskguard/apply.sh"
 : >"$vp/robot/key"
 cat >"$vp/bin/ssh" <<'STUB'
-#!/bin/sh
+#!/usr/bin/env bash
 case $* in
   *'new=$(cat)'*) cat >"${0%/bin/ssh}/voice.json"; echo unchanged ;;
-  *master_volume*) echo 4 ;;
-  *clock_24_hour*) echo true ;;
-  *temp_is_fahrenheit*) echo false ;;
-  *time_zone*) echo Europe/Tallinn ;;
+  *"sed -n "*) c=${!#}; sh -c "${c//\/data\/data\/com.anki.victor\/persistent\/jdocs\/vic.RobotSettings.json/${0%/bin/ssh}/vic.RobotSettings.json}" ;;
   *user-do-not-auto-update*) echo present ;;
 esac
 STUB
@@ -65,7 +62,14 @@ cat >"$vp/bin/curl" <<'STUB'
 #!/bin/sh
 echo "$*" >>"${0%/bin/curl}/curl.log"
 STUB
-chmod +x "$vp/bin/ssh" "$vp/bin/curl"
+printf '#!/bin/sh\n' >"$vp/bin/sleep"
+chmod +x "$vp/bin/ssh" "$vp/bin/curl" "$vp/bin/sleep"
+# robot_jdoc <time_zone>: the robot's pretty-printed vic.RobotSettings.json that the ssh stub's sed reads.
+robot_jdoc() {
+  printf '{\n   "clock_24_hour" : true,\n   "master_volume" : 4,\n   "temp_is_fahrenheit" : false,\n   "time_zone" : "%s",\n}\n' "$1" \
+    >"$vp/vic.RobotSettings.json"
+}
+robot_jdoc Europe/Tallinn
 vp_run() { local s=$1; shift; GIT_DIR=/nonexistent PATH="$vp/bin:$PATH" "$vp/robot/firmware/$s" "$@" 2>&1; }
 n=0
 while read -r want url; do
@@ -108,4 +112,9 @@ grep -qF '"voice":"af_heart","slow":1.1,"lang":"en-US"' "$vp/voice.json" || die 
   die "settings.sh, wire-pod copy Fahrenheit: curl calls $(cat "$vp/curl.log")"
 [[ $rc == 1 && $out == *"WARN: temp_is_fahrenheit: wire-pod's copy"*"still has true"*"weather units follow it"* ]] ||
   die "settings.sh, wire-pod copy stays Fahrenheit: exit $rc, want 1 + WARN ($out)"
+robot_jdoc America/Los_Angeles
+settings_run true false '{"lang": "en-US"}'
+[[ $(cat "$vp/curl.log") == *"/api-sdk/timezone?serial=0&timezone=Europe/Tallinn"* && $rc == 1 &&
+  $out == *"WARN: time_zone: set to Europe/Tallinn sent, robot still has America/Los_Angeles after 15 s"* ]] ||
+  die "settings.sh, robot on America/Los_Angeles: exit $rc, curl $(cat "$vp/curl.log"): $out"
 echo "pc-voice host test OK (${touch[0]##*/}; voice-push.sh agrees on $n tts-urls.txt rows; voice-push.sh lang + settings.sh T2/jdoc stubs)"
