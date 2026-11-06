@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/voice"
 )
 
@@ -123,7 +124,8 @@ func forkSay(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(robot.Ctx, 15*time.Second) // under smoke.sh's curl -m 20
 	defer cancel()
-	used, err := voice.Say(ctx, robot.Vector, text, voice.DefaultVoice, 1)
+	// The saved language's T1 at the saved speed; 7 s outlasts a cold Kokoro load (6.6 s seen) before falling back.
+	used, err := voice.Speak(voice.WithFirstAudio(ctx, 7*time.Second), robot.Vector, text, voice.Current().For(lang.Current()))
 	if err != nil {
 		fmt.Fprint(w, "error: "+used+": "+err.Error())
 		return
