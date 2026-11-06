@@ -197,9 +197,11 @@ ha_plugin() {
   # Fill the placeholders the upstream file asks you to edit by hand; switch on its agent_id lines.
   sed -e "s#http://HAIPHERE:8123#$HA_URL#" -e "s#LongLiveTokenHere#$HA_TOKEN#" \
       -e "s#//AgentID string#AgentID string#" -e "s#//agentID := \"AgentIDHere\"#agentID := \"$HA_AGENT\"#" \
-      -e "s#//AgentID: agentID,#AgentID: agentID,#" "$src/commandha.go" >"$build/commandha.go"
+      -e "s#//AgentID: agentID,#AgentID: agentID,#" \
+      -e 's#panic(err)#return "intent_imperative_praise", "Home Assistant is not reachable."#' "$src/commandha.go" >"$build/commandha.go"
   chmod 600 "$build/commandha.go"
   grep -q 'agentID := "' "$build/commandha.go" || die "agent_id substitution did not apply — upstream file changed"
+  ! grep -q 'panic(' "$build/commandha.go" || die "panic patch did not apply — upstream file changed (an unreachable HA would restart wire-pod)"
   (cd "$build" && CGO_ENABLED=1 "$GO" build -buildmode=plugin -o "$so" commandha.go)
   chmod 600 "$so"
   echo "built $so — run: make start, then check the log for: Action func in plugin commandha.so is OK"
