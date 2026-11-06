@@ -1,0 +1,93 @@
+"""Estonian text normaliser for Piper et_EE (espeak-ng `et` reads cardinals itself, not times or ordinals).
+
+normalize("Kell on 14.05.") -> "Kell on 14 null 5."; normalize("5. novembril") -> "viiendal novembril".
+"""
+
+import re
+
+# day 1-31 -> (nominative, genitive) ordinal
+_UNITS = [
+    ("esimene", "esimese"),
+    ("teine", "teise"),
+    ("kolmas", "kolmanda"),
+    ("neljas", "neljanda"),
+    ("viies", "viienda"),
+    ("kuues", "kuuenda"),
+    ("seitsmes", "seitsmenda"),
+    ("kaheksas", "kaheksanda"),
+    ("üheksas", "üheksanda"),
+]
+_TEEN_STEMS = [
+    "ühe",
+    "kahe",
+    "kolme",
+    "nelja",
+    "viie",
+    "kuue",
+    "seitsme",
+    "kaheksa",
+    "üheksa",
+]
+
+
+def ordinal(n):
+    """1-31 -> (nominative, genitive) Estonian ordinal."""
+    if not 1 <= n <= 31:
+        raise ValueError(n)
+    if n < 10:
+        return _UNITS[n - 1]
+    if n == 10:
+        return "kümnes", "kümnenda"
+    if n < 20:
+        stem = _TEEN_STEMS[n - 11] + "teistkümne"
+        return stem + "s", stem + "nda"
+    tens = {2: "kahekümne", 3: "kolmekümne"}[n // 10]
+    if n % 10 == 0:
+        return tens + "s", tens + "nda"
+    nom, gen = _UNITS[n % 10 - 1]
+    return f"{tens} {nom}", f"{tens} {gen}"
+
+
+# month nominative -> genitive stem; a case form = genitive stem + one of _CASE_ENDINGS
+_MONTHS = {
+    "jaanuar": "jaanuari",
+    "veebruar": "veebruari",
+    "märts": "märtsi",
+    "aprill": "aprilli",
+    "mai": "mai",
+    "juuni": "juuni",
+    "juuli": "juuli",
+    "august": "augusti",
+    "september": "septembri",
+    "oktoober": "oktoobri",
+    "november": "novembri",
+    "detsember": "detsembri",
+}
+_CASE_ENDINGS = ("", "l", "s", "st", "ks", "ni", "le", "lt", "ga", "na", "ta")
+
+_TIME = re.compile(r"(?<![\d.,:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d]|[.:,]\d)")
+_DAY_MONTH = re.compile(
+    r"(?<![\d.,])([1-9]|[12]\d|3[01])\.(\s+)([a-zõäöüšž]+)\b", re.IGNORECASE
+)
+
+
+def _time(m):
+    mm = m.group(2)
+    minutes = "null null" if mm == "00" else f"null {mm[1]}" if mm[0] == "0" else mm
+    return f"{int(m.group(1))} {minutes}"
+
+
+def _day_month(m):
+    word = m.group(3)
+    low = word.lower()
+    nom, gen = ordinal(int(m.group(1)))
+    if low in _MONTHS:
+        return f"{nom}{m.group(2)}{word}"
+    for stem in _MONTHS.values():
+        if low.startswith(stem) and low[len(stem) :] in _CASE_ENDINGS:
+            return f"{gen}{low[len(stem) :]}{m.group(2)}{word}"
+    return m.group(0)
+
+
+def normalize(text):
+    return _DAY_MONTH.sub(_day_month, _TIME.sub(_time, text))

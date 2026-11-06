@@ -22,6 +22,9 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # `python -I` leaves the script dir off sys.path
+import et_text  # noqa: E402
+
 RATE = 16000
 SLOW_MIN, SLOW_MAX = 0.5, 2.0
 MAX_TEXT = 5000
@@ -32,8 +35,12 @@ LIMIT_BLOCK = 32  # samples (2 ms) per limiter gain step
 LIMIT_RELEASE_S = 0.06  # limiter gain recovery time constant
 GAINS_FILE = Path(__file__).with_name("gains.json")  # tts/calibrate.py writes it
 
-# voice name -> (engine, engine voice id)
-VOICES = {"cori": ("piper", "en_GB-cori-high"), "af_bella": ("kokoro", "af_bella")}
+# voice name -> (engine, engine voice id); Piper id = model[@speaker]; an `et_` model gets Estonian text rules
+VOICES = {
+    "cori": ("piper", "en_GB-cori-high"),
+    "af_bella": ("kokoro", "af_bella"),
+    "mari": ("piper", "et_EE-news-medium@Mari"),
+}
 
 log = logging.getLogger("myvector-tts")
 
@@ -45,19 +52,25 @@ CONFIG_POLL_S = 5
 _SENT_END = re.compile(r"(?<=[.!?…])[\"')\]]*\s+|\n+")
 _CLAUSE_END = re.compile(r"(?<=[,;:])\s+")
 _ABBREV = re.compile(r"\b(?:Mr|Mrs|Ms|Dr|St|vs|etc|e\.g|i\.e|No)\.$", re.IGNORECASE)
+_ABBREV_ET = re.compile(
+    r"\b(?:nt|jne|jm|jt|vms|vt|ca|u|lk|nr|hr|pr|prl|dr|sh|st|tn|mnt|pst|kl|eKr|pKr|s\.t|v\.a|e\.m\.a|p\.o)\.$",
+    re.IGNORECASE,
+)
+_ORDINAL_END = re.compile(r"\d\.$")  # "2026. aastal": ET ordinal, not a sentence end when a lowercase word follows
 
 
-def split_sentences(text):
+def split_sentences(text, lang="en"):
     """Split text into speakable pieces: sentence ends, newlines, then clauses for pieces over MAX_SENTENCE."""
+    abbrev = _ABBREV_ET if lang == "et" else _ABBREV
+    pieces = [p for p in (piece.strip() for piece in _SENT_END.split(text.strip())) if p]
     parts, buf = [], ""
-    for piece in _SENT_END.split(text.strip()):
-        piece = piece.strip()
-        if not piece:
-            continue
+    for i, piece in enumerate(pieces):
         buf = f"{buf} {piece}" if buf else piece
-        if not _ABBREV.search(buf):
-            parts.append(buf)
-            buf = ""
+        nxt = pieces[i + 1] if i + 1 < len(pieces) else ""
+        if abbrev.search(buf) or (lang == "et" and _ORDINAL_END.search(buf) and nxt[:1].islower()):
+            continue
+        parts.append(buf)
+        buf = ""
     if buf:
         parts.append(buf)
     out = []
@@ -174,10 +187,12 @@ class PiperEngine:
         self._load = PiperVoice.load
 
     def synth(self, voice_id, text, slow):
-        if voice_id not in self._voices:
-            self._voices[voice_id] = self._load(str(self._dir / f"{voice_id}.onnx"))
-        v = self._voices[voice_id]
-        chunks = list(v.synthesize(text, syn_config=self._cfg(length_scale=slow)))
+        model, _, speaker = voice_id.partition("@")
+        if model not in self._voices:
+            self._voices[model] = self._load(str(self._dir / f"{model}.onnx"))
+        v = self._voices[model]
+        sid = v.config.speaker_id_map[speaker] if speaker else None
+        chunks = list(v.synthesize(text, syn_config=self._cfg(speaker_id=sid, length_scale=slow)))
         if not chunks:
             return np.zeros(0, np.float32), v.config.sample_rate
         return np.concatenate([c.audio_float_array for c in chunks]), chunks[
@@ -381,9 +396,13 @@ class Synth:
         return to_pcm16(audio, rate, self.gains.get(voice, 1.0) * 10 ** (boost_db / 20))
 
     def stream(self, voice, text, slow, boost_db=0.0):
-        engine = self.engines[VOICES[voice][0]]
+        name, voice_id = VOICES[voice]
+        engine = self.engines[name]
+        lang = "et" if voice_id.startswith("et_") else "en"
+        if lang == "et":
+            text = et_text.normalize(text)
         with getattr(engine, "request", contextlib.nullcontext)():
-            for s in split_sentences(text):
+            for s in split_sentences(text, lang):
                 pcm = self.sentence_pcm(voice, s, slow, boost_db)
                 if pcm:
                     yield pcm

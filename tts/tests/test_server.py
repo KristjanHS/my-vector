@@ -25,6 +25,47 @@ def test_split_sentences_ends_newlines_and_abbreviations():
     ]
 
 
+def test_split_sentences_estonian_abbreviations_and_ordinals():
+    text = "Tule nt. homme. 2026. aastal oli soe. See on 5. Järgmine."
+    assert server.split_sentences(text, "et") == [
+        "Tule nt. homme.",
+        "2026. aastal oli soe.",
+        "See on 5.",
+        "Järgmine.",
+    ]
+    assert server.split_sentences("It was 2026. then rain.") == ["It was 2026.", "then rain."]
+
+
+def test_stream_normalises_estonian_voice_only():
+    piper = FakeEngine(22050)
+    synth = server.Synth({"piper": piper, "kokoro": FakeEngine(24000)}, {})
+    for voice in ("mari", "cori"):
+        list(synth.stream(voice, "Kell on 14.05.", 1.0))
+    assert [c[:2] for c in piper.calls] == [
+        ("et_EE-news-medium@Mari", "Kell on 14 null 5."),
+        ("en_GB-cori-high", "Kell on 14.05."),
+    ]
+
+
+def test_piper_engine_speaker_from_voice_id_one_load_per_model():
+    loads, configs = [], []
+
+    class Voice:
+        config = types.SimpleNamespace(speaker_id_map={"Mari": 2}, sample_rate=22050)
+
+        def synthesize(self, text, syn_config):
+            configs.append(syn_config)
+            yield types.SimpleNamespace(audio_float_array=np.zeros(4, np.float32), sample_rate=22050)
+
+    eng = server.PiperEngine.__new__(server.PiperEngine)
+    eng._voices, eng._dir, eng._cfg = {}, server.Path("/m"), dict
+    eng._load = lambda path: loads.append(path) or Voice()
+    eng.synth("et_EE-news-medium@Mari", "Tere.", 1.2)
+    eng.synth("et_EE-news-medium", "Tere.", 1.0)
+    assert loads == ["/m/et_EE-news-medium.onnx"]
+    assert configs == [{"speaker_id": 2, "length_scale": 1.2}, {"speaker_id": None, "length_scale": 1.0}]
+
+
 def test_split_sentences_long_sentence_split_under_cap():
     long = ", ".join(["word " * 20] * 6) + "."
     parts = server.split_sentences(long)
@@ -195,7 +236,7 @@ def test_health(serve):
     port = serve({"piper": FakeEngine(22050), "kokoro": FakeEngine(24000)})
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     c.request("GET", "/health")
-    assert json.loads(c.getresponse().read())["voices"] == ["af_bella", "cori"]
+    assert json.loads(c.getresponse().read())["voices"] == ["af_bella", "cori", "mari"]
 
 
 def raw_chunks(port, body):
