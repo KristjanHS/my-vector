@@ -67,6 +67,7 @@ Then ask Vector a question (see "How to ask" above). Things to try:
 - Another installed model: `scripts/llm.sh models ollama`, then e.g. `scripts/llm.sh use ollama cas/mistral-7b-instruct-v0.3:latest`.
   Avoid `deepseek-r1` (it "thinks out loud", and Vector would read that out) and the coder models.
 - `scripts/llm.sh use ollama --intentgraph` to skip the "I have a question" step.
+  `--commands`/`--intentgraph`/`--remember` stick: a later `use` keeps them; `--no-intentgraph` (etc.) turns one off.
 
 What can go wrong:
 

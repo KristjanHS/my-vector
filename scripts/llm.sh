@@ -4,8 +4,9 @@
 #
 #   scripts/llm.sh show                         current settings (key hidden)
 #   scripts/llm.sh backup | restore FILE | off
-#   scripts/llm.sh use PRESET [MODEL] [--commands] [--intentgraph] [--remember] [--prompt TEXT] [--voice NAME]
+#   scripts/llm.sh use PRESET [MODEL] [--[no-]commands] [--[no-]intentgraph] [--[no-]remember] [--prompt TEXT] [--voice NAME]
 #        PRESET = ollama | claude | openai | together | gemini     (then runs `ping`)
+#        commands/intentgraph/remember keep their saved value unless a flag is passed
 #   scripts/llm.sh ping [QUESTION]              send a wire-pod-shaped request with the saved settings
 #   scripts/llm.sh models [PRESET]              list model ids the provider offers
 #   scripts/llm.sh warm [MODEL]                 load an Ollama model now (the first load takes ~1 min)
@@ -54,10 +55,15 @@ use() {
   [[ $# -ge 1 ]] || die "usage: use PRESET [MODEL] [flags]"
   preset "$1"; shift
   if [[ $# -gt 0 && $1 != --* ]]; then M=$1; shift; fi
-  local cmds=false ig=false rem=false prompt= voice=
+  # The three switches keep their saved value unless a flag sets them (9.5: a bare `use` once dropped intentgraph).
+  local cmds ig rem prompt= voice= saved
+  saved=$(get_kg | python3 -I -c 'import json,sys
+d=json.load(sys.stdin); print(*(str(d.get(k) is True).lower() for k in ("commands_enable","intentgraph","save_chat")))')
+  read -r cmds ig rem <<<"$saved"
   while [[ $# -gt 0 ]]; do
     case $1 in
       --commands) cmds=true ;; --intentgraph) ig=true ;; --remember) rem=true ;;
+      --no-commands) cmds=false ;; --no-intentgraph) ig=false ;; --no-remember) rem=false ;;
       --prompt) prompt=${2?}; shift ;; --voice) voice=${2?}; shift ;;
       *) die "unknown flag $1" ;;
     esac; shift
