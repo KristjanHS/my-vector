@@ -15,7 +15,9 @@ import et_text
         ("21. märtsini", "kahekümne esimeseni märtsini"),
         ("15. juuni", "viieteistkümnes juuni"),
         ("12. detsembri hommikul", "kaheteistkümnenda detsembri hommikul"),
-        ("30. Augustist", "kolmekümnendast Augustist"),
+        ("30. augustist", "kolmekümnendast augustist"),
+        ("Kell on 14.25. novembris", "Kell on 14 25. novembris"),
+        ("Neid oli 5. Mai algul", "Neid oli 5. Mai algul"),
     ],
 )
 def test_normalize_times_and_day_month(text, want):

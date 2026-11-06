@@ -66,9 +66,8 @@ _MONTHS = {
 _CASE_ENDINGS = ("", "l", "s", "st", "ks", "ni", "le", "lt", "ga", "na", "ta")
 
 _TIME = re.compile(r"(?<![\d.,:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d]|[.:,]\d)")
-_DAY_MONTH = re.compile(
-    r"(?<![\d.,])([1-9]|[12]\d|3[01])\.(\s+)([a-zõäöüšž]+)\b", re.IGNORECASE
-)
+# ET months are lowercase: "5. Mai" is a sentence end or a name
+_DAY_MONTH = re.compile(r"(?<![\d.,])([1-9]|[12]\d|3[01])\.(\s+)([a-zõäöüšž]+)\b")
 
 
 def _time(m):
@@ -79,15 +78,15 @@ def _time(m):
 
 def _day_month(m):
     word = m.group(3)
-    low = word.lower()
     nom, gen = ordinal(int(m.group(1)))
-    if low in _MONTHS:
+    if word in _MONTHS:
         return f"{nom}{m.group(2)}{word}"
     for stem in _MONTHS.values():
-        if low.startswith(stem) and low[len(stem) :] in _CASE_ENDINGS:
-            return f"{gen}{low[len(stem) :]}{m.group(2)}{word}"
+        if word.startswith(stem) and word[len(stem) :] in _CASE_ENDINGS:
+            return f"{gen}{word[len(stem) :]}{m.group(2)}{word}"
     return m.group(0)
 
 
 def normalize(text):
-    return _DAY_MONTH.sub(_day_month, _TIME.sub(_time, text))
+    # day-month first, so the "25." of a time "14.25." never reads as a day
+    return _TIME.sub(_time, _DAY_MONTH.sub(_day_month, text))
