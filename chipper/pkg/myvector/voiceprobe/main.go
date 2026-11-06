@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -14,30 +13,14 @@ import (
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/botinfo"
 )
 
-// botInfo is wire-pod's jdocs/botSdkInfo.json (vars.RobotInfoStore); the GUID never leaves this process.
-type botInfo struct {
-	Robots []struct {
-		Esn       string `json:"esn"`
-		IPAddress string `json:"ip_address"`
-		GUID      string `json:"guid"`
-	} `json:"robots"`
-}
-
 func connect(path string) (*vector.Vector, error) {
-	raw, err := os.ReadFile(path)
+	r, err := botinfo.Load(path)
 	if err != nil {
 		return nil, err
 	}
-	var bi botInfo
-	if err := json.Unmarshal(raw, &bi); err != nil {
-		return nil, err
-	}
-	if len(bi.Robots) == 0 {
-		return nil, fmt.Errorf("no robots in %s", path)
-	}
-	r := bi.Robots[0]
 	return vector.New(vector.WithSerialNo(r.Esn), vector.WithToken(r.GUID), vector.WithTarget(r.IPAddress+":443"))
 }
 
@@ -116,10 +99,7 @@ func play(v *vector.Vector, args []string) error {
 }
 
 func main() {
-	info := os.Getenv("BOTINFO")
-	if info == "" {
-		info = os.ExpandEnv("$HOME/projects/my-vector/chipper/jdocs/botSdkInfo.json")
-	}
+	info := botinfo.Path()
 	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "usage: voiceprobe say|play [flags] <text|file.pcm>")
 		os.Exit(2)
