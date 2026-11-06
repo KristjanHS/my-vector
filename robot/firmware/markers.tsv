@@ -32,3 +32,7 @@
 0010-pc-voice.patch	src	engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp	Default_Processed, true);
 0010-pc-voice.patch	src	animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp	AudioSwitchStateId>(AudioTtsProcessingStyle::Unprocessed)
 0010-pc-voice.patch	src	animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp	mv.slow * mv.durationScalar, mv.lang)
+0011-night-window.patch	src	engine/aiComponent/behaviorComponent/behaviors/sleeping/behaviorSleepCycle.cpp	my-vector.NightWindow
+0011-night-window.patch	src	engine/aiComponent/behaviorComponent/sleepTracker.cpp	kSleepTracker_moning_hour, CONSOLE_GROUP, 9,
+0011-night-window.patch	src	clad/src/clad/types/behaviorComponent/sleepingTypes.clad	  NightWindow,
+0011-night-window.patch	bin	lib/libcozmo_engine.so	my-vector.NightWindow
