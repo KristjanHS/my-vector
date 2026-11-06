@@ -148,7 +148,7 @@ step "deploy: ./build/deploy-v.sh to $ip"
 (cd "$src" && script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
 
 # A settings failure warns, never stops the ship: the robot already runs $sha.
-step "robot settings: settings.sh (master_volume, no-auto-update, T2 voice)"
+step "robot settings: settings.sh (master_volume, no-auto-update, T2 voice, /data guard)"
 out=$("$pd/settings.sh" 2>&1) || true
 echo "$out"
 add_warns "$out"
