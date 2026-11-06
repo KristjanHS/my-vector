@@ -6,5 +6,9 @@
   "af_bella": {
     "gain_db": 10.9,
     "measured_lufs": -24.9
+  },
+  "mari": {
+    "gain_db": 2.0,
+    "measured_lufs": -16.0
   }
 }
