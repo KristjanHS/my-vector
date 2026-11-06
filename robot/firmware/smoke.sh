@@ -117,7 +117,7 @@ code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$ip:8888/consolevars"
 [[ $code == 200 ]] || die "vic-engine :8888/consolevars answered ${code:-nothing}"
 ok "vic-engine :8888 answers"
 
-sdk() { curl -s -m 20 "$server/api-sdk/$1?serial=$esn${2:+&$2}" || true; }
+sdk() { curl -s -m "${sdk_m:-20}" "$server/api-sdk/$1?serial=$esn${2:+&$2}" || true; } # curl -m from sdk_m, default 20 s
 state() { # state <label>: one robot_state sample as JSON, or die
   local s; s=$(sdk fork_robot_state)
   jq -e '.pose.x != null and .origin_id != null and .wheels_mm_s.l != null and .wheels_mm_s.r != null' <<<"$s" >/dev/null 2>&1 ||
@@ -170,10 +170,14 @@ step "A2 face + speech"
 r=$(sdk fork_face); [[ $r == ok ]] || die "A2: fork_face: ${r:0:200}"
 ok "A2 face shown"
 # The phrase in wire-pod's current language (fork_say speaks that language's T1); English if the voice API is unreadable.
-# By ear: English = exclamation, colon/comma pauses, a number list, question rise, several streamed sentences; Estonian = õ/ö, comma pause.
+# By ear: exclamation, colon/comma pauses, a number list, question rise, several streamed sentences; Estonian adds
+# õ/ä/ö/ü and tts/et_text.py's time ("7 33") and day-ordinal ("kuues november") readings of the current time and date.
 said="Hello! This is Vector's speech test: one, two, three. Can you hear me clearly?"
-[[ $(curl -s -m 5 "$server/myvector/api/voice" | jq -r .lang 2>/dev/null) == et-EE ]] && said='Tere, kõik töötab'
-r=$(sdk fork_say "text=$(jq -rn --arg s "$said" '$s|@uri')"); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
+if [[ $(curl -s -m 5 "$server/myvector/api/voice" | jq -r .lang 2>/dev/null) == et-EE ]]; then
+  et_months=(jaanuar veebruar märts aprill mai juuni juuli august september oktoober november detsember)
+  said="Tere! See on Vectori kõnetest: üks, kaks, kolm. Kell on $(date +%H.%M) ja täna on $(date +%-d). ${et_months[$(date +%-m) - 1]}. Kõik töötab. Kas sa kuuled mind hästi?"
+fi
+r=$(sdk_m=35 sdk fork_say "text=$(jq -rn --arg s "$said" '$s|@uri')"); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
 [[ $r != 'FINISHED fallback'* ]] && ok "A2 said '$said' in ${r#FINISHED }" ||
   echo "WARN: A2 said '$said' in the fallback voice, not the saved language's T1 (TTS service :8091 down? make tts-enable): ${r#FINISHED fallback: }"
 sdk release_behavior_control >/dev/null

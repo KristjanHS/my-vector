@@ -122,7 +122,8 @@ func forkSay(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "error: text must be 1-599 characters")
 		return
 	}
-	ctx, cancel := context.WithTimeout(robot.Ctx, 15*time.Second) // under smoke.sh's curl -m 20
+	// 7 s first-audio wait + smoke.sh's longest phrase (~10 s at slow 1.2) + a Stall's slack; under its fork_say curl -m 35
+	ctx, cancel := context.WithTimeout(robot.Ctx, 30*time.Second)
 	defer cancel()
 	// The saved language's T1 at the saved speed; 7 s outlasts a cold Kokoro load (6.6 s seen) before falling back.
 	used, err := voice.Speak(voice.WithFirstAudio(ctx, 7*time.Second), robot.Vector, text, voice.Current().For(lang.Current()))
