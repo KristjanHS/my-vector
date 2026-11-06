@@ -8,7 +8,8 @@ import et_text
     [
         ("Kell on 14.05.", "Kell on 14 null 5."),
         ("Kell on 10:30.", "Kell on 10 30."),
-        ("kell 7.00", "kell 7 null null"),
+        ("kell 7.00", "kell 7"),
+        ("Kell on 14.00.", "Kell on 14."),
         ("Täna on 5. november.", "Täna on viies november."),
         ("6. novembril", "kuuendal novembril"),
         ("1. mail", "esimesel mail"),

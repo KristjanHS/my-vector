@@ -37,7 +37,7 @@
 | E26 | ET camera keeps getImage: unload the ET model, photo turn on `Knowledge.Model` (vision), unload it after (`keep_alive: 0`) — one LLM resident |
 | E27 | Ollama = Provider `custom` ∧ endpoint port 11434 (claude/gemini presets are `custom` too); gates ET model, `reasoning_effort: none`, unloads |
 | E28 | ET voice key = `mari` → Piper `et_EE-news-medium@Mari` only (Vesta/Albert/Kalev not exposed); `@speaker` parsed in `PiperEngine`, one model load |
-| E29 | ET normaliser in 8.1 (`tts/et_text.py`, `et_*` voices only): `HH.MM`/`HH:MM` → `14 null 5`; day 1–31 `.` + month form → ordinal in the month's case (viies november, viiendal novembril); other ordinals/years untouched; 9.1 reuses it |
+| E29 | ET normaliser in 8.1 (`tts/et_text.py`, `et_*` voices only): `HH.MM`/`HH:MM` → `14 null 5`, `HH:00` → `H` (`9:00` → `9`); day 1–31 `.` + month form → ordinal in the month's case (viies november, viiendal novembril); other ordinals/years untouched; 9.1 reuses it |
 | E30 | ET voice list = `mari` only (stock = Acapela English reading Estonian, rejected in 1.4); one `slow` shared by both languages |
 | E31 | Patch 0010 (amended in place — `tests/pc-voice.sh` wants one patch on the provider): robot reads `lang` (`en-US`/`et-EE`, else omitted) from `myvector-voice.json`, sends it in the `/tts` body; PC translates ONLY on `lang` = `et-EE`; no `lang` = today's behaviour |
 | E32 | Robot = 24h clock + Celsius in every language; `settings.sh` enforces it (`/api-sdk/time_format_24`, `/api-sdk/temp_c`), not the language switch |

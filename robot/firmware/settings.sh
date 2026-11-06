@@ -9,6 +9,7 @@ settings=/data/data/com.anki.victor/persistent/jdocs/vic.RobotSettings.json
 volume=4 # master_volume: MUTE 0 … HIGH 5; quiet idle comes from the per-bus patches, not from this
 flag=/data/data/user-do-not-auto-update
 conf=$robot_dir/../chipper/myvectorConfig.json # voice.SettingsPath: wire-pod (cwd chipper/) saves it beside apiConfig.json
+jdocs=$robot_dir/../chipper/jdocs/jdocs.json # vars.JdocsPath (unpackaged wire-pod)
 rc=0
 ok() { echo "ok: $*"; }
 warn() { echo "WARN: $*"; rc=1; }
@@ -18,24 +19,35 @@ ssh_ true 2>/dev/null || { warn "settings: SSH to $ip failed; nothing checked"; 
 
 # A field of the robot's own settings jdoc (wire-pod's chipper/jdocs copy goes stale: it missed a 4→1 set); empty if unreadable.
 robot_setting() { ssh_ "sed -n 's/.*\"$1\" *: *\([a-z0-9]*\).*/\1/p' $settings" 2>/dev/null; }
+# The same field in wire-pod's copy (vic.RobotSettings in $jdocs; intentparam's weather units + clock read it); empty if unreadable.
+wirepod_setting() {
+  jq -r --arg t "vic:$esn" --arg f "$1" '.[] | select(.thing == $t and .name == "vic.RobotSettings")
+    | .jdoc.json_doc | fromjson | if has($f) then .[$f] | tostring else empty end' "$jdocs" 2>/dev/null
+}
 
-# ensure <label> <jdoc field> <want> <api-sdk call>: wire-pod sets it only if the robot differs; then ≤15 s for the jdoc to show it.
+# ensure <label> <jdoc field> <want> <api-sdk call> [<what follows wire-pod's copy>]: set via wire-pod only if the robot differs
+# (with the 5th arg: or wire-pod's copy does); ≤15 s for the robot jdoc to show it, then get_sdk_settings re-pulls wire-pod's copy.
 ensure() {
-  local label=$1 field=$2 want=$3 call=$4 was now
+  local label=$1 field=$2 want=$3 call=$4 follows=${5:-} was now wp=
   was=$(robot_setting "$field")
-  if [[ $was == "$want" ]]; then ok "$label already $want"; return; fi
+  [[ -z $follows ]] || wp=$(wirepod_setting "$field")
+  if [[ $was == "$want" && (-z $follows || $wp == "$want") ]]; then ok "$label already $want"; return; fi
   if ! curl -sf -m 20 -o /dev/null "$server/api-sdk/$call"; then
     warn "$label: set to $want failed at $server (wire-pod down?); robot has ${was:-unknown}"; return
   fi
   now=$was
   for _ in $(seq 15); do now=$(robot_setting "$field"); [[ $now == "$want" ]] && break; sleep 1; done
-  if [[ $now == "$want" ]]; then ok "$label $want (was ${was:-unknown})"
+  if [[ $now == "$want" ]]; then ok "$label $want (was ${was:-unknown}${follows:+, wire-pod ${wp:-unknown}})"
   else warn "$label: set to $want sent, robot still has ${now:-unknown} after 15 s"; fi
+  [[ -n $follows ]] || return
+  curl -sf -m 20 -o /dev/null "$server/api-sdk/get_sdk_settings?serial=$esn" || true
+  wp=$(wirepod_setting "$field")
+  [[ $wp == "$want" ]] || warn "$label: wire-pod's copy ($jdocs) still has ${wp:-unknown}, want $want; $follows follow it"
 }
 ensure volume master_volume "$volume" "volume?serial=$esn&volume=$volume"
 # E32: 24h clock + Celsius in every language (the ET clock/weather lines assume them).
-ensure clock_24_hour clock_24_hour true "time_format_24?serial=$esn"
-ensure temp_is_fahrenheit temp_is_fahrenheit false "temp_c?serial=$esn"
+ensure clock_24_hour clock_24_hour true "time_format_24?serial=$esn" "the clock"
+ensure temp_is_fahrenheit temp_is_fahrenheit false "temp_c?serial=$esn" "weather units"
 
 case $(ssh_ "[ -e $flag ] && echo present || { touch $flag && echo created; }" 2>/dev/null) in
   present) ok "no-auto-update: $flag present" ;;

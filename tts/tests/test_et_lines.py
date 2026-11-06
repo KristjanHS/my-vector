@@ -52,7 +52,9 @@ def test_translate_unmatched_is_unchanged(text):
 
 
 def test_clock_line_then_normalize():
-    assert [et_text.normalize(et_lines.translate(t)) for t in ("09:05", "15:15")] == [
+    assert [et_text.normalize(et_lines.translate(t)) for t in ("09:05", "15:15", "09:00", "00:00")] == [
         "Kell on 9 null 5",
         "Kell on 15 15",
+        "Kell on 9",
+        "Kell on 0",
     ]
