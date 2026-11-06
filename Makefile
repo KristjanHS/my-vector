@@ -45,16 +45,16 @@ tts-disable: ## Stop + remove myvector-tts.service
 	systemctl is-active -q wire-pod || sudo nft delete table inet wirepod_guard 2>/dev/null || true # wire-pod keeps its guard
 	sudo systemctl daemon-reload
 
-stt-setup: ## Create/refresh the Estonian STT venv + TalTech turbo-et model in robot/work/et-stt (no sudo; downloads ~4 GB on first run)
+stt-setup: ## Create/refresh the STT venv + TalTech turbo-et and large-v3-turbo models in robot/work/et-stt (no sudo; downloads ~6 GB on first run)
 	$(CURDIR)/et-stt/setup.sh
 
-stt-enable: ## Install + (re)start myvector-stt.service (127.0.0.1:8092, GPU only while lang = et-EE); asks the sudo password
-	@[ -f $(WORK)/et-stt/models/taltech-et/ct2/model.bin ] || { echo "no STT model: run make stt-setup first"; exit 1; }
+stt-enable: ## Install + (re)start myvector-stt.service (127.0.0.1:8092, all speech; one model on the GPU, per lang); asks the sudo password
+	@[ -f $(WORK)/et-stt/models/taltech-et/ct2/model.bin ] && [ -f $(WORK)/et-stt/models/turbo-stock/model.bin ] || { echo "no STT model: run make stt-setup first"; exit 1; }
 	sed -e 's|@REPO@|$(CURDIR)|g' -e 's|@WORK@|$(WORK)|g' -e 's|@USER@|$(USER)|g' $(CURDIR)/scripts/myvector-stt.service | sudo tee /etc/systemd/system/myvector-stt.service >/dev/null
 	sudo systemctl daemon-reload
 	sudo systemctl enable myvector-stt
 	sudo systemctl restart myvector-stt
-	@echo "logs: journalctl -u myvector-stt -f   live check (switch = et-EE): et-stt/smoke.sh"
+	@echo "logs: journalctl -u myvector-stt -f   live check: et-stt/smoke.sh"
 
 stt-disable: ## Stop + remove myvector-stt.service
 	sudo systemctl disable --now myvector-stt

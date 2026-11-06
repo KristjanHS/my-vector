@@ -1,6 +1,6 @@
 # Template: `make stt-enable` fills the REPO/WORK/USER @-placeholders and installs it as /etc/systemd/system/myvector-stt.service.
 [Unit]
-Description=my-vector Estonian STT service (TalTech turbo-et, 16 kHz PCM -> text on 127.0.0.1:8092)
+Description=my-vector STT service (TalTech turbo-et / large-v3-turbo per lang, 16 kHz PCM -> text on 127.0.0.1:8092)
 StartLimitIntervalSec=120
 StartLimitBurst=5
 
@@ -9,7 +9,7 @@ Type=simple
 User=@USER@
 WorkingDirectory=@REPO@
 ExecStart=@WORK@/et-stt/venv/bin/python -I @REPO@/et-stt/server.py
-Environment=STT_MODEL=@WORK@/et-stt/models/taltech-et/ct2 LD_LIBRARY_PATH=@WORK@/et-stt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:@WORK@/et-stt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib
+Environment=STT_MODEL=@WORK@/et-stt/models/taltech-et/ct2 STT_MODEL_EN=@WORK@/et-stt/models/turbo-stock LD_LIBRARY_PATH=@WORK@/et-stt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:@WORK@/et-stt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib
 Restart=on-failure
 RestartSec=5
 

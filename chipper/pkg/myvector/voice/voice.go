@@ -82,7 +82,7 @@ func Say(ctx context.Context, v *vector.Vector, text, voice string, slow float64
 	return voice, stream(ctx, v, first, body)
 }
 
-// Speak says text in s.T1 at s.Slow and returns the voice that spoke, as Say does; Stock is the robot voice (plan R12).
+// Speak says text in s.T1 at s.Slow and returns the voice that spoke, as Say does; Stock is the robot's Acapela voice (plan R12; no robot-voice effect since patch 0010).
 func Speak(ctx context.Context, v *vector.Vector, text string, s Settings) (string, error) {
 	if s.T1 != Stock {
 		return Say(ctx, v, text, s.T1, s.Slow)

@@ -47,6 +47,14 @@ def test_stream_normalises_estonian_voice_only():
     ]
 
 
+def test_stream_translates_robot_lines_on_et_ee_only():
+    piper = FakeEngine(22050)
+    synth = server.Synth({"piper": piper, "kokoro": FakeEngine(24000)}, {})
+    for robot_lang in (None, "en-US", "et-EE"):
+        list(synth.stream("mari", "09:05", 1.0, 0.0, robot_lang))
+    assert [c[1] for c in piper.calls] == ["9 null 5", "9 null 5", "Kell on 9 null 5"]
+
+
 def test_piper_engine_speaker_from_voice_id_one_load_per_model():
     loads, configs = [], []
 
@@ -122,7 +130,9 @@ def test_limit_holds_the_ceiling_itself_not_via_the_final_clip():
 
 
 def test_parse_request_defaults_and_clamp():
-    assert server.parse_request(b'{"text": "hi"}') == ("hi", "af_bella", 1.0, 0.0)
+    assert server.parse_request(b'{"text": "hi"}') == ("hi", "af_bella", 1.0, 0.0, None)
+    assert server.parse_request(b'{"text": "hi", "lang": "et-EE"}')[4] == "et-EE"
+    assert server.parse_request(b'{"text": "hi", "lang": "en-US"}')[4] == "en-US"
     assert server.parse_request(b'{"text": "hi", "voice": "cori", "slow": 9}')[
         1:3
     ] == ("cori", server.SLOW_MAX)
@@ -142,6 +152,8 @@ def test_parse_request_defaults_and_clamp():
         b'{"text": "hi", "slow": NaN}',
         b'{"text": "hi", "boost_db": "max"}',
         b'{"text": "hi", "boost_db": NaN}',
+        b'{"text": "hi", "lang": "fi-FI"}',
+        b'{"text": "hi", "lang": ["et-EE"]}',
     ],
 )
 def test_parse_request_rejects(body):
@@ -224,6 +236,16 @@ def test_tts_bad_request_and_unknown_path(serve):
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     c.request("GET", "/nope")
     assert c.getresponse().status == 404
+
+
+def test_tts_lang_reaches_the_stream(serve):
+    piper = FakeEngine(22050)
+    port = serve({"piper": piper, "kokoro": FakeEngine(24000)})
+    assert post(port, {"text": "Ready", "voice": "mari", "lang": "et-EE"})[0].status == 200
+    assert post(port, {"text": "Ready", "voice": "mari"})[0].status == 200
+    r, data = post(port, {"text": "Ready", "voice": "mari", "lang": "xx"})
+    assert r.status == 400 and "lang" in json.loads(data)["error"]
+    assert [c[1] for c in piper.calls] == ["Valmis", "Ready"]
 
 
 def test_tts_engine_failure_is_500(serve):

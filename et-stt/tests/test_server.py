@@ -26,15 +26,18 @@ class StubModel:
 
 @pytest.fixture
 def stub():
-    st = types.SimpleNamespace(loads=0, closes=0, calls=[], fail=False, crash=False)
+    st = types.SimpleNamespace(loads=0, closes=0, calls=[], models=[], fail=False, crash=False)
 
     def factory(model, device, compute):
         st.loads += 1
+        st.models.append(model)
         if st.fail:
             raise OSError("no model.bin")
         return StubModel(st)
 
-    st.rec = server.Recognizer(factory, "m", "cuda", "int8_float16")
+    st.rec = server.Recognizer(
+        factory, {server.ENGLISH: "m-en", server.ESTONIAN: "m-et"}, "cuda", "int8_float16"
+    )
     return st
 
 
@@ -86,33 +89,39 @@ def test_config_lang_matches_lang_go(tmp_path, body, want):
     assert (err is None) if want[1] is None else (want[1] in err)
 
 
-def test_transcribe_estonian_scales_pcm(stub):
-    stub.rec.set_active(True)
+@pytest.mark.parametrize("lang, code", [(server.ESTONIAN, "et"), (server.ENGLISH, "en")])
+def test_transcribe_scales_pcm_in_lang(stub, lang, code):
+    stub.rec.set_lang(lang)
     pcm = np.array([16384, -32768], "<i2").tobytes()
-    assert stub.rec.transcribe(pcm) == "Mis kell on?"
+    assert stub.rec.transcribe(pcm, lang) == "Mis kell on?"
     audio, language, beam = stub.calls[0]
     assert audio.dtype == np.float32 and audio.tolist() == [0.5, -1.0]
-    assert (language, beam) == ("et", server.BEAM)
+    assert (language, beam) == (code, server.BEAM)
 
 
-def test_transcribe_inactive_raises_without_loading(stub):
+def test_transcribe_other_lang_raises_without_loading(stub):
     with pytest.raises(server.Inactive):
-        stub.rec.transcribe(b"\0\0")
+        stub.rec.transcribe(b"\0\0", server.ESTONIAN)
     assert stub.loads == 0
+    stub.rec.set_lang(server.ENGLISH)
+    with pytest.raises(server.Inactive):
+        stub.rec.transcribe(b"\0\0", server.ESTONIAN)
+    assert stub.calls == []
 
 
-def test_watcher_loads_on_estonian_and_frees_on_english(tmp_path, stub):
+def test_watcher_swaps_model_with_lang(tmp_path, stub):
     p = tmp_path / "myvectorConfig.json"
     w = server.ConfigWatcher(p, stub.rec)
     w.poll()
-    assert not stub.rec.loaded  # no file -> en-US
+    assert stub.models == ["m-en"]  # no file -> en-US
     write_lang(p, "et-EE")
     w.poll()
     w.poll()
-    assert stub.rec.loaded and stub.loads == 1
+    assert stub.models == ["m-en", "m-et"] and stub.closes == 1  # one model resident
     write_lang(p, "en-US")
     w.poll()
-    assert not stub.rec.loaded and not stub.rec.active and stub.closes == 1
+    assert stub.models == ["m-en", "m-et", "m-en"] and stub.closes == 2
+    assert stub.rec.lang == server.ENGLISH
 
 
 def test_crashed_model_is_freed_and_next_poll_reloads(tmp_path, stub):
@@ -122,10 +131,10 @@ def test_crashed_model_is_freed_and_next_poll_reloads(tmp_path, stub):
     w.poll()
     stub.crash = True
     with pytest.raises(RuntimeError, match="exited"):
-        stub.rec.transcribe(b"\0\0")
+        stub.rec.transcribe(b"\0\0", server.ESTONIAN)
     assert not stub.rec.loaded and stub.closes == 1
     stub.crash = False
-    w.poll()  # config unchanged: the unloaded-et-EE check alone must reload
+    w.poll()  # config unchanged: the unloaded check alone must reload
     assert stub.rec.loaded and stub.loads == 2
 
 
@@ -178,9 +187,14 @@ def serve(tmp_path, stub):
     srv.server_close()
 
 
-def test_http_english_is_409(serve):
-    assert serve.post(b"\0\0")[0] == 409
-    assert serve.stub.loads == 0
+def test_http_lang_mismatch_is_409(serve):
+    assert serve.post(b"\0\0", "/stt?lang=et-EE")[0] == 409  # no file -> en-US resident
+    assert serve.stub.calls == []
+
+
+def test_http_english_answers(serve):
+    assert serve.post(b"\0\0", "/stt?lang=en-US") == (200, {"text": "Mis kell on?"})
+    assert serve.stub.calls[0][1] == "en"
 
 
 def test_http_request_right_after_switch_loads_and_answers(serve):

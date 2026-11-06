@@ -18,8 +18,6 @@ const (
 	English  = "en-US"
 	Estonian = "et-EE"
 	Default  = English
-	// DefaultETModel is the et-EE Ollama model (plan E11, E25) when "et_model" is unset.
-	DefaultETModel = "hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M"
 )
 
 // Supported are the switch's languages, Default first.
@@ -29,7 +27,7 @@ var Supported = []string{English, Estonian}
 var Path = func() string { return "myvectorConfig.json" }
 
 // cached is the language load read from path; a Path change (vars.Init after package init) invalidates it.
-type cached struct{ path, lang, etModel string }
+type cached struct{ path, lang string }
 
 var (
 	cur    atomic.Pointer[cached]
@@ -48,9 +46,6 @@ func Valid(l string) bool {
 // Current is the saved language, cached per Path(); a missing, unreadable or invalid one gives Default.
 func Current() string { return settings().lang }
 
-// ETModel is the saved "et_model", cached like Current; missing, empty or not a string gives DefaultETModel.
-func ETModel() string { return settings().etModel }
-
 func settings() *cached {
 	path := Path()
 	for {
@@ -58,7 +53,7 @@ func settings() *cached {
 		if old != nil && old.path == path {
 			return old
 		}
-		c := &cached{path, load(path), loadETModel(path)}
+		c := &cached{path, load(path)}
 		if cur.CompareAndSwap(old, c) { // a lost race retries so a concurrent Save wins
 			return c
 		}
@@ -89,18 +84,6 @@ func load(path string) string {
 	return *f.Lang
 }
 
-func loadETModel(path string) string {
-	var f struct {
-		ETModel any `json:"et_model"`
-	}
-	if b, err := os.ReadFile(path); err == nil && json.Unmarshal(b, &f) == nil {
-		if m, ok := f.ETModel.(string); ok && m != "" {
-			return m
-		}
-	}
-	return DefaultETModel
-}
-
 // Save validates l, writes it to the settings file and makes it Current.
 func Save(l string) error {
 	if !Valid(l) {
@@ -112,6 +95,6 @@ func Save(l string) error {
 	if err := conf.Update(path, map[string]any{"lang": l}); err != nil {
 		return err
 	}
-	cur.Store(&cached{path, l, loadETModel(path)})
+	cur.Store(&cached{path, l})
 	return nil
 }

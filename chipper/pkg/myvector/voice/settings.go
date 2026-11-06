@@ -14,17 +14,19 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
 const (
-	Stock            = "stock"  // the robot's own voice; slow sets its DurationScalar (plan R12)
+	Stock            = "stock"  // the robot's own Acapela voice, without the robot-voice effect since patch 0010; slow sets its DurationScalar (plan R12)
 	DefaultSlow      = 1.2      // plan R11
 	SlowMin, SlowMax = 0.5, 2.0 // tts/server.py SLOW_MIN, SLOW_MAX
 	SettingsAPI      = "/myvector/api/voice"
@@ -124,7 +126,7 @@ func Save(s Settings) error {
 var PushTimeout = 15 * time.Second
 
 var (
-	// PushT2 writes s's T2 + slow to the robot (plan R15); tests replace it so none runs SSH.
+	// PushT2 writes language l's T2 + slow + l to the robot (plan R15, E31); tests replace it so none runs SSH.
 	PushT2 = pushT2
 	// ReloadIntents reloads wire-pod's intents after a language switch; tests replace it.
 	ReloadIntents = reloadIntents
@@ -160,15 +162,15 @@ func reloadIntents() error {
 	return err
 }
 
-// pushT2 runs voice-push.sh <t2> <slow>; its error carries the script's last output line.
-func pushT2(ctx context.Context, s Settings) error {
+// pushT2 runs voice-push.sh <l's t2> <slow> <l>; its error carries the script's last output line.
+func pushT2(ctx context.Context, s Settings, l string) error {
 	script, err := pushScript()
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, PushTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, script, s.T2, strconv.FormatFloat(s.Slow, 'g', -1, 64))
+	cmd := exec.CommandContext(ctx, script, s.For(l).T2, strconv.FormatFloat(s.Slow, 'g', -1, 64), l)
 	cmd.WaitDelay = time.Second // an orphaned ssh holding the output pipe must not outlive the timeout
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
@@ -188,26 +190,103 @@ type settingsReply struct {
 	Voices  map[string][]string `json:"voices"`
 	SlowMin float64             `json:"slowMin"`
 	SlowMax float64             `json:"slowMax"`
+	// LLM is each language's effective brain (llm.Effective); Defaults is the same with no saved profiles.
+	LLM       map[string]llm.Profile `json:"llm"`
+	Defaults  map[string]llm.Profile `json:"defaults"`
+	OllamaURL string                 `json:"ollamaUrl"`
+	ClaudeKey string                 `json:"claudeKey"` // llm.Mask: never the full key
+	KGEnabled bool                   `json:"kgEnabled"`
+	// LLMSaved is false until the page first saves "llm"; till then Knowledge (provider model) is the brain.
+	LLMSaved  bool   `json:"llmSaved"`
+	Knowledge string `json:"knowledge"`
 	// PushError is why a saved T2 did not reach the robot; the save itself stands.
 	PushError string `json:"pushError,omitempty"`
+	// IntentError is why the language switch was rolled back (its intents did not load); the other saves stand.
+	IntentError string `json:"intentError,omitempty"`
 }
 
 type settingsRequest struct {
 	Settings
 	Lang string `json:"lang"`
+	// LLM, OllamaURL and ClaudeKey are saved by llm.Save when any is present; absent keeps; ClaudeKey "" clears.
+	LLM       map[string]llm.Profile `json:"llm"`
+	OllamaURL *string                `json:"ollama_url"`
+	ClaudeKey *string                `json:"claude_key"`
+}
+
+func (q *settingsRequest) llmChanged() bool {
+	return q.LLM != nil || q.OllamaURL != nil || q.ClaudeKey != nil
+}
+
+// llmConfig is the saved llm.Config with q's fields over it.
+func (q *settingsRequest) llmConfig() llm.Config {
+	c := llm.Load()
+	if q.LLM != nil {
+		c.Profiles = q.LLM
+	}
+	if q.OllamaURL != nil {
+		c.OllamaURL = *q.OllamaURL
+	}
+	if q.ClaudeKey != nil {
+		c.ClaudeKey = *q.ClaudeKey
+	}
+	return c
+}
+
+func forkKG() llm.KG {
+	k := vars.APIConfig.Knowledge
+	return llm.KG{Provider: k.Provider, Endpoint: k.Endpoint, Model: k.Model}
 }
 
 func (q *settingsRequest) valid() error {
 	if !lang.Valid(q.Lang) {
 		return fmt.Errorf("lang: one of %v", lang.Supported)
 	}
+	if q.llmChanged() {
+		if err := llm.Validate(q.llmConfig()); err != nil {
+			return err
+		}
+	}
 	return q.Validate()
 }
 
-// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings + lang) validates, saves,
-// switches the language (reloading intents) and pushes that language's T2.
+// saveMu holds across a POST's saves, so two concurrent ones cannot end with one's language and the other's intents.
+var saveMu sync.Mutex
+
+// save writes q's settings, LLM profiles and language; a language whose intents do not load is rolled back and
+// returned as intentErr (the old intents stay). err is a failed write.
+func save(q *settingsRequest) (intentErr string, err error) {
+	saveMu.Lock()
+	defer saveMu.Unlock()
+	if err := Save(q.Settings); err != nil {
+		return "", fmt.Errorf("save: %w", err)
+	}
+	if q.llmChanged() {
+		if err := llm.Save(q.llmConfig()); err != nil {
+			return "", fmt.Errorf("save llm: %w", err)
+		}
+	}
+	old := lang.Current()
+	if q.Lang == old {
+		return "", nil
+	}
+	if err := lang.Save(q.Lang); err != nil {
+		return "", fmt.Errorf("save lang: %w", err)
+	}
+	if rerr := ReloadIntents(); rerr != nil {
+		intentErr = q.Lang + " intents not loaded, language stays " + old + ": " + rerr.Error()
+		if err := lang.Save(old); err != nil {
+			intentErr += "; rollback failed, language is " + lang.Current() + ": " + err.Error()
+		}
+		logger.Println("myvector voice settings: " + intentErr)
+	}
+	return intentErr, nil
+}
+
+// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings + lang + optional llm, ollama_url, claude_key) validates,
+// saves, switches the language (reloading intents; rolled back if they fail) and pushes the current language's T2.
 func SettingsHandler(w http.ResponseWriter, r *http.Request) {
-	pushErr := ""
+	pushErr, intentErr := "", ""
 	switch r.Method {
 	case http.MethodGet:
 	case http.MethodPost:
@@ -215,20 +294,12 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 		if !decode(w, r, &q, q.valid) {
 			return
 		}
-		if err := Save(q.Settings); err != nil {
-			http.Error(w, "save: "+err.Error(), http.StatusInternalServerError)
+		var err error
+		if intentErr, err = save(&q); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if q.Lang != lang.Current() {
-			if err := lang.Save(q.Lang); err != nil {
-				http.Error(w, "save lang: "+err.Error(), http.StatusInternalServerError)
-				return
-			}
-			if err := ReloadIntents(); err != nil {
-				logger.Println("myvector voice settings: " + q.Lang + " intents not loaded: " + err.Error())
-			}
-		}
-		if err := PushT2(r.Context(), q.Settings.For(q.Lang)); err != nil {
+		if err := PushT2(r.Context(), q.Settings, lang.Current()); err != nil { // after a rollback, the old language's T2
 			pushErr = err.Error()
 			logger.Println("myvector voice settings: saved; robot not updated: " + pushErr)
 		}
@@ -238,7 +309,13 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(settingsReply{Current(), lang.Current(), lang.Supported, voices, SlowMin, SlowMax, pushErr})
+	c, kg := llm.Load(), forkKG()
+	profiles, url := llm.Effective(c, kg)
+	defaults, _ := llm.Effective(llm.Config{LegacyETModel: c.LegacyETModel}, kg)
+	json.NewEncoder(w).Encode(settingsReply{Settings: Current(), Lang: lang.Current(), Langs: lang.Supported, Voices: voices,
+		SlowMin: SlowMin, SlowMax: SlowMax, LLM: profiles, Defaults: defaults, OllamaURL: url, ClaudeKey: llm.Mask(c.ClaudeKey), KGEnabled: vars.APIConfig.Knowledge.Enable,
+		LLMSaved: c.Profiles != nil, Knowledge: strings.TrimSpace(kg.Provider + " " + kg.Model),
+		PushError: pushErr, IntentError: intentErr})
 }
 
 // decode reads an application/json POST body into v and runs valid on it; on failure it has written the error.
@@ -248,7 +325,7 @@ func decode(w http.ResponseWriter, r *http.Request, v any, valid func() error) b
 		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
 		return false
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
 	dec.DisallowUnknownFields()
 	err := dec.Decode(v)
 	if err == nil {

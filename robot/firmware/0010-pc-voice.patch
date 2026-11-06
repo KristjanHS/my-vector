@@ -4,7 +4,7 @@ Date: Thu, 5 Nov 2026 11:39:12 +0200
 Subject: [PATCH] pc-voice
 
 vic-anim TTS provider (B4.2, R15-R18): each line reads /data/data/myvector-voice.json
-{url, voice, slow}; missing/bad file, no url or voice stock speaks Acapela unchanged. Otherwise
+{url, voice, slow, lang}; missing/bad file, no url or voice stock speaks Acapela unchanged. Otherwise
 each sentence is one HTTP/1.0 POST /tts to the PC service (slow = file slow x durationScalar,
 clamped 0.5-2.0; 1.5 s to the first response byte, 20 s and 4 MB for the whole sentence), its
 16 kHz PCM resampled to Acapela's rate because a stream keeps its first chunk's rate. Chunk
@@ -13,14 +13,17 @@ line speak in Acapela (R17). Logs my-vector.Voice. Host test: robot/firmware/tes
 
 R19: SDK SayText (wire-pod) stays Acapela: sdkComponent sets the new TextToSpeechPrepare.sdkOrigin, vic-anim passes it to the provider, which skips the PC voice (log 'acapela: sdk SayText (R19)'). Built-in lines (time, weather, behaviours) keep T2.
 B5: the KnowledgeGraph response line (wire-pod's streaming placeholder) also sets sdkOrigin via BehaviorTextToSpeechLoop::SetTextToSay - PC voice put +0.5-0.64 s before its first sound, PC down +1.5 s.
+
+Unprocessed: every vic-anim TTS line plays with the Unprocessed switch whatever style it asked for - Default_Processed (Wwise robot-voice effect) made the PC voices sound robotic on built-in lines; Acapela (stock, KG placeholder, fallbacks) plays clean too.
+E31: lang (en-US or et-EE; anything else is dropped) rides in each /tts body; the PC translates only on et-EE.
 ---
- .../textToSpeech/textToSpeechComponent.cpp    |  14 +-
+ .../textToSpeech/textToSpeechComponent.cpp    |  19 +-
  .../textToSpeech/textToSpeechComponent.h      |   6 +-
  .../textToSpeech/textToSpeechProvider.cpp     |   5 +-
  .../textToSpeech/textToSpeechProvider.h       |   3 +-
  .../textToSpeech/textToSpeechProvider_mac.cpp |   4 +-
  .../textToSpeech/textToSpeechProvider_mac.h   |   3 +-
- .../textToSpeechProvider_vicos.cpp            | 282 +++++++++++++++++-
+ .../textToSpeechProvider_vicos.cpp            | 293 +++++++++++++++++-
  .../textToSpeech/textToSpeechProvider_vicos.h |  18 +-
  .../behaviorTextToSpeechLoop.cpp              |   5 +-
  .../behaviorTextToSpeechLoop.h                |   3 +-
@@ -29,10 +32,10 @@ B5: the KnowledgeGraph response line (wire-pod's streaming placeholder) also set
  .../textToSpeech/textToSpeechCoordinator.cpp  |   4 +-
  .../textToSpeech/textToSpeechCoordinator.h    |   3 +-
  .../robotInterface/messageEngineToRobot.clad  |   1 +
- 15 files changed, 335 insertions(+), 22 deletions(-)
+ 15 files changed, 350 insertions(+), 23 deletions(-)
 
 diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
-index 9f3df6f6..783e876c 100644
+index 9f3df6f6..c595c34d 100644
 --- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
 +++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
 @@ -124,7 +124,8 @@ Result TextToSpeechComponent::CreateSpeech(const TTSID_t ttsID,
@@ -77,7 +80,22 @@ index 9f3df6f6..783e876c 100644
  
    if (RESULT_OK != result) {
      LOG_ERROR("TextToSpeechComponent.GetFirstAudioData", "Unable to get first audio data (error %d)", result);
-@@ -550,7 +552,7 @@ void TextToSpeechComponent::HandleMessage(const RobotInterface::TextToSpeechPrep
+@@ -439,10 +441,13 @@ TextToSpeechComponent::BundlePtr TextToSpeechComponent::GetBundle(const TTSID_t
+ //
+ void TextToSpeechComponent::SetAudioProcessingStyle(AudioTtsProcessingStyle style)
+ {
++  // my-vector (0010): every line Unprocessed - Default_Processed is Wwise's robot-voice effect, which made the PC
++  // voices sound robotic; Acapela (stock, KG placeholder, fallbacks) plays clean too. The requested style is only logged.
++  (void) style;
+   const auto switchGroup = AudioMetaData::SwitchState::SwitchGroupType::Robot_Vic_External_Processing;
+   _audioController->SetSwitchState(
+     static_cast<AudioEngine::AudioSwitchGroupId>(switchGroup),
+-    static_cast<AudioEngine::AudioSwitchStateId>(style),
++    static_cast<AudioEngine::AudioSwitchStateId>(AudioTtsProcessingStyle::Unprocessed),
+     static_cast<AudioEngine::AudioGameObject>(kTTSGameObject)
+   );
+ }
+@@ -550,7 +555,7 @@ void TextToSpeechComponent::HandleMessage(const RobotInterface::TextToSpeechPrep
              HidePersonallyIdentifiableInfo(text.c_str()));
  
    // Enqueue request on worker thread
@@ -174,7 +192,7 @@ index 3bc7d5ba..9983fdd1 100644
    // Get next chunk of TTS audio.
    // Returns RESULT_OK on success, else error code.
 diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp
-index 973d3bea..e3cadf92 100644
+index 973d3bea..ae0c2876 100644
 --- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp
 +++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.cpp
 @@ -24,6 +24,20 @@
@@ -198,7 +216,7 @@ index 973d3bea..e3cadf92 100644
  /* Interpolate Acapela code fragments */
  #define USE_LOADINIFILE
  #include "ic_babile.h"
-@@ -37,6 +51,202 @@ namespace Anki {
+@@ -37,6 +51,217 @@ namespace Anki {
  namespace Vector {
  namespace TextToSpeech {
  
@@ -247,7 +265,8 @@ index 973d3bea..e3cadf92 100644
 +}
 +
 +// Reads kMyVectorVoiceFile; false + why = speak Acapela.
-+bool MyVectorLoadVoice(std::string& host, int& port, std::string& path, std::string& voice, float& slow, std::string& why)
++bool MyVectorLoadVoice(std::string& host, int& port, std::string& path, std::string& voice, float& slow, std::string& lang,
++                       std::string& why)
 +{
 +  std::ifstream f(kMyVectorVoiceFile);
 +  if (!f) { why = std::string("no ") + kMyVectorVoiceFile; return false; }
@@ -257,6 +276,8 @@ index 973d3bea..e3cadf92 100644
 +  const std::string url = v["url"].isString() ? v["url"].asString() : "";
 +  voice = v["voice"].isString() ? v["voice"].asString() : "";
 +  slow = v["slow"].isNumeric() ? v["slow"].asFloat() : 1.f;
++  lang = v["lang"].isString() ? v["lang"].asString() : "";
++  if (lang != "en-US" && lang != "et-EE") { lang.clear(); } // E31: anything else = no lang field, PC speaks as before
 +  if (voice.empty() || voice == "stock") { why = "voice stock"; return false; }
 +  if (url.empty()) { why = "no url"; return false; }
 +  if (url.compare(0, 7, "http://") != 0) { why = "url not http://: " + url; return false; }
@@ -279,10 +300,22 @@ index 973d3bea..e3cadf92 100644
 +}
 +
 +// R19: wire-pod's SDK SayText stays Acapela (its T1 path already applied slow); robot-internal lines may use the PC.
-+bool MyVectorPcLine(bool sdkOrigin, std::string& host, int& port, std::string& path, std::string& voice, float& slow, std::string& why)
++bool MyVectorPcLine(bool sdkOrigin, std::string& host, int& port, std::string& path, std::string& voice, float& slow,
++                    std::string& lang, std::string& why)
 +{
 +  if (sdkOrigin) { why = "sdk SayText (R19)"; return false; }
-+  return MyVectorLoadVoice(host, port, path, voice, slow, why);
++  return MyVectorLoadVoice(host, port, path, voice, slow, lang, why);
++}
++
++// One sentence's /tts body: {text, voice, slow} plus lang only when the voice file set one.
++std::string MyVectorRequestBody(const std::string& text, const std::string& voice, float slow, const std::string& lang)
++{
++  Json::Value req;
++  req["text"] = text;
++  req["voice"] = voice;
++  req["slow"] = std::min(2.f, std::max(0.5f, slow)); // R16; server's range
++  if (!lang.empty()) { req["lang"] = lang; }
++  return Json::FastWriter().write(req);
 +}
 +
 +// Splits an HTTP response into PCM; decodes chunked (tts/server.py always chunks). False + why on anything else.
@@ -323,7 +356,7 @@ index 973d3bea..e3cadf92 100644
 +  return true;
 +}
 +
-+// POST {text, voice, slow} to http://host:port<path>/tts as HTTP/1.0; whole response into resp.
++// POST body (MyVectorRequestBody) to http://host:port<path>/tts as HTTP/1.0; whole response into resp.
 +bool MyVectorPost(const std::string& host, int port, const std::string& path, const std::string& body,
 +                  std::string& resp, std::string& why)
 +{
@@ -401,7 +434,7 @@ index 973d3bea..e3cadf92 100644
  TextToSpeechProviderImpl::TextToSpeechProviderImpl(const Anim::AnimContext* context, const Json::Value& tts_platform_config)
  {
    // Caller must provide context & RNG
-@@ -255,7 +465,73 @@ Result TextToSpeechProviderImpl::GetFirstAudioData(const std::string & text,
+@@ -255,7 +480,69 @@ Result TextToSpeechProviderImpl::GetFirstAudioData(const std::string & text,
                                                     float durationScalar,
                                                     float pitchScalar,
                                                     TextToSpeechProviderData & data,
@@ -412,7 +445,7 @@ index 973d3bea..e3cadf92 100644
 +  auto & mv = _myVectorVoice;
 +  mv.active = false;
 +  std::string why;
-+  if (MyVectorPcLine(sdkOrigin, mv.host, mv.port, mv.path, mv.voice, mv.slow, why)) {
++  if (MyVectorPcLine(sdkOrigin, mv.host, mv.port, mv.path, mv.voice, mv.slow, mv.lang, why)) {
 +    mv.text = text;
 +    mv.sentences = MyVectorSplitSentences(text);
 +    mv.next = 0;
@@ -422,8 +455,8 @@ index 973d3bea..e3cadf92 100644
 +    why = "no sentences";
 +  }
 +  if (mv.active) {
-+    LOG_WARNING("my-vector.Voice", "pc voice=%s %s:%d sentences=%zu slow=%.2f duration=%.2f",
-+                mv.voice.c_str(), mv.host.c_str(), mv.port, mv.sentences.size(), mv.slow, durationScalar);
++    LOG_WARNING("my-vector.Voice", "pc voice=%s lang=%s %s:%d sentences=%zu slow=%.2f duration=%.2f",
++                mv.voice.c_str(), mv.lang.c_str(), mv.host.c_str(), mv.port, mv.sentences.size(), mv.slow, durationScalar);
 +    return GetNextMyVectorVoiceData(data, done);
 +  }
 +  LOG_WARNING("my-vector.Voice", "acapela: %s", why.c_str());
@@ -444,13 +477,9 @@ index 973d3bea..e3cadf92 100644
 +    ++mv.next;
 +    return RESULT_OK;
 +  }
-+  Json::Value req;
-+  req["text"] = say;
-+  req["voice"] = mv.voice;
-+  req["slow"] = std::min(2.f, std::max(0.5f, mv.slow * mv.durationScalar)); // R16; server's range
 +  std::string resp, why;
 +  std::vector<int16_t> pcm;
-+  if (MyVectorPost(mv.host, mv.port, mv.path, Json::FastWriter().write(req), resp, why) &&
++  if (MyVectorPost(mv.host, mv.port, mv.path, MyVectorRequestBody(say, mv.voice, mv.slow * mv.durationScalar, mv.lang), resp, why) &&
 +      MyVectorParseResponse(resp, pcm, why)) {
 +    ++mv.next;
 +    // One rate per stream (StreamingWaveDataInstance drops a changed rate): match Acapela's so a fallback can follow.
@@ -476,7 +505,7 @@ index 973d3bea..e3cadf92 100644
  {
    LOG_INFO("TextToSpeechProvider.GetFirstAudioData", "text=%s duration=%.2f pitch=%.2f",
              Anki::Util::HidePersonallyIdentifiableInfo(text.c_str()),
-@@ -340,6 +616,10 @@ Result TextToSpeechProviderImpl::GetFirstAudioData(const std::string & text,
+@@ -340,6 +627,10 @@ Result TextToSpeechProviderImpl::GetFirstAudioData(const std::string & text,
  
  Result TextToSpeechProviderImpl::GetNextAudioData(TextToSpeechProviderData & data, bool & done)
  {
@@ -488,7 +517,7 @@ index 973d3bea..e3cadf92 100644
    BB_TCHAR * str = (BB_TCHAR *) (_draining ? nullptr: &_str[_strpos]);
  
 diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h
-index c0a69008..c20a4f42 100644
+index c0a69008..d642c492 100644
 --- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h
 +++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechProvider_vicos.h
 @@ -21,6 +21,7 @@
@@ -516,7 +545,7 @@ index c0a69008..c20a4f42 100644
 +  // my-vector voice (patch 0010): PC TTS one sentence per POST; after a failure the rest goes to Acapela
 +  struct MyVectorVoice {
 +    bool active = false;
-+    std::string host, path, voice;
++    std::string host, path, voice, lang;
 +    int port = 0;
 +    float slow = 1.f, durationScalar = 1.f, pitchScalar = 1.f;
 +    std::string text;

@@ -7,12 +7,15 @@ clip=${1:-$(find "$w/fleurs/data/et_ee" -name '*.wav' -printf '%s %p\n' 2>/dev/n
 [[ -f $clip ]] || { echo "no clip (robot/et-stt/run.sh fetches FLEURS)" >&2; exit 1; }
 curl -fsS http://127.0.0.1:8092/health; echo
 pcm=$(mktemp "$w/smoke.XXXXXX")
-trap 'rm -f "$pcm"' EXIT
+trap 'rm -f "$pcm" "$pcm.out"' EXIT
 "$w/venv/bin/python" -I -c 'import sys, soundfile as sf, numpy as np
 a, r = sf.read(sys.argv[1], dtype="float32")  # dtype=int16 on a FLOAT wav reads ~0, not scaled
 assert r == 16000 and a.ndim == 1, (r, a.shape)
 open(sys.argv[2], "wb").write(np.clip(a * 32768, -32768, 32767).astype("<i2").tobytes())' "$clip" "$pcm"
-out=$(curl -fsS --max-time 60 --data-binary @"$pcm" -H 'Content-Type: application/octet-stream' http://127.0.0.1:8092/stt)
+code=$(curl -sS --max-time 60 -o "$pcm.out" -w '%{http_code}' --data-binary @"$pcm" -H 'Content-Type: application/octet-stream' http://127.0.0.1:8092/stt)
+out=$(cat "$pcm.out")
+[[ $code != 409 ]] || { echo "409: switch must be et-EE (this is an Estonian clip check): $out" >&2; exit 1; }
+[[ $code == 200 ]] || { echo "HTTP $code: $out" >&2; exit 1; }
 echo "$clip -> $out"
 ref=$(awk -F'\t' -v f="${clip##*/}" '$2 == f { print $4 }' "$w/fleurs/data/et_ee/test.tsv" 2>/dev/null || true)
 "$w/venv/bin/python" -I -c 'import json, re, sys

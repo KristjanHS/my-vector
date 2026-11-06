@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ship the patched firmware: tests, patches, robot compat check, build (live progress), built-asset check, wire-pod restart
+# Ship the patched firmware: tests, patches, robot compat + myvector-stt freshness checks, build (live progress), built-asset check, wire-pod restart
 # (only if chipper/ or the firewall changed since the running server's sha), deploy, robot settings, robot smoke check, git push.
 # Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no server restart, no deploy, no push).
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
@@ -107,6 +107,14 @@ if ((deploy)); then
   # The unit file is a template that only make daemon-enable installs; a restart doesn't apply it.
   [[ -z $running ]] || git -C "$repo" diff --quiet "$running" "$full" -- scripts/wire-pod.service 2>/dev/null ||
     add_warns "WARN scripts/wire-pod.service changed since $running: run make daemon-enable to install it"
+  # myvector-stt runs the tree's et-stt/server.py and has no NOPASSWD restart rule, so it is checked, not restarted:
+  # one started before the shipped server.py may not serve wire-pod's /stt?lang= (an old one 404s all STT). Inactive -> skip.
+  if systemctl is-active -q myvector-stt 2>/dev/null; then
+    stt_up=$(date -d "$(systemctl show -p ActiveEnterTimestamp --value myvector-stt)" +%s 2>/dev/null || echo 0)
+    stt_ct=$(git -C "$repo" log -1 --format=%ct "$full" -- et-stt/server.py)
+    ((${stt_ct:-0} <= stt_up)) || die "myvector-stt started before $sha's last et-stt/server.py commit — run: make stt-enable"
+    echo "myvector-stt started after $sha's last et-stt/server.py commit"
+  fi
 fi
 
 json=$(echo "$want" | grep '\.json$' || true)

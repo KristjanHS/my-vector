@@ -1,7 +1,7 @@
-"""my-vector Estonian STT service: POST /stt (16 kHz s16le mono PCM body) -> {"text"}; GET /health -> {"lang", "loaded", "device"}.
+"""my-vector STT service: POST /stt?lang=<en-US|et-EE> (16 kHz s16le mono PCM body) -> {"text"}; GET /health -> {"lang", "loaded", "device"}.
 
-TalTech turbo-et (faster-whisper) holds the GPU only while myvectorConfig.json "lang" is et-EE; /stt under en-US -> 409.
-Env: STT_BIND (127.0.0.1), STT_PORT (8092), STT_MODEL (CT2 dir), STT_DEVICE (cuda), STT_COMPUTE (int8_float16), STT_CONFIG (polled every 5 s).
+One faster-whisper model on the GPU: myvectorConfig.json "lang"'s (TalTech turbo-et or MODEL_EN); a ?lang= that differs -> 409; a missing ?lang= means et-EE (back-compat with an older wire-pod).
+Env: STT_BIND (127.0.0.1), STT_PORT (8092), STT_MODEL / STT_MODEL_EN (CT2 dirs), STT_DEVICE (cuda), STT_COMPUTE (int8_float16), STT_CONFIG (polled every 5 s).
 """
 
 import json
@@ -14,6 +14,7 @@ import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 import numpy as np
 
@@ -24,13 +25,15 @@ ENGLISH, ESTONIAN = "en-US", "et-EE"  # chipper/pkg/myvector/lang
 REPO = Path(__file__).resolve().parents[1]
 CONFIG = REPO / "chipper/myvectorConfig.json"
 MODEL = REPO / "robot/work/et-stt/models/taltech-et/ct2"
+MODEL_EN = REPO / "robot/work/et-stt/models/turbo-stock"  # deepdml/faster-whisper-large-v3-turbo-ct2
+WHISPER_LANG = {ENGLISH: "en", ESTONIAN: "et"}
 CONFIG_POLL_S = 5
 
 log = logging.getLogger("myvector-stt")
 
 
 class Inactive(Exception):
-    """/stt while the switch is not et-EE."""
+    """/stt for a lang other than the switch's."""
 
 
 def config_lang(path):
@@ -113,11 +116,11 @@ class ChildWhisper:
 
 
 class Recognizer:
-    """The model is resident iff active (lang et-EE); every load/free/transcribe runs under one lock."""
+    """Resident model = self.lang's (models[lang]); every load/free/transcribe runs under one lock."""
 
-    def __init__(self, factory, model, device, compute):
-        self._factory, self._args = factory, (model, device, compute)
-        self._lock, self._model, self.active = threading.Lock(), None, False
+    def __init__(self, factory, models, device, compute):
+        self._factory, self._models, self._rest = factory, models, (device, compute)
+        self._lock, self._model, self.lang = threading.Lock(), None, None
         self.device = device
 
     @property
@@ -127,12 +130,12 @@ class Recognizer:
     def _load(self):  # caller holds the lock
         t = time.monotonic()
         try:
-            self._model = self._factory(*self._args)
+            self._model = self._factory(self._models[self.lang], *self._rest)
         except Exception as e:
             log.error("model load failed:\n%s", traceback.format_exc())
             msg = f"model load failed: {e!r}"
         else:
-            log.info("model loaded on %s in %.1f s", self.device, time.monotonic() - t)
+            log.info("%s model loaded on %s in %.1f s", self.lang, self.device, time.monotonic() - t)
             return
         raise RuntimeError(
             msg
@@ -144,20 +147,20 @@ class Recognizer:
             self._model = None
             log.info("model freed")
 
-    def set_active(self, active):
-        """et-EE -> load now (a failure raises; the next poll retries); en-US -> free now."""
+    def set_lang(self, lang):
+        """Free the other lang's model, then load lang's (a failure raises; the next poll retries)."""
         with self._lock:
-            self.active = active
-            if active and self._model is None:
-                self._load()
-            elif not active:
+            if lang != self.lang:
                 self._free()
+                self.lang = lang
+            if self._model is None:
+                self._load()
 
-    def transcribe(self, pcm):
+    def transcribe(self, pcm, lang):
         """Never loads: the caller's poll does (one load attempt per request, plan E21)."""
         audio = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
         with self._lock:
-            if not self.active:
+            if lang != self.lang:
                 raise Inactive
             if self._model is None:
                 raise RuntimeError(
@@ -166,14 +169,14 @@ class Recognizer:
             if not audio.size:
                 return ""
             try:
-                return self._model.transcribe(audio, "et", BEAM)
+                return self._model.transcribe(audio, WHISPER_LANG[lang], BEAM)
             except Exception:
                 self._free()  # a crashed child stays dead: the next poll reloads
                 raise
 
 
 class ConfigWatcher:
-    """Polls wire-pod's settings (stat key: mtime, inode, size) and (de)activates the recognizer on a change."""
+    """Polls wire-pod's settings (stat key: mtime, inode, size) and swaps the recognizer's model (set_lang) on a change."""
 
     def __init__(self, path, recognizer):
         self.path, self.rec, self._key = Path(path), recognizer, ()
@@ -186,13 +189,13 @@ class ConfigWatcher:
                 key = (st.st_mtime_ns, st.st_ino, st.st_size)
             except OSError:
                 key = None
-            if key != self._key or (
-                self.rec.active and not self.rec.loaded
-            ):  # unloaded et-EE: retry the load
+            if (
+                key != self._key or not self.rec.loaded
+            ):  # unloaded: retry the load
                 lang, err = config_lang(self.path)
                 if err:
                     log.warning("settings unreadable, using %s: %s", ENGLISH, err)
-                self.rec.set_active(lang == ESTONIAN)
+                self.rec.set_lang(lang)
                 self._key = key  # only after success: a failed load retries next poll
 
     def poll_logged(self):
@@ -228,7 +231,7 @@ def make_handler(rec, watcher):
                 self._json(
                     200,
                     {
-                        "lang": ESTONIAN if rec.active else ENGLISH,
+                        "lang": rec.lang,
                         "loaded": rec.loaded,
                         "device": rec.device,
                     },
@@ -239,7 +242,9 @@ def make_handler(rec, watcher):
         def do_POST(self):
             client_close = self.close_connection
             self.close_connection = True  # until the body is read: an unread body would parse as the next request
-            if self.path != "/stt":
+            path, _, query = self.path.partition("?")
+            lang = parse_qs(query).get("lang", [ESTONIAN])[0]
+            if path != "/stt":
                 self._json(404, {"error": "not found"})
                 return
             try:
@@ -257,9 +262,9 @@ def make_handler(rec, watcher):
             watcher.poll_logged()  # a request right after the switch sees it now, not at the next poll (plan E21)
             t = time.monotonic()
             try:
-                text = rec.transcribe(pcm)
+                text = rec.transcribe(pcm, lang)
             except Inactive:
-                self._json(409, {"error": f"lang is not {ESTONIAN}"})
+                self._json(409, {"error": f"lang is {rec.lang}, not {lang}"})
                 return
             except Exception as e:
                 log.exception("transcription failed")
@@ -281,15 +286,19 @@ def main():
     )
     rec = Recognizer(
         ChildWhisper,
-        os.environ.get("STT_MODEL", MODEL),
+        {
+            ENGLISH: os.environ.get("STT_MODEL_EN", MODEL_EN),
+            ESTONIAN: os.environ.get("STT_MODEL", MODEL),
+        },
         os.environ.get("STT_DEVICE", "cuda"),
         os.environ.get("STT_COMPUTE", "int8_float16"),
     )
     if (
         "--warm-only" in sys.argv[1:]
-    ):  # et-stt/setup.sh: prove the model loads and decodes
-        rec.set_active(True)
-        print(repr(rec.transcribe(np.zeros(RATE, "<i2").tobytes())))
+    ):  # et-stt/setup.sh: prove each model loads and decodes
+        for lang in WHISPER_LANG:
+            rec.set_lang(lang)
+            print(lang, repr(rec.transcribe(np.zeros(RATE, "<i2").tobytes(), lang)))
         return
     watcher = ConfigWatcher(os.environ.get("STT_CONFIG", CONFIG), rec)
     watcher.poll_logged()
