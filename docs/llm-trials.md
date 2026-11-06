@@ -119,8 +119,8 @@ scripts/llm.sh use claude --commands --intentgraph --remember   # then the step-
 ```
 
 - **"Low effort":** wire-pod sends no thinking/effort settings, so Claude answers straight away
-  without extended thinking. That is the cheapest and fastest mode already. A real effort dial would
-  need a code change.
+  without extended thinking. That is the cheapest and fastest mode already. The endpoint
+  (`api.anthropic.com/v1/chat/completions`) ignores `reasoning_effort` — even `"bogus"` returns 200.
 - Larger model later: `scripts/llm.sh models claude`, then e.g. `scripts/llm.sh use claude claude-sonnet-5-5`.
 - Spend: check usage in the Anthropic Console (the workspace that owns the key). A spoken answer is a
   few hundred tokens, so the credit lasts a long time on Haiku.
