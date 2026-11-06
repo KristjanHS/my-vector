@@ -493,6 +493,7 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 		logger.Println("Using " + vars.APIConfig.Knowledge.Model)
 		aireq.Model = vars.APIConfig.Knowledge.Model
 	}
+	defer forkCameraReq(&aireq)()
 	if stopImaging {
 		return
 	}
