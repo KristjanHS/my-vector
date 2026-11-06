@@ -3,8 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	pb "github.com/digital-dream-labs/api/go/chipperpb"
@@ -103,6 +106,42 @@ func TestVerdict(t *testing.T) {
 		if got := verdict(c.rs, c.want); got != c.code {
 			t.Errorf("verdict(%d replies, %q) = %d, want %d", len(c.rs), c.want, got, c.code)
 		}
+	}
+}
+
+func TestSynthPostsAfBella(t *testing.T) {
+	pcm := bytes.Repeat([]byte{7, 0}, 4000)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		if r.Method != http.MethodPost || r.URL.Path != "/tts" ||
+			body["text"] != "what time is it" || body["voice"] != "af_bella" || body["lang"] != "en-US" || len(body) != 3 {
+			t.Errorf("%s %s %v", r.Method, r.URL.Path, body)
+		}
+		w.Write(pcm)
+	}))
+	defer ts.Close()
+	got, err := synth(ts.URL, "what time is it")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _ := stream(t, got)
+	var streamed []byte
+	for _, r := range f.reqs {
+		streamed = append(streamed, r.InputAudio...)
+	}
+	if !bytes.Equal(streamed[3200:3200+len(pcm)], pcm) {
+		t.Fatal("streamed audio does not carry the TTS PCM")
+	}
+}
+
+func TestSynthServerError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+	if _, err := synth(ts.URL, "x"); err == nil {
+		t.Fatal("TTS 500: want error")
 	}
 }
 
