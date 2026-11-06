@@ -37,10 +37,13 @@ case $(ssh_ "[ -e $flag ] && echo present || { touch $flag && echo created; }" 2
   *) warn "no-auto-update: could not check or create $flag over SSH to $ip" ;;
 esac
 
-# T2 voice (plan R15): the saved t2 + slow, voice.Defaults() (af_bella, 1.2) for a missing file or field.
-conf_field() { sed -n "s/.*\"$1\": *\"\{0,1\}\([a-z_0-9.]*\).*/\1/p" "$conf" 2>/dev/null | head -1; }
-t2=$(conf_field t2) slow=$(conf_field slow)
-if out=$("$here/voice-push.sh" "${t2:-af_bella}" "${slow:-1.2}" 2>&1); then ok "${out#ok: }"
+# T2 voice (plan R15, E30): the saved language's T2 (t2, or t2_et for et-EE) + slow, as voice.Settings.For;
+# voice.Defaults() (af_bella / mari, 1.2) for a missing file or field.
+conf_field() { sed -n "s/.*\"$1\": *\"\{0,1\}\([A-Za-z_0-9.-]*\).*/\1/p" "$conf" 2>/dev/null | head -1; }
+if [[ $(conf_field lang) == et-EE ]]; then t2=$(conf_field t2_et) t2=${t2:-mari}
+else t2=$(conf_field t2) t2=${t2:-af_bella}; fi
+slow=$(conf_field slow)
+if out=$("$here/voice-push.sh" "$t2" "${slow:-1.2}" 2>&1); then ok "${out#ok: }"
 else warn "T2 voice: not pushed: ${out##*$'\n'}"; fi
 
 # /data fill guard (robot/diskguard): it lives on the rootfs, so a reflash drops it; this re-installs it.
