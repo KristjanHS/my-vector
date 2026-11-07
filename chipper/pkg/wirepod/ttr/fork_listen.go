@@ -24,13 +24,21 @@ var forkListening = func() *listen.State {
 	return s
 }()
 
+// forkCapture runs robot/openmic/listen.sh while a robot listens.
+var forkCapture = &listen.Runner{
+	Script: listen.ScriptPath,
+	Log:    func(l string) { logger.Println(l) },
+}
+
 // forkJoiner turns listen.sh clips (listen.ClipAPI) into utterances for forkHearer.
 var forkJoiner = &listen.Joiner{
-	STT:   func(pcm []byte) (string, error) { return listen.STT(lang.Current(), pcm) },
-	Heard: func(u listen.Utterance) { go forkHearer.Heard(u) },
+	STT:     func(pcm []byte) (string, error) { return listen.STT(lang.Current(), pcm) },
+	Heard:   func(u listen.Utterance) { go forkHearer.Heard(u) },
+	Clipped: func(esn string) { forkCapture.Clipped(esn) },
 }
 
 func init() {
+	forkListening.OnOff, forkCapture.Off = forkCapture.Stop, forkListening.Deactivate
 	http.HandleFunc(listen.ClipAPI, listen.ClipHandler(forkListening, forkJoiner, func(l string) { logger.Println(l) }))
 }
 
@@ -76,6 +84,7 @@ func forkListen(req interface{}, voiceText, botSerial string) bool {
 	text := listen.Confirm(on, lang.Current() == lang.Estonian)
 	if on {
 		forkListening.Activate(botSerial, time.Now())
+		forkCapture.Start(botSerial)
 		logger.Println("myvector listen: on")
 	} else {
 		forkListening.Deactivate(botSerial, "phrase")
