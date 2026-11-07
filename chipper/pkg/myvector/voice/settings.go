@@ -131,27 +131,8 @@ var (
 	// ReloadIntents reloads wire-pod's intents after a language switch; tests replace it.
 	ReloadIntents = reloadIntents
 	// pushScript is robot/firmware/voice-push.sh in the nearest ancestor of the cwd (wire-pod's is chipper/).
-	pushScript = func() (string, error) { return findUp(filepath.Join("robot", "firmware", "voice-push.sh")) }
+	pushScript = func() (string, error) { return conf.FindUp(filepath.Join("robot", "firmware", "voice-push.sh")) }
 )
-
-func findUp(rel string) (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	for {
-		if p := filepath.Join(dir, rel); fileExists(p) {
-			return p, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("no %s above the working directory", rel)
-		}
-		dir = parent
-	}
-}
-
-func fileExists(p string) bool { st, err := os.Stat(p); return err == nil && !st.IsDir() }
 
 // reloadIntents loads ./intent-data/<vars.ForkLanguage()>.json; on an error the old intents stay.
 func reloadIntents() error {
