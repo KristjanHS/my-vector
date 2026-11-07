@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -119,6 +120,36 @@ func TestForkPromptReplyCap(t *testing.T) {
 	}
 }
 
+// A saved profile whose brain differs from Knowledge sets the cap, on the request and the camera follow-up.
+func TestForkPromptReplyCapProfile(t *testing.T) {
+	for _, k := range []struct {
+		endpoint, model string
+		profile         llm.Profile
+		want            int
+	}{
+		{ollamaEndpoint, "qwen3.5:4b", llm.Profile{Provider: llm.Claude, Model: "claude-haiku-5-5"}, 400},
+		{"https://api.anthropic.com/v1", "claude-haiku-5-5", llm.Profile{Provider: llm.Ollama, Model: "qwen3.5:4b"}, 300},
+	} {
+		useKnowledge(t, "custom", k.endpoint, k.model)
+		saveLLM(t, lang.English, llm.Config{Profiles: map[string]llm.Profile{lang.English: k.profile}, ClaudeKey: strings.Repeat("k", 20)})
+		if r := CreateAIReq("hi", "esn", false, true); r.MaxCompletionTokens != k.want || r.Model != k.profile.Model {
+			t.Errorf("%s profile: MaxCompletionTokens %d model %q, want %d", k.profile.Provider, r.MaxCompletionTokens, r.Model, k.want)
+		}
+		cam := openai.ChatCompletionRequest{Model: k.model}
+		forkCameraReq(&cam)()
+		if cam.MaxCompletionTokens != k.want {
+			t.Errorf("%s profile camera: MaxCompletionTokens = %d, want %d", k.profile.Provider, cam.MaxCompletionTokens, k.want)
+		}
+	}
+}
+
+func TestForkActionsNoParam(t *testing.T) {
+	a := GetActionsFromString("Look. {{getImage}}")
+	if len(a) < 2 || a[1].Action != ActionGetImage || a[1].Parameter != "" {
+		t.Errorf("{{getImage}} parsed as %+v", a)
+	}
+}
+
 // Every {{command||param}} the block offers must parse: the command exists and lists the param.
 func TestForkCommandsSample(t *testing.T) {
 	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
@@ -131,18 +162,27 @@ func TestForkCommandsSample(t *testing.T) {
 		t.Errorf("prompt.SampleEmotions drifted from playAnimationWI ParamChoices %q", byName["playAnimationWI"].ParamChoices)
 	}
 	block := forkCommands(true)
-	for _, name := range []string{"playAnimationWI", "playAnimation", "getImage", "newVoiceRequest"} {
-		if !strings.Contains(block, name) {
-			t.Errorf("block lacks %s", name)
-		}
-	}
-	for _, m := range regexp.MustCompile(`(\w+)\|\|(\w+)`).FindAllStringSubmatch(block, -1) {
-		c, ok := byName[m[1]]
-		if m[1] == "command" {
+	offered := map[string]bool{}
+	for _, m := range regexp.MustCompile(`\{\{(\w+)\|\|(\w+)\}\}`).FindAllStringSubmatch(block, -1) {
+		name, param := m[1], m[2]
+		if name == "command" {
 			continue // the grammar line itself
 		}
-		if !ok || !strings.Contains(c.ParamChoices, m[2]) {
-			t.Errorf("block offers {{%s||%s}}, not a valid command/param", m[1], m[2])
+		if param == "emotion" {
+			param = "love" // placeholder: the list is SampleEmotions
+		}
+		offered[name] = true
+		if !slices.Contains(strings.Split(byName[name].ParamChoices, ", "), param) {
+			t.Errorf("block offers {{%s||%s}}, not in its ParamChoices", name, param)
+		}
+		a := GetActionsFromString("{{" + name + "||" + param + "}}")
+		if len(a) == 0 || a[0].Action != byName[name].Action || a[0].Parameter != param {
+			t.Errorf("block offers {{%s||%s}}; the parser returns %+v", m[1], m[2], a)
+		}
+	}
+	for _, name := range []string{"playAnimationWI", "playAnimation", "getImage", "newVoiceRequest"} {
+		if !offered[name] {
+			t.Errorf("block lacks {{%s||…}}", name)
 		}
 	}
 	if strings.Contains(forkCommands(false), "newVoiceRequest") {
