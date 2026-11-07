@@ -1,57 +1,77 @@
 # Vector crash review — every change we make, eliminated one by one
 
-Status: **stub** — evidence so far; review + elimination order not yet written (user: doc only, don't run it).
+Status: **plan, not started.** Method = `systematic-debugging`: reproduce → one variable per test → pre-registered pass/fail.
+Authored 2026-11-07; execution is a fresh session (user: "write .md, don't launch debugging in this session").
 
-## Crashes 2026-11-05..07 (robot crashDumps + journal)
+## Symptoms (S)
 
-| time | process | signature | context |
+| id | symptom | seen | evidence |
 |---|---|---|---|
-| 11-05 09:22 | vic-anim | SeAssert nrgainv.c:191, SIGILL | ship deploy |
-| 11-07 11:54 | vic-anim | same | ship deploy b70e53a (smoke step) |
-| 11-07 12:31:28 | vic-engine | SIGSEGV | catch.sh restart round 5 (observer?) |
-| 11-07 12:33:13 | vic-anim | start timeout → fault 800 | catch.sh round 6, no gdb on that pid |
-| 11-07 12:37:02 | vic-engine | SIGSEGV → fault 914 | catch.sh -d deploy round 1 |
+| S1 | vic-anim `SeAssert se_lib/nrgainv.c:191` → SIGILL | 11-05 09:22, 11-07 11:54 | both ship deploys, ~13 s after start, first speaker audio; `2026-11-07-vic-anim-seassert.md (docs/plans/)` |
+| S2 | vic-engine SIGSEGV → fault 914 | 11-07 12:31, 12:37 | pc=0 from `libOpenCL.so+0xa480`, stack `tflite::gpu::cl::CreateDefaultGPUDevice`; 3–7 s after a stop→start |
+| S3 | vic-anim.service start timeout → fault 800 | 11-07 12:33 | during my catch loop (rapid restarts); no gdb on that pid |
+| S4 | vic-engine dump, night idle | 11-06 05:18 | dump all zeros; /data was full (`No space left on device` 11-05 21:08) |
+| S5 | ship smoke FAIL | 4 logs: 1105-204236, 1106-071657, 1107-114118, 1107-115312 | `robot/work/ship-logs/`; which S each was = E0 |
 
-Complete crash dumps (`crashDumps/*.dmp` + `.log`) since unlock — the organic set:
+Not causes: vic-switchboard SIGQUIT / vic-cloud SIGTERM / 4-process `.dmp~` groups = fault-handler or stop cascades.
+Dumps + `.dmp.log` copies: `robot/work/crash-review/`, `robot/work/seassert/`; reader `robot/seassert/md.py`.
 
-| dump time | process | context |
-|---|---|---|
-| 11-04 12:39:51 | vic-engine | ? |
-| 11-05 09:22:33 | vic-anim | SeAssert, ship deploy |
-| 11-06 05:18:19 | vic-engine | **night idle — no deploy** |
-| 11-06 19:15:36 | vic-switchboard | ? |
-| 11-07 11:54:29 | vic-anim | SeAssert, ship deploy |
-| 11-07 12:31:26 / 12:36:59 | vic-engine | catch loop / deploy round |
-| 11-07 12:33:14 | vic-switchboard | fault-800 cascade (SIGQUIT) |
+## Critical points before blaming any change
 
-`.dmp~` (incomplete) dumps come in 4-process groups (vic-robot/anim/engine/switchboard within 2 s): 11-03 21:21, 21:30;
-11-04 07:13, 08:49, 19:39; 11-05 10:43, 18:27; 11-06 19:22; 11-07 10:09, 11:54:58, 12:37:17 = whole-stack kills (fault handler or deploy stop?).
-vic-switchboard SIGQUIT / vic-cloud SIGTERM = fault-handler cascade, not causes.
+- **Exposure, not just code:** S1–S3 are all *startup* crashes. Vanilla days had ~no restarts; we did 1 / 13 / 6 ships on
+  11-05 / 11-06 / 11-07 plus ~12 catch-loop restarts today. A constant per-start rate looks like "new" crashes. E0 measures it.
+- **Observer effect:** 12:22–12:39 my loop restarted every ~45 s, ptrace-attached and SIGSTOP'd vic-anim. S2/S3 today may be induced.
+- **Vanilla baseline is unrecorded:** robot journal starts at the WireOS image (10-25 clock), crashDumps start 11-03. No vanilla data.
+- **Biggest single change is the OS, not our code:** WireOS 3.0.2.36d (`/etc/os-version`) replaced stock; S2's code path
+  (TFLite GPU delegate) does not exist in stock vision.
 
-Dump `.log` reads (robot `crashDumps/*.dmp.log`, tail of syslog at dump time):
-- 11-07 12:31:28 + 12:37:02 vic-engine SIGSEGV, both minidumps identical (`md.py`, copies in `robot/work/crash-review/`):
-  pc = 0 (NULL call), lr = `libOpenCL.so+0xa480`, stack → `tflite::gpu::cl::CreateDefaultGPUDevice+52` (libcozmo_engine.so+0x7747b4).
-  ⇒ TFLite GPU-delegate init calls an unresolved OpenCL entry in stock `/usr/lib/libOpenCL.so` (78 KB, 2011). Not our patch code.
-  Source: upstream WireOS `coretech/vision/engine/tfliteModel.cpp` (`CreateGpuDelegate`, added 2026-09 by WireOS author), gated by
-  `TfliteConfig.useGpu` set in `faceNet.cpp`. Elimination test: force `useGpu=false` (patch) → vic-engine SIGSEGV gone across N restarts.
-- 11-06 05:18 vic-engine dump is all zeros (written while /data was full) — unreadable.
-- Both came ~3–7 s after a stop→start (12:31:19 stop; 12:36:46 deploy stop): crash in the new instance's startup or the old one's shutdown — unresolved.
-- 11-04 12:39 vic-engine and 11-06 19:15 vic-switchboard logs show only systemd SIGTERM/SIGKILL shutdown lines: likely stop-time dumps, not organic.
-- 11-06 05:18 vic-engine (night idle): its log ends with syslog-ng `No space left on device (28)` from 11-05 21:08 — /data full
-  is a suspect for that crash (diskguard came after; check `git log -- robot/diskguard`).
-Observer effect: 12:22–12:39 the catch loop restarted every ~45 s, ptrace-attached and SIGSTOP'd vic-anim.
+## Change inventory (C) and suspicion
 
-## Change surface to review
+| id | change | process | S1 | S2 | S3 | elimination test |
+|---|---|---|---|---|---|---|
+| C1 | WireOS 3.0.2 replaces stock image (11-03) | all | M | **H** | M | official WireOS release, no patches (E6) |
+| C2 | self-built binaries from `robot/work/wire-os-victor` (vic-anim built 11-06 21:03); deploy re-copies `lib/libc++.so.1` (same md5) | all | M | L | L | E6 (official binaries) |
+| C3 | TFLite GPU delegate `coretech/vision/engine/tfliteModel.cpp` (`CreateGpuDelegate`, WireOS 2026-09), via `faceNet.cpp` `useGpu` | vic-engine | – | **H** | – | E1 |
+| P1 | 0001 stay-on-charger (behavior) | engine | L | L | L | revert in E2 arm |
+| P2 | 0002 lift-lock (actions, liftController) | engine, robot | L | L | L | ″ |
+| P3 | 0003 quiet-idle (behavior JSON) | engine | L | L | L | ″ |
+| P4 | 0004 quiet-winsock (CMake, civetweb) | build | L | L | L | ″ |
+| P5 | 0005 motor-lock (hal_motors, wheelController) | vic-robot | L | L | L | ″ |
+| P6 | 0006 drive-guard (basicActions) | engine | L | L | L | ″ |
+| P7 | 0007 log-level-intent (shared `logging.cpp`, `iLoggerProvider.cpp`) | **every process** | M | M | L | ″ |
+| P8 | 0008 speech-volume (`audioLayerManager`, `cozmoAudioController`) | audio | **H** | L | L | E2 audio arm |
+| P9 | 0009 eye-chimes-off (`cozmoAudioController`) | audio | **H** | L | L | E2 audio arm |
+| P10 | 0010 pc-voice (TTS behaviors, `messageEngineToRobot` CLAD) | engine↔anim | **H** | M | L | E2 audio arm |
+| P11 | 0011 night-window (`sleepTracker`, `sleepingTypes.clad`) | engine | L | L | L | revert in E2 arm |
+| C4 | `settings.sh`: master volume 1, tz, no-auto-update, T2 voice url | anim audio | M | L | L | E3 (default volume) |
+| C5 | diskguard timer (only non-stock unit besides WireOS's) | – | L | L | L | `systemctl stop myvector-diskguard.timer` |
+| C6 | server fork: pc-voice TTS push, jdocs/settings writes, intents | anim audio, gateway | M | L | L | E5 (vanilla wire-pod) |
+| C7 | my instrumentation (gdb attach, SIGSTOP, 45 s restarts) | anim | – | M | **H** | E0 (no gdb) |
+| C8 | /data full on 11-05 (log capture runaway) | all | – | – | – | fixed by diskguard 11-06; `df -h /data` = 5 % now |
 
-- Self-built WireOS (`robot/work/wire-os-victor`, vic-anim built 11-06 21:03); every deploy re-copies `lib/libc++.so.1`.
-- Firmware patches 0001–0011 (`robot/firmware/series`); `settings.sh` (volume, tz, no-auto-update, T2 voice, diskguard).
-- Robot tools `robot/*/` (diskguard, logkeep, openmic, wifi, et-stt, voice push); server-side fork (`chipper/pkg/myvector/`).
-- Baseline "vanilla had no crashes": no crash-dump evidence from the vanilla period checked yet.
+## Elimination stages (in order; stop when a stage explains a symptom)
 
-## Next
+**E0 — measure exposure, no instrumentation (S2, S3, S5).** Read the 4 smoke-FAIL logs → map each to S1/S2/S3.
+Then 20 plain restarts (stop, 5 s, start; no gdb), log per round: S1/S2/S3 from journal + new crashDumps.
+Pass rule: S3 = 0/20 ⇒ S3 was observer-induced (C7), drop it. S2 ≥ 2/20 ⇒ reliable repro for E1. Needs `catch.sh -n` (no-attach) or a 10-line loop.
 
-1. Catalogue all crashDumps since 11-03 with context tags (ship / idle / observer); symbolize vic-engine dumps (`robot/seassert/md.py`).
-2. Per change: mechanism → which crash it could cause → cheapest elimination test; order by cost.
-3. Candidate first test: official WireOS release without our patches/self-built bins, idle + deploys.
+**E1 — GPU delegate (S2).** First: `ls -l /lib/libOpenCL.so` (what `ShouldUseGpu` checks) and WireOS upstream log of `tfliteModel.cpp` for a fix.
+Then patch 0012 forcing `useGpu=false` → user ships → 20 restarts. Pass: S2 0/20 when E0 had ≥ 2/20 ⇒ C3 confirmed; keep the patch.
 
-Tooling: `robot/seassert/catch.sh [-d] N` (gdb catcher, works; history in commits 5b31b99, 5859d4a).
+**E2 — SeAssert (S1), only with a hit or a repro.** Rate ~2 per 20 deploys, so bisecting blind costs ~20 deploys per arm.
+Step 1: catch the values with `robot/seassert/catch.sh -d N` (deploy rounds) — the reading picks corruption vs register (seassert plan §Plan 4).
+Step 2 if corruption: build with P8+P9+P10 reverted (audio arm) → 20 deploys; S1 0/20 ⇒ the writer is in those patches → bisect the 3.
+
+**E3 — volume (S1).** Same 20-deploy count at default master volume (settings.sh volume step skipped). Only if E2 points at SE inputs, not corruption.
+
+**E4 — exposure check.** Per day: starts vs crashes (ship logs + catch logs + crashDumps). Constant per-start rate ⇒ the "new errors" are frequency of restarts, not new bugs.
+
+**E5 — server (C6).** One day on upstream wire-pod (`git stash`-free: build `upstream/main` in `robot/work/`). Only if S1 persists after E2 and correlates with voice/TTS use.
+
+**E6 — official WireOS release, no patches (C1, C2).** Control arm for everything; costs a reflash and losing patches for the test. Only if E1/E2 inconclusive.
+
+## Stopping rules
+
+- Each stage pre-registers N and its pass rule above; stop at the first stage that explains a symptom, fix, then re-run E0's count.
+- Robot audio: every restart plays the power-on sound — accepted by the user for C-hunts; ask before any other audio.
+- The user runs `make ship`; Claude may run `deploy-v.sh` only in E2 rounds the user OK'd.
