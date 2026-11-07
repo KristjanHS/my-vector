@@ -71,20 +71,23 @@ Severity: CRITICAL / HIGH / MEDIUM / LOW.
 
 | id | ruling | edit site |
 |---|---|---|
-| P | Builder with 4 editable templates (et-EE, en-US) × (ollama, claude), in gitignored config, editable in the web UI. Shared content is written once as a block and referenced by tag (`{now}` `{user}` `{facts}` `{diary}` `{search}` `{speech}` `{commands}`), never copied into template text. | new `pkg/myvector/prompt`; `forkAIReq` calls it; UI in `webroot` |
+| P | Builder with 2 editable English templates (ollama, claude), in gitignored config, editable in the web UI; `{lang}` renders only for et-EE ("Answer in Estonian. Keep names, brands and titles as written."); en-US gets no language line. Shared content is a block referenced by tag (`{now}` `{lang}` `{user}` `{facts}` `{diary}` `{search}` `{speech}` `{commands}`), never copied into template text. | new `pkg/myvector/prompt`; `forkAIReq` calls it |
+| U | `{user}` = one free-text "about me" box on the prompt page, token-capped; memory facts arrive separately via `{facts}`. | `prompt` store |
+| SP | `{speech}`: times and dates as digits (`tts/et_text.py` `normalize` turns them to words), every other number written as words; normal punctuation; no markdown, emoji or lists. | `prompt` default block |
+| E | Editor on its own page `/myvector/prompt`; templates, about-me and 5 versions in gitignored `chipper/myvectorPrompt.json`. | `prompt` http + embedded html; `sdkapp/fork_*.go` route |
 | P-guard | A required tag missing from a template is appended at the end by the builder and flagged in the UI, so a block can never drop. Saving rejects unknown tags and anything over the tier's token budget. A preview shows the template rendered with sample data. Built-in defaults include "reset". A saved template that fails checks at load falls back to the default and logs. Keep the last 5 saved versions. | `prompt` validate + render; golden test per language × tier |
 | P-budget | Per-tier config: reply cap, history turns, history gap, memory and search token budgets, Ollama `num_ctx`. Claude and Ollama are configured separately (R8). | `prompt` profile struct; `CreateAIReq` reply cap through the fork hook |
 | S | Search provider is a selector on the `/myvector/voice` page; default = the free tier (keyword router + pre-fetched snippets, provider picked by a bench of Tavily, Brave free credit, SearXNG, Ollama web search on 10 Estonian queries) for every brain, Claude included. Claude's paid `web_search` runs only when selected there. | new `pkg/myvector/search`; selector in `myvector/voice`; bench script under `robot/` or `scripts/` |
 | S-guard | Per-provider monthly counter with a hard cap; results cached per query with a TTL. The future Claude tool gets max 1 search per turn and a daily cap. | `search` quota + cache in gitignored state |
 | V | Claude sees photos only when explicitly chosen in a separate vision setting in the wire-pod UI, even when the brain is Claude. Default: the best local Ollama vision model, picked by a 3–5 photo bench (gemma4:e4b, gemma4:e2b, qwen3.5:4b, gemma3:4b; direct Estonian vs English → EstLLM). | `llm.VisionModel` + config field; `forkCameraReq`; UI selector |
-| M | M2 now: transcripts → per-session fact extraction (evidence-substring check, unconfirmed) → nightly diary entry (append-only) + merge of touched categories + profile rebuilt from facts + fixed question set with revert. M3 extras later. | new `pkg/myvector/memory`; gitignored store |
+| M | Facts, diary and profile are stored in English; the evidence quote stays verbatim from the transcript. M2 now: transcripts → per-session fact extraction (evidence-substring check, unconfirmed) → nightly diary entry (append-only) + merge of touched categories + profile rebuilt from facts + fixed question set with revert. M3 extras later. | new `pkg/myvector/memory`; gitignored store |
 | N | `{now}`: zone = robot jdoc `vic.RobotSettings.time_zone` by ESN, else `time.Local`; native line per language ("Praegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn)."), placed before the language line. | `prompt.Now`; `forkAIReq(aireq, esn)` |
 | M-later | M3: bge-m3 search, weekly Claude pass, "mida sa minust tead?" / "unusta see". Revisit once M2 has run ~2 weeks. | — |
 
 ## Build order (each slice visible on the robot)
 
 1. `{now}` line through a minimal builder → "mis nädalapäev täna on?" answered. Falsifier: golden test contains the Estonian weekday.
-2. Templates + tags + P-guard + UI editor/preview; speech, persona and language fixes (critique 3–5, 7, 9).
+2. Templates + tags + P-guard + UI editor/preview; speech, persona and language fixes (critique 3–5, 7, 9). → plan: `2026-11-07-prompt-templates.md (docs/plans/)`
 3. History gap and follow-up listening decoupled from commands (critique 8).
 4. Search bench → router + snippets for Ollama (S, S-guard).
 5. Vision setting + local vision bench (V).
