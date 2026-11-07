@@ -27,7 +27,7 @@ var Backoff = []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute, 4 
 // named spots Vector's name in overheard text (et case endings included); it skips the Backoff wait.
 var named = regexp.MustCompile(`(?i)\b(?:vector|victor|vektor)\w*`)
 
-// Persona, SpeakRules and QuietRules also build listenprobe's other arms.
+// Persona and SpeakRules also build listenprobe's prompt 1 arm.
 const (
 	SpeakRules = "Speak only when: someone asks a question nobody has answered, someone states a clear factual mistake, someone mentions you (Vector) by name, or there is a clear opening for a short fun remark."
 	QuietRules = "Stay quiet for small talk, one side of a phone call, TV or radio, private or emotional talk, unfinished sentences, and questions someone already answered. When unsure, stay quiet."
