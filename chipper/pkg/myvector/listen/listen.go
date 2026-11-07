@@ -79,6 +79,10 @@ func NewState() *State {
 func (s *State) Activate(esn string, now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if b, ok := s.bots[esn]; ok {
+		b.since = now
+		return
+	}
 	s.bots[esn] = &bot{since: now}
 }
 
