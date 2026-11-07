@@ -53,7 +53,8 @@ Dumps + `.dmp.log` copies: `robot/work/crash-review/`, `robot/work/seassert/`; r
 
 **E0 — measure exposure, no instrumentation (S2, S3, S5).** Read the 4 smoke-FAIL logs → map each to S1/S2/S3.
 Then 5 plain restarts (user ruling) via `robot/crash-review/restarts.sh` (stop, 5 s, start; no gdb; 60 s watch), log per round: S1/S2/S3 + new crashDumps.
-Pass rule: S3 = 0/5 ⇒ S3 was observer-induced (C7), drop it. S2 = 0/5 ⇒ S2 was observer-induced too; no patch.
+**Result 13:52:** S1 0/5 S2 0/5 S3 0/5 (`robot/work/crash-review/restarts-20261107-1346*`); every S hit = a deploy or gdb attached.
+Smoke FAILs: 1105-204236 + 1106-071657 = lift calibration, 1107-114118 = gateway refused pre-deploy, 1107-115312 = S1.
 
 **E1 — GPU delegate (S2).** First: `ls -l /lib/libOpenCL.so` (what `ShouldUseGpu` checks) and WireOS upstream log of `tfliteModel.cpp` for a fix.
 User ruling: keep the GPU (Adreno 304 + Qualcomm OpenCL is real; GPU init ok on 15 of 17 starts) — no `useGpu=false` patch.
