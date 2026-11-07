@@ -39,7 +39,7 @@ score() {
     for ((s = 0; ; s++)); do
       dd if="$2/$src.pcm" of="$2/win.pcm" bs=32000 skip=$s count=2 status=none
       (($(stat -c %s "$2/win.pcm") >= 16000)) || break
-      text=$(transcribe "$2/win.pcm")
+      text=$(transcribe "$2/win.pcm") || text="<stt error>"
       if [[ $(match) == HIT ]]; then
         [[ $at == - ]] && at=$s hit=$text
         whole=HIT
@@ -47,7 +47,8 @@ score() {
       [[ $(match -any) == HIT ]] && any=HIT && hit=${hit:-$text}
     done
     rm -f "$2/win.pcm"
-    text=${hit:-$(transcribe "$2/$src.pcm")}
+    [[ -n $hit ]] || hit=$(transcribe "$2/$src.pcm") || hit="<stt error>"
+    text=$hit
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$src" "$whole" "$any" "$at" "$text"
   done
 }
@@ -91,7 +92,10 @@ cue() { # the stop phrase, now
   else paplay --raw --rate=16000 --channels=1 --format=s16le "$say_pcm"; fi
 }
 
-run=$W/$(date +%Y%m%d-%H%M%S)-$lang$( ((say)) || echo -quiet)$( ((say && over)) && echo -over)
+suffix=-quiet
+((say)) && suffix=
+((say && over)) && suffix=-over
+run=$W/$(date +%Y%m%d-%H%M%S)-$lang$suffix
 mkdir -p "$run"
 curl -fsS -o /dev/null "http://$ip:8889/consolevarset?key=MicData_ClipRecordTime_ms&value=15000"
 header | tee "$run/results.tsv"
@@ -108,8 +112,13 @@ for ((i = 1; i <= n; i++)); do
     sleep 3
     cue
   fi
-  wait "$play" || true
-  ((say && !over)) && cue
+  rc=0
+  wait "$play" || rc=$?
+  ((rc == 0)) || { echo "SETUP: trial $i: play.sh exit $rc (robot said nothing)" >&2; exit 2; }
+  if ((say && !over)); then
+    cue
+    ((SECONDS - start <= 12)) || { echo "SETUP: trial $i: cue at clip +$((SECONDS - start)) s, too late for 15 s — play one short sample" >&2; exit 2; }
+  fi
   sleep $((start + 16 - SECONDS > 0 ? start + 16 - SECONDS : 0))
   for _ in {1..10}; do
     a=$(rsh "ls -l $D/miccapture_*/*.wav 2>/dev/null | awk '{s+=\$5} END {print NR, s}'"); sleep 1

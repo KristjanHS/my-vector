@@ -2,6 +2,7 @@ package wirepod_ttr
 
 import (
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
@@ -20,18 +21,26 @@ func forkQuiet(req interface{}, voiceText, botSerial string) bool {
 	if err := quiet.Set(now.Add(quiet.LockFor), "voice:"+phrase); err != nil {
 		logger.Println("my-vector quiet: lock: " + err.Error())
 	}
-	go forkNap(botSerial, now.Add(quiet.NapFor))
+	ip := forkRobotIP(botSerial)
+	forkNaps.Add(1)
+	go func() { defer forkNaps.Done(); forkNap(ip, botSerial, now.Add(quiet.NapFor)) }()
 	IntentPass(req, "intent_system_sleep", voiceText, map[string]string{}, false)
 	return true
 }
 
-func forkNap(esn string, until time.Time) {
-	ip := ""
+// forkNaps tracks in-flight naps so tests can wait them out.
+var forkNaps sync.WaitGroup
+
+func forkRobotIP(esn string) string {
 	for _, r := range vars.BotInfo.Robots {
 		if r.Esn == esn {
-			ip = r.IPAddress
+			return r.IPAddress
 		}
 	}
+	return ""
+}
+
+func forkNap(ip, esn string, until time.Time) {
 	if ip == "" {
 		logger.Println("my-vector quiet: nap skipped: no IP for " + esn)
 		return
