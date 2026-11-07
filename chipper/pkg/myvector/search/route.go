@@ -122,7 +122,9 @@ var tables = map[string]cues{
 		recent: table{phrases: words("kes on", "kes oli", "mis * juhtus", "mis * toimub", "mis * toimus")},
 		self: []string{"sa", "sina", "sinu", "su", "sind", "sul", "sulle", "sinuga", "sinust", "ma", "mina", "minu",
 			"mu", "mind", "mul", "mulle", "minuga", "minust", "me", "meie", "meil", "meile", "te", "teie", "teil"},
-		deictic: []string{"ta", "tema", "see", "too", "seal", "siin", "nad", "nemad"},
+		deictic: []string{"ta", "tema", "see", "too", "seal", "siin", "nad", "nemad", "selle", "sellega", "sellest",
+			"temaga", "temast", "tal", "talle", "neid", "nendega", "siis", "nüüd", "jälle", "lõpuks", "edasi",
+			"üldse", "ikka", "küll", "veel", "kell", "lõpus", "alguses"},
 	},
 	lang.English: {
 		weather: table{exact: []string{"weather", "forecast", "raining", "rainy", "snowing", "sunny", "windy"}},
