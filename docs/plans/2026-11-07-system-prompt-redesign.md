@@ -67,13 +67,24 @@ Severity: CRITICAL / HIGH / MEDIUM / LOW.
 | Memory, sleep | When an LLM keeps rewriting memory, its usefulness first rises, then falls below no memory. Keep raw episodes; consolidate only on new evidence; keep a daily diary layer (MemoryBank); predict-calibrate (Nemori); store event time and learned time separately; rank by heat (MemoryOS). | arxiv 2605.12978, 2305.10250, 2508.03341, 2506.06326 |
 | Memory, budgets | Ollama: core profile ≤150 tokens + ≤3 keyword facts ≈ 300 tokens. Claude: ≤3k tokens. Use 5-character prefixes or Vabamorf lemmas instead of embeddings until there are about 300 facts; then bge-m3 on CPU. | ollama.com/library/bge-m3 |
 
-## Alternatives
+## Design rulings (user, 2026-11-07)
 
-Applies to every option: the date/weekday/time line ships first. It is ~20 tokens, the weekday comes from a Go Estonian name table, and it fixes the original bug.
+| id | ruling | edit site |
+|---|---|---|
+| P | Builder with 4 editable templates (et-EE, en-US) × (ollama, claude), in gitignored config, editable in the web UI. Shared content is written once as a block and referenced by tag (`{now}` `{user}` `{facts}` `{diary}` `{search}` `{speech}` `{commands}`), never copied into template text. | new `pkg/myvector/prompt`; `forkAIReq` calls it; UI in `webroot` |
+| P-guard | A required tag missing from a template is appended at the end by the builder and flagged in the UI, so a block can never drop. Saving rejects unknown tags and anything over the tier's token budget. A preview shows the template rendered with sample data. Built-in defaults include "reset". A saved template that fails checks at load falls back to the default and logs. Keep the last 5 saved versions. | `prompt` validate + render; golden test per language × tier |
+| P-budget | Per-tier config: reply cap, history turns, history gap, memory and search token budgets, Ollama `num_ctx`. Claude and Ollama are configured separately (R8). | `prompt` profile struct; `CreateAIReq` reply cap through the fork hook |
+| S | Ollama: keyword router + pre-fetched snippets first. Claude tool comes later. Free, non-Claude providers are compared first: Tavily, Brave free credit, SearXNG, Ollama web search, on 10 Estonian queries. | new `pkg/myvector/search`; bench script under `robot/` or `scripts/` |
+| S-guard | Per-provider monthly counter with a hard cap; results cached per query with a TTL. The future Claude tool gets max 1 search per turn and a daily cap. | `search` quota + cache in gitignored state |
+| V | Claude sees photos only when explicitly chosen in a separate vision setting in the wire-pod UI, even when the brain is Claude. Default: the best local Ollama vision model, picked by a 3–5 photo bench (gemma4:e4b, gemma4:e2b, qwen3.5:4b, gemma3:4b; direct Estonian vs English → EstLLM). | `llm.VisionModel` + config field; `forkCameraReq`; UI selector |
+| M | M2 now: transcripts → per-session fact extraction (evidence-substring check, unconfirmed) → nightly diary entry (append-only) + merge of touched categories + profile rebuilt from facts + fixed question set with revert. M3 extras later. | new `pkg/myvector/memory`; gitignored store |
+| M-later | M3: bge-m3 search, weekly Claude pass, "mida sa minust tead?" / "unusta see". Revisit once M2 has run ~2 weeks. | — |
 
-| Decision | Option 1 (thin) | Option 2 | Option 3 (most mature) |
-|---|---|---|---|
-| P: prompt build | Patch the strings in place | Fork builder `pkg/myvector/prompt`, two tiers (Ollama ≈250 tokens core, Claude ≈600 tokens + extras), budgets per profile, golden tests | P2 + user-editable templates per language and tier in gitignored config |
-| S: web search | Keyword router + pre-fetched snippets for both backends | Claude: function tool; Ollama: router + snippets (one Go search client, Tavily) | S2, but Claude uses the native server `web_search` (citations, dynamic filtering) |
-| V: ET vision | Claude for camera turns when a key is saved, else today's qwen | V1 + offline fallback: vision model writes English → EstLLM answers | Offline only (V2's fallback), photos never leave home |
-| M: memory | Hand-edited gitignored profile file only | Daily diary + facts (evidence-checked) + nightly per-category merge + profile rebuilt each night + fixed question set | M2 + bge-m3 search + weekly Claude whole-store pass + voice "mida sa minust tead / unusta see" |
+## Build order (each slice visible on the robot)
+
+1. `{now}` line through a minimal builder → "mis nädalapäev täna on?" answered. Falsifier: golden test contains the Estonian weekday.
+2. Templates + tags + P-guard + UI editor/preview; speech, persona and language fixes (critique 3–5, 7, 9).
+3. History gap and follow-up listening decoupled from commands (critique 8).
+4. Search bench → router + snippets for Ollama (S, S-guard).
+5. Vision setting + local vision bench (V).
+6. Memory M2: transcripts → extraction → nightly pass → `{facts}`/`{diary}` blocks.
