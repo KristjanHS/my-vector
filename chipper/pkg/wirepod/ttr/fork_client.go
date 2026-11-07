@@ -7,10 +7,10 @@ import (
 	"github.com/sashabaranov/go-openai"
 )
 
-// forkClient is the client for the current language's llm.Resolve target, else c (wire-pod's Knowledge one).
+// forkClient is the client for the current language's forkResolve target, else c (wire-pod's Knowledge one).
 func forkClient(c *openai.Client) *openai.Client {
 	l := lang.Current()
-	t, ok := llm.Resolve(llm.Load(), l, forkKG())
+	t, ok := forkResolve(llm.Load(), l, forkKG())
 	if !ok {
 		return c
 	}

@@ -21,6 +21,7 @@ func forkQuiet(req interface{}, voiceText, botSerial string) bool {
 	if err := quiet.Set(now.Add(quiet.LockFor), "voice:"+phrase); err != nil {
 		logger.Println("my-vector quiet: lock: " + err.Error())
 	}
+	forkListening.Deactivate(botSerial, "quiet")
 	ip := forkRobotIP(botSerial)
 	forkNaps.Add(1)
 	go func() { defer forkNaps.Done(); forkNap(ip, botSerial, now.Add(quiet.NapFor)) }()

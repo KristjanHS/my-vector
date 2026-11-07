@@ -45,7 +45,7 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 	l := lang.Current()
 	kg := forkKG()
 	ollama := llm.IsOllama(kg)
-	if t, ok := llm.Resolve(llm.Load(), l, kg); ok {
+	if t, ok := forkResolve(llm.Load(), l, kg); ok {
 		r.Model = t.Model
 		r.TopP = forkTargetTopP(t.Provider, r.Model)
 		ollama = t.Ollama()
@@ -118,7 +118,7 @@ func forkCommands(isKG bool) string {
 // unloaded first and the vision model (llm.VisionModel) after, both at the target's Ollama, so one LLM stays resident.
 func forkCameraReq(r *openai.ChatCompletionRequest) func() {
 	l, c, kg := lang.Current(), llm.Load(), forkKG()
-	t, ok := llm.Resolve(c, l, kg)
+	t, ok := forkResolve(c, l, kg)
 	forkReplyCap(r, (ok && t.Ollama()) || (!ok && llm.IsOllama(kg)), false)
 	if !ok {
 		if kg.Provider == "openai" && kg.Model != "" {
