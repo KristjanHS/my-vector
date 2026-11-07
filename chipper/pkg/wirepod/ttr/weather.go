@@ -161,6 +161,9 @@ type openWeatherMapForecastAPIResponseStruct struct {
 }
 
 func getWeather(location string, botUnits string, hoursFromNow int) (string, string, string, string, string, string) {
+	if r, ok := forkGetWeather(location, botUnits, hoursFromNow); ok { // fork_weather.go: weatherapi forecast + Open-Meteo race
+		return r.condition, "false", r.localTime, r.place, r.temp, r.unit
+	}
 	var weatherEnabled bool
 	var condition string
 	var is_forecast string

@@ -8,14 +8,16 @@ import (
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
 // stubWeather disables the provider (getWeather echoes the location) and records location probes.
 func stubWeather(t *testing.T, hits ...string) *[]string {
-	oldWeather, oldExists := vars.APIConfig.Weather, forkLocationExists
-	t.Cleanup(func() { vars.APIConfig.Weather, forkLocationExists = oldWeather, oldExists })
+	oldWeather, oldExists, oldGet := vars.APIConfig.Weather, forkLocationExists, forkGetWeather
+	t.Cleanup(func() { vars.APIConfig.Weather, forkLocationExists, forkGetWeather = oldWeather, oldExists, oldGet })
 	vars.APIConfig.Weather.Enable = false
+	forkGetWeather = func(string, string, int) (forkWeatherReply, bool) { return forkWeatherReply{}, false }
 	probes := &[]string{}
 	forkLocationExists = func(loc string) bool {
 		*probes = append(*probes, loc)
@@ -106,5 +108,100 @@ func TestForkLocationProbeErrorHidesKey(t *testing.T) {
 	}
 	if !strings.Contains(logger.LogTrayList, "probe failed") || strings.Contains(logger.LogTrayList, "SECRETKEY") {
 		t.Errorf("probe error log %q: want the failure without the key", logger.LogTrayList)
+	}
+}
+
+func TestForkLocationExistsKeyless(t *testing.T) {
+	lang.UseForTest(t, lang.Estonian)
+	fakeWeather(t, "", 200, 200, 200)
+	if got := forkWeatherLocation("mis ilm on keilas", "Home", "keilas"); got != "Keila" {
+		t.Errorf("keyless probe: location %q, want Keila from Open-Meteo geocode", got)
+	}
+}
+
+func TestForkWMOClad(t *testing.T) {
+	cases := []struct {
+		code int
+		day  bool
+		want string
+	}{{61, true, "Rain"}, {81, true, "Rain"}, {71, true, "Snow"}, {85, true, "Snow"}, {95, true, "Thunderstorms"},
+		{3, true, "Cloudy"}, {45, true, "Cloudy"}, {0, true, "Sunny"}, {0, false, "Stars"}, {1, false, "Stars"}}
+	for _, c := range cases {
+		if got := forkWMOClad(c.code, c.day); got != c.want {
+			t.Errorf("WMO %d day=%v: %q, want %q", c.code, c.day, got, c.want)
+		}
+	}
+}
+
+// fakeWeather serves weatherapi forecast.json and Open-Meteo geocode/forecast with the given statuses; returns the weatherapi call count.
+func fakeWeather(t *testing.T, key string, waStatus, geoStatus, fcStatus int) *int {
+	waCalls := new(int)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/wa":
+			*waCalls++
+			w.WriteHeader(waStatus)
+			w.Write([]byte(`{"location":{"name":"Tallinn"},"current":{"last_updated":"2026-11-07 17:00","temp_c":4.4,"temp_f":39.9,"condition":{"text":"Sunny"}},` +
+				`"forecast":{"forecastday":[{"date":"2026-11-07","day":{"maxtemp_c":5,"maxtemp_f":41,"condition":{"text":"Sunny"}}},` +
+				`{"date":"2026-11-08","day":{"maxtemp_c":8.6,"maxtemp_f":47.5,"condition":{"text":"light rain"}}},` +
+				`{"date":"2026-11-09","day":{"maxtemp_c":1,"maxtemp_f":33.8,"condition":{"text":"Light Snow"}}}]}}`))
+		case "/geo":
+			w.WriteHeader(geoStatus)
+			w.Write([]byte(`{"results":[{"name":"Keila","latitude":59.3,"longitude":24.4}]}`))
+		case "/fc":
+			w.WriteHeader(fcStatus)
+			w.Write([]byte(`{"current":{"temperature_2m":-2.4,"weather_code":0,"is_day":0},"daily":{"time":["2026-11-07","2026-11-08","2026-11-09"],` +
+				`"weather_code":[3,95,71],"temperature_2m_max":[1,10.4,-1],"temperature_2m_min":[0,0,0],"precipitation_sum":[0,0,0]}}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	oldW, oldWA, oldGeo, oldFc, oldMap := vars.APIConfig.Weather, forkWeatherAPIForecastURL, search.GeocodeURL, search.ForecastURL, forkWeatherMapPath
+	t.Cleanup(func() {
+		vars.APIConfig.Weather, forkWeatherAPIForecastURL, search.GeocodeURL, search.ForecastURL, forkWeatherMapPath = oldW, oldWA, oldGeo, oldFc, oldMap
+	})
+	vars.APIConfig.Weather.Enable, vars.APIConfig.Weather.Key, vars.APIConfig.Weather.Provider = key != "", key, "weatherapi.com"
+	forkWeatherAPIForecastURL, search.GeocodeURL, search.ForecastURL = srv.URL+"/wa", srv.URL+"/geo", srv.URL+"/fc"
+	forkWeatherMapPath = "../../../weather-map.json"
+	return waCalls
+}
+
+func TestForkGetWeather(t *testing.T) {
+	lang.UseForTest(t, lang.Estonian)
+	cases := []struct {
+		name, key, speech, units    string
+		wa, geo, fc                 int
+		cond, at, place, temp, unit string
+		waCalls                     int
+	}{
+		{"keyless now °C", "", "mis ilm on?", "C", 200, 200, 200, "Stars", "", "Keila", "-2", "C", 0},
+		{"keyless now °F", "", "mis ilm on?", "F", 200, 200, 200, "Stars", "", "Keila", "28", "F", 0},
+		{"keyless homme", "", "mis ilm homme on?", "C", 200, 200, 200, "Thunderstorms", "2026-11-08 12:00", "Keila", "10", "C", 0},
+		{"keyless ülehomme", "", "kas ülehomme sajab?", "C", 200, 200, 200, "Snow", "2026-11-09 12:00", "Keila", "-1", "C", 0},
+		{"open-meteo down → weatherapi homme", "K", "mis ilm homme on?", "C", 200, 500, 200, "Rain", "2026-11-08 12:00", "Tallinn", "9", "C", 1},
+		{"open-meteo down → weatherapi now °F", "K", "mis ilm on?", "F", 200, 200, 500, "Sunny", "2026-11-07 17:00", "Tallinn", "40", "F", 1},
+		{"weatherapi down → open-meteo homme", "K", "mis ilm homme on?", "C", 500, 200, 200, "Thunderstorms", "2026-11-08 12:00", "Keila", "10", "C", 1},
+		{"both down", "K", "mis ilm homme on?", "C", 500, 500, 500, "", "test", "Home", "", "", 1},
+	}
+	for _, c := range cases {
+		waCalls := fakeWeather(t, c.key, c.wa, c.geo, c.fc)
+		cond, _, at, place, temp, unit := weatherParser(c.speech, "Home", c.units)
+		if c.at == "" { // Open-Meteo "now" is the server clock
+			at = ""
+		}
+		if c.at == "test" {
+			cond, temp, unit = "", "", ""
+		}
+		got := strings.Join([]string{cond, at, place, temp, unit}, "|")
+		want := strings.Join([]string{c.cond, c.at, c.place, c.temp, c.unit}, "|")
+		if got != want || *waCalls != c.waCalls {
+			t.Errorf("%s: %s, weatherapi calls %d; want %s, %d", c.name, got, *waCalls, want, c.waCalls)
+		}
+	}
+}
+
+func TestForkGetWeatherLeavesOWM(t *testing.T) {
+	fakeGeo(t, "openweathermap.org", "[]")
+	if _, ok := forkGetWeather("Tallinn", "C", 0); ok {
+		t.Error("openweathermap.org with a key: forkGetWeather took it, want upstream's branch")
 	}
 }
