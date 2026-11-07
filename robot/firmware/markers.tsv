@@ -36,5 +36,3 @@
 0011-night-window.patch	src	engine/aiComponent/behaviorComponent/sleepTracker.cpp	kSleepTracker_moning_hour, CONSOLE_GROUP, 9,
 0011-night-window.patch	src	clad/src/clad/types/behaviorComponent/sleepingTypes.clad	  NightWindow,
 0011-night-window.patch	bin	lib/libcozmo_engine.so	my-vector.NightWindow
-0012-no-gpu.patch	src	coretech/vision/engine/tfliteModel.cpp	my-vector.NoGpu
-0012-no-gpu.patch	bin	lib/libcozmo_engine.so	my-vector.NoGpu
