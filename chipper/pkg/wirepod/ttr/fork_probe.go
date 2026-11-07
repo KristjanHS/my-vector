@@ -58,5 +58,9 @@ func ForkProbeLLM(ctx context.Context, transcribedText, esn string) (target, ans
 	if len(resp.Choices) == 0 {
 		return target, "", nil
 	}
-	return target, removeSpecialCharacters(resp.Choices[0].Message.Content), nil
+	answer = removeSpecialCharacters(resp.Choices[0].Message.Content)
+	if resp.Choices[0].FinishReason == openai.FinishReasonLength {
+		answer = forkCutTail(answer, true) // as the stream loops' forkDropCut
+	}
+	return target, answer, nil
 }

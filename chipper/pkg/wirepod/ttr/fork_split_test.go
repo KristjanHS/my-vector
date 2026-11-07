@@ -2,6 +2,7 @@ package wirepod_ttr
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -30,17 +31,64 @@ func TestForkSplitSentence(t *testing.T) {
 
 // forkStream runs chunks through the stream loop's steps: one split per chunk, then the EOF flush.
 func forkStream(chunks ...string) []string {
-	var out []string
+	out, _ := forkStreamCut(false, chunks...)
+	return out
+}
+
+// forkStreamCut is forkStream with the EOF forkDropCut; full is the loop's fullfullRespText after it.
+func forkStreamCut(cut bool, chunks ...string) (out []string, full string) {
 	buf := ""
 	for _, c := range chunks {
 		buf += c
+		full += c
 		for s, r, ok := forkSplitSentence(buf); ok; s, r, ok = forkSplitSentence(buf) {
 			out, buf = append(out, s), r
 		}
 	}
+	forkDropCut(cut, out, &full, &buf)
 	out, buf, _ = forkFlushHeld(out, buf)
 	out, _ = forkFlushUnpunctuated(out, buf)
-	return out
+	return out, full
+}
+
+func TestForkCutTail(t *testing.T) {
+	for _, c := range []struct {
+		tail string
+		none bool
+		want string
+	}{
+		{" Ta lendas koju. Ja siis", true, "Ta lendas koju."},
+		{" Ja siis", false, ""},
+		{" Ja siis", true, "Ja siis"}, // nothing said yet: the fragment beats silence
+		{" Aasta on 2026.", false, "Aasta on 2026."},
+		{" Kell on 10.1", false, ""}, // a number cut mid-way is not a sentence end
+		{" Kell on 10.10. Siis", false, "Kell on 10.10."},
+	} {
+		if got := forkCutTail(c.tail, c.none); got != c.want {
+			t.Errorf("forkCutTail(%q, %v) = %q, want %q", c.tail, c.none, got, c.want)
+		}
+	}
+}
+
+func TestForkDropCut(t *testing.T) {
+	for _, c := range []struct {
+		cut    bool
+		chunks []string
+		want   []string
+	}{
+		{true, []string{"Lohe elas mäel.", " Ta lendas", " koju ja"}, []string{"Lohe elas mäel."}},
+		{false, []string{"Lohe elas mäel.", " Ta lendas"}, []string{"Lohe elas mäel.", "Ta lendas"}},
+		{true, []string{"Lohe elas", " mäel ja"}, []string{"Lohe elas mäel ja"}},
+		{true, []string{"Tere.", " Aasta on 2026", "."}, []string{"Tere.", "Aasta on 2026."}},
+	} {
+		got, full := forkStreamCut(c.cut, c.chunks...)
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("forkStreamCut(%v, %q) = %q, want %q", c.cut, c.chunks, got, c.want)
+		}
+		if spoken := strings.Join(got, " "); c.cut && full != spoken {
+			t.Errorf("cut %q: full = %q, want the spoken %q (else upstream adds the tail back)", c.chunks, full, spoken)
+		}
+	}
 }
 
 func TestForkStreamKeepsNumbers(t *testing.T) {

@@ -127,7 +127,7 @@ func TestForkPromptReplyCap(t *testing.T) {
 		want            int
 	}{
 		{ollamaEndpoint, "qwen3.5:4b", 300},
-		{"https://api.anthropic.com/v1", "claude-haiku-5-5", 400},
+		{"https://api.anthropic.com/v1", "claude-haiku-5-5", 1024},
 	} {
 		useKnowledge(t, "custom", k.endpoint, k.model)
 		checkCap(t, k.model, CreateAIReq("hi", "esn", false, true), k.want)
@@ -156,7 +156,7 @@ func TestForkPromptReplyCapProfile(t *testing.T) {
 		profile         llm.Profile
 		want            int
 	}{
-		{ollamaEndpoint, "qwen3.5:4b", llm.Profile{Provider: llm.Claude, Model: "claude-haiku-5-5"}, 400},
+		{ollamaEndpoint, "qwen3.5:4b", llm.Profile{Provider: llm.Claude, Model: "claude-haiku-5-5"}, 1024},
 		{"https://api.anthropic.com/v1", "claude-haiku-5-5", llm.Profile{Provider: llm.Ollama, Model: "qwen3.5:4b"}, 300},
 	} {
 		useKnowledge(t, "custom", k.endpoint, k.model)
