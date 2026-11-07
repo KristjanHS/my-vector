@@ -93,7 +93,8 @@ print(json.dumps({"enable":True,"provider":e["P"],"endpoint":e["E"],"model":e["M
 }
 
 # Smoke test of kgsim.go's request: same endpoint, key, model, stream, temperature, top_p and reasoning rule;
-# no command prompt, chat history or 2048-token cap. Key goes through the environment, never argv.
+# reply cap = prompt.ReplyCap (Claude 1024, it thinks inside the cap; Ollama 300); no command prompt or chat history.
+# Key goes through the environment, never argv.
 ping() {
   local q=${1:-Why is the sky blue? Answer in one sentence.}
   get_kg | Q=$q python3 -I -c 'import json,os,sys,time,urllib.parse,urllib.request
@@ -102,7 +103,7 @@ if not c.get("enable"): sys.exit("LLM is off — run: scripts/llm.sh use PRESET"
 base={"openai":"https://api.openai.com/v1","together":"https://api.together.xyz/v1"}.get(c["provider"],c.get("endpoint","")).rstrip("/")
 model=c["model"] or "gpt-4o-mini"
 sysmsg=c.get("openai_prompt") or "You are a helpful, animated robot called Vector. Keep the response concise yet informative."
-body={"model":model,"stream":True,"temperature":1,"max_completion_tokens":300,
+body={"model":model,"stream":True,"temperature":1,"max_completion_tokens":1024 if model.lower().startswith("claude") else 300,
       "messages":[{"role":"system","content":sysmsg},{"role":"user","content":os.environ["Q"]}]}
 if not model.lower().startswith("claude"): body["top_p"]=1
 if c["provider"]=="custom" and urllib.parse.urlparse(base).port==11434:  # forkAIReq/forkReplyCap (fork_prompt.go)
