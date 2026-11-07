@@ -30,10 +30,12 @@ jq -nc --arg t "$phrase" --arg v "$voice" --arg l "$lang" '{text: $t, voice: $v,
 if ((manual)); then # no PC audio from WSL: the user plays this file on cue
   win_dir=${WIN_DIR:-/mnt/c/Users/PC/Documents}
   "$ffmpeg" -v error -y -f s16le -ar 16000 -ac 1 -i "$say_pcm" "$W/say-$lang.wav"
-  # A player holding the file open blocks the overwrite; phrase + voice are fixed per lang, so its copy is the same clip.
-  if ! err=$(cp "$W/say-$lang.wav" "$win_dir/say-$lang.wav" 2>&1); then
-    [[ -s $win_dir/say-$lang.wav ]] || { echo "SETUP: $err" >&2; exit 2; }
-    echo "say-$lang.wav not overwritten (open in your player?) — keeping that copy: $err"
+  # Never rewrite an existing copy: a player holding it open loses the file. Phrase + voice are fixed per lang,
+  # so it is the same clip — delete it to regenerate.
+  if [[ -s $win_dir/say-$lang.wav ]]; then
+    echo "keeping existing $win_dir/say-$lang.wav (delete it to regenerate)"
+  elif ! err=$(cp "$W/say-$lang.wav" "$win_dir/say-$lang.wav" 2>&1); then
+    echo "SETUP: $err" >&2; exit 2
   fi
   win_path="C:${win_dir#/mnt/c}/say-$lang.wav" win_path=${win_path//\//\\}
 fi
