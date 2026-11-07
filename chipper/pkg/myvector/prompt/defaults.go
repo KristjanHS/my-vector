@@ -32,7 +32,7 @@ func ReplyCap(brain string) int {
 	if brain == Ollama {
 		return 300
 	}
-	return 400
+	return 1024 // Claude thinks inside the cap (plan ruling RC)
 }
 
 // LangLine is the {lang} block: et-EE only.
