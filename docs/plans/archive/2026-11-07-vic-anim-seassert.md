@@ -1,6 +1,6 @@
 # vic-anim SeAssert nrgainv.c:191 — root-cause hunt (option C)
 
-Status: **parked — no repro** (0 hits in 10 gdb rounds + 5 plain restarts, 2026-11-07). Resume on the next S1 at step 2.
+Status: **CLOSED WITHOUT SHIPPING 2026-11-07 — no repro** (0 hits in 10 gdb rounds + 5 plain restarts). On the next S1, resume at step 1.
 
 ## Background
 
