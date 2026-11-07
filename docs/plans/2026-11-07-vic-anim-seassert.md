@@ -49,8 +49,8 @@ re-ship, **C = dig deeper with robot restarts (chosen; the power-on sound on eac
    - Not yet run even once: watch round 1 (attach works? `handle all` too noisy? does a timeout INT detach
      cleanly?) before leaving it to loop.
    - Code review of `catch.sh` is owed after the first working run.
-3. **Stopping rule (user ruling 2026-11-07):** stop at the first hit. 20 rounds with no hit (P ≈ 19 % at 8 %) ⇒
-   re-run the clone's `deploy-v.sh` (same binary, user OK'd) with the catcher attached after its restart.
+3. **Stopping rule (user ruling 2026-11-07):** stop at the first hit. Restarts: 5 attached, no hit (round 6 = fault 800,
+   cut). Next `catch.sh -d 5`: ship deploy (deploy-v.sh + settings.sh), round 1 watched; a miss is inconclusive.
 4. **Read the hit:**
    - table ≠ file values → **runtime memory corruption** of `.data` → find the writer (watchpoint on the table
      with the same gdb tooling).
