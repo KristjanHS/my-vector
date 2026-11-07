@@ -2,6 +2,7 @@ package wirepod_ttr
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"time"
 
@@ -23,7 +24,17 @@ var forkListening = func() *listen.State {
 	return s
 }()
 
-// forkHearer decides overheard utterances (Stage 3.2's /myvector/listen/heard calls Heard).
+// forkJoiner turns listen.sh clips (listen.ClipAPI) into utterances for forkHearer.
+var forkJoiner = &listen.Joiner{
+	STT:   func(pcm []byte) (string, error) { return listen.STT(lang.Current(), pcm) },
+	Heard: func(u listen.Utterance) { go forkHearer.Heard(u) },
+}
+
+func init() {
+	http.HandleFunc(listen.ClipAPI, listen.ClipHandler(forkListening, forkJoiner, func(l string) { logger.Println(l) }))
+}
+
+// forkHearer decides overheard utterances.
 var forkHearer = &listen.Hearer{
 	State: forkListening,
 	Client: func() (*openai.Client, string, bool) {
