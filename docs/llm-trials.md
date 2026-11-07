@@ -118,9 +118,8 @@ scripts/llm.sh use claude                   # claude-haiku-5-5, cheapest; expect
 scripts/llm.sh use claude --commands --intentgraph --remember   # then the step-2 tests, on Claude
 ```
 
-- **"Low effort":** wire-pod sends no thinking/effort settings, so Claude answers straight away
-  without extended thinking. That is the cheapest and fastest mode already. The endpoint
-  (`api.anthropic.com/v1/chat/completions`) ignores `reasoning_effort` — even `"bogus"` returns 200.
+- **Thinking:** claude-haiku-5-5 thinks by default inside `max_completion_tokens` (keep `prompt.ReplyCap` ≥1024);
+  `reasoning_effort` does not disable it, body `"thinking":{"type":"disabled"}` does (`robot/work/live-check/claude_think.py`).
 - Larger model later: `scripts/llm.sh models claude`, then e.g. `scripts/llm.sh use claude claude-sonnet-5-5`.
 - Spend: check usage in the Anthropic Console (the workspace that owns the key). A spoken answer is a
   few hundred tokens, so the credit lasts a long time on Haiku.
