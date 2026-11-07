@@ -1,4 +1,4 @@
-// Command listenprobe scores candidate active-listening prompts and models (active-listening.md, et-listen-model.md (docs/plans/)).
+// Command listenprobe scores candidate active-listening prompts and models (2026-11-07-active-listening.md, 2026-11-07-et-listen-model.md (docs/plans/)).
 //
 //	go run ./pkg/myvector/listenprobe [-config ../../../my-vector/chipper/myvectorConfig.json] [-set dev,holdout -lang et-EE -models a,b -arm "prompt 2" -show]   # from chipper/
 //
@@ -98,7 +98,7 @@ var dev = []snippet{
 	{lang.Estonian, "answered", []string{"mis kell pood täna kinni läheb?"}, "üheksa, ma vaatasin hommikul.", false},
 }
 
-// confirm: written before any et-listen-model.md Stage 1.3 run, used only to confirm its winner (E5).
+// confirm: written before any 2026-11-07-et-listen-model.md (docs/plans/) Stage 1.3 run, used only to confirm its winner (E5).
 var confirm = []snippet{
 	{lang.Estonian, "question", []string{"teeme täna õhtul pannkooke."}, "mitu muna ühe liitri piima kohta pannkoogitainasse käib? kas keegi teab?", true},
 	{lang.Estonian, "question", []string{"homme läheme matkale."}, "kui kaugel tallinnast lahemaa rahvuspark üldse on?", true},
@@ -194,7 +194,7 @@ func main() {
 		langs = []string{*langF}
 	}
 	var snippets []snippet
-	for _, name := range strings.Split(*setF, ",") {
+	for _, name := range list(*setF, "-set") {
 		s, ok := sets[name]
 		if !ok {
 			die("-set: dev, holdout or confirm, comma-separated")
@@ -219,7 +219,7 @@ func main() {
 	byModel := map[string]int{}
 	if *models != "" {
 		*alt = false
-		for _, m := range strings.Split(*models, ",") {
+		for _, m := range list(*models, "-models") {
 			ts = append(ts, target{m, ollama(m), langs, len(groups)})
 			groups = append(groups, m)
 		}
@@ -262,6 +262,9 @@ func main() {
 		gsc := make([]map[string]score, len(groups))
 		failed := make([]bool, len(groups))
 		for _, tg := range ts {
+			if !hasLang(snippets, tg.langs) {
+				continue
+			}
 			cfg := openai.DefaultConfig(tg.t.Key)
 			cfg.BaseURL = tg.t.BaseURL
 			cl := openai.NewClientWithConfig(cfg)
@@ -305,6 +308,9 @@ func main() {
 			sortD(ms)
 			fmt.Printf("  %-34s", tg.name)
 			for _, l := range tg.langs {
+				if sc[l].n == 0 {
+					continue
+				}
 				fmt.Printf("  %s %d/%d fs %d", l, sc[l].ok, sc[l].n, sc[l].falseSpeak)
 			}
 			fmt.Printf("  median %5d ms  max %5d ms", ms[len(ms)/2].Milliseconds(), ms[len(ms)-1].Milliseconds())
@@ -344,7 +350,7 @@ func main() {
 				}
 			}
 			fmt.Printf("  median %d ms  pass=%v\n", v.med.Milliseconds(), v.pass)
-			if v.pass && (best == nil || better(v, *best)) {
+			if v.pass && a.sys == listen.Prompt && (best == nil || better(v, *best)) { // only the shipped prompt wins (E7)
 				best = &v
 			}
 		}
@@ -362,6 +368,28 @@ func main() {
 func contains(xs []string, x string) bool {
 	for _, y := range xs {
 		if y == x {
+			return true
+		}
+	}
+	return false
+}
+
+// list splits a comma-separated flag; empty or repeated entries are refused.
+func list(s, flagName string) []string {
+	var out []string
+	for _, x := range strings.Split(s, ",") {
+		x = strings.TrimSpace(x)
+		if x == "" || contains(out, x) {
+			die(flagName + ": empty or repeated entry")
+		}
+		out = append(out, x)
+	}
+	return out
+}
+
+func hasLang(ss []snippet, langs []string) bool {
+	for _, s := range ss {
+		if contains(langs, s.l) {
 			return true
 		}
 	}
