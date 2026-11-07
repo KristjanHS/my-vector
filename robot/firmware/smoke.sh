@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# On-robot smoke test (make robot-test; make ship after deploy): units up and stable, SDK gateway open, clean vic-robot log, wire-pod link, docked,
+# On-robot smoke test (make robot-test; make ship after deploy): units up and stable, clean vic-robot log, wire-pod link, docked,
 # head moves to both limits, face + speech work, log-level intent, wheels never moved.
 # Usage: smoke.sh   → PASS (exit 0); FAIL (1) names the first failing check; SETUP (2) = no ESN/key/SSH/wire-pod link.  (env: ESN, SERVER)
 # Moves only the head: check-static.sh S5 fails on a wheel/lift name in this file or fork_smoke.go (denylist), on any `sdk`/api-sdk
@@ -58,7 +58,7 @@ for try in 1 2 3; do
   ((try < 3)) || setup "no SSH to $ip"; sleep 3
 done
 
-step "units up and stable, gateway open (up to 255 s)"
+step "units up and stable (up to 195 s)"
 # P1: units active within 180 s, PIDs unchanged 15 s later (and at the end).
 t0=$(ssh_ 'date +%s' 2>/dev/null) || t0=$(date +%s)
 end=$((SECONDS + 180))
@@ -74,13 +74,6 @@ done
 sleep 15
 same_pids "within 15 s (crash loop?)"
 ok "units active, stable 15 s: $up"
-# P1: the SDK gateway (vic-cloud on :443) accepts TCP within 60 s. It opens ~15 s after vic-cloud starts (jdocs socket
-# retries every 5 s), so a quick ship reached the docked check first: connection refused (2026-11-07, baed0e1).
-end=$((SECONDS + 60)) w0=$SECONDS
-until timeout 3 bash -c ": >/dev/tcp/$ip/443" 2>/dev/null; do
-  ((SECONDS < end)) || die "gateway: $ip:443 not accepting connections within 60 s (vic-cloud)"; sleep 1
-done
-ok "gateway $ip:443 accepts connections (waited $((SECONDS - w0)) s)"
 
 step "wire-pod link"
 # P1: wire-pod reaches the robot within 20 s (else the setup, not the firmware, is broken).
@@ -89,6 +82,14 @@ until [[ $(curl -s -m 20 "$server/api-sdk/conn_test?serial=$esn" || true) == suc
   ((SECONDS < end)) || setup "wire-pod at $server has no link to $esn (conn_test)"; sleep 2
 done
 ok "wire-pod conn_test"
+# P1: an SDK call through wire-pod works within 60 s. conn_test answers from wire-pod's cached robot connection without an
+# RPC; a connection made before the deploy restarted vic-cloud kept failing (connection refused) ~13 s after the robot's
+# :443 was open again (2026-11-07, baed0e1), so retry the real call the docked check uses.
+end=$((SECONDS + 60)) w0=$SECONDS
+until b=$(curl -s -m 20 "$server/api-sdk/get_battery?serial=$esn" || true); [[ $b == *'"battery_volts"'* ]]; do
+  ((SECONDS < end)) || die "SDK via wire-pod: get_battery failing after 60 s: ${b:0:200}"; sleep 2
+done
+ok "SDK via wire-pod: get_battery answers (waited $((SECONDS - w0)) s)"
 
 step "docked, clean vic-robot log"
 # P2: docked before the checks.
