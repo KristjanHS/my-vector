@@ -27,6 +27,7 @@ robot or server: Claude asks first and never runs it unasked. No step makes a ro
 | N4 | Hosts pin: exactly one `/etc/hosts` line `<pc_ip> escapepod.local # my-vector`. Re-apply replaces our marked line and leaves the rest. FAIL if `readlink -f /etc/hosts` is not on `/`. ⚠ hedge: vic-cloud is Go, and Go's resolver honouring nsswitch `files` before `mdns4_minimal` is unproven on the robot (the `curl` checks only prove glibc). | `netguard/apply.sh` |
 | R1 | Rollback timer: `setsid sh -c 'sleep …; [ -e <confirm> ] \|\| <restore>' </dev/null >/dev/null 2>&1 &` (on this robot `wifi.sh` jobs already survive the SSH drop). No `systemd-run` dependency. ⚠ hedge: a robot reboot inside the window loses the timer, so K3(c) and N3 order their persistent writes so that a boot inside the window lands in a working state. | `robot/lib/etc.sh` `arm` |
 | H1 | The robot's sshd host keys may ship in the WireOS image, which would make them identical on every robot. 3.1 probes their path and mtime; if they are image-shipped → a `docs/backlog.md` line, not this plan. | 3.1 probe |
+| L1 | Laptop sshd `:22` stays out of `guarded`: its guard is the Hyper-V rule `WSL-SSH-from-WG` (corp WG peer only, dotfiles `corp-ssh-rdp-wireguard-windows-wsl-setup.md` §5); in `guarded` that peer is dropped. | — |
 
 ## Constants (source is the home; values below)
 

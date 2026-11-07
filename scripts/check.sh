@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace), firmware static checks (check-static.sh), patch 0010 host test (tests/pc-voice.sh), go vet + Fork tests of the patched sdkapp,
+# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace) + scripts/tests/guard.sh, firmware static checks (check-static.sh), patch 0010 host test (tests/pc-voice.sh), go vet + Fork tests of the patched sdkapp,
 # chipper myvector + vars + localization fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir), tts + stt pytest (when each venv exists).
 # Usage: check.sh [--head [rev]]   --head checks only that commit (default HEAD) via a git archive copy;
 #   make ship passes its pinned sha so the checked commit is the one it ships.
@@ -14,11 +14,12 @@ if [[ ${1:-} == --head ]]; then
 fi
 (cd "$repo" && scripts/upstream-drift.sh "${head[@]}")
 shopt -s nullglob # a pre-R6 commit has no robot/*.sh
-for f in "$dir"/robot/*.sh "$dir"/robot/*/*.sh "$dir"/robot/firmware/tests/*.sh "$dir"/scripts/*.sh "$dir"/tts/*.sh "$dir"/et-stt/*.sh; do bash -n "$f" || { echo "syntax: ${f#"$dir"/}" >&2; exit 1; }; done
+for f in "$dir"/robot/*.sh "$dir"/robot/*/*.sh "$dir"/robot/firmware/tests/*.sh "$dir"/scripts/*.sh "$dir"/scripts/tests/*.sh "$dir"/tts/*.sh "$dir"/et-stt/*.sh; do bash -n "$f" || { echo "syntax: ${f#"$dir"/}" >&2; exit 1; }; done
 echo "shell syntax OK"
 if [[ -f $dir/scripts/wire-pod-guard.nft ]] && unshare -rn true 2>/dev/null; then
   unshare -rn /usr/sbin/nft -c -f "$dir/scripts/wire-pod-guard.nft" || { echo "nft syntax: scripts/wire-pod-guard.nft" >&2; exit 1; }
   echo "nft guard syntax OK"
+  if [[ ${#head[@]} -eq 0 ]]; then "$dir"/scripts/tests/guard.sh; fi # diffs against HEAD: tree mode only
 elif [[ -f $dir/scripts/wire-pod-guard.nft ]]; then echo "nft guard check skipped: no unprivileged unshare"; fi
 "$dir"/robot/firmware/check-static.sh
 if [[ -f $dir/robot/firmware/tests/pc-voice.sh ]]; then "$dir"/robot/firmware/tests/pc-voice.sh; fi # SKIPs itself without g++/clone

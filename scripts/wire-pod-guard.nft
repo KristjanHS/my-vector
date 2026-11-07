@@ -3,9 +3,10 @@
 # unauthenticated API (LLM key included), :8091 the TTS service: only this PC and the allowed*/tailnet* sets reach them. Add a device, then commit + `make server-pin`:
 # LAN devices -> allowed4/6; Tailscale devices -> tailnet4/6 (tailscale0 only; re-check `tailscale status` after a device re-auths — its address can change).
 # Never `tailscale serve`/`funnel` these ports: that proxy connects via lo and so bypasses every address check.
-# The ports are hardcoded: a WEBSERVER_PORT override in source.sh needs the same change here.
+# The ports are hardcoded in `guarded`: a WEBSERVER_PORT override in source.sh needs the same change here.
 table inet wirepod_guard
 delete table inet wirepod_guard
+define guarded = { 80, 8080, 8091 }
 table inet wirepod_guard {
 	# Vector (needs :80/ok for its connection check, :8080 for first-time BLE setup) — keep its DHCP lease reserved
 	set allowed4 {
@@ -27,12 +28,12 @@ table inet wirepod_guard {
 	chain input {
 		type filter hook input priority filter; policy accept;
 		# lo = WSL itself; loopback0 = Windows localhost under mirrored networking
-		tcp dport { 80, 8080, 8091 } iifname { "lo", "loopback0" } accept
-		tcp dport { 80, 8080, 8091 } ip saddr @allowed4 accept
-		tcp dport { 80, 8080, 8091 } ip6 saddr @allowed6 accept
-		tcp dport { 80, 8080, 8091 } iifname "tailscale0" ip saddr @tailnet4 accept
-		tcp dport { 80, 8080, 8091 } iifname "tailscale0" ip6 saddr @tailnet6 accept
-		tcp dport { 80, 8080, 8091 } limit rate 6/minute log prefix "wirepod-guard drop: "
-		tcp dport { 80, 8080, 8091 } drop
+		tcp dport $guarded iifname { "lo", "loopback0" } accept
+		tcp dport $guarded ip saddr @allowed4 accept
+		tcp dport $guarded ip6 saddr @allowed6 accept
+		tcp dport $guarded iifname "tailscale0" ip saddr @tailnet4 accept
+		tcp dport $guarded iifname "tailscale0" ip6 saddr @tailnet6 accept
+		tcp dport $guarded limit rate 6/minute log prefix "wirepod-guard drop: "
+		tcp dport $guarded drop
 	}
 }
