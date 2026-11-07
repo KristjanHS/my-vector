@@ -118,12 +118,39 @@ func TestNapTimeout(t *testing.T) {
 	oldURL, oldT := NapURL, NapTimeout
 	NapURL, NapTimeout = func(string) string { return srv.URL }, 50*time.Millisecond
 	t.Cleanup(func() { NapURL, NapTimeout = oldURL, oldT })
-	start := time.Now()
-	if err := Nap("x", time.Now().Add(time.Hour)); err == nil || time.Since(start) > time.Second {
-		t.Errorf("Nap = %v after %v, want a timeout error within NapTimeout", err, time.Since(start))
+	done := make(chan error, 1)
+	go func() { done <- Nap("x", time.Now().Add(time.Hour)) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("Nap = nil against a hung console, want a timeout error")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Nap ignored NapTimeout")
 	}
 	t.Setenv("MYVECTOR_NAP", "off")
 	if err := Nap("x", time.Time{}); !errors.Is(err, ErrNapOff) {
 		t.Errorf("MYVECTOR_NAP=off: Nap = %v, want ErrNapOff", err)
+	}
+}
+
+func TestNapValueAndStatus(t *testing.T) {
+	t.Setenv("MYVECTOR_NAP", "")
+	var got []string
+	code := http.StatusOK
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.Query().Get("value"))
+		w.WriteHeader(code)
+	}))
+	t.Cleanup(srv.Close)
+	old := NapURL
+	NapURL = func(string) string { return srv.URL }
+	t.Cleanup(func() { NapURL = old })
+	if err := Nap("x", time.Time{}); err != nil || len(got) != 1 || got[0] != "0" {
+		t.Errorf("Nap(zero) = %v, sent %v; want value=0 (nap off)", err, got)
+	}
+	code = http.StatusInternalServerError
+	if err := Nap("x", time.Unix(1700000000, 0)); err == nil || got[1] != "1700000000" {
+		t.Errorf("Nap on a 500 = %v, sent %v; want an error and value in epoch seconds", err, got)
 	}
 }
