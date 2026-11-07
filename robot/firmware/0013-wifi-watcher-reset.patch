@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Sat, 7 Nov 2026 20:10:00 +0200
+Subject: [PATCH] wifi-watcher-reset
+
+vic-switchboard WifiWatcher: reset the failed-autoconnect count whenever the robot is on WiFi,
+so only consecutive failures (5) restart wpa_supplicant + connman. wire-pod's WiFi switch
+(connmanctl connect) makes each switchboard attempt fail InProgress; the count never reset, so
+every 3rd-5th switch restarted connman mid-switch (robot log 2026-11-07 19:58:12, sudo by net).
+Logs my-vector.WifiWatcherReset.
+---
+ platform/switchboard/switchboardd/wifiWatcher.cpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/platform/switchboard/switchboardd/wifiWatcher.cpp b/platform/switchboard/switchboardd/wifiWatcher.cpp
+index 5272e52a..421287bb 100644
+--- a/platform/switchboard/switchboardd/wifiWatcher.cpp
++++ b/platform/switchboard/switchboardd/wifiWatcher.cpp
+@@ -59,6 +59,12 @@ void WifiWatcher::ConnectIfNoWifi() {
+   if((wifiState.connState == Anki::Wifi::WiFiConnState::CONNECTED) ||
+     (wifiState.connState == Anki::Wifi::WiFiConnState::ONLINE)) {
+     // robot is on wifi, so carry on!
++    // my-vector: count only consecutive failed autoconnects. A WiFi switch by another tool (connmanctl connect)
++    // makes each attempt fail InProgress; never reset, those added up to a wpa_supplicant/connman restart.
++    if(_connectErrorCount > 0) {
++      Log::Write("WifiWatcher: on wifi again, my-vector.WifiWatcherReset of %d failed autoconnects", _connectErrorCount);
++      _connectErrorCount = 0;
++    }
+     return;
+   }
+ 
