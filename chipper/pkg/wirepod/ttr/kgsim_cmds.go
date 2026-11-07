@@ -198,7 +198,7 @@ func GetActionsFromString(input string) []RobotAction {
 			continue
 		}
 
-		cmdPlusParam := strings.Split(strings.TrimSpace(strings.Split(spl, "}}")[0]), "||")
+		cmdPlusParam := append(strings.Split(strings.TrimSpace(strings.Split(spl, "}}")[0]), "||"), "") // fork: {{cmd}} with no || was an index panic
 		cmd := strings.TrimSpace(cmdPlusParam[0])
 		param := strings.TrimSpace(cmdPlusParam[1])
 		action := CmdParamToAction(cmd, param)

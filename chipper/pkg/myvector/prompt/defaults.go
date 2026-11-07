@@ -52,12 +52,12 @@ func SpeechBlock() string {
 
 // Commands is the {commands} block; emotions = playAnimationWI's ParamChoices, followUp offers newVoiceRequest.
 func Commands(emotions string, followUp bool) string {
-	s := "You can act by writing {{command||parameter}} in your reply, e.g. \"{{playAnimationWI||happy}} Hello!\". Only these:\n" +
-		"playAnimationWI shows an emotion while you talk: " + emotions + ".\n" +
-		"playAnimation, same emotions, pauses your speech; only when asked to animate.\n" +
-		"getImage||front takes a photo; say so first, end the sentence with it."
+	s := "Act by writing {{command||parameter}} in your reply, e.g. \"{{playAnimationWI||happy}} Hello!\". Only these:\n" +
+		"{{playAnimationWI||emotion}} while you talk; emotions: " + emotions + ".\n" +
+		"{{playAnimation||emotion}} pauses your speech; only when asked to animate.\n" +
+		"{{getImage||front}} takes a photo; say so first, end the sentence with it."
 	if followUp {
-		s += "\nnewVoiceRequest||now listens again; put it last, only after a question."
+		s += "\n{{newVoiceRequest||now}} listens again; put it last, only after a question."
 	}
 	return s
 }

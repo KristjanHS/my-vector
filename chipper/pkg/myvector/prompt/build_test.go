@@ -37,12 +37,12 @@ func TestRenderGolden(t *testing.T) {
 }
 
 func TestRenderDropsEmptyBlocks(t *testing.T) {
-	got := Render(Default(Ollama), Vars{Now: "NOW", Speech: "SPEECH"})
+	got := Render(Default(Ollama), Vars{Now: "NOW", Speech: "SPEECH", User: " \n "})
 	if want := persona + "\n\nSPEECH\n\nNOW"; got != want {
 		t.Errorf("Render with empty blocks = %q, want %q", got, want)
 	}
-	// block text is not rescanned: a tag inside a block stays literal
-	if got := Render("{commands}", Vars{Commands: "{{playAnimationWI||happy}} {now}"}); got != "{{playAnimationWI||happy}} {now}" {
+	// block text is not rescanned, whatever the tag order: each block names the other's tag
+	if got := Render("{now}|{commands}", Vars{Now: "{commands}", Commands: "{{playAnimationWI||happy}} {now}"}); got != "{commands}|{{playAnimationWI||happy}} {now}" {
 		t.Errorf("block rescanned: %q", got)
 	}
 }
