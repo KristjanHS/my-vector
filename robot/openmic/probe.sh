@@ -7,12 +7,9 @@
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
-# shellcheck source=robot/env.sh
-. "$here/../env.sh"
+# shellcheck source=robot/openmic/lib.sh
+. "$here/lib.sh"
 W=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")/robot/work/openmic
-tts=${TTS_URL:-http://127.0.0.1:8091} stt=${STT_URL:-http://127.0.0.1:8092} api=${WIREPOD_URL:-http://127.0.0.1:8080}
-ffmpeg=$(command -v ffmpeg || echo /opt/ffmpeg/ffmpeg)
-D=/data/data/com.anki.victor/cache/micdata/debugCapture
 n=5 say=1 manual=0 over=0 rescore=
 while [[ ${1:-} == -* ]]; do
   case $1 in
@@ -86,7 +83,6 @@ if ((manual)); then # no PC audio from WSL: the user plays this file on cue
   fi
   win_path="C:${win_dir#/mnt/c}/say-$lang.wav" win_path=${win_path//\//\\}
 fi
-rsh() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 cue() { # the stop phrase, now
   if ((manual)); then printf '\a▶ PLAY NOW: %s (trial %d)\n' "$win_path" "$i" >&2
   else paplay --raw --rate=16000 --channels=1 --format=s16le "$say_pcm"; fi
@@ -97,7 +93,7 @@ suffix=-quiet
 ((say && over)) && suffix=-over
 run=$W/$(date +%Y%m%d-%H%M%S)-$lang$suffix
 mkdir -p "$run"
-curl -fsS -o /dev/null "http://$ip:8889/consolevarset?key=MicData_ClipRecordTime_ms&value=15000"
+clip_ms 15000
 header | tee "$run/results.tsv"
 for ((i = 1; i <= n; i++)); do
   rsh "rm -rf $D"
@@ -106,7 +102,7 @@ for ((i = 1; i <= n; i++)); do
   play=$!
   # pause cue: the clip starts late so the cue, given when play.sh ends (sentence + 2 s), still lands well inside 15 s
   if ((say && !over)); then sleep 3; else sleep 1; fi
-  curl -fsS -o /dev/null "http://$ip:8889/consolefunccall?func=RecordMicDataClip&args="
+  record_clip
   start=$SECONDS
   if ((say && over)); then
     sleep 3
@@ -120,20 +116,11 @@ for ((i = 1; i <= n; i++)); do
     ((SECONDS - start <= 12)) || { echo "SETUP: trial $i: cue at clip +$((SECONDS - start)) s, too late for 15 s — play one short sample" >&2; exit 2; }
   fi
   sleep $((start + 16 - SECONDS > 0 ? start + 16 - SECONDS : 0))
-  for _ in {1..10}; do
-    a=$(rsh "ls -l $D/miccapture_*/*.wav 2>/dev/null | awk '{s+=\$5} END {print NR, s}'"); sleep 1
-    b=$(rsh "ls -l $D/miccapture_*/*.wav 2>/dev/null | awk '{s+=\$5} END {print NR, s}'")
-    [[ $a == "$b" && $a == 2\ * ]] && break
-  done
-  [[ $a == "$b" && $a == 2\ * ]] || { echo "trial $i: clip not saved ($b)" >&2; exit 1; }
+  st=$(saved_clip) || { echo "trial $i: clip not saved ($st)" >&2; exit 1; }
   t=$run/t$i
-  mkdir -p "$t"
-  scp -q "${ssh_opts[@]}" "root@$ip:$D/miccapture_*/*.wav" "$t/"
-  rsh "rm -rf $D"
-  proc=$(find "$t" -name '*.wav' ! -name '*_raw.wav')
-  raw=$(find "$t" -name '*_raw.wav')
-  "$ffmpeg" -v error -y -i "$proc" -ar 16000 -ac 1 -f s16le "$t/proc.pcm"
-  "$ffmpeg" -v error -y -i "$raw" -af 'pan=mono|c0=0.25*c0+0.25*c1+0.25*c2+0.25*c3,dynaudnorm' -ar 16000 -f s16le "$t/raw.pcm"
+  fetch_clip "$t"
+  proc_pcm "$t"
+  raw_pcm "$t"
   score "$i" "$t" | tee -a "$run/results.tsv"
 done
 summary "$run/results.tsv" "$n" | tee "$run/summary.txt"
