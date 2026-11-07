@@ -1,10 +1,13 @@
 package search
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -77,6 +80,12 @@ func TestFillWeather(t *testing.T) {
 	if len(*qs) == 0 || !strings.Contains((*qs)[0], "name=Tartu") {
 		t.Errorf("configured place: queries %q", *qs)
 	}
+	useConfig(t, `{"search": {"weather_place": " Tartu, Estonia"}}`)
+	*qs = nil
+	Fill("kas homme sajab?", lang.Estonian, prompt.Ollama, tln)
+	if len(*qs) == 0 || !slices.Contains(strings.Split((*qs)[0], "&"), "name=Tartu") {
+		t.Errorf("comma-qualified place: queries %q, want name=Tartu", *qs)
+	}
 
 	*qs = nil
 	if got := Fill("räägi nali", lang.Estonian, prompt.Ollama, tln); got != "" || len(*qs) != 0 {
@@ -87,10 +96,21 @@ func TestFillWeather(t *testing.T) {
 		t.Errorf("no place: Fill = %q after %d calls", got, len(*qs))
 	}
 
+	lines := captureLog(t)
 	fakeMeteo(t, 500, geoTallinn)
 	if got := Fill("mis ilm on?", lang.Estonian, prompt.Ollama, tln); got != "" {
 		t.Errorf("geocode 500: Fill = %q", got)
 	}
+	if len(*lines) != 1 || !regexp.MustCompile(`^myvector: search weather open-meteo err \d+ .*500`).MatchString((*lines)[0]) {
+		t.Errorf("geocode 500: log %q, want one status line carrying the error", *lines)
+	}
+	*lines = nil
+	fakeOpenMeteo(t)
+	Fill("mis ilm on?", lang.Estonian, prompt.Ollama, tln)
+	if len(*lines) != 1 || !regexp.MustCompile(`^myvector: search weather open-meteo ok \d+$`).MatchString((*lines)[0]) {
+		t.Errorf("ok: log %q, want one status line", *lines)
+	}
+	*lines = nil
 
 	old := Timeout
 	Timeout = time.Millisecond
@@ -108,4 +128,17 @@ func TestFillWeather(t *testing.T) {
 	if got := Fill("mis ilm on?", lang.Estonian, prompt.Ollama, tln); got != "" {
 		t.Errorf("past Timeout: Fill = %q", got)
 	}
+	if len(*lines) != 1 || !regexp.MustCompile(`^myvector: search weather open-meteo timeout \d+$`).MatchString((*lines)[0]) {
+		t.Errorf("past Timeout: log %q, want one status line", *lines)
+	}
+}
+
+// captureLog swaps logf for one recording each line as fmt.Sprintln would print it.
+func captureLog(t *testing.T) *[]string {
+	t.Helper()
+	var lines []string
+	old := logf
+	logf = func(a ...any) { lines = append(lines, strings.TrimSuffix(fmt.Sprintln(a...), "\n")) }
+	t.Cleanup(func() { logf = old })
+	return &lines
 }
