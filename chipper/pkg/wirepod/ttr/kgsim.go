@@ -300,7 +300,9 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
-				fullRespSlice, fullRespText = forkFlushHeld(fullRespSlice, fullRespText) // my-vector: a sentence held at a digit '.' (fork_split.go)
+				var held string
+				fullRespSlice, fullRespText, held = forkFlushHeld(fullRespSlice, fullRespText) // my-vector: a sentence held at a digit '.' (fork_split.go)
+				forkSignalHeld(speakReady, held)
 				var flushed bool
 				if fullRespSlice, flushed = forkFlushUnpunctuated(fullRespSlice, fullRespText); flushed {
 					isDone = true
@@ -363,7 +365,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 
 			fullfullRespText = fullfullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
 			fullRespText = fullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
-			if sentence, rest, ok := forkSplitSentence(fullRespText); ok { // my-vector: no split at a '.' between digits (fork_split.go)
+			for sentence, rest, ok := forkSplitSentence(fullRespText); ok; sentence, rest, ok = forkSplitSentence(fullRespText) { // my-vector: no split at a '.' between digits (fork_split.go)
 				fullRespSlice = append(fullRespSlice, sentence)
 				fullRespText = rest
 				select {
