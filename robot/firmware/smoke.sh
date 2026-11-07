@@ -171,7 +171,7 @@ r=$(sdk fork_face); [[ $r == ok ]] || die "A2: fork_face: ${r:0:200}"
 ok "A2 face shown"
 # The phrase in wire-pod's current language (fork_say speaks that language's T1); English if the voice API is unreadable.
 # By ear: exclamation, colon/comma pauses, numbers, question rise, several streamed sentences. English counts "one, two, three";
-# Estonian has õ/ä/ö/ü and tts/et_text.py's time ("7 33") and day-ordinal ("kuues november") readings of the current time and date.
+# Estonian has õ/ä/ö/ü and tts/et_text.py's time ("seitse kolmkümmend kolm") and day-ordinal ("kuues november") readings of the current time and date.
 said="Hello! This is Vector's speech test: one, two, three. Can you hear me clearly?"
 if [[ $(curl -s -m 5 "$server/myvector/api/voice" | jq -r .lang 2>/dev/null) == et-EE ]]; then
   et_months=(jaanuar veebruar märts aprill mai juuni juuli august september oktoober november detsember)
