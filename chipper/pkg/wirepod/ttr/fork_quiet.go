@@ -17,16 +17,20 @@ func forkQuiet(req interface{}, voiceText, botSerial string) bool {
 	if !ok {
 		return false
 	}
-	now := time.Now()
+	forkQuietLock(botSerial, phrase, time.Now())
+	IntentPass(req, "intent_system_sleep", voiceText, map[string]string{}, false)
+	return true
+}
+
+// forkQuietLock is a "shut up" match's lock + listen off + nap (wake-word and overheard alike).
+func forkQuietLock(esn, phrase string, now time.Time) {
 	if err := quiet.Set(now.Add(quiet.LockFor), "voice:"+phrase); err != nil {
 		logger.Println("my-vector quiet: lock: " + err.Error())
 	}
-	forkListening.Deactivate(botSerial, "quiet")
-	ip := forkRobotIP(botSerial)
+	forkListening.Deactivate(esn, "quiet")
+	ip := forkRobotIP(esn)
 	forkNaps.Add(1)
-	go func() { defer forkNaps.Done(); forkNap(ip, botSerial, now.Add(quiet.NapFor)) }()
-	IntentPass(req, "intent_system_sleep", voiceText, map[string]string{}, false)
-	return true
+	go func() { defer forkNaps.Done(); forkNap(ip, esn, now.Add(quiet.NapFor)) }()
 }
 
 // forkNaps tracks in-flight naps so tests can wait them out.

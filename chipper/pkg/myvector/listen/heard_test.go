@@ -1,0 +1,156 @@
+package listen
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	openai "github.com/sashabaranov/go-openai"
+)
+
+type rig struct {
+	h      *Hearer
+	now    time.Time
+	reply  string
+	calls  int
+	user   string // the last LLM user message
+	said   []string
+	quiet  []string
+	locked bool
+}
+
+const esn = "00e20100"
+
+func newRig(t *testing.T) *rig {
+	r := &rig{now: time.Date(2026, 11, 7, 12, 0, 0, 0, time.Local), reply: "SKIP"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+		var req openai.ChatCompletionRequest
+		json.NewDecoder(q.Body).Decode(&req)
+		r.calls++
+		r.user = req.Messages[len(req.Messages)-1].Content
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"role": "assistant", "content": r.reply}}}})
+	}))
+	t.Cleanup(srv.Close)
+	cfg := openai.DefaultConfig("ollama")
+	cfg.BaseURL = srv.URL + "/v1"
+	c := openai.NewClientWithConfig(cfg)
+	r.h = &Hearer{
+		State:  NewState(),
+		Client: func() (*openai.Client, string, bool) { return c, Model, true },
+		Say:    func(_, text string) error { r.said = append(r.said, text); return nil },
+		Locked: func(time.Time) bool { return r.locked },
+		Quiet:  func(_, p string) { r.quiet = append(r.quiet, p) },
+		Now:    func() time.Time { return r.now },
+	}
+	r.h.State.Activate(esn, r.now)
+	return r
+}
+
+// hear overhears text in a 2 s clip ending now, after advancing the clock by d.
+func (r *rig) hear(d time.Duration, text string) {
+	r.now = r.now.Add(d)
+	r.h.Heard(Utterance{ESN: esn, Text: text, Start: r.now.Add(-2 * time.Second), End: r.now})
+}
+
+func TestHeardSkipAndSpeak(t *testing.T) {
+	r := newRig(t)
+	r.hear(time.Second, "we should water the plants.")
+	if r.calls != 1 || len(r.said) != 0 {
+		t.Fatalf("SKIP: calls %d said %v", r.calls, r.said)
+	}
+	r.reply = "Once every two weeks is plenty."
+	r.hear(5*time.Second, "how often does a cactus need water?")
+	if r.calls != 2 || len(r.said) != 1 || r.said[0] != r.reply {
+		t.Fatalf("SPEAK: calls %d said %v", r.calls, r.said)
+	}
+	if want := User([]string{"we should water the plants."}, "how often does a cactus need water?"); r.user != want {
+		t.Fatalf("user message %q, want %q", r.user, want)
+	}
+}
+
+func TestHeardCooldown(t *testing.T) {
+	r := newRig(t)
+	r.reply = "Hi there."
+	r.hear(time.Second, "does vector like the shelf?")
+	r.hear(20*time.Second, "do you think so, vector?")
+	if r.calls != 1 || len(r.said) != 1 {
+		t.Fatalf("inside Cooldown: calls %d said %v", r.calls, r.said)
+	}
+	r.hear(Cooldown, "vector, are you there?")
+	if r.calls != 2 || len(r.said) != 2 {
+		t.Fatalf("after Cooldown: calls %d said %v", r.calls, r.said)
+	}
+}
+
+func TestHeardAutoOff(t *testing.T) {
+	r := newRig(t)
+	r.hear(IdleOff, "anyone home?")
+	if r.calls != 0 || r.h.State.Active(esn, r.now) {
+		t.Fatalf("IdleOff: calls %d, still on", r.calls)
+	}
+	r = newRig(t)
+	r.now = time.Date(2026, 11, 7, NightFrom-1, 50, 0, 0, time.Local)
+	r.h.State.Activate(esn, r.now)
+	r.hear(15*time.Minute, "good night everyone")
+	if r.calls != 0 || r.h.State.Active(esn, r.now) {
+		t.Fatalf("night entry: calls %d, still on", r.calls)
+	}
+}
+
+func TestHeardPhrasesFirst(t *testing.T) {
+	r := newRig(t)
+	r.hear(time.Second, "deactivate active listening")
+	if r.calls != 0 || r.h.State.Active(esn, r.now) || len(r.said) != 1 || r.said[0] != Confirm(false, false) {
+		t.Fatalf("off phrase: calls %d said %v", r.calls, r.said)
+	}
+	r = newRig(t)
+	r.hear(time.Second, "vector, shut up")
+	if r.calls != 0 || r.h.State.Active(esn, r.now) || len(r.quiet) != 1 || r.quiet[0] != "shut up" || len(r.said) != 0 {
+		t.Fatalf("quiet phrase: calls %d quiet %v said %v", r.calls, r.quiet, r.said)
+	}
+}
+
+func TestHeardEchoGate(t *testing.T) {
+	r := newRig(t)
+	r.reply = "It is eight."
+	from := r.now.Add(time.Second)
+	r.h.State.Spoken(esn, from, from.Add(3*time.Second)) // a wake-word LLM answer
+	r.hear(5*time.Second, "it is eight.")                // clip 2..4 s after from: inside the answer
+	if r.calls != 0 {
+		t.Fatalf("own speech: %d LLM calls", r.calls)
+	}
+	r.hear(3*time.Second+EchoPad, "what time is it?") // clip clear of the answer + EchoPad
+	if r.calls != 1 || len(r.said) != 1 {
+		t.Fatalf("wake-word answers must not start Cooldown: calls %d said %v", r.calls, r.said)
+	}
+	r = newRig(t)
+	r.h.State.Turn(esn, r.now)
+	r.hear(TurnTail, "what's the weather")
+	if r.calls != 0 {
+		t.Fatalf("inside a wake-word turn: %d LLM calls", r.calls)
+	}
+	r.hear(EchoPad+2*time.Second, "anyway, the weather")
+	if r.calls != 1 {
+		t.Fatalf("after the turn: %d LLM calls", r.calls)
+	}
+}
+
+func TestHeardLockedAndLog(t *testing.T) {
+	r := newRig(t)
+	r.h.LogDir = t.TempDir()
+	r.reply = "Mars is the fourth planet."
+	r.locked = true
+	r.hear(time.Second, "mars is closest to the sun")
+	if r.calls != 1 || len(r.said) != 0 {
+		t.Fatalf("locked: calls %d said %v", r.calls, r.said)
+	}
+	b, _ := os.ReadFile(filepath.Join(r.h.LogDir, r.now.Format("2006-01-02")+".txt"))
+	if !strings.Contains(string(b), "[SPEAK] mars is closest to the sun") {
+		t.Fatalf("listen log %q", b)
+	}
+}

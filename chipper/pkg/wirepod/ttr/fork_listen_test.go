@@ -3,6 +3,7 @@ package wirepod_ttr
 import (
 	"os"
 	"testing"
+	"time"
 
 	pb "github.com/digital-dream-labs/api/go/chipperpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
@@ -85,5 +86,17 @@ func TestResolveWhileOn(t *testing.T) {
 	forkListening.Deactivate("00e20100", "phrase")
 	if got := brain(); got != "claude claude-haiku-5-5" {
 		t.Errorf("off again: %q, want Claude back", got)
+	}
+}
+
+func TestForkListenStampsTurn(t *testing.T) {
+	freshListening(t)
+	now := time.Now()
+	forkListening.Activate("on", now)
+	if forkListen(nil, "what time is it", "on") || forkListen(nil, "what time is it", "off") {
+		t.Fatal("a plain ask must route on")
+	}
+	if !forkListening.Echo("on", now, now.Add(time.Second)) {
+		t.Fatal("a wake-word ask while on must open an echo window")
 	}
 }

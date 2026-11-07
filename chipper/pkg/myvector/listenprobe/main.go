@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/listen"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -25,11 +26,11 @@ const (
 	maxMedian     = 2 * time.Second
 )
 
-const speakRules = "Speak only when: someone asks a question nobody has answered, someone states a clear factual mistake, someone mentions you (Vector) by name, or there is a clear opening for a short fun remark."
-
-const quietRules = "Stay quiet for small talk, one side of a phone call, TV or radio, private or emotional talk, unfinished sentences, and questions someone already answered. When unsure, stay quiet."
-
-const persona = "You are Vector, a small home robot. You overhear people talking nearby as speech-to-text lines, with no speaker names. "
+const (
+	speakRules = listen.SpeakRules
+	quietRules = listen.QuietRules
+	persona    = listen.Persona
+)
 
 // arm is one way of turning a snippet into SKIP or a reply.
 type arm struct {
@@ -41,8 +42,7 @@ type arm struct {
 var arms = []arm{
 	{name: "prompt 1", sys: persona + "Usually you stay quiet. " + speakRules +
 		" Otherwise reply exactly SKIP. If you speak, reply with one or two short sentences in the conversation's language, nothing else."},
-	{name: "prompt 2", sys: persona + speakRules + " " + quietRules +
-		" To stay quiet, reply with the single word SKIP. To speak, reply with one or two short, friendly sentences in the same language as the conversation. Never explain your choice."},
+	{name: "prompt 2", sys: listen.Prompt},
 	{name: "two-call", sys: persona + speakRules + " " + quietRules +
 		" Should Vector speak now? Answer YES or NO only.",
 		answer: persona + "You decided to join in. Reply to the newest line with one or two short, friendly sentences in the same language as the conversation."},
@@ -102,18 +102,7 @@ var dev = []snippet{
 	{lang.Estonian, "answered", []string{"mis kell pood täna kinni läheb?"}, "üheksa, ma vaatasin hommikul.", false},
 }
 
-func user(s snippet) string {
-	var b strings.Builder
-	b.WriteString("Earlier:\n")
-	if len(s.before) == 0 {
-		b.WriteString("(nothing)\n")
-	}
-	for _, l := range s.before {
-		b.WriteString(l + "\n")
-	}
-	b.WriteString("Newest line:\n" + s.now)
-	return b.String()
-}
+func user(s snippet) string { return listen.User(s.before, s.now) }
 
 type target struct {
 	name    string
@@ -134,10 +123,7 @@ func ask(c *openai.Client, model, sys, msg string, max int) (string, error) {
 	return strings.TrimSpace(res.Choices[0].Message.Content), nil
 }
 
-func skip(s string) bool {
-	s = strings.ToUpper(strings.TrimSpace(s))
-	return s == "" || strings.HasPrefix(s, "SKIP")
-}
+func skip(s string) bool { return !listen.Parse(s) }
 
 // run answers one snippet with one arm: speak?, the reply (if any), the whole time.
 func run(c *openai.Client, model string, a arm, s snippet) (bool, string, time.Duration, error) {
