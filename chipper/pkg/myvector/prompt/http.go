@@ -44,12 +44,16 @@ type reply struct {
 	Tags           []string              `json:"tags"`
 	Required       []string              `json:"required"`
 	UpstreamIgnore bool                  `json:"upstream_prompt_ignored"`
+	LoadError      string                `json:"load_error"` // the store file did not load: built-ins shown, saves refused
 }
 
 func current() reply {
-	s := Load()
+	s, err := load()
 	r := reply{Brains: map[string]brainReply{}, About: s.About, AboutCap: AboutCap, Tags: KnownTags, Required: RequiredTags,
 		UpstreamIgnore: UpstreamPrompt() != ""}
+	if err != nil {
+		r.LoadError = err.Error()
+	}
 	for _, b := range []string{Claude, Ollama} {
 		t, saved := s.Templates[b]
 		if !saved {

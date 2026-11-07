@@ -105,7 +105,8 @@ sysmsg=c.get("openai_prompt") or "You are a helpful, animated robot called Vecto
 body={"model":model,"stream":True,"temperature":1,"max_completion_tokens":300,
       "messages":[{"role":"system","content":sysmsg},{"role":"user","content":os.environ["Q"]}]}
 if not model.lower().startswith("claude"): body["top_p"]=1
-if c["provider"]=="custom" and urllib.parse.urlparse(base).port==11434: body["reasoning_effort"]="none"  # forkAIReq (fork_prompt.go)
+if c["provider"]=="custom" and urllib.parse.urlparse(base).port==11434:  # forkAIReq/forkReplyCap (fork_prompt.go)
+    body["reasoning_effort"]="none"; body["max_tokens"]=body.pop("max_completion_tokens")
 req=urllib.request.Request(base+"/chat/completions",json.dumps(body).encode(),
     {"Content-Type":"application/json","Authorization":"Bearer "+c.get("key","")})
 print("->", c["provider"], base, "model="+model)

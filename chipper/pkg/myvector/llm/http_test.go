@@ -19,6 +19,7 @@ type fakeAPI struct {
 	tags, models atomic.Int32
 	tagsFail     atomic.Bool
 	tagsSlow     chan struct{} // non-nil: /api/tags waits on it
+	ping         atomic.Value  // the last chat request body
 	*httptest.Server
 }
 
@@ -50,6 +51,7 @@ func newFakeAPI(t *testing.T, slow bool) *fakeAPI {
 			if !strings.Contains(string(b), TestPrompt) {
 				t.Errorf("ping body %s", b)
 			}
+			f.ping.Store(string(b))
 			io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"OK"}}]}`)
 		default:
 			http.NotFound(w, r)
@@ -161,6 +163,9 @@ func TestLLMTestHandler(t *testing.T) {
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil || got.Reply != "OK" {
 		t.Fatalf("ollama test: %d %s", w.Code, w.Body)
 	}
+	if b := f.ping.Load().(string); !strings.Contains(b, `"max_tokens":32`) || strings.Contains(b, "max_completion_tokens") {
+		t.Errorf("ollama ping cap: %s, want max_tokens only", b)
+	}
 	if w := postTest(`{"lang":"et-EE","provider":"claude","model":"claude-haiku-5-5"}`); w.Code != 400 {
 		t.Fatalf("claude test without key: %d, want 400", w.Code)
 	}
@@ -169,6 +174,9 @@ func TestLLMTestHandler(t *testing.T) {
 	}
 	if w := postTest(`{"lang":"en-US","provider":"claude","model":"claude-haiku-5-5"}`); w.Code != 200 {
 		t.Fatalf("claude test: %d %s", w.Code, w.Body)
+	}
+	if b := f.ping.Load().(string); !strings.Contains(b, `"max_completion_tokens":32`) || strings.Contains(b, `"max_tokens"`) {
+		t.Errorf("claude ping cap: %s, want max_completion_tokens only", b)
 	}
 	if w := postTest(`{"lang":"xx","provider":"ollama","model":"m"}`); w.Code != 400 {
 		t.Fatalf("bad lang: %d", w.Code)

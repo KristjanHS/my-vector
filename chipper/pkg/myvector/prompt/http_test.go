@@ -2,8 +2,12 @@ package prompt
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -39,6 +43,41 @@ func TestPromptAPIRejectsUnknownTag(t *testing.T) {
 	}
 }
 
+func TestPromptAPIRejectsNonJSON(t *testing.T) {
+	path, _ := useStore(t)
+	req := httptest.NewRequest(http.MethodPost, API, strings.NewReader(`{"action":"about","about":"Mari"}`))
+	req.Header.Set("Content-Type", "text/plain")
+	w := httptest.NewRecorder()
+	APIHandler(w, req)
+	if _, err := os.Stat(path); w.Code != http.StatusUnsupportedMediaType || !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("text/plain post: %d, file stat err %v (want 415, nothing written)", w.Code, err)
+	}
+}
+
+func TestPromptAPIWriteFailureIs500(t *testing.T) {
+	_, _ = useStore(t)
+	dir := filepath.Join(t.TempDir(), "missing")
+	Path = func() string { return filepath.Join(dir, "myvectorPrompt.json") }
+	if w := post(t, APIHandler, `{"action":"about","about":"Mari"}`); w.Code != http.StatusInternalServerError {
+		t.Errorf("unwritable store: %d %q, want 500", w.Code, w.Body.String())
+	}
+}
+
+func TestPromptAPICorruptStore(t *testing.T) {
+	path, _ := useStore(t)
+	os.WriteFile(path, []byte("{not json"), 0o644)
+	w := post(t, APIHandler, `{"action":"save","brain":"claude","template":"Hi."}`)
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("save over a corrupt store: %d, want 500", w.Code)
+	}
+	get := httptest.NewRecorder()
+	APIHandler(get, httptest.NewRequest(http.MethodGet, API, nil))
+	var r reply
+	if json.Unmarshal(get.Body.Bytes(), &r); !strings.Contains(r.LoadError, "fix or delete it") || r.Brains[Claude].Template != Default(Claude) {
+		t.Errorf("GET over a corrupt store: load_error %q", r.LoadError)
+	}
+}
+
 func TestPromptAPISaveRoundTrip(t *testing.T) {
 	_, _ = useStore(t)
 	old := UpstreamPrompt
@@ -54,7 +93,7 @@ func TestPromptAPISaveRoundTrip(t *testing.T) {
 	if !c.Saved || c.Template != "Be brief.\n\n{user}" || len(c.Versions) != 1 || strings.Join(c.Appended, " ") != strings.Join(RequiredTags, " ") {
 		t.Errorf("claude after save: %+v", c)
 	}
-	if o.Saved || o.Template != Default(Ollama) || o.Budget != Budget(Ollama) || r.About != "Mari" || !r.UpstreamIgnore {
+	if o.Saved || o.Template != Default(Ollama) || o.Budget != Budget(Ollama) || r.About != "Mari" || !r.UpstreamIgnore || r.LoadError != "" {
 		t.Errorf("reply: ollama %+v, about %q, upstream ignored %v", o, r.About, r.UpstreamIgnore)
 	}
 	get := httptest.NewRecorder()
@@ -96,9 +135,12 @@ func TestPromptPageServed(t *testing.T) {
 	if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
 		t.Fatalf("page: %d %s", w.Code, w.Header().Get("Content-Type"))
 	}
-	for _, want := range []string{API + `"`, PreviewAPI + `"`, `id="tmpl"`, `id="about"`, `id="versions"`, `id="meter"`, "--accent:"} {
+	for _, want := range []string{API + `"`, PreviewAPI + `"`, `id="tmpl"`, `id="about"`, `id="versions"`, `id="meter"`, "--accent:", "if (cur.load_error) notes.push("} {
 		if !strings.Contains(b, want) {
 			t.Errorf("page lacks %s", want)
 		}
+	}
+	if strings.Contains(b, `$("warn").innerHTML`) {
+		t.Error("notices built with innerHTML: server text must go in via textContent")
 	}
 }
