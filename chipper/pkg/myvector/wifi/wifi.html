@@ -113,8 +113,9 @@
             <button type="button" id="show" aria-pressed="false">Show</button>
           </div>
         </div>
-        <p class="hint" id="addHint">2.4 GHz WPA/WPA2 networks only. Saving restarts Vector's WiFi (~20 s offline).
-          The password goes to Vector only: wire-pod keeps no copy and this page never shows it again.</p>
+        <p class="hint" id="addHint">2.4 GHz WPA/WPA2 networks only. Saving restarts Vector's WiFi (~10 s offline).
+          The password is stored on Vector only: wire-pod keeps no copy and this page never shows it again.
+          It crosses your home network to wire-pod unencrypted (wire-pod's web UI is plain HTTP).</p>
         <div><button type="submit" class="primary" id="save">Save to Vector</button></div>
       </div>
     </form>
@@ -141,7 +142,7 @@
           el("span", { className: "badge" + (n.connected ? " on" : ""), textContent: n.connected ? "Connected now" : n.seen ? "In range" : "Not in range" }),
           forget);
       }) : [el("li", { className: "hint", textContent: "None saved." })]));
-      const others = nets.filter((n) => n.seen && !n.saved);
+      const others = nets.filter((n) => n.seen && !n.saved && !n.ssid.includes("�")); // a non-UTF-8 name cannot be typed back
       $("seen").replaceChildren(...others.map((n) =>
         el("button", { type: "button", textContent: n.ssid, title: "Vector sees this network now", onclick: () => { $("ssid").value = n.ssid; $("pw").focus(); } })));
     }
@@ -153,18 +154,20 @@
       return JSON.parse(text);
     }
 
+    // load(true) is a retry while Vector restarts its WiFi: no status, and a failure keeps the buttons locked.
     async function load(quiet = false) {
       if (!quiet) status("Asking Vector (scans for networks, ~5 s)…");
       setBusy(true);
+      let ok = false;
       try {
         nets = (await call("GET")).networks || [];
         render();
         if (!quiet) status("");
-        return true;
+        return ok = true;
       } catch (e) {
         if (!quiet) status("Could not reach Vector: " + e.message, "err");
         return false;
-      } finally { setBusy(false); }
+      } finally { if (ok || !quiet) setBusy(false); }
     }
 
     // After a change Vector's WiFi restarts: wait, then retry the list until Vector answers.
@@ -177,6 +180,7 @@
         await new Promise((r) => setTimeout(r, 10000));
       }
       status(msg + ", but Vector has not answered for 80 s. If it stays offline, reboot it.", "err");
+      setBusy(false);
     }
 
     async function forgetNet(n) {

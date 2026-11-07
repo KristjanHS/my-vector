@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -38,6 +39,8 @@ var Timeout = 20 * time.Second
 
 // Run runs wifi.sh args with stdin and returns its stdout, stderr and exit code (-1: it did not run); tests replace it.
 var Run = run
+
+var changing sync.Mutex
 
 //go:embed wifi.html
 var page []byte
@@ -152,6 +155,10 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "GET or POST", http.StatusMethodNotAllowed)
 		return
+	}
+	if r.Method == http.MethodPost { // one change at a time: two would overlap their connman restarts
+		changing.Lock()
+		defer changing.Unlock()
 	}
 	out, errOut, code := Run(r.Context(), stdin, args...)
 	if code != 0 {
