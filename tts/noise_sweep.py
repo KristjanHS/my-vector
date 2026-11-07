@@ -1,5 +1,6 @@
 """STT misses of "Kell on" (and hour-minute fillers) in an Estonian voice's clock line per Piper noise level → server.PIPER_NOISE (needs myvector-stt, et-EE):
-robot/work/tts/venv/bin/python -I tts/noise_sweep.py [takes=20] [voice=mari]"""
+robot/work/tts/venv/bin/python -I tts/noise_sweep.py [takes=20] [voice=mari]
+The level is per model (all its speakers share it): sweep every speaker of the model before changing it."""
 
 import json
 import os
