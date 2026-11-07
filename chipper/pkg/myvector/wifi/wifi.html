@@ -169,16 +169,18 @@
       } finally { setBusy(false); }
     }
 
-    // A change counts from Vector's next boot (no WiFi restart): show it, then re-read the list.
+    // A change counts from Vector's next boot (no WiFi restart): say so, then re-read the list.
     async function changed(msg) {
-      await load(true);
-      status(msg + ". Vector uses this from its next boot — reboot it once when convenient.", "ok");
+      const done = msg + ". Vector uses this from its next boot — reboot it once when convenient.";
+      status(done + " Updating the list…", "ok");
+      status((await load(true)) ? done : done + " (Could not re-read the list: press Refresh.)", "ok");
     }
 
     async function forgetNet(n) {
       if (busy || !confirm(`Forget "${n.ssid}" on Vector?`)) return;
       setBusy(true);
-      try { const r = await call("POST", { action: "forget", hex: n.hex }); await changed(`Forgot "${n.ssid}"`); }
+      status("Forgetting…");
+      try { await call("POST", { action: "forget", hex: n.hex }); await changed(`Forgot "${n.ssid}"`); }
       catch (e) { status(e.message, "err"); setBusy(false); }
     }
 
@@ -191,6 +193,7 @@
       if (known && !confirm(`"${ssid}" is saved already. Replace its password?`)) return;
       setBusy(true);
       try {
+        status("Saving to Vector…");
         await call("POST", { action: "add", ssid, password });
         $("pw").value = ""; $("ssid").value = "";
         await changed(`Saved "${ssid}"`);

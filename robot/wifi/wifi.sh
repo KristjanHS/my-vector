@@ -7,8 +7,9 @@
 #        wifi.sh forget <ssid-hex>
 #   add/forget only change connman's files and never restart connman: the robot stays online, and the change
 #   counts from its next boot (a restart can get a new DHCP address, so the robot looks offline: 2026-11-07).
-#   A network not in range now is picked up as soon as it appears. The connected network is refused (a wrong
-#   password would strand the robot until BLE setup). wire-pod's WiFi page runs this.
+#   Re-saving a saved network drops connman's in-memory copy (else it saves the old password back): until the next
+#   boot connman will not fail over to that one. list counts a network as saved only while its file holds a password.
+#   The connected network is refused (a wrong password would strand the robot until BLE setup). wire-pod's WiFi page runs this.
 #   Exit 0 = done; 1 = bad input or SSH failed; 2 = SETUP (robot/env.sh); 3 = refused: the robot is on that network now.
 set -uo pipefail
 export LC_ALL=C # byte lengths and [[:print:]] in ASCII
@@ -21,13 +22,15 @@ if ((EUID == 0)) && owner_home=$(getent passwd "$(stat -c %U "$robot_dir")" | cu
   ssh_opts+=(-o "UserKnownHostsFile=$owner_home/.ssh/known_hosts")
 fi
 
-# Remote prelude: $id = wlan0's service for $hex; connected = the online/ready service ("*AO …" / "*AR …").
+# Remote prelude: $id = wlan0's service for $hex, $d its connman dir (connman runs from /data/lib/connman, compiled
+# in), $s the stage dir; connected = the online/ready service ("*AO …" / "*AR …").
 prelude='mac=$(tr -d : </sys/class/net/wlan0/address); id=wifi_${mac}_${hex}_managed_psk; d=/data/lib/connman/$id
+s=/data/lib/connman-staged
 connected() { connmanctl services | awk '\''substr($0, 3, 1) ~ /[OR]/ { print $NF }'\''; }'
-# Remote apply: refuse the connected one; drop connman's in-memory copy of the network (an old password it would
-# save back over the new file), then delete its file. A refusal also clears add's staged copy. connman runs from /data/lib/connman (compiled in).
-apply='connected | grep -qx "$id" && { rm -rf /data/lib/connman-staged; echo connected; exit 0; }
-connmanctl config "$id" --remove >/dev/null 2>&1
+# Remote apply: clear any stage left by an earlier cut-off add (it may hold a password), refuse the connected
+# network, and for a saved one drop connman's in-memory copy (connmanctl config --remove).
+apply='rm -rf $s; connected | grep -qx "$id" && { echo connected; exit 0; }
+[ -d "$d" ] && connmanctl config "$id" --remove >/dev/null 2>&1
 '
 
 remote() { # remote <hex> <script>; stdin passes through
@@ -52,7 +55,7 @@ esc() { local v=${1//\\/\\\\}; printf '%s' "${v// /\\s}"; }
 case ${1:-} in
   list)
     (($# == 1)) || die "usage: wifi.sh list"
-    remote 0 'for f in /data/lib/connman/wifi_${mac}_*_managed_psk; do [ -f "$f/settings" ] && echo "saved $f"; done
+    remote 0 'for f in /data/lib/connman/wifi_${mac}_*_managed_psk; do grep -qs "^Passphrase=" "$f/settings" && echo "saved $f"; done
 connmanctl scan wifi >/dev/null 2>&1; sleep 3 # a fresh "seen" list: results land after the scan returns
 connmanctl services | awk '\''{ print "seen " $NF }'\''
 connected | sed "s/^/connected /"' </dev/null |
@@ -69,15 +72,15 @@ connected | sed "s/^/connected /"' </dev/null |
     # The file body goes over the SSH stdin from printf (a builtin: no argv, no here-string temp file).
     out=$(printf 'Name=%s\nSSID=%s\nFavorite=true\nAutoConnect=true\nPassphrase=%s\nIPv4.method=dhcp\nIPv6.method=auto\nIPv6.privacy=disabled\n' \
       "$(esc "$ssid")" "$hex" "$(esc "$pw")" |
-      remote "$hex" '{ umask 077; s=/data/lib/connman-staged; rm -rf $s; mkdir -p $s/$id &&
-  { echo "[$id]"; cat; } >$s/$id/settings && grep -q "^Passphrase=" $s/$id/settings; } ||
-  { rm -rf $s; echo "staging failed"; exit 0; }
-'"$apply"'rm -rf $d && mv $s/$id $d && rm -rf $s && echo done') || exit
+      remote "$hex" "$apply"'umask 077; mkdir -p $s/$id && { echo "[$id]"; cat; } >$s/$id/settings &&
+  grep -q "^Passphrase=" $s/$id/settings || { rm -rf $s; echo "staging failed"; exit 0; }
+rm -rf $d; mv $s/$id $d; rm -rf $s
+grep -q "^Passphrase=" $d/settings 2>/dev/null && echo done || echo "move into $d failed"') || exit
     result "$out" "saved '$ssid'"
     ;;
   forget)
     (($# == 2)) && [[ $2 =~ ^([0-9a-f]{2}){1,32}$ ]] || die "usage: wifi.sh forget <ssid-hex>"
-    out=$(remote "$2" '[ -d "$d" ] || { echo missing; exit 0; }
+    out=$(remote "$2" '[ -d "$d" ] || { rm -rf $s; echo missing; exit 0; }
 '"$apply"'rm -rf $d && echo done' </dev/null) || exit
     [[ ${out##*$'\n'} == missing ]] && { echo "ok: not saved on the robot"; exit 0; }
     result "$out" "forgot it"
