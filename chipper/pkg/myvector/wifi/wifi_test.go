@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type call struct {
@@ -148,4 +149,63 @@ func TestAccepts64HexKey(t *testing.T) {
 	if w := do(http.MethodPost, `{"action":"add","ssid":"home","password":"`+strings.Repeat("aB", 32)+`"}`); w.Code != http.StatusOK {
 		t.Fatalf("64-hex key: %d %s", w.Code, w.Body)
 	}
+}
+
+func TestTestSwitchAndJob(t *testing.T) {
+	for _, action := range []string{"test", "switch"} {
+		calls := fake(t, "ok: "+action+" started\n", "", 0)
+		w := do(http.MethodPost, `{"action":"`+action+`","hex":"4c696e77696669325f316b"}`)
+		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "started") {
+			t.Fatalf("%s: %d %s", action, w.Code, w.Body)
+		}
+		if want := []string{action, "4c696e77696669325f316b"}; !reflect.DeepEqual((*calls)[0].args, want) {
+			t.Fatalf("%s args %v", action, (*calls)[0].args)
+		}
+	}
+	calls := fake(t, "failed: Linwifi2_1k did not connect. Vector is back on Linwifi2_2k.\n", "", 0)
+	do(http.MethodGet, "") // a plain GET is still the list
+	r := httptest.NewRequest(http.MethodGet, API+"?job", nil)
+	w := httptest.NewRecorder()
+	Handler(w, r)
+	var rep reply
+	if json.Unmarshal(w.Body.Bytes(), &rep) != nil || !strings.HasPrefix(rep.Message, "failed: ") || rep.Networks != nil {
+		t.Fatalf("?job reply %d %s", w.Code, w.Body)
+	}
+	if got := (*calls)[1].args; !reflect.DeepEqual(got, []string{"status"}) {
+		t.Fatalf("?job args %v", got)
+	}
+	fake(t, "", "wifi: a test/switch is running on the robot; try again when it is done\n", ExitBusy)
+	if w := do(http.MethodPost, `{"action":"switch","hex":"41"}`); w.Code != http.StatusConflict {
+		t.Errorf("busy: %d, want 409", w.Code)
+	}
+	for _, body := range []string{`{"action":"switch","hex":"4; reboot"}`, `{"action":"test"}`} {
+		calls := fake(t, "", "", 0)
+		if w := do(http.MethodPost, body); w.Code != http.StatusBadRequest || len(*calls) != 0 {
+			t.Errorf("%s: %d, calls %d; want 400, none", body, w.Code, len(*calls))
+		}
+	}
+}
+
+func TestRoamTicksAndSkipsWhileChanging(t *testing.T) {
+	old := RoamEvery
+	RoamEvery = 5 * time.Millisecond
+	t.Cleanup(func() { RoamEvery = old })
+	n := make(chan []string, 100)
+	oldRun := Run
+	Run = func(_ context.Context, _ string, args ...string) (string, string, int) { n <- args; return "", "", 0 }
+	t.Cleanup(func() { Run = oldRun })
+	changing.Lock()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { Roam(ctx); close(done) }()
+	time.Sleep(30 * time.Millisecond)
+	if len(n) != 0 {
+		t.Fatalf("roamed %d times while a page change held the lock", len(n))
+	}
+	changing.Unlock()
+	if args := <-n; !reflect.DeepEqual(args, []string{"roam"}) {
+		t.Fatalf("roam args %v", args)
+	}
+	cancel()
+	<-done
 }
