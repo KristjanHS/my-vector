@@ -55,6 +55,23 @@ func geocode(ctx context.Context, st *State, place string) (Place, error) {
 	return p, err
 }
 
+// CachedGeocode is Geocode through the saved places and the open-meteo quota (W5, W17).
+func CachedGeocode(ctx context.Context, place string) (Place, error) {
+	return geocode(ctx, current(), place)
+}
+
+// QuotaForecast is FetchForecast after an open-meteo Take (W5, W17).
+func QuotaForecast(ctx context.Context, lat, lon float64) (Forecast, error) {
+	return forecast(ctx, current(), lat, lon)
+}
+
+func forecast(ctx context.Context, st *State, lat, lon float64) (Forecast, error) {
+	if !st.Take("open-meteo", time.Now()) {
+		return Forecast{}, errCapped
+	}
+	return FetchForecast(ctx, lat, lon)
+}
+
 // Unavailable is the W8 {search} block when no lookup worked.
 func Unavailable(l string) string {
 	reply := "English"
@@ -89,7 +106,11 @@ func Fill(sentence, l, brain string, zone *time.Location) string {
 	}
 	st := current()
 	start := time.Now()
-	if b, ok := st.Get(class, sentence, start); ok {
+	key := sentence // web blocks are sized per brain (W9); the weather block is not
+	if class != Weather {
+		key = brain + " " + sentence
+	}
+	if b, ok := st.Get(class, key, start); ok {
 		logf("myvector: search", class.String(), "cache", "ok", time.Since(start).Milliseconds())
 		return b
 	}
@@ -125,7 +146,7 @@ func Fill(sentence, l, brain string, zone *time.Location) string {
 	if block == "" {
 		return Unavailable(l)
 	}
-	st.Put(class, sentence, block, time.Now())
+	st.Put(class, key, block, time.Now())
 	return block
 }
 
@@ -158,10 +179,7 @@ func weather(ctx context.Context, st *State, place string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !st.Take("open-meteo", time.Now()) {
-		return "", errCapped
-	}
-	f, err := FetchForecast(ctx, p.Lat, p.Lon)
+	f, err := forecast(ctx, st, p.Lat, p.Lon)
 	if err != nil {
 		return "", err
 	}

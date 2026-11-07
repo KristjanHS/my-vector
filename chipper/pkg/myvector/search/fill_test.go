@@ -1,6 +1,8 @@
 package search
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -133,6 +135,27 @@ func TestFillWeather(t *testing.T) {
 	}
 }
 
+func TestQuotaWeatherHelpers(t *testing.T) {
+	ctx := context.Background()
+	qs := fakeOpenMeteo(t)
+	useConfig(t, `{}`)
+	p, err := CachedGeocode(ctx, "Tallinn")
+	if _, err2 := CachedGeocode(ctx, "Tallinn"); err != nil || err2 != nil || len(*qs) != 1 {
+		t.Fatalf("CachedGeocode: %d queries, err %v / %v; want one geocode", len(*qs), err, err2)
+	}
+	if _, err := QuotaForecast(ctx, p.Lat, p.Lon); err != nil {
+		t.Fatal(err)
+	}
+	if u := current().UsedThisMonth("open-meteo", time.Now()); u != 2 {
+		t.Errorf("open-meteo used %d, want 2 (geocode + forecast)", u)
+	}
+	st := current()
+	st.Month, st.Used["open-meteo"] = month(time.Now()), CapOpenMeteo
+	if _, err := QuotaForecast(ctx, p.Lat, p.Lon); !errors.Is(err, errCapped) || len(*qs) != 2 {
+		t.Errorf("capped: err %v after %d queries, want errCapped and no call", err, len(*qs))
+	}
+}
+
 // fakeSearch serves body with status at TavilyURL (tavily) or as a SearXNG server, counting requests.
 func fakeSearch(t *testing.T, status int, body string, delay time.Duration) (string, *int) {
 	t.Helper()
@@ -181,6 +204,9 @@ func TestFillChain(t *testing.T) {
 	if want := `^myvector: search live cache ok \d+$`; len(*lines) != 2 || !regexp.MustCompile(want).MatchString((*lines)[1]) {
 		t.Errorf("log %q, want tavily ok then a cache line", *lines)
 	}
+	if got := Fill(live, lang.Estonian, prompt.Claude, nil); !results(got) || *nT != 1 {
+		t.Errorf("other brain: Fill after %d calls, want a fresh fetch (blocks are sized per brain)", *nT)
+	}
 
 	chainConfig(t, "auto", okT, okS)
 	st := current()
@@ -203,6 +229,9 @@ func TestFillChain(t *testing.T) {
 		}
 		if len(*lines) != 2 || !regexp.MustCompile(`^myvector: search live tavily err \d+ .*`+name).MatchString((*lines)[0]) {
 			t.Errorf("tavily %s: log %q", name, *lines)
+		}
+		if u := current().UsedThisMonth("tavily", now); u != 1 {
+			t.Errorf("tavily %s: used %d, want 1 (a failed attempt still counts)", name, u)
 		}
 	}
 

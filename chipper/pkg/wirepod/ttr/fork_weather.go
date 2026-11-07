@@ -59,7 +59,7 @@ var forkLocationExists = func(loc string) bool {
 	default:
 		ctx, cancel := context.WithTimeout(context.Background(), forkProbeClient.Timeout)
 		defer cancel()
-		p, err := search.Geocode(ctx, loc)
+		p, err := search.CachedGeocode(ctx, loc)
 		return err == nil && strings.EqualFold(p.Name, loc)
 	}
 	resp, err := forkProbeClient.Get(u)
@@ -258,11 +258,11 @@ func forkCladType(text string) string {
 // forkOpenMeteo geocodes the city part of location and answers current (day 0) or that day's max.
 func forkOpenMeteo(ctx context.Context, location, unit string, day int) (forkWeatherReply, error) {
 	city := strings.TrimSpace(strings.Split(location, ",")[0])
-	p, err := search.Geocode(ctx, city)
+	p, err := search.CachedGeocode(ctx, city)
 	if err != nil {
 		return forkWeatherReply{}, err
 	}
-	f, err := search.FetchForecast(ctx, p.Lat, p.Lon)
+	f, err := search.QuotaForecast(ctx, p.Lat, p.Lon)
 	if err != nil {
 		return forkWeatherReply{}, err
 	}
