@@ -7,17 +7,21 @@ import (
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/voice"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
-// Fork voice settings (plan B2), demo (R14) and LLM lists/test, on the default mux the web UI serves.
+// Fork voice settings (plan B2), demo (R14), LLM lists/test and the prompt editor, on the default mux the web UI serves.
 func init() {
 	http.HandleFunc(voice.SettingsPage, voice.PageHandler)
 	http.HandleFunc(voice.SettingsAPI, voice.SettingsHandler)
 	http.HandleFunc(voice.DemoAPI, voice.DemoHandler(forkVoiceRobot))
 	http.HandleFunc(llm.ModelsAPI, llm.ModelsHandler(forkLLMKG))
 	http.HandleFunc(llm.TestAPI, llm.TestHandler(forkLLMKG))
+	http.HandleFunc(prompt.PageURL, prompt.PageHandler)
+	http.HandleFunc(prompt.API, prompt.APIHandler)
+	http.HandleFunc(prompt.PreviewAPI, prompt.PreviewHandler)
 }
 
 func forkLLMKG() llm.KG {

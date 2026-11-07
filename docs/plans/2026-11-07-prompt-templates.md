@@ -1,6 +1,6 @@
 # Prompt templates (slice 2)
 
-Status: Stages 1–2 committed; Stages 3–4 open. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order 2; its rulings P, U, SP, E, P-guard, P-budget, N bind.
+Status: Stages 1–3 committed; Stage 4 open. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order 2; its rulings P, U, SP, E, P-guard, P-budget, N bind.
 
 ## Rulings
 
@@ -28,7 +28,7 @@ Status: Stages 1–2 committed; Stages 3–4 open. Parent: `2026-11-07-system-pr
 | `ReplyCap` claude / ollama | 400 / 300 → `MaxCompletionTokens`, also on the camera follow-up | default; `TestForkPromptReplyCap` |
 | `Budget` claude / ollama | 2000 / 600 tokens, rendered with `prompt.Sample` and empty facts/diary/search | default; `TestValidateBudget` |
 | `AboutCap` | 450 runes (≈150 tokens), shared by both brains | `TestAboutCap` |
-| `RequiredTags` (both brains) | `{now}` `{lang}` `{speech}` `{commands}`; `{user}` `{facts}` `{diary}` `{search}` optional | `TestRenderAppendsMissing` |
+| `RequiredTags` (both brains) | `{speech}` `{commands}` `{now}` `{lang}` (appended in this order); `{user}` `{facts}` `{diary}` `{search}` optional | `TestRenderAppendsMissing` |
 | `Versions` | last 5 saved per brain | `TestVersionsKeepFive` |
 | `prompt.Sample` | 2026-11-07 09:43 Europe/Tallinn, commands on, saved about-me | `TestRenderGolden` |
 

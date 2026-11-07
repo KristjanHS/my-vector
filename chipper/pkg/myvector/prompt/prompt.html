@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wire-Pod - Prompt</title>
+  <!-- Standalone like /myvector/voice: the shared look is copied from voice/settings.html. -->
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f7f8; --surface: #ffffff; --surface-2: #eef0f2; --border: #d3d7dc;
+      --text: #1c1e21; --muted: #5f6368;
+      --accent: #00874a; --accent-hover: #006e3c; --on-accent: #ffffff; --accent-soft: #e3f4ea;
+      --warn-bg: #fff4e0; --warn: #7a4300; --err: #b3261e; --ok: #00743f; --focus: #1a73e8;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #1b1d1f; --surface: #24272a; --surface-2: #2d3135; --border: #41464c;
+        --text: #e8eaed; --muted: #a0a6ad;
+        --accent: #00d16d; --accent-hover: #2fe08a; --on-accent: #0b1a12; --accent-soft: #163626;
+        --warn-bg: #3a2a12; --warn: #ffcc80; --err: #ff8a80; --ok: #5ee39b; --focus: #8ab4f8;
+      }
+    }
+    :root[data-theme="light"] { color-scheme: light; }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #1b1d1f; --surface: #24272a; --surface-2: #2d3135; --border: #41464c;
+      --text: #e8eaed; --muted: #a0a6ad;
+      --accent: #00d16d; --accent-hover: #2fe08a; --on-accent: #0b1a12; --accent-soft: #163626;
+      --warn-bg: #3a2a12; --warn: #ffcc80; --err: #ff8a80; --ok: #5ee39b; --focus: #8ab4f8;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    a { color: var(--accent); }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 32px; }
+    .top { position: sticky; top: 0; z-index: 1; background: var(--bg); border-bottom: 1px solid var(--border); }
+    .bar { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
+    .bar h1 { flex: 1; margin: 0; font-size: 18px; font-weight: 600; }
+    .back { font-size: 14px; text-decoration: none; white-space: nowrap; }
+    button, select, input, textarea { font: inherit; color: inherit; }
+    button {
+      border: 1px solid var(--border); background: var(--surface-2); border-radius: 6px;
+      padding: 6px 12px; cursor: pointer; white-space: nowrap;
+    }
+    button:hover:not(:disabled) { border-color: var(--muted); }
+    button:disabled { opacity: .55; cursor: progress; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+    button.primary.dirty::after { content: " •"; }
+    button.link { border: 0; background: none; padding: 0; color: var(--accent); font-size: 13px; }
+    button.link:hover { text-decoration: underline; }
+    select, input[type=text], input[type=password], textarea {
+      width: 100%; min-width: 0; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px 9px;
+    }
+    textarea { resize: vertical; }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    #status:empty { display: none; }
+    #status { margin: -4px 0 10px; font-size: 14px; color: var(--muted); }
+    #status.ok { color: var(--ok); } #status.err { color: var(--err); }
+    .notices { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+    .notices li { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 7px 10px; font-size: 14px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-top: 16px; }
+    .card > h2 { margin: 0; padding: 12px 16px 0; font-size: 15px; font-weight: 600; }
+    .body { padding: 12px 16px 16px; display: grid; gap: 14px; }
+    .field { display: grid; gap: 4px; }
+    .field > .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .field label, .field .lab { font-size: 13px; font-weight: 600; color: var(--muted); }
+    .hint { font-size: 13px; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
+    .hint.ok { color: var(--ok); } .hint.err { color: var(--err); }
+    .tabs { display: flex; gap: 4px; padding: 8px 8px 0; border-bottom: 1px solid var(--border); }
+    .tabs button {
+      border: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; background: none;
+      padding: 8px 14px; color: var(--muted); font-weight: 600;
+    }
+    .tabs button[aria-selected=true] { color: var(--text); border-bottom-color: var(--accent); }
+    .tabs .dot { color: var(--accent); font-size: 12px; font-weight: 400; margin-left: 6px; }
+    textarea.mono, pre { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chips button { padding: 2px 9px; border-radius: 999px; font: 12px ui-monospace, Menlo, Consolas, monospace; }
+    .chips button.req { border-color: var(--accent); }
+    .chips button.missing { background: var(--warn-bg); color: var(--warn); }
+    pre { margin: 0; padding: 10px; background: var(--surface-2); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; }
+    meter { width: 100%; height: 10px; }
+    .versions { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+    .versions li { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+    .versions code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <header class="bar">
+        <a class="back" href="/myvector/voice" aria-label="Back to voice settings">&larr;<span class="txt"> Voice</span></a>
+        <h1>System prompt</h1>
+        <button type="button" class="primary" id="save">Save</button>
+      </header>
+      <p id="status" role="status" aria-live="polite"></p>
+    </div>
+    <ul id="warn" class="notices"></ul>
+    <section class="card">
+      <div class="tabs" role="tablist" id="tabs">
+        <button type="button" role="tab" data-brain="claude">Claude</button>
+        <button type="button" role="tab" data-brain="ollama">Ollama</button>
+      </div>
+      <div class="body">
+        <div class="field">
+          <div class="head"><label for="tmpl">Template</label><button type="button" class="link" id="reset">Reset to built-in</button></div>
+          <textarea id="tmpl" class="mono" rows="14" spellcheck="false"></textarea>
+          <div class="chips" id="chips" aria-label="Insert a tag"></div>
+          <p class="hint">Click a tag to insert it. Outlined tags are required: one left out is added at the end.</p>
+        </div>
+        <div class="field">
+          <div class="head"><span class="lab">Preview</span>
+            <select id="plang" aria-label="Preview language"><option value="et-EE">Eesti</option><option value="en-US">English</option></select></div>
+          <meter id="meter" min="0" low="0" optimum="0"></meter>
+          <p class="hint" id="tokens"></p>
+          <pre id="preview"></pre>
+        </div>
+        <div class="field">
+          <span class="lab">Saved versions</span>
+          <ul class="versions" id="versions"></ul>
+        </div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>About me</h2>
+      <div class="body">
+        <div class="field">
+          <div class="head"><label for="about">Shared by both brains as {user}</label><span class="hint" id="count"></span></div>
+          <textarea id="about" rows="3"></textarea>
+          <div class="inline"><button type="button" id="saveAbout">Save about me</button></div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const status = (t, kind = "") => { $("status").textContent = t; $("status").className = kind; };
+    let cur = null, brain = "claude", timer = 0;
+
+    async function call(url, body) {
+      const r = await fetch(url, body === undefined ? {} :
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error((await r.text()).trim() || r.statusText);
+      return r.json();
+    }
+
+    function show() {
+      const b = cur.brains[brain];
+      document.querySelectorAll("#tabs button").forEach((t) => t.setAttribute("aria-selected", t.dataset.brain === brain));
+      $("tmpl").value = b.template;
+      $("versions").replaceChildren(...(b.versions || []).map((v, i) => {
+        const li = document.createElement("li"), code = document.createElement("code"), btn = document.createElement("button");
+        code.textContent = (i === 0 && b.saved && v === b.template ? "live · " : "") + v.replace(/\s+/g, " ");
+        btn.type = "button"; btn.textContent = "Restore"; btn.onclick = () => post({ action: "restore", brain, version: i }, "Restored");
+        li.append(code, btn); return li;
+      }));
+      if (!(b.versions || []).length) $("versions").innerHTML = '<li class="hint">None yet: the built-in template is live.</li>';
+      $("about").value = cur.about;
+      $("warn").innerHTML = cur.upstream_prompt_ignored ?
+        "<li>Wire-pod's own “LLM prompt” setting is ignored: this page's template is used instead.</li>" : "";
+      dirty(false); count(); preview();
+    }
+
+    function chips(appended) {
+      $("chips").replaceChildren(...cur.tags.map((t) => {
+        const c = document.createElement("button");
+        c.type = "button"; c.textContent = t;
+        c.className = (cur.required.includes(t) ? "req" : "") + ((appended || []).includes(t) ? " missing" : "");
+        c.title = (appended || []).includes(t) ? "Missing: added at the end" : "Insert";
+        c.onclick = () => { const a = $("tmpl"); a.setRangeText(t, a.selectionStart, a.selectionEnd, "end"); a.focus(); edited(); };
+        return c;
+      }));
+    }
+
+    function count() {
+      const n = [...$("about").value.trim()].length;
+      $("count").textContent = `${n} / ${cur.about_cap}`;
+      $("count").className = "hint" + (n > cur.about_cap ? " err" : "");
+    }
+
+    function dirty(on) { $("save").classList.toggle("dirty", on); }
+    function edited() { dirty($("tmpl").value !== cur.brains[brain].template); clearTimeout(timer); timer = setTimeout(preview, 250); }
+
+    async function preview() {
+      try {
+        const p = await call("/myvector/api/prompt/preview",
+          { brain, template: $("tmpl").value, about: $("about").value, lang: $("plang").value });
+        $("preview").textContent = p.text;
+        Object.assign($("meter"), { max: p.budget, high: p.budget * 0.9, value: Math.min(p.tokens, p.budget) });
+        $("tokens").textContent = `≈ ${p.tokens} / ${p.budget} tokens` + (p.appended && p.appended.length ? ` · added at the end: ${p.appended.join(" ")}` : "");
+        $("tokens").className = "hint" + (p.error ? " err" : "");
+        if (p.error) $("tokens").textContent += ` · can't save: ${p.error}`;
+        chips(p.appended);
+      } catch (e) { $("tokens").textContent = "Preview failed: " + e.message; $("tokens").className = "hint err"; }
+    }
+
+    async function post(body, done) {
+      try { cur = await call("/myvector/api/prompt", body); show(); status(done, "ok"); }
+      catch (e) { status(e.message, "err"); }
+    }
+
+    $("tabs").onclick = (e) => {
+      const b = e.target.dataset && e.target.dataset.brain;
+      if (!b || b === brain) return;
+      if ($("save").classList.contains("dirty") && !confirm("Discard unsaved template changes?")) return;
+      brain = b; show();
+    };
+    $("tmpl").oninput = edited;
+    $("about").oninput = () => { count(); clearTimeout(timer); timer = setTimeout(preview, 250); };
+    $("plang").onchange = preview;
+    $("save").onclick = () => post({ action: "save", brain, template: $("tmpl").value }, "Saved");
+    $("reset").onclick = () => confirm(`Use the built-in ${brain} template?`) && post({ action: "reset", brain }, "Reset to built-in");
+    $("saveAbout").onclick = () => post({ action: "about", about: $("about").value }, "About me saved");
+    call("/myvector/api/prompt").then((r) => { cur = r; show(); }).catch((e) => status("Load failed: " + e.message, "err"));
+  </script>
+</body>
+</html>

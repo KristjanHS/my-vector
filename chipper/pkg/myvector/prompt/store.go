@@ -26,9 +26,10 @@ const AboutCap = 450
 
 const keepVersions = 5
 
-// RequiredTags are appended to a template that lacks them (Complete); the other KnownTags are optional.
+// RequiredTags are appended, in this (the default template's) order, to a template that lacks them (Complete);
+// the other KnownTags are optional.
 var (
-	RequiredTags = []string{"{now}", "{lang}", "{speech}", "{commands}"}
+	RequiredTags = []string{"{speech}", "{commands}", "{now}", "{lang}"}
 	KnownTags    = []string{"{now}", "{lang}", "{user}", "{facts}", "{diary}", "{search}", "{speech}", "{commands}"}
 )
 
@@ -41,6 +42,9 @@ func Budget(brain string) int {
 }
 
 var logf = logger.Println
+
+// Invalid marks a rejected brain, template, about-me or version (the page's 400); any other store error is I/O.
+type Invalid struct{ error }
 
 // Store is myvectorPrompt.json: per-brain saved template and versions (newest first), and the about-me text.
 type Store struct {
@@ -108,7 +112,7 @@ func UserBlock(about string) string {
 // CheckAbout rejects an about-me over AboutCap runes.
 func CheckAbout(about string) error {
 	if n := utf8.RuneCountInString(strings.TrimSpace(about)); n > AboutCap {
-		return fmt.Errorf("about-me is %d characters, over the %d limit", n, AboutCap)
+		return Invalid{fmt.Errorf("about-me is %d characters, over the %d limit", n, AboutCap)}
 	}
 	return nil
 }
@@ -132,11 +136,11 @@ var tagRe = regexp.MustCompile(`\{[A-Za-z_]+\}`)
 // brain's Budget in either language.
 func Validate(brain, tmpl, about string) error {
 	if brain != Claude && brain != Ollama {
-		return fmt.Errorf("unknown brain %q", brain)
+		return Invalid{fmt.Errorf("unknown brain %q", brain)}
 	}
 	for _, tag := range tagRe.FindAllString(tmpl, -1) {
 		if !slices.Contains(KnownTags, tag) {
-			return fmt.Errorf("unknown tag %s", tag)
+			return Invalid{fmt.Errorf("unknown tag %s", tag)}
 		}
 	}
 	if err := CheckAbout(about); err != nil {
@@ -147,7 +151,7 @@ func Validate(brain, tmpl, about string) error {
 		v := Sample(l)
 		v.User = UserBlock(about)
 		if n := Estimate(Render(full, v)); n > Budget(brain) {
-			return fmt.Errorf("%d tokens, over the %s budget of %d", n, brain, Budget(brain))
+			return Invalid{fmt.Errorf("%d tokens, over the %s budget of %d", n, brain, Budget(brain))}
 		}
 	}
 	return nil
@@ -173,7 +177,7 @@ func Restore(brain string, i int) error {
 	s := Load()
 	v := s.Versions[brain]
 	if i < 0 || i >= len(v) {
-		return fmt.Errorf("no %s version %d", brain, i)
+		return Invalid{fmt.Errorf("no %s version %d", brain, i)}
 	}
 	if err := Validate(brain, v[i], s.about()); err != nil {
 		return err
@@ -184,7 +188,7 @@ func Restore(brain string, i int) error {
 // Reset drops brain's saved template, so the built-in default goes live; versions are kept.
 func Reset(brain string) error {
 	if brain != Claude && brain != Ollama {
-		return fmt.Errorf("unknown brain %q", brain)
+		return Invalid{fmt.Errorf("unknown brain %q", brain)}
 	}
 	mu.Lock()
 	defer mu.Unlock()
