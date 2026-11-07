@@ -1,6 +1,6 @@
 # Prompt templates (slice 2)
 
-Status: Stages 1–3 committed; Stage 4 open: Claude story asks reply empty (`-lang en-US -brain claude:claude-haiku-5-5 -llm "Tell me a story about a dragon in exactly six sentences."` → bare `llm:`), fakebot stream, review. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order 2; its rulings P, U, SP, E, P-guard, P-budget, N bind.
+Status: Stages 1–3 committed; Stage 4 open: rulings RC + CT (Claude empty story replies — cause measured: hidden thinking eats the 400 cap), live checks, fakebot stream, review. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order 2; its rulings P, U, SP, E, P-guard, P-budget, N bind.
 
 ## Rulings
 
@@ -18,6 +18,8 @@ Status: Stages 1–3 committed; Stage 4 open: Claude story asks reply empty (`-l
 | DBG | `DEBUG_PRINT_PROMPT=true` logs the rendered prompt (upstream logs the discarded one). | `forkAIReq` |
 | UA | `{user}` = "About the person you are talking with:" + newline + the about-me text; empty about renders empty. | `prompt.UserBlock`; `forkAIReq` |
 | VS | Versions = last 5 saves per brain, newest first (= live); Restore(i) re-saves version i; a save equal to the newest adds none. Reset drops the saved template (built-in default goes live), history kept. | `prompt.Save` `Restore` `Reset` |
+| RC | Claude keeps thinking (default); its `ReplyCap` 400 → 1024. Measured 2026-11-07 on claude-haiku-5-5, cap 400, six-sentence story: thinking uses ~80 tokens typical, once all 400 (86 chars, `finish_reason` length); `routeprobe` gave bare `llm:`. `reasoning_effort` none does not disable it (1/3 cut). | `prompt.ReplyCap` |
+| CT | A reply cut by the cap (`finish_reason` length) ends on its last full sentence: the unfinished tail is dropped; when no sentence finished yet, the fragment is kept (beats "no response"). Both stream loops + `ForkProbeLLM`. | `forkDropCut` `forkCutTail` (fork_split.go); `kgsim.go` `kgsim_cmds.go` EOF; `ForkProbeLLM` |
 | LF | Missing file = defaults, silent; unparsable file, or a brain's template / about failing checks → that part falls back to default + one log line. | `prompt.Load` `Store.Live` `Store.User` |
 
 ## Constants (source is the home; defaults below)
@@ -25,7 +27,7 @@ Status: Stages 1–3 committed; Stage 4 open: Claude story asks reply empty (`-l
 | symbol | value | validated by |
 |---|---|---|
 | `prompt.Estimate` | ceil(runes / 3) tokens | `TestEstimate` |
-| `ReplyCap` claude / ollama | 400 / 300 → Claude `max_completion_tokens`, Ollama `max_tokens` (its /v1 ignores the other), also on the camera follow-up | default; `TestForkPromptReplyCap` |
+| `ReplyCap` claude / ollama | 1024 / 300 (RC) → Claude `max_completion_tokens`, Ollama `max_tokens` (its /v1 ignores the other), also on the camera follow-up | default; `TestForkPromptReplyCap` |
 | `Budget` claude / ollama | 2000 / 600 tokens, rendered with `prompt.Sample` and empty facts/diary/search | default; `TestValidateBudget` |
 | `AboutCap` | 450 runes (≈150 tokens), shared by both brains | `TestAboutCap` |
 | `RequiredTags` (both brains) | `{speech}` `{commands}` `{now}` `{lang}` (appended in this order); `{user}` `{facts}` `{diary}` `{search}` optional | `TestRenderAppendsMissing` |
@@ -39,7 +41,7 @@ Status: Stages 1–3 committed; Stage 4 open: Claude story asks reply empty (`-l
 | Stage 1 — builtin templates on the wire | `pkg/myvector/prompt/{build,defaults}.go` + `_test.go` + `testdata/*.golden`; `ttr/fork_prompt.go` + test | `prompt.Render` `Default` `LangLine` `SpeechBlock` `Commands` `Estimate` `ReplyCap`; `forkAIReq` `forkCameraReq` `forkCommands`; delete `forkETLine`; `{user}` empty | `TestRenderGolden` (et/en × claude/ollama: et has LA line, en has no "Answer in"), `TestRenderDropsEmptyBlocks`, `TestCommandsBlockBudget`, `TestForkPromptReplyCap`, `TestForkPromptEstonian` (rewritten to LA) | `make check` |
 | Stage 2 — store + P-guard | `prompt/store.go` + test; `.gitignore`; `routeprobe` `isolate` | `prompt.Path` (beside `vars.ApiConfigPath`, overridable), `Load` `Save` `SaveAbout` `Reset` `Restore` `Validate` `RequiredTags` `KnownTags`; write via `conf.Update`; `forkAIReq` reads the store; `isolate` copies `myvectorPrompt.json` (must=false) | `TestValidateUnknownTag`, `TestRenderAppendsMissing` (appended + flagged), `TestValidateBudget`, `TestAboutCap`, `TestLoadFallback` (bad file → default + log line), `TestVersionsKeepFive`, `TestReset` | `make check`; `git check-ignore -v chipper/myvectorPrompt.json` |
 | Stage 3 — `/myvector/prompt` page | `prompt/{http.go,prompt.html}` + `http_test.go`; `sdkapp/fork_voice.go` `init`; `voice/settings.html` link + `webroot/index.html` nav link (listed in `upstream-drift.sh`) | `PageHandler`, `APIHandler` (GET; POST save/reset/about/restore via `decode`-style valid), `PreviewHandler` → {text, tokens, budget, appended}; page: brain picker, textarea, tag chips, about-me box + counter, preview, budget meter, save/reset, versions | `TestPromptAPIRejectsUnknownTag` (400), `TestPromptAPISaveRoundTrip`, `TestPreviewReportsAppended`, `TestPromptPageServed` | `make check` |
-| Stage 4 — e2e + review | — | fix-ups only | `scripts/live-check.sh route`; from `chipper/`: `go run ./pkg/myvector/routeprobe -lang et-EE -llm "mis nädalapäev täna on?"` → today's Estonian weekday; `-llm "kui palju on kaks tuhat viissada jagatud viiega?"` → number words, no digits, reply ends in `.`/`!`/`?`; both again with `-brain ollama:<ET model>`; a long-answer `-llm` on Ollama stops by 300 tokens (`max_tokens` honoured); `-lang en-US` → no Estonian; fakebot stream; `code-reviewer` dispatch | `make check` |
+| Stage 4 — e2e + review | `prompt/defaults.go`; `ttr/{fork_split,fork_probe,kgsim,kgsim_cmds}.go` + tests; `upstream-drift.sh` | RC, CT | `TestForkCutTail`, `TestForkDropCut`, `TestForkPromptReplyCap` (1024); the Claude story ask (`-lang en-US -brain claude:claude-haiku-5-5 -llm "Tell me a story about a dragon in exactly six sentences."`) answers non-empty; `scripts/live-check.sh route`; from `chipper/`: `go run ./pkg/myvector/routeprobe -lang et-EE -llm "mis nädalapäev täna on?"` → today's Estonian weekday; `-llm "kui palju on kaks tuhat viissada jagatud viiega?"` → number words, no digits, reply ends in `.`/`!`/`?`; both again with `-brain ollama:<ET model>`; a long-answer `-llm` on Ollama stops by 300 tokens (`max_tokens` honoured); `-lang en-US` → no Estonian; fakebot stream; `code-reviewer` dispatch | `make check` |
 
 ## Owed after Stage 4
 
