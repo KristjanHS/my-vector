@@ -553,3 +553,49 @@ func TestSettingsLLM(t *testing.T) {
 		t.Fatalf("clear key with the profile moved off Claude: %d %s", w.Code, w.Body)
 	}
 }
+
+func TestSettingsSearch(t *testing.T) {
+	tempSettings(t)
+	const base = `{"lang":"en-US","t1":"af_bella","t2":"stock","t1_et":"mari","t2_et":"mari","slow":1`
+	post := func(search string) (*httptest.ResponseRecorder, settingsReply) {
+		t.Helper()
+		w := serve(http.MethodPost, "application/json", base+`,"search":`+search+`}`)
+		var got settingsReply
+		json.Unmarshal(w.Body.Bytes(), &got)
+		return w, got
+	}
+	const tavily, ollama = "tvly-dev-0123456789abcdefWXYZ", "ollama-0123456789abcdefQRST"
+	w, got := post(`{"provider":"tavily","tavily_key":"` + tavily + `","ollama_key":"` + ollama + `","searxng_url":"http://127.0.0.1:9999/","weather_place":"Tartu"}`)
+	if w.Code != 200 {
+		t.Fatalf("POST: %d %s", w.Code, w.Body)
+	}
+	if strings.Contains(w.Body.String(), tavily) || strings.Contains(w.Body.String(), ollama) {
+		t.Fatalf("reply carries a full key: %s", w.Body)
+	}
+	want := searchReply{Provider: "tavily", TavilyKey: "tvly-de…WXYZ", OllamaKey: "ollama-…QRST", SearxngURL: "http://127.0.0.1:9999", WeatherPlace: "Tartu"}
+	if g := got.Search; g.Provider != want.Provider || g.TavilyKey != want.TavilyKey || g.OllamaKey != want.OllamaKey ||
+		g.SearxngURL != want.SearxngURL || g.WeatherPlace != want.WeatherPlace || len(g.Usage) != 4 {
+		t.Fatalf("search reply %+v, want %+v + 4 usage rows", g, want)
+	}
+
+	_, got = post(`{"tavily_key":""}`) // absent fields keep, "" clears
+	if g := got.Search; g.TavilyKey != "" || g.OllamaKey != want.OllamaKey || g.Provider != "tavily" || g.WeatherPlace != "Tartu" {
+		t.Fatalf("after clearing tavily_key: %+v", g)
+	}
+	w = serve(http.MethodGet, "", "")
+	json.Unmarshal(w.Body.Bytes(), &got)
+	if strings.Contains(w.Body.String(), ollama) || got.Search.OllamaKey != want.OllamaKey {
+		t.Fatalf("GET search %+v", got.Search)
+	}
+
+	for _, bad := range []string{`{"provider":"brave"}`, `{"tavily_key":"has space"}`, `{"searxng_url":"ftp://x"}`, `{"weather_place":"a\nb"}`, `{"x":1}`} {
+		if w, _ := post(bad); w.Code != 400 {
+			t.Errorf("search %s: %d, want 400", bad, w.Code)
+		}
+	}
+	w = serve(http.MethodGet, "", "")
+	json.Unmarshal(w.Body.Bytes(), &got)
+	if got.Search.Provider != "tavily" || got.Search.SearxngURL != want.SearxngURL {
+		t.Fatalf("a rejected POST changed search: %+v", got.Search)
+	}
+}
