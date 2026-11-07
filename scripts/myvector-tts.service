@@ -10,7 +10,7 @@ StartLimitBurst=5
 Type=simple
 User=@USER@
 WorkingDirectory=@REPO@
-ExecStartPre=+/usr/sbin/nft -f @REPO@/scripts/wire-pod-guard.nft
+ExecStartPre=+@REPO@/scripts/load-guard.sh
 ExecStart=@WORK@/tts/venv/bin/python -I @REPO@/tts/server.py
 Environment=HF_HOME=@HF_HOME@ HF_HUB_CACHE=@HF_HUB_CACHE@ HF_HUB_OFFLINE=1 TTS_PIPER_DIR=@WORK@/voice-samples/piper-voices
 Restart=on-failure
