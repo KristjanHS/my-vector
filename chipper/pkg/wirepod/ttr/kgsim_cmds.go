@@ -523,6 +523,7 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
+				fullRespSlice, fullRespText = forkFlushHeld(fullRespSlice, fullRespText) // my-vector: a sentence held at a digit '.' (fork_split.go)
 				var flushed bool
 				if fullRespSlice, flushed = forkFlushUnpunctuated(fullRespSlice, fullRespText); flushed {
 					isDone = true
@@ -563,26 +564,11 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 			}
 			fullfullRespText = fullfullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
 			fullRespText = fullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
-			if strings.Contains(fullRespText, "...") || strings.Contains(fullRespText, ".'") || strings.Contains(fullRespText, ".\"") || strings.Contains(fullRespText, ".") || strings.Contains(fullRespText, "?") || strings.Contains(fullRespText, "!") {
-				var sepStr string
-				if strings.Contains(fullRespText, "...") {
-					sepStr = "..."
-				} else if strings.Contains(fullRespText, ".'") {
-					sepStr = ".'"
-				} else if strings.Contains(fullRespText, ".\"") {
-					sepStr = ".\""
-				} else if strings.Contains(fullRespText, ".") {
-					sepStr = "."
-				} else if strings.Contains(fullRespText, "?") {
-					sepStr = "?"
-				} else if strings.Contains(fullRespText, "!") {
-					sepStr = "!"
-				}
-				splitResp := strings.Split(strings.TrimSpace(fullRespText), sepStr)
-				fullRespSlice = append(fullRespSlice, strings.TrimSpace(splitResp[0])+sepStr)
-				fullRespText = splitResp[1]
+			if sentence, rest, ok := forkSplitSentence(fullRespText); ok { // my-vector: no split at a '.' between digits (fork_split.go)
+				fullRespSlice = append(fullRespSlice, sentence)
+				fullRespText = rest
 				select {
-				case speakReady <- strings.TrimSpace(splitResp[0]) + sepStr:
+				case speakReady <- sentence:
 				default:
 				}
 			}
