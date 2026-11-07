@@ -1,6 +1,6 @@
 # WiFi baseline hardening (Stage 0, before the on-robot Tailscale)
 
-Status: staged, no code yet. Executes Stage 0 (0.1–0.4) of `2026-11-07-public-wifi-security.md (docs/plans/)` plus T2,
+Status: Stages 1, 2, 3.1 committed; next Stage 3.2. `[USER]` owed: 1.2 `make server-pin` check, 2.1 live diskguard, 3.1 key copy. Executes Stage 0 (0.1–0.4) of `2026-11-07-public-wifi-security.md (docs/plans/)` plus T2,
 the public server TLS key. The option D spike itself is not planned here. Every `[USER]` slice is a live run against the
 robot or server: Claude asks first and never runs it unasked. No step makes a robot sound.
 
