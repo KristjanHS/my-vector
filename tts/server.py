@@ -45,8 +45,8 @@ VOICES = {
     "albert": ("piper", "et_EE-news-medium@Albert"),
     "kalev": ("piper", "et_EE-news-medium@Kalev"),
 }
-# Piper id -> (noise_scale, noise_w_scale) over the model's own; re-pick with tts/noise_sweep.py
-PIPER_NOISE = {"et_EE-news-medium@Mari": (0.4, 0.6)}
+# Piper model -> (noise_scale, noise_w_scale) over the model's own, for every speaker of it; re-pick with tts/noise_sweep.py
+PIPER_NOISE = {"et_EE-news-medium": (0.4, 0.6)}
 
 log = logging.getLogger("myvector-tts")
 
@@ -220,7 +220,7 @@ class PiperEngine:
             self._voices[model] = self._load(str(self._dir / f"{model}.onnx"))
         v = self._voices[model]
         sid = v.config.speaker_id_map[speaker] if speaker else None
-        noise = PIPER_NOISE.get(voice_id)
+        noise = PIPER_NOISE.get(model)
         extra = dict(noise_scale=noise[0], noise_w_scale=noise[1]) if noise else {}
         chunks = list(v.synthesize(text, syn_config=self._cfg(speaker_id=sid, length_scale=slow, **extra)))
         if not chunks:

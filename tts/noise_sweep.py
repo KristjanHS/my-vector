@@ -17,7 +17,7 @@ from et_text import normalize  # noqa: E402
 
 VOICE = server.VOICES[sys.argv[2] if len(sys.argv) > 2 else "mari"][1]
 LEVELS = [(0.667, 0.8), (0.4, 0.6), (0.2, 0.4)]  # the model default first
-TIMES = ["20:47", "12:00", "08:05", "09:26"]  # 09:26: the "kuni" filler case (bdea4c0)
+TIMES = ["20:47", "12:00", "08:05", "09:26", "20:16"]  # 09:26: the "kuni" filler case (bdea4c0); 20:16: albert's "kuueteist" by ear
 FILLER = re.compile(r"\b(kuni|või)\b", re.I)
 STT = os.environ.get("STT_URL", "http://127.0.0.1:8092")
 
@@ -38,7 +38,7 @@ def main():
         os.environ.get("TTS_PIPER_DIR", root / "robot/work/voice-samples/piper-voices")
     )
     for level in LEVELS:
-        server.PIPER_NOISE[VOICE] = level
+        server.PIPER_NOISE[VOICE.partition("@")[0]] = level
         for t in TIMES:
             text, misses, fillers = normalize(f"Kell on {t}."), [], []
             for _ in range(takes):
