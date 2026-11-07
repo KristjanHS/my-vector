@@ -73,7 +73,7 @@ func judge(key, model, query string, rs []search.Result) (score, error) {
 		fmt.Fprintf(&b, "%d. %s (%s) %s\n%s\n", i+1, r.Title, r.URL, r.Date, r.Snippet)
 	}
 	body, _ := json.Marshal(map[string]any{
-		"model": model, "max_tokens": 64, "system": judgePrompt,
+		"model": model, "max_tokens": 200, "system": judgePrompt, "thinking": map[string]string{"type": "disabled"},
 		"messages": []map[string]string{{"role": "user", "content": b.String()}},
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -92,12 +92,17 @@ func judge(key, model, query string, rs []search.Result) (score, error) {
 		return score{}, fmt.Errorf("judge HTTP %d", res.StatusCode)
 	}
 	var out struct {
-		Content []struct{ Text string } `json:"content"`
+		Content []struct{ Type, Text string } `json:"content"`
 	}
-	if err := json.Unmarshal(raw, &out); err != nil || len(out.Content) == 0 {
+	if err := json.Unmarshal(raw, &out); err != nil {
 		return score{}, fmt.Errorf("judge reply: %v", err)
 	}
-	return parseScore(out.Content[0].Text)
+	for _, c := range out.Content {
+		if c.Type == "text" {
+			return parseScore(c.Text)
+		}
+	}
+	return score{}, errors.New("judge reply has no text block")
 }
 
 type row struct {
@@ -168,6 +173,7 @@ func bench(p search.Provider, st *search.State, key, model string) row {
 		s, err := judge(key, model, q, rs)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "judge %s %q: %v\n", p.Name(), q, err)
+			r.judged = false // one failed judgement voids the row: "-", never picked
 			continue
 		}
 		r.relevance += float64(s.Relevance) / float64(len(queries))
