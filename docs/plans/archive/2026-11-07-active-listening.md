@@ -1,6 +1,6 @@
 # Active listening
 
-Status: Stages 1–4 committed; next 5.1. Code review from `c0b0efb` deferred to 5.1. Owed live: G5 curl 423 (1.3), en-US phrase STT round trip (1.1, needs saved lang en-US), wake word mid-clip (3.3, silent). Stage 3 builds ahead of `2026-11-07-shut-up-sleep.md (docs/plans/)` §Stage 1 verdict (ruled 2026-11-07); the verdict gates 5.2 only.
+Status: ✅ SHIPPED (every stage committed; 5.2 + live checks → `docs/backlog.md` §OWED[USER]).
 
 Ask: Vector listens to all talk, speaks only when he has something relevant. Ollama only, never Claude. On: "hey vector, activate active listening" / "hey vector, aktiveeri aktiivne kuulamine". Off: "deactivate active listening" / "deaktiveeri aktiivne kuulamine". Short forms "active listening on/off", "aktiivne kuulamine sees/välja" too.
 
