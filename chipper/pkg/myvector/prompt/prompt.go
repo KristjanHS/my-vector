@@ -34,7 +34,7 @@ func Now(l string, t time.Time, loc *time.Location) string {
 		zone = t.Format("MST") // "Local" tells the model nothing
 	}
 	if l == lang.Estonian {
-		return fmt.Sprintf("Praegu on %s, %d. %s %d, kell %d.%02d (%s).",
+		return fmt.Sprintf("Praegu on %s, %d. %s %d, kell %d:%02d (%s).",
 			etWeekdays[t.Weekday()], t.Day(), etMonths[t.Month()-1], t.Year(), t.Hour(), t.Minute(), zone)
 	}
 	return fmt.Sprintf("It is %s, %d %s %d, %02d:%02d (%s).", t.Weekday(), t.Day(), t.Month(), t.Year(), t.Hour(), t.Minute(), zone)
