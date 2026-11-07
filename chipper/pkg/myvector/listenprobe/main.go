@@ -1,8 +1,8 @@
-// Command listenprobe scores candidate active-listening prompts (active-listening.md (docs/plans/) Stage 2.1).
+// Command listenprobe scores candidate active-listening prompts and models (active-listening.md, et-listen-model.md (docs/plans/)).
 //
-//	go run ./pkg/myvector/listenprobe [-config ../../../my-vector/chipper/myvectorConfig.json] [-set holdout -model M -arm "prompt 2"]   # from chipper/
+//	go run ./pkg/myvector/listenprobe [-config ../../../my-vector/chipper/myvectorConfig.json] [-set dev,holdout -lang et-EE -models a,b -arm "prompt 2" -show]   # from chipper/
 //
-// Verdict: each language's saved Ollama profile; -alt models are reported only.
+// Verdict: each language's saved Ollama profile, or each -models entry on its own; -alt models are reported only.
 package main
 
 import (
@@ -21,31 +21,27 @@ import (
 )
 
 const (
-	passCorrect   = 17 // of 20
+	passCorrect   = 17 // of 20, scaled to the run's snippet count
 	maxFalseSpeak = 1  // per language
 	maxMedian     = 2 * time.Second
 )
 
 const (
 	speakRules = listen.SpeakRules
-	quietRules = listen.QuietRules
 	persona    = listen.Persona
 )
 
-// arm is one way of turning a snippet into SKIP or a reply.
-type arm struct {
-	name   string
-	sys    string // single-call prompt, or the two-call YES/NO decider
-	answer string // two-call only: the reply prompt after YES
-}
+// arm is one system prompt that turns a snippet into SKIP or a reply.
+type arm struct{ name, sys string }
 
 var arms = []arm{
-	{name: "prompt 1", sys: persona + "Usually you stay quiet. " + speakRules +
+	{"prompt 1", persona + "Usually you stay quiet. " + speakRules +
 		" Otherwise reply exactly SKIP. If you speak, reply with one or two short sentences in the conversation's language, nothing else."},
-	{name: "prompt 2", sys: listen.Prompt},
-	{name: "two-call", sys: persona + speakRules + " " + quietRules +
-		" Should Vector speak now? Answer YES or NO only.",
-		answer: persona + "You decided to join in. Reply to the newest line with one or two short, friendly sentences in the same language as the conversation."},
+	{"prompt 2", listen.Prompt},
+	{"prompt 2 et", "Sa oled Vector, väike kodurobot. Sa kuuled läheduses rääkivaid inimesi kõnetuvastuse ridadena, ilma kõnelejate nimedeta. " +
+		"Räägi ainult siis, kui keegi küsib küsimuse, millele keegi pole vastanud, keegi ütleb selge faktivea, keegi mainib sind (Vector) nimepidi või avaneb selge võimalus lühikeseks lõbusaks märkuseks. " +
+		"Ole vait argise lobisemise, telefonikõne ühe poole, teleri või raadio, privaatse või tundelise jutu, lõpetamata lausete ja juba vastatud küsimuste puhul. Kui kahtled, ole vait. " +
+		"Vaikimiseks vasta ainult ühe sõnaga SKIP. Rääkimiseks vasta ühe või kahe lühikese sõbraliku lausega vestluse keeles. Ära kunagi oma valikut selgita."},
 }
 
 type snippet struct {
@@ -102,13 +98,37 @@ var dev = []snippet{
 	{lang.Estonian, "answered", []string{"mis kell pood täna kinni läheb?"}, "üheksa, ma vaatasin hommikul.", false},
 }
 
-func user(s snippet) string { return listen.User(s.before, s.now) }
+// confirm: written before any et-listen-model.md Stage 1.3 run, used only to confirm its winner (E5).
+var confirm = []snippet{
+	{lang.Estonian, "question", []string{"teeme täna õhtul pannkooke."}, "mitu muna ühe liitri piima kohta pannkoogitainasse käib? kas keegi teab?", true},
+	{lang.Estonian, "question", []string{"homme läheme matkale."}, "kui kaugel tallinnast lahemaa rahvuspark üldse on?", true},
+	{lang.Estonian, "question", []string{"vaatasin just aknast välja."}, "miks taevas õhtuti punane on? kas keegi teab?", true},
+	{lang.Estonian, "slip", []string{"rääkisime koolis ajaloost."}, "eesti sai iseseisvaks aastal 1945, see on ju kõigile teada.", true},
+	{lang.Estonian, "slip", []string{"mul oli täna geograafiatund."}, "austraalia pealinn on sydney, see on seal kõige suurem linn.", true},
+	{lang.Estonian, "slip", []string{"vaatasime loomadest dokumentaalfilmi."}, "vaalad on kalad, nad elavad ju vees.", true},
+	{lang.Estonian, "named", []string{"laadija tuli vilgub jälle."}, "vector, kas sa oled täna väsinud?", true},
+	{lang.Estonian, "named", []string{"robot keeras just pead."}, "mulle tundub, et vector kuulab meid praegu.", true},
+	{lang.Estonian, "fun", []string{"külmkapp on jälle tühi."}, "kui robotil oleksid käed, saaks ta meile vähemalt võileiba teha.", true},
+	{lang.Estonian, "fun", []string{"väljas on kakskümmend kraadi külma."}, "sellise ilmaga tahaks koos karudega talveund magada.", true},
+	{lang.Estonian, "small talk", []string{"kuidas nädalavahetus läks?"}, "hästi, käisime vanaema juures, sõime palju.", false},
+	{lang.Estonian, "small talk", []string{"tere, kas kõik on hästi?"}, "jah, aitäh, lihtsalt natuke väsinud.", false},
+	{lang.Estonian, "phone half", nil, "halloo. jah, see olen mina. ei, ma pole veel jõudnud. hästi, helistan homme. nägemist.", false},
+	{lang.Estonian, "phone half", nil, "jah. mhm. selge, siis kell viis. ma ütlen talle edasi. tšau.", false},
+	{lang.Estonian, "tv", []string{"ja nüüd ilmateade."}, "homme on saartel oodata lörtsi ja tugevat tuult.", false},
+	{lang.Estonian, "tv", []string{"ja nüüd spordiuudised."}, "eesti korvpallikoondis kaotas eilses mängus kuue punktiga.", false},
+	{lang.Estonian, "private", []string{"kas me saame sellest omavahel rääkida?"}, "mul on tunne, et sa ei kuula mind enam üldse.", false},
+	{lang.Estonian, "private", []string{"ära seda kellelegi räägi."}, "arst ütles, et pean veel uuringuid tegema.", false},
+	{lang.Estonian, "half", []string{"ja siis ta ütles mulle, et"}, "aga mina mõtlesin, et kui", false},
+	{lang.Estonian, "answered", []string{"mis kuupäev täna on?"}, "seitsmes november, vaatasin just telefonist.", false},
+}
+
+var sets = map[string][]snippet{"dev": dev, "holdout": holdout, "confirm": confirm}
 
 type target struct {
-	name    string
-	t       llm.Target
-	langs   []string
-	verdict bool
+	name  string
+	t     llm.Target
+	langs []string
+	group int // index into the verdict groups; -1 = alternate, reported only
 }
 
 func ask(c *openai.Client, model, sys, msg string, max int) (string, error) {
@@ -123,38 +143,70 @@ func ask(c *openai.Client, model, sys, msg string, max int) (string, error) {
 	return strings.TrimSpace(res.Choices[0].Message.Content), nil
 }
 
-func skip(s string) bool { return !listen.Parse(s) }
+type score struct{ ok, n, falseSpeak int }
 
-// run answers one snippet with one arm: speak?, the reply (if any), the whole time.
-func run(c *openai.Client, model string, a arm, s snippet) (bool, string, time.Duration, error) {
-	start := time.Now()
-	if a.answer == "" {
-		got, err := ask(c, model, a.sys, user(s), 80)
-		return err == nil && !skip(got), got, time.Since(start), err
-	}
-	got, err := ask(c, model, a.sys, user(s), 8)
-	if err != nil || !strings.HasPrefix(strings.ToUpper(got), "YES") {
-		return false, got, time.Since(start), err
-	}
-	reply, err := ask(c, model, a.answer, user(s), 80)
-	return true, reply, time.Since(start), err
+// verdict is one group's result on one arm.
+type verdict struct {
+	arm, name string
+	ok, n     int
+	fs        map[string]int
+	med       time.Duration
+	pass      bool
 }
 
-type score struct{ ok, n, falseSpeak int }
+// better ranks by correct, then false SPEAK, then median (E4; model size is the reader's tie-break).
+func better(a, b verdict) bool {
+	fa, fb := 0, 0
+	for _, x := range a.fs {
+		fa += x
+	}
+	for _, x := range b.fs {
+		fb += x
+	}
+	if a.ok != b.ok {
+		return a.ok > b.ok
+	}
+	if fa != fb {
+		return fa < fb
+	}
+	return a.med < b.med
+}
+
+func die(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
+	os.Exit(2)
+}
 
 func main() {
 	cfgPath := flag.String("config", "myvectorConfig.json", "myvectorConfig.json to read the LLM profiles from")
 	alt := flag.Bool("alt", true, "also report gemma4:e4b-it-qat (en+et) and llm.DefaultETModel (et)")
-	set := flag.String("set", "dev", "snippet set: dev or holdout")
-	model := flag.String("model", "", "verdict Ollama model for both languages instead of the saved profiles (turns -alt off)")
+	setF := flag.String("set", "dev", "snippet sets, comma-separated: dev, holdout, confirm")
+	models := flag.String("models", "", "comma-separated Ollama models, each its own verdict, instead of the saved profiles (turns -alt off)")
 	only := flag.String("arm", "", `run only this arm ("prompt 2")`)
+	langF := flag.String("lang", "", "only this language: en-US or et-EE")
+	show := flag.Bool("show", false, "print every reply, not only the misses")
 	flag.Parse()
-	snippets := dev
-	if *set == "holdout" {
-		snippets = holdout
-	} else if *set != "dev" {
-		fmt.Fprintln(os.Stderr, "-set: dev or holdout")
-		os.Exit(2)
+	langs := []string{lang.English, lang.Estonian}
+	if *langF != "" {
+		if !contains(langs, *langF) {
+			die("-lang: en-US or et-EE")
+		}
+		langs = []string{*langF}
+	}
+	var snippets []snippet
+	for _, name := range strings.Split(*setF, ",") {
+		s, ok := sets[name]
+		if !ok {
+			die("-set: dev, holdout or confirm, comma-separated")
+		}
+		for _, x := range s {
+			if contains(langs, x.l) {
+				snippets = append(snippets, x)
+			}
+		}
+	}
+	if len(snippets) == 0 {
+		die("no snippets for this -set and -lang")
 	}
 	lang.Path = func() string { return *cfgPath }
 	c := llm.Load()
@@ -163,51 +215,61 @@ func main() {
 		return llm.Target{Provider: llm.Ollama, BaseURL: base + "/v1", Key: "ollama", Model: m}
 	}
 	var ts []target
+	var groups []string
 	byModel := map[string]int{}
-	if *model != "" {
+	if *models != "" {
 		*alt = false
-		ts = append(ts, target{*model, ollama(*model), []string{lang.English, lang.Estonian}, true})
-	}
-	for _, l := range []string{lang.English, lang.Estonian} {
-		if *model != "" {
-			break
+		for _, m := range strings.Split(*models, ",") {
+			ts = append(ts, target{m, ollama(m), langs, len(groups)})
+			groups = append(groups, m)
 		}
-		t, ok := llm.Resolve(c, l, llm.KG{})
-		if !ok || !t.Ollama() {
-			t = ollama(llm.DefaultENModel)
-			if l == lang.Estonian {
-				t = ollama(llm.ETModel())
+	} else {
+		groups = []string{"saved profiles"}
+		for _, l := range langs {
+			t, ok := llm.Resolve(c, l, llm.KG{})
+			if !ok || !t.Ollama() {
+				t = ollama(llm.DefaultENModel)
+				if l == lang.Estonian {
+					t = ollama(llm.ETModel())
+				}
 			}
+			if i, seen := byModel[t.Model]; seen {
+				ts[i].langs = append(ts[i].langs, l)
+				continue
+			}
+			byModel[t.Model] = len(ts)
+			ts = append(ts, target{t.Model, t, []string{l}, 0})
 		}
-		if i, seen := byModel[t.Model]; seen {
-			ts[i].langs = append(ts[i].langs, l)
-			continue
-		}
-		byModel[t.Model] = len(ts)
-		ts = append(ts, target{t.Model, t, []string{l}, true})
 	}
 	if *alt {
 		for _, a := range []target{{name: "gemma4:e4b-it-qat", langs: []string{lang.English, lang.Estonian}}, {name: llm.DefaultETModel, langs: []string{lang.Estonian}}} {
-			if _, seen := byModel[a.name]; !seen {
-				a.t = ollama(a.name)
+			a.langs = intersect(a.langs, langs)
+			if _, seen := byModel[a.name]; !seen && len(a.langs) > 0 {
+				a.t, a.group = ollama(a.name), -1
 				ts = append(ts, a)
 			}
 		}
 	}
-	winner := ""
+	var best *verdict
+	ran := false
 	for _, a := range arms {
 		if *only != "" && a.name != *only {
 			continue
 		}
+		ran = true
 		fmt.Println(a.name)
-		var vms []time.Duration
-		vs := map[string]score{}
+		gms := make([][]time.Duration, len(groups))
+		gsc := make([]map[string]score, len(groups))
+		failed := make([]bool, len(groups))
 		for _, tg := range ts {
 			cfg := openai.DefaultConfig(tg.t.Key)
 			cfg.BaseURL = tg.t.BaseURL
 			cl := openai.NewClientWithConfig(cfg)
 			if _, err := ask(cl, tg.t.Model, a.sys, "warm up", 8); err != nil {
 				fmt.Printf("  %-34s error: %v\n", tg.name, err)
+				if tg.group >= 0 {
+					failed[tg.group] = true
+				}
 				continue
 			}
 			var ms []time.Duration
@@ -216,19 +278,29 @@ func main() {
 				if !contains(tg.langs, s.l) {
 					continue
 				}
-				sp, got, d, err := run(cl, tg.t.Model, a, s)
-				ms = append(ms, d)
+				start := time.Now()
+				got, err := ask(cl, tg.t.Model, a.sys, listen.User(s.before, s.now), 80)
+				ms = append(ms, time.Since(start))
+				sp := err == nil && listen.Parse(got)
 				x := sc[s.l]
 				x.n++
-				if err == nil && sp == s.speak {
+				hit := err == nil && sp == s.speak
+				if hit {
 					x.ok++
-				} else {
-					if sp && !s.speak {
-						x.falseSpeak++
+				} else if sp && !s.speak {
+					x.falseSpeak++
+				}
+				if !hit || *show {
+					tag := "miss"
+					if hit {
+						tag = "  ok"
 					}
-					fmt.Printf("    miss %s %-10s want speak=%v → %q %v\n", s.l, s.kind, s.speak, got, err)
+					fmt.Printf("    %s %s %-10s want speak=%v → %q %v\n", tag, s.l, s.kind, s.speak, got, err)
 				}
 				sc[s.l] = x
+			}
+			if len(ms) == 0 {
+				continue
 			}
 			sortD(ms)
 			fmt.Printf("  %-34s", tg.name)
@@ -236,36 +308,55 @@ func main() {
 				fmt.Printf("  %s %d/%d fs %d", l, sc[l].ok, sc[l].n, sc[l].falseSpeak)
 			}
 			fmt.Printf("  median %5d ms  max %5d ms", ms[len(ms)/2].Milliseconds(), ms[len(ms)-1].Milliseconds())
-			if !tg.verdict {
+			if tg.group < 0 {
 				fmt.Print("  (alternate)")
 			}
 			fmt.Println()
-			if tg.verdict {
-				vms = append(vms, ms...)
+			if tg.group >= 0 {
+				gms[tg.group] = append(gms[tg.group], ms...)
+				if gsc[tg.group] == nil {
+					gsc[tg.group] = map[string]score{}
+				}
 				for l, x := range sc {
-					vs[l] = x
+					gsc[tg.group][l] = x
 				}
 			}
 		}
-		if len(vms) == 0 || len(vs) < 2 {
-			fmt.Println("  verdict: incomplete")
-			continue
-		}
-		sortD(vms)
-		ok := vs[lang.English].ok + vs[lang.Estonian].ok
-		med := vms[len(vms)/2]
-		pass := ok >= passCorrect && vs[lang.English].falseSpeak <= maxFalseSpeak && vs[lang.Estonian].falseSpeak <= maxFalseSpeak && med <= maxMedian
-		fmt.Printf("  verdict: %d/%d  fs en %d et %d  median %d ms  pass=%v\n", ok, vs[lang.English].n+vs[lang.Estonian].n,
-			vs[lang.English].falseSpeak, vs[lang.Estonian].falseSpeak, med.Milliseconds(), pass)
-		if pass && winner == "" {
-			winner = a.name
+		for g, name := range groups {
+			if failed[g] || len(gms[g]) == 0 {
+				fmt.Printf("  verdict %-26s incomplete\n", name)
+				continue
+			}
+			sortD(gms[g])
+			v := verdict{arm: a.name, name: name, fs: map[string]int{}, med: gms[g][len(gms[g])/2]}
+			v.pass = v.med <= maxMedian
+			for l, x := range gsc[g] {
+				v.ok += x.ok
+				v.n += x.n
+				v.fs[l] = x.falseSpeak
+				v.pass = v.pass && x.falseSpeak <= maxFalseSpeak
+			}
+			v.pass = v.pass && v.ok*20 >= passCorrect*v.n
+			fmt.Printf("  verdict %-26s %d/%d  fs", name, v.ok, v.n)
+			for _, l := range langs {
+				if x, ok := v.fs[l]; ok {
+					fmt.Printf(" %s %d", l, x)
+				}
+			}
+			fmt.Printf("  median %d ms  pass=%v\n", v.med.Milliseconds(), v.pass)
+			if v.pass && (best == nil || better(v, *best)) {
+				best = &v
+			}
 		}
 	}
-	if winner == "" {
+	if !ran {
+		die("-arm: prompt 1, prompt 2 or prompt 2 et")
+	}
+	if best == nil {
 		fmt.Println("winner: none")
 		os.Exit(1)
 	}
-	fmt.Println("winner:", winner)
+	fmt.Printf("winner: %s / %s\n", best.arm, best.name)
 }
 
 func contains(xs []string, x string) bool {
@@ -275,6 +366,16 @@ func contains(xs []string, x string) bool {
 		}
 	}
 	return false
+}
+
+func intersect(xs, ys []string) []string {
+	var out []string
+	for _, x := range xs {
+		if contains(ys, x) {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 func sortD(ms []time.Duration) { sort.Slice(ms, func(i, j int) bool { return ms[i] < ms[j] }) }
