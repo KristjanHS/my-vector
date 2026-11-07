@@ -9,9 +9,10 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 )
 
-// TestMain stubs forkSearch to "" so no ttr test reaches Open-Meteo; TestForkAIReqSearch swaps in its own fake.
+// TestMain stubs forkSearch to "" and points the weather endpoints at a closed port so no ttr test reaches the network.
 func TestMain(m *testing.M) {
 	forkSearch = func(sentence, l, brain string, zone *time.Location) string { return "" }
+	search.GeocodeURL, search.ForecastURL, forkWeatherAPIForecastURL = "http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1"
 	os.Exit(m.Run())
 }
 

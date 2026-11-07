@@ -41,7 +41,7 @@ var forkWeatherStopwords = map[string]bool{
 
 // Probe endpoints; package vars so tests point them at an httptest server.
 var (
-	forkWeatherAPISearchURL = "http://api.weatherapi.com/v1/search.json"
+	forkWeatherAPISearchURL = "https://api.weatherapi.com/v1/search.json"
 	forkOWMGeoURL           = "http://api.openweathermap.org/geo/1.0/direct"
 	forkProbeClient         = &http.Client{Timeout: 3 * time.Second}
 )
@@ -123,9 +123,10 @@ func forkHideKey(err error) error {
 }
 
 var (
-	forkWeatherAPIForecastURL = "http://api.weatherapi.com/v1/forecast.json"
+	forkWeatherAPIForecastURL = "https://api.weatherapi.com/v1/forecast.json"
 	forkWeatherMapPath        = "./weather-map.json"
 	forkWeatherTimeout        = 3 * time.Second
+	forkWeatherGo             = func(f func()) { go f() } // tests wait for the race's loser
 )
 
 // forkWeatherReply is getWeather's tuple minus is_forecast (always "false", as upstream); localTime "test" = DoWeatherError.
@@ -159,10 +160,10 @@ var forkGetWeather = func(location, botUnits string, hoursFromNow int) (forkWeat
 	}
 	ch := make(chan result, 2)
 	n, start := 1, time.Now()
-	go func() { r, err := forkOpenMeteo(ctx, location, unit, day); ch <- result{"open-meteo", r, err} }()
+	forkWeatherGo(func() { r, err := forkOpenMeteo(ctx, location, unit, day); ch <- result{"open-meteo", r, err} })
 	if keyed && w.Provider == "weatherapi.com" {
 		n++
-		go func() { r, err := forkWeatherAPI(ctx, w.Key, location, unit, day); ch <- result{"weatherapi", r, err} }()
+		forkWeatherGo(func() { r, err := forkWeatherAPI(ctx, w.Key, location, unit, day); ch <- result{"weatherapi", r, err} })
 	}
 	for i := 0; i < n; i++ {
 		x := <-ch
