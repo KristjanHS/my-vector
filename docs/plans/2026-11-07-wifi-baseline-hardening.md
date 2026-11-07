@@ -1,7 +1,7 @@
 # WiFi baseline hardening (Stage 0, before the on-robot Tailscale)
 
 Status: Stages 1, 2, 3.1 committed; next Stage 3.2. `[USER]` owed: 1.2 `make server-pin` check, 2.1 live diskguard, 3.1 key copy. Executes Stage 0 (0.1–0.4) of `2026-11-07-public-wifi-security.md (docs/plans/)` plus T2,
-the public server TLS key. The option D spike itself is not planned here. Every `[USER]` slice is a live run against the
+the public server TLS key, and H1 (per-robot sshd host keys). The option D spike itself is not planned here. Every `[USER]` slice is a live run against the
 robot or server: Claude asks first and never runs it unasked. No step makes a robot sound.
 
 ## Rulings
@@ -26,7 +26,7 @@ robot or server: Claude asks first and never runs it unasked. No step makes a ro
 | N3 | Lock-out guards. The rules are built in `MYVECTOR_IN_NEW` and then swapped into the hook (if any command fails, nothing gets hooked). The robot side refuses when `${SSH_CLIENT%% *}` ≠ `pc_ip`. `arm netguard` (unhook + `systemctl disable myvector-netguard`, i.e. fail open) runs before the live apply. The boot unit is installed only after `confirm`, so a reboot inside the window boots open. ⚠ hedge: whether the `conntrack` match exists (`rules.sh` probes it on the robot and falls back to `-m state`). | `robot/netguard/apply.sh` |
 | N4 | Hosts pin: exactly one `/etc/hosts` line `<pc_ip> escapepod.local # my-vector`. Re-apply replaces our marked line and leaves the rest. FAIL if `readlink -f /etc/hosts` is not on `/`. ⚠ hedge: vic-cloud is Go, and Go's resolver honouring nsswitch `files` before `mdns4_minimal` is unproven on the robot (the `curl` checks only prove glibc). | `netguard/apply.sh` |
 | R1 | Rollback timer: `setsid sh -c 'sleep …; [ -e <confirm> ] \|\| <restore>' </dev/null >/dev/null 2>&1 &` (on this robot `wifi.sh` jobs already survive the SSH drop). No `systemd-run` dependency. ⚠ hedge: a robot reboot inside the window loses the timer, so K3(c) and N3 order their persistent writes so that a boot inside the window lands in a working state. | `robot/lib/etc.sh` `arm` |
-| H1 | The robot's sshd host keys ship in the WireOS image (3.1: ro `/`, mtime = `/usr/sbin/sshd`'s) → `docs/backlog.md` line, not this plan. | — |
+| H1 | Image-shipped sshd host keys (3.1: ro `/`, mtime = `/usr/sbin/sshd`'s; `sshd -T` hostkey = `ssh_host_{ecdsa,rsa}_key`) → per-robot keys made once on the robot in `HOSTKEY_STORE`, `etc_put` (mode 600) over each `sshd -T` hostkey path; reflash → settings re-copies the same keys, so known_hosts stays valid. No sshd restart (`sshd.socket` spawns per connection). Laptop: the ip's owner `known_hosts` lines are replaced only after a `StrictHostKeyChecking=yes` login against the new pubs passes. ⚠ hedge: the deploy container's host-key check is unprobed (3.5 greps the clone's `build/`). | `robot/hostkey/apply.sh`; `settings.sh` (after sshkey); `ship.sh` archive |
 | L1 | Laptop sshd `:22` stays out of `guarded`: its guard is the Hyper-V rule `WSL-SSH-from-WG` (corp WG peer only, dotfiles `corp-ssh-rdp-wireguard-windows-wsl-setup.md` §5); in `guarded` that peer is dropped. | — |
 
 ## Constants (source is the home; values below)
@@ -38,6 +38,7 @@ robot or server: Claude asks first and never runs it unasked. No step makes a ro
 | `ROBOT_KEY` (robot.env, relative to `robot/`) | `backup/myvector_ed25519` | `git check-ignore -v robot/backup/myvector_ed25519` |
 | `ROBOT_KEY_OLD` default | `work/wire-os-victor/robot_sshkey` | `robot/sshkey/tests/apply.sh` |
 | `MYVECTOR_DEPLOY_KEY` / clone copy | `myvector_sshkey` | check-static marker row 0014 |
+| `HOSTKEY_STORE` | `/data/myvector/ssh/` | `robot/hostkey/tests/apply.sh` |
 | `EPOD_STAGE` / `EPOD_DIR` (repo-relative) | `robot/backup/epod-new/` / `robot/backup/epod/` (`ca.{crt,key}`, `ep.{crt,key}`) | `robot/epod/tests/mkcert.sh`; `TestPair*` |
 | `ROBOT_TRUST` | `/data/data/wirepod-cert.crt` | `robot/epod/tests/apply.sh` |
 | `pc_ip` | host of `ROBOT_TTS_URL` (today 192.0.2.249) | `robot/netguard/tests/rules.sh` |
@@ -65,7 +66,7 @@ Focus: `robot/lib/{etc.sh,tests/etc.sh}`; `robot/{diskguard,logkeep}/apply.sh`; 
 
 ## Stage 3 — robot root SSH key (0.1, T1)
 
-Focus: `robot/sshkey/{keygen.sh,apply.sh,tests/apply.sh}`; `robot/env.sh`; `robot/robot.env.example`; K5/K6 sites.
+Focus: `robot/sshkey/{keygen.sh,apply.sh,tests/apply.sh}`; `robot/hostkey/{apply.sh,tests/apply.sh}` (H1); `robot/env.sh`; `robot/robot.env.example`; K5/K6 sites.
 
 | slice | edit sites | falsifiers (red demo first) | verify |
 |---|---|---|---|
@@ -73,6 +74,8 @@ Focus: `robot/sshkey/{keygen.sh,apply.sh,tests/apply.sh}`; `robot/env.sh`; `robo
 | Stage 3.2 | env.sh `key_old`; `sshkey/apply.sh` (K3, K4); robot.env.example | `robot/sshkey/tests/apply.sh`: a fake `ssh` on PATH runs the robot heredoc locally against a temp root and accepts a login only if the `-i` key's pub is in the fake `authorized_keys`. Cases: new key missing → exit 2, zero writes. New-key verify fails (fake rejects it) → the old key is still present. Happy path → calls in K3 order, and an old-key login is refused at the end. Already swapped → `sshkey: already installed`, no `arm`. Red: write new-only before step (b) → the "verify fails" case loses the old key → FAIL | `make check` |
 | Stage 3.3 | K5 patch 0014 + markers row; K6 `ship.sh` step + archive list + `settings.sh` first step. Run back-to-back with 3.4: a ship in between would do the swap itself (same K3 safety) | `check-static.sh` S1 (series ↔ patch ↔ markers). Red: drop the markers row → FAIL | `make check`; `VICTOR_SRC=… robot/firmware/apply.sh` then `grep -c MYVECTOR_DEPLOY_KEY robot/work/wire-os-victor/build/deploy-v.sh` = 4 |
 | Stage 3.4 | `[USER]` edits `robot/robot.env` `ROBOT_KEY=backup/myvector_ed25519` (Claude never reads it), then a live `robot/sshkey/apply.sh` | the run's own PASS lines: new-key login, old key refused, no `victor-dev` line left | `ssh -o IdentitiesOnly=yes -i robot/work/wire-os-victor/robot_sshkey root@<ip> true` → `Permission denied`. `[USER]` `make ship` → deploy passes on the new key, settings prints `sshkey: already installed` |
+| Stage 3.5 | H1 `hostkey/apply.sh`: save the image keys to `/run/myvector/hostkey-image/`; per `sshd -T` hostkey path, `[ -s $HOSTKEY_STORE/<base> ] \|\| ssh-keygen -q -N '' -t <type>`; `arm hostkey` (restore the image keys); `etc_put` key + pub, `chmod 600` the key; `sshd -t`; laptop new-connection login with a temp `UserKnownHostsFile` of the new pubs + `StrictHostKeyChecking=yes` → `confirm`, then rewrite the ip's lines in owner `known_hosts`; settings hook + archive list | `robot/hostkey/tests/apply.sh` (fake root + fake `ssh`/`sshd`): installed key mode 600; 2nd run `hostkey: already installed`, no `arm`; `sshd -t` fails → image keys back, `known_hosts` untouched; new-pub login fails → no `confirm`, the restore runs. Red: rewrite `known_hosts` before the login check → the fail case changes it → FAIL | `make check` |
+| Stage 3.6 | `[USER]` live `robot/hostkey/apply.sh`, then `make ship` | the run's PASS lines | robot `test /etc/ssh/ssh_host_ecdsa_key -nt /usr/sbin/sshd` exit 0; `ssh-keyscan -t ecdsa <ip> \| ssh-keygen -lf -` = owner `known_hosts`' fingerprint; `make ship` deploy + settings `hostkey: already installed` |
 
 ## Stage 4 — server TLS key (T2)
 
@@ -101,4 +104,4 @@ Focus: `robot/env.sh` (`pc_ip`); `robot/netguard/{apply.sh,rules.sh,tests/}`; `s
 
 | slice | edit sites | falsifiers (red demo first) | verify |
 |---|---|---|---|
-| Stage 6.1 | — | — | `make check`. `[USER]` e2e, no robot sound, ranked: (1) `ssh -i robot/backup/myvector_ed25519 root@<ip> true` ok and the old key refused; (2) `s_client` issuer = our CA and the robot's `curl --cacert … https://escapepod.local/ok` = 200; (3) laptop `curl -m3 http://<ip>:8888/consolevars` = 200 (`quiet.Nap`'s path from `pc_ip`) and `iptables -S MYVECTOR_IN` as rendered; (4) `scripts/live-check.sh stt` and `route` PASS (PC-only); (5) `make ship` green end to end. Then `Agent(subagent_type="code-reviewer")` over this plan's commits |
+| Stage 6.1 | — | — | `make check`. `[USER]` e2e, no robot sound, ranked: (1) `ssh -i robot/backup/myvector_ed25519 root@<ip> true` ok and the old key refused, robot `test /etc/ssh/ssh_host_ecdsa_key -nt /usr/sbin/sshd` exit 0; (2) `s_client` issuer = our CA and the robot's `curl --cacert … https://escapepod.local/ok` = 200; (3) laptop `curl -m3 http://<ip>:8888/consolevars` = 200 (`quiet.Nap`'s path from `pc_ip`) and `iptables -S MYVECTOR_IN` as rendered; (4) `scripts/live-check.sh stt` and `route` PASS (PC-only); (5) `make ship` green end to end. Then `Agent(subagent_type="code-reviewer")` over this plan's commits |
