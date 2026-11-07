@@ -52,7 +52,7 @@ re-ship, **C = dig deeper with robot restarts (chosen; the power-on sound on eac
 | F1 | **rename inside the archive** (user 2026-11-07): `objcopy --redefine-sym __isinff=__se_isinff` on `nrgainv.o` | `libsignalessence_softfp.a` + `math_abi_bridge.c` in the clone |
 | F1b | add `int pcs("aapcs") __se_isinff(float)` to `math_abi_bridge.c`, rebuild its `.o` into the archive | commit on clone branch `my-vector` → `robot/firmware/apply.sh --export` = `0012-*.patch` |
 | F1c | `robot/firmware/series` + `markers.tsv` src row (`math_abi_bridge.c`) + bin row | `robot/firmware/` |
-| F2 | _owed_ — `policy_actions.o` calls unbridged `sin` (double): same rename as F1 (`sin=__se_sin`) recommended | same patch |
+| F2 | **same rename** (user 2026-11-07): `sin=__se_sin` on `policy_actions.o` + `double pcs("aapcs") __se_sin(double)` bridge | same patch 0012 |
 
 Falsifier: `robot/seassert/isinff-abi.c` built unfixed exits 139 (SIGSEGV) on args `1 0` on the robot, `-DFIX` exits 0.
 Ship gate: `nm vic-anim.full | grep -E ' U (__isinff|sin)$'` empty; `isinff-abi` against the patched archive (no `-DFIX`) exits 0 on `1 0`.
