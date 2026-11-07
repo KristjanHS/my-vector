@@ -8,6 +8,8 @@ set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=robot/env.sh
 . "$here/../env.sh"
+# shellcheck source=robot/crash-review/lib.sh
+. "$here/lib.sh"
 deploy=0
 [[ ${1:-} == -d ]] && { deploy=1; shift; }
 max=${1:-5}
@@ -20,11 +22,7 @@ mark=/tmp/myvector-restarts.mark
 # shellcheck disable=SC2029 # the remote commands are built here on purpose
 ssh_() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 ssh_ true || { echo "SETUP: robot unreachable over ssh" >&2; exit 2; }
-if ((deploy)); then
-  tip=$("$here/../firmware/apply.sh" --check 2>/dev/null | tail -1) || tip=
-  [[ -n $tip && $(git -C "$src" rev-parse HEAD) == "$tip" ]] ||
-    { echo "SETUP: the clone is not at the series tip (run robot/firmware/apply.sh, then build)" >&2; exit 2; }
-fi
+((deploy)) && clone_ready "$src" "$here/../firmware"
 
 out=$here/../work/crash-review/restarts-$(date +%Y%m%d-%H%M%S)
 mkdir -p "$out"
@@ -37,9 +35,10 @@ for ((i = 1; i <= max; i++)); do
   for _ in $(seq 30); do ssh_ 'systemctl is-active -q fault-code.service' 2>/dev/null || break; sleep 2; done
   t0=$(ssh_ "touch $mark; date +%s") || { log "round $i: ssh failed"; sleep 10; continue; }
   if ((deploy)); then
-    # Same order as robot/firmware/ship.sh: deploy-v.sh (stop, rsync, start), then settings.sh.
-    (cd "$src" && script -qec ./build/deploy-v.sh /dev/null && "$here/../firmware/settings.sh") \
-      >"$out/deploy-$i.log" 2>&1 </dev/null || { log "round $i: deploy failed, see $out/deploy-$i.log"; exit 2; }
+    # Same order as robot/firmware/ship.sh: deploy-v.sh (stop, rsync, start), then settings.sh (warn-only, as in ship).
+    (cd "$src" && script -qec ./build/deploy-v.sh /dev/null) >"$out/deploy-$i.log" 2>&1 </dev/null ||
+      { log "round $i: deploy failed, see $out/deploy-$i.log"; exit 2; }
+    "$here/../firmware/settings.sh" >>"$out/deploy-$i.log" 2>&1 </dev/null || log "round $i: settings.sh exit $? (warn only)"
   else
     ssh_ 'systemctl stop anki-robot.target; sleep 5; systemctl start --no-block anki-robot.target' ||
       { log "round $i: restart ssh failed"; continue; }
@@ -50,11 +49,13 @@ for ((i = 1; i <= max; i++)); do
   hits=()
   grep -q 'SeAssert' "$j" && hits+=(S1)
   grep -qE 'vic-engine terminated by signal 11|fault code 914' "$j" && hits+=(S2)
-  grep -qE "vic-anim.service: (Start operation timed out|Failed with result 'timeout')|fault code 800" "$j" && hits+=(S3)
-  grep 'terminated by signal' "$j" | grep -vqE 'vic-engine terminated by signal 11|vic-anim terminated by signal 4' &&
+  grep -qE "vic-anim.service: (Start operation timed out|Failed with result 'timeout')" "$j" && hits+=(S3)
+  # Fault-handler stop cascade (switchboard SIGQUIT, cloud SIGTERM) is not a crash.
+  # shellcheck disable=SC2143 # grep -q would SIGPIPE the first grep under pipefail
+  [[ -n $(grep 'terminated by signal' "$j" | grep -vE 'vic-engine terminated by signal 11|vic-anim terminated by signal 4|signal (3|15)$') ]] &&
     hits+=(other)
   for h in "${hits[@]}"; do total[$h]=$((total[$h] + 1)); done
-  new=$(ssh_ "find $dumps -type f -newer $mark 2>/dev/null | tr '\n' ' '" || true)
+  new=$(ssh_ "find $dumps -type f -name '*.dmp' -newer $mark 2>/dev/null | tr '\n' ' '" || true)
   faults=$(grep -oE 'fault code [0-9]+' "$j" | sort -u | tr '\n' ' ' || true)
   log "round $i: ${hits[*]:-ok}${faults:+ ($faults)}${new:+ dumps: $new}"
   # Two fault restarts inside 97 s escalate the robot's fault handler; let its counter clear.

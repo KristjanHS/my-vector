@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Crash catalogue: real crash dumps (.dmp + .dmp.log; .dmp~ = stop-cascade snapshots, skipped) and journal crash lines.
-# Usage: crashes.sh [-p] [since='today']   since = any journalctl --since value; -p copies the dumps into
+# Usage: crashes.sh [-p] [since='today']   since = any GNU `date -d` value; -p copies the dumps into
 # robot/work/crash-review/dumps/ (read them with robot/seassert/md.py).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -13,7 +13,8 @@ dumps=/data/data/com.anki.victor/cache/crashDumps
 # shellcheck disable=SC2029 # the remote commands are built here on purpose
 ssh_() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 ssh_ true || { echo "SETUP: robot unreachable over ssh" >&2; exit 2; }
-t0=$(ssh_ "date -d '$since' +%s") || { echo "SETUP: robot date can't parse since='$since'" >&2; exit 2; }
+# Parsed on the host: the robot's busybox date rejects 'today' / '-1 hour'.
+t0=$(date -d "$since" +%s) || { echo "SETUP: date can't parse since='$since'" >&2; exit 2; }
 
 echo "== crash dumps since $since"
 list=$(ssh_ "cd $dumps && for f in *.dmp; do [ -f \"\$f\" ] && [ \$(date -r \"\$f\" +%s) -ge $t0 ] && echo \"\$f\"; done; true")
