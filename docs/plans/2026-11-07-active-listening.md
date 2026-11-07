@@ -1,6 +1,6 @@
 # Active listening
 
-Status: ruled 2026-11-07 (qimpag round), executing from Stage 1.1. Stage 3 reuses `robot/openmic` and waits on `2026-11-07-shut-up-sleep.md (docs/plans/)` §Stage 1 verdict.
+Status: Stage 1 (1.1–1.3) committed; next Stage 2.1. Code review of `c0b0efb..b6a71d9` deferred to 5.1. Owed live: G5 curl 423 (1.3), en-US phrase STT round trip (1.1, needs saved lang en-US). Stage 3 reuses `robot/openmic` and waits on `2026-11-07-shut-up-sleep.md (docs/plans/)` §Stage 1 verdict.
 
 Ask: Vector listens to all talk, speaks only when he has something relevant. Ollama only, never Claude. On: "hey vector, activate active listening" / "hey vector, aktiveeri aktiivne kuulamine". Off: "deactivate active listening" / "deaktiveeri aktiivne kuulamine". Short forms "active listening on/off", "aktiivne kuulamine sees/välja" too.
 
