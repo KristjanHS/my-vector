@@ -4,8 +4,8 @@
 # Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no server restart, no deploy, no push).
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
 # HEAD-only: checks, patches and apply.sh come from the committed HEAD; uncommitted fork files are ignored.
-#   The server too: the restart pins the shipped sha in robot/work/server-sha and wire-pod.service (scripts/run-server.sh)
-#   builds that commit from a clean copy. Only the tree's run-server.sh itself must equal the shipped sha's (systemd runs it).
+#   The server too: the restart pins the shipped sha (scripts/pin-server.sh), which run-server.sh builds; only the tree's
+#   launchers and runtime data ($data) must equal the shipped sha's.
 # Log: every run is recorded to robot/work/ship-logs/ship-<time>-<sha>.log (latest.log = newest); the newest 20 are kept.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -79,8 +79,10 @@ if ((deploy)); then
   echo "$out"
   add_warns "$out"
 
-  # Server inputs: the Go tree, the firewall and the launcher that builds + runs the pinned commit on each (re)start.
-  srv=(chipper scripts/wire-pod-guard.nft scripts/run-server.sh)
+  # Server inputs: the Go tree, the firewall and the launchers that build + run the pinned commit on each (re)start.
+  srv=(chipper scripts/wire-pod-guard.nft scripts/run-server.sh scripts/load-guard.sh)
+  # Tracked data the server still reads from the tree at runtime (cwd chipper/), not from the pinned build.
+  data=(chipper/intent-data chipper/webroot chipper/weather-map.json chipper/stttest.pcm chipper/epod)
   # run-server.sh execs robot/work/server-build/<full sha>/chipper as the service's main pid; empty = no server (or still building).
   server_sha() {
     local pid; pid=$(systemctl show -p MainPID --value wire-pod 2>/dev/null || true)
@@ -97,13 +99,15 @@ if ((deploy)); then
       server_unit_ok
     fi
   }
-  # The restart must build the pin, not run the tree: the installed unit uses run-server.sh, and the tree's copy
-  # (which systemd runs) is the shipped sha's. Uncommitted edits anywhere else are ignored.
+  # The restart must build the pin, not run the tree: the installed unit uses run-server.sh, the tree's launchers
+  # (which systemd runs) and runtime data are the shipped sha's. Uncommitted Go code is ignored.
   server_unit_ok() {
     grep -q 'ExecStart=.*/scripts/run-server\.sh' /etc/systemd/system/wire-pod.service 2>/dev/null ||
       die "installed wire-pod.service does not run scripts/run-server.sh (a restart would go run the working tree): make daemon-enable"
-    git -C "$repo" diff --quiet "$full" -- scripts/run-server.sh ||
-      die "the tree's scripts/run-server.sh differs from $sha's, and systemd runs the tree's copy: commit it or restore it"
+    git -C "$repo" diff --quiet "$full" -- scripts/run-server.sh scripts/load-guard.sh ||
+      die "the tree's scripts/run-server.sh or load-guard.sh differs from $sha's, and systemd runs the tree's copy: commit it or restore it"
+    local d; d=$(git -C "$repo" diff --name-only "$full" -- "${data[@]}"; git -C "$repo" status --porcelain --untracked-files=normal -- "${data[@]}")
+    [[ -z $d ]] || die "server data the restarted wire-pod reads from the tree differs from $sha's: $d"
   }
   server_check
   # The unit file is a template that only make daemon-enable installs; a restart doesn't apply it.
@@ -142,9 +146,12 @@ echo "built firmware matches the tree"
 server_check # again: the server may have been restarted during the build
 if ((restart)); then
   step "server: ${srv[*]} changed since ${running:-none (not running)} -> pin $sha, restart wire-pod"
-  printf '%s\n' "$full" >"$repo/robot/work/server-sha.tmp" && mv "$repo/robot/work/server-sha.tmp" "$repo/robot/work/server-sha"
-  "$repo/scripts/restart-service.sh" ||
-    die "wire-pod not up on :443 within the wait (journal above; it may still be building $sha) — robot untouched, not pushed; fix and ship again"
+  "$repo/scripts/pin-server.sh" "$full"
+  if ! "$repo/scripts/restart-service.sh"; then
+    # Don't leave a pin that may not build: every crash-restart and boot would retry it with Vector offline.
+    if [[ -n $running ]]; then { "$repo/scripts/pin-server.sh" "$running" && "$repo/scripts/restart-service.sh"; } || true; fi
+    die "wire-pod not up on :443 within the wait (journal above; maybe still building $sha) — ${running:+pin rolled back to $running, }robot untouched, not pushed; fix and ship again"
+  fi
   now=$(server_sha)
   [[ $now == "$full" ]] ||
     die "wire-pod restarted but runs ${now:-no pinned build}, not $sha — robot untouched, not pushed"

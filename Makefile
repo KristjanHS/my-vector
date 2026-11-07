@@ -1,4 +1,4 @@
-.PHONY: help start daemon-enable daemon-disable tts-setup tts-enable tts-disable stt-setup stt-enable stt-disable check robot-test ship
+.PHONY: help start server-pin daemon-enable daemon-disable tts-setup tts-enable tts-disable stt-setup stt-enable stt-disable check robot-test ship
 # Run from anywhere: make -C ~/projects/my-vector <target>
 # robot/work of the main checkout (venvs + models live there, also when make runs in a worktree)
 WORK := $(shell dirname "$$(git -C $(CURDIR) rev-parse --path-format=absolute --git-common-dir)")/robot/work
@@ -13,9 +13,13 @@ start: ## Restart wire-pod.service (runs the last shipped commit, robot/work/ser
 	@if systemctl is-enabled -q wire-pod 2>/dev/null; then $(CURDIR)/scripts/restart-service.sh; \
 	else sudo -n $(CURDIR)/chipper/start.sh || { echo "no sudoers rule? see docs/run-without-sudo-password.md"; exit 1; }; fi
 
+server-pin: ## Pin wire-pod to the committed HEAD and restart it (run a committed server fix without a full ship)
+	$(CURDIR)/scripts/pin-server.sh HEAD
+	$(CURDIR)/scripts/restart-service.sh
+
 daemon-enable: ## Install + (re)start wire-pod.service (builds + runs the pinned commit; starts with WSL, restarts on crash); asks the sudo password
 	@systemctl is-active -q wire-pod || [ -z "$$(ss -Hltn 'sport = :443')" ] || { echo "something already listens on :443 (a foreground wire-pod?): stop it first"; exit 1; }
-	@[ -s $(CURDIR)/robot/work/server-sha ] || { git -C $(CURDIR) rev-parse HEAD >$(CURDIR)/robot/work/server-sha && echo "pinned the server to HEAD (make ship moves the pin)"; }
+	@[ -s $(CURDIR)/robot/work/server-sha ] || $(CURDIR)/scripts/pin-server.sh HEAD
 	sed 's|@REPO@|$(CURDIR)|g' $(CURDIR)/scripts/wire-pod.service | sudo tee /etc/systemd/system/wire-pod.service >/dev/null
 	sudo systemctl daemon-reload
 	sudo systemctl enable wire-pod

@@ -1,20 +1,15 @@
 #!/usr/bin/env bash
-# wire-pod.service ExecStart (root): build the pinned commit's server from a clean git archive copy, then run it inside
-# chipper/, so apiConfig.json, jdocs/, session-certs/, ../certs etc. resolve exactly as with start.sh.
-# The pin is robot/work/server-sha (a full sha): make ship writes it before its restart, make daemon-enable seeds it with HEAD.
-# Uncommitted edits never run here. Gap: chipper/webroot is still read from the working tree at runtime.
-# The working tree is still runnable by hand: with the service disabled, make start runs chipper/start.sh (go run).
-# Builds are cached per sha in robot/work/server-build/<sha>/chipper (root-owned; the newest 3 are kept). The running binary's
-# path names its sha: ship.sh reads it from the service's main pid.
+# wire-pod.service ExecStart (root): build the commit in robot/work/server-sha from a git archive copy into
+# robot/work/server-build/<sha>/chipper (ship.sh parses that path), then exec it with cwd chipper/ as start.sh does.
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 work=$repo/robot/work
 die() { echo "run-server.sh: $*" >&2; exit 1; }
-pin=$(cat "$work/server-sha" 2>/dev/null) || die "no $work/server-sha: make ship writes it, make daemon-enable seeds it"
+pin=$(cat "$work/server-sha" 2>/dev/null) || die "no $work/server-sha: make ship / make server-pin write it, make daemon-enable seeds it"
 sha=$(git -C "$repo" rev-parse --verify "$pin^{commit}") || die "server-sha $pin is not a commit"
 
 # The firewall of the same commit (a nft error stops the service, as ExecStartPre did).
-git -C "$repo" show "$sha:scripts/wire-pod-guard.nft" | /usr/sbin/nft -f - || die "firewall from $sha did not load"
+"$repo/scripts/load-guard.sh" || die "firewall from $sha did not load"
 
 cd "$repo/chipper"
 [[ -f source.sh ]] || die "no chipper/source.sh: run setup.sh"
@@ -29,22 +24,22 @@ export LD_LIBRARY_PATH="/root/.vosk/libvosk:${LD_LIBRARY_PATH:-}"
 builds=$work/server-build
 bin=$builds/$sha/chipper
 if [[ ! -x $bin ]]; then
-  mkdir -p "$builds"
-  tmp=$(mktemp -d "$builds/.tmp.XXXXXX")
-  trap 'rm -rf "$tmp"' EXIT
-  git -C "$repo" archive "$sha" chipper | tar -x -C "$tmp"
+  # Fixed dir: Go's build cache keys on the package dir, a new path per build recompiles everything.
+  src=$builds/.src
+  rm -rf "$src"
+  mkdir -p "$src"
+  git -C "$repo" archive "$sha" chipper | tar -x -C "$src"
   tags=nolibopusfile
   [[ ${USE_INBUILT_BLE:-} == true ]] && tags+=,inbuiltble
   short=$(git -C "$repo" rev-parse --short "$sha")
   echo "building server $short from a clean copy"
-  (cd "$tmp/chipper" && /usr/local/go/bin/go build -tags "$tags" \
-    -ldflags "-X 'github.com/kercre123/wire-pod/chipper/pkg/vars.CommitSHA=$short'" -o "$tmp/chipper.bin" cmd/vosk/main.go)
+  # -buildvcs=false: never let go run git (as root) on the main checkout.
+  (cd "$src/chipper" && /usr/local/go/bin/go build -buildvcs=false -tags "$tags" \
+    -ldflags "-X 'github.com/kercre123/wire-pod/chipper/pkg/vars.CommitSHA=$short'" -o "$src/chipper.bin" cmd/vosk/main.go)
   mkdir -p "$builds/$sha"
-  mv "$tmp/chipper.bin" "$bin"
-  rm -rf "$tmp"
-  trap - EXIT
-  # Keep the newest 3 builds (this one included).
-  find "$builds" -mindepth 1 -maxdepth 1 -type d ! -name '.tmp.*' -printf '%T@ %p\n' | sort -rn | tail -n +4 | cut -d' ' -f2- |
-    xargs -r rm -rf --
+  mv "$src/chipper.bin" "$bin"
+  # Keep the newest 3 builds; a prune failure never stops the server.
+  find "$builds" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%T@\t%p\0' | sort -zrn | tail -zn +4 | cut -zf2- |
+    xargs -0r rm -rf -- || true
 fi
 exec "$bin"
