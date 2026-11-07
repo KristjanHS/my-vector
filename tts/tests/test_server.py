@@ -34,7 +34,10 @@ def test_split_sentences_estonian_abbreviations_and_ordinals():
         "See on 5.",
         "Järgmine.",
     ]
-    assert server.split_sentences("It was 2026. then rain.") == ["It was 2026.", "then rain."]
+    assert server.split_sentences("It was 2026. then rain.") == [
+        "It was 2026.",
+        "then rain.",
+    ]
 
 
 def test_stream_normalises_estonian_voice_only():
@@ -43,7 +46,7 @@ def test_stream_normalises_estonian_voice_only():
     for voice in ("mari", "cori"):
         list(synth.stream(voice, "Kell on 14.05.", 1.0))
     assert [c[:2] for c in piper.calls] == [
-        ("et_EE-news-medium@Mari", "Kell on 14 null 5."),
+        ("et_EE-news-medium@Mari", "Kell on neliteist null viis."),
         ("en_GB-cori-high", "Kell on 14.05."),
     ]
 
@@ -53,7 +56,11 @@ def test_stream_translates_robot_lines_on_et_ee_only():
     synth = server.Synth({"piper": piper, "kokoro": FakeEngine(24000)}, {})
     for robot_lang in (None, "en-US", "et-EE"):
         list(synth.stream("mari", "09:05", 1.0, 0.0, robot_lang))
-    assert [c[1] for c in piper.calls] == ["9 null 5", "9 null 5", "Kell on 9 null 5"]
+    assert [c[1] for c in piper.calls] == [
+        "üheksa null viis",
+        "üheksa null viis",
+        "Kell on üheksa null viis",
+    ]
 
 
 def test_piper_engine_speaker_and_noise_from_voice_id_one_load_per_model():
@@ -64,7 +71,9 @@ def test_piper_engine_speaker_and_noise_from_voice_id_one_load_per_model():
 
         def synthesize(self, text, syn_config):
             configs.append(syn_config)
-            yield types.SimpleNamespace(audio_float_array=np.zeros(4, np.float32), sample_rate=22050)
+            yield types.SimpleNamespace(
+                audio_float_array=np.zeros(4, np.float32), sample_rate=22050
+            )
 
     eng = server.PiperEngine.__new__(server.PiperEngine)
     eng._voices, eng._dir, eng._cfg = {}, server.Path("/m"), dict
@@ -74,7 +83,12 @@ def test_piper_engine_speaker_and_noise_from_voice_id_one_load_per_model():
     assert loads == ["/m/et_EE-news-medium.onnx"]
     # mari's noise override; a voice id without one keeps the model's own noise
     assert configs == [
-        {"speaker_id": 2, "length_scale": 1.2, "noise_scale": 0.4, "noise_w_scale": 0.6},
+        {
+            "speaker_id": 2,
+            "length_scale": 1.2,
+            "noise_scale": 0.4,
+            "noise_w_scale": 0.6,
+        },
         {"speaker_id": None, "length_scale": 1.0},
     ]
 
@@ -116,12 +130,16 @@ def test_to_pcm16_gain_and_peak_limit():
 def test_trim_silence_keeps_the_head_and_tail_pads_around_speech():
     rate = 24000
     x = np.zeros(int(1.5 * rate), np.float32)
-    x[int(0.45 * rate) : int(0.70 * rate)] = 0.1  # -20 dBFS speech, Kokoro-like 0.45 s lead / 0.8 s tail
+    x[int(0.45 * rate) : int(0.70 * rate)] = (
+        0.1  # -20 dBFS speech, Kokoro-like 0.45 s lead / 0.8 s tail
+    )
     x[: int(0.1 * rate)] = 0.001  # -60 dBFS hiss stays under the floor
     y = server.trim_silence(x, rate)
     assert y.size == int(0.55 * rate)  # 0.05 head + 0.25 speech + 0.25 tail
     assert y[int(0.05 * rate) - 1] == 0 and y[int(0.05 * rate)] == np.float32(0.1)
-    assert y[int(0.30 * rate) - 1] == np.float32(0.1) and not y[int(0.30 * rate) :].any()
+    assert (
+        y[int(0.30 * rate) - 1] == np.float32(0.1) and not y[int(0.30 * rate) :].any()
+    )
 
 
 def test_trim_silence_leaves_all_quiet_and_tiny_audio_alone():
@@ -132,9 +150,16 @@ def test_trim_silence_leaves_all_quiet_and_tiny_audio_alone():
 
 
 def test_kokoro_synth_trims_its_silence():
-    lead, tail = np.zeros(int(0.45 * 24000), np.float32), np.zeros(int(0.82 * 24000), np.float32)
+    lead, tail = (
+        np.zeros(int(0.45 * 24000), np.float32),
+        np.zeros(int(0.82 * 24000), np.float32),
+    )
     speech = np.full(2400, 0.1, np.float32)
-    part = types.SimpleNamespace(audio=types.SimpleNamespace(cpu=lambda: types.SimpleNamespace(numpy=lambda: np.r_[lead, speech, tail])))
+    part = types.SimpleNamespace(
+        audio=types.SimpleNamespace(
+            cpu=lambda: types.SimpleNamespace(numpy=lambda: np.r_[lead, speech, tail])
+        )
+    )
     eng = object.__new__(server.KokoroEngine)
     eng._pipes = {"a": lambda text, voice, speed: [part]}
     eng._torch = types.SimpleNamespace(inference_mode=contextlib.nullcontext)
@@ -156,22 +181,38 @@ def test_limit_holds_the_ceiling_itself_not_via_the_final_clip():
     """limit() alone stays under PEAK (to_pcm16's clip would hide a no-op or overshooting limiter = hard clipping)."""
     rng = np.random.default_rng(0)
     x = (0.2 * rng.standard_normal(4000)).astype(np.float32)
-    for i in (0, 15, 16, 31, 32, 33, 63, 64, 99, 3999):  # block edges and the padded tail
+    for i in (
+        0,
+        15,
+        16,
+        31,
+        32,
+        33,
+        63,
+        64,
+        99,
+        3999,
+    ):  # block edges and the padded tail
         x[i] = 3.0
     y = server.limit(x)
     assert np.abs(y).max() <= server.PEAK + 1e-6
-    assert not np.allclose(y, np.clip(x, -server.PEAK, server.PEAK), atol=1e-3)  # gain dips, not clipping
+    assert not np.allclose(
+        y, np.clip(x, -server.PEAK, server.PEAK), atol=1e-3
+    )  # gain dips, not clipping
 
 
 def test_parse_request_defaults_and_clamp():
     assert server.parse_request(b'{"text": "hi"}') == ("hi", "af_bella", 1.0, 0.0, None)
     assert server.parse_request(b'{"text": "hi", "lang": "et-EE"}')[4] == "et-EE"
     assert server.parse_request(b'{"text": "hi", "lang": "en-US"}')[4] == "en-US"
-    assert server.parse_request(b'{"text": "hi", "voice": "cori", "slow": 9}')[
-        1:3
-    ] == ("cori", server.SLOW_MAX)
+    assert server.parse_request(b'{"text": "hi", "voice": "cori", "slow": 9}')[1:3] == (
+        "cori",
+        server.SLOW_MAX,
+    )
     assert server.parse_request(b'{"text": "hi", "slow": 0.1}')[2] == server.SLOW_MIN
-    assert server.parse_request(b'{"text": "hi", "boost_db": 99}')[3] == server.BOOST_MAX
+    assert (
+        server.parse_request(b'{"text": "hi", "boost_db": 99}')[3] == server.BOOST_MAX
+    )
     assert server.parse_request(b'{"text": "hi", "boost_db": -3}')[3] == 0.0
 
 
@@ -275,7 +316,9 @@ def test_tts_bad_request_and_unknown_path(serve):
 def test_tts_lang_reaches_the_stream(serve):
     piper = FakeEngine(22050)
     port = serve({"piper": piper, "kokoro": FakeEngine(24000)})
-    assert post(port, {"text": "Ready", "voice": "mari", "lang": "et-EE"})[0].status == 200
+    assert (
+        post(port, {"text": "Ready", "voice": "mari", "lang": "et-EE"})[0].status == 200
+    )
     assert post(port, {"text": "Ready", "voice": "mari"})[0].status == 200
     r, data = post(port, {"text": "Ready", "voice": "mari", "lang": "xx"})
     assert r.status == 400 and "lang" in json.loads(data)["error"]
@@ -359,8 +402,6 @@ def test_tts_chunked_request_body_is_411(serve):
     assert c.getresponse().status == 411
 
 
-
-
 class Model:
     """Stands in for the GPU model: a test checks it is garbage once freed."""
 
@@ -375,7 +416,9 @@ class FakeKokoro(FakeEngine):
         self.ref = weakref.ref(self.model)
 
     def synth(self, voice_id, text, slow):
-        model = self.model  # a frame local, as Kokoro's pipeline frames hold the model  # noqa: F841
+        model = (
+            self.model
+        )  # a frame local, as Kokoro's pipeline frames hold the model  # noqa: F841
         self.events.append("synth start")
         if self.gate:
             self.gate.wait(10)
@@ -391,14 +434,24 @@ class FakeKokoro(FakeEngine):
 def test_kokoro_engine_has_the_surface_the_fakes_stand_in_for():
     # B1 smoke: a module function inserted mid-class orphaned KokoroEngine.synth while every faked test stayed green
     for name in ("synth", "close"):
-        assert inspect.signature(getattr(server.KokoroEngine, name)) == inspect.signature(getattr(FakeKokoro, name))
+        assert inspect.signature(
+            getattr(server.KokoroEngine, name)
+        ) == inspect.signature(getattr(FakeKokoro, name))
 
 
 @pytest.fixture
 def lazy():
     """LazyKokoro + Synth over FakeKokoros. f.made: engines; f.events: order log; f.devices: devices asked of the factory;
     f.reclaims: (Synth lock held?, live models of closed engines) per reclaim; f.fail_loads / f.fail_at / f.fallback steer loads."""
-    f = types.SimpleNamespace(made=[], events=[], devices=[], reclaims=[], fail_loads=0, fail_at=0, fallback=False)
+    f = types.SimpleNamespace(
+        made=[],
+        events=[],
+        devices=[],
+        reclaims=[],
+        fail_loads=0,
+        fail_at=0,
+        fallback=False,
+    )
     lock = threading.Lock()
 
     def factory(device):
@@ -412,7 +465,9 @@ def lazy():
 
     def reclaim():
         gc.collect()
-        f.reclaims.append((lock.locked(), sum(1 for e in f.made if e.closed and e.ref() is not None)))
+        f.reclaims.append(
+            (lock.locked(), sum(1 for e in f.made if e.closed and e.ref() is not None))
+        )
 
     f.k = server.LazyKokoro(factory, "cuda", lock, reclaim)
     f.synth = server.Synth({"piper": FakeEngine(22050), "kokoro": f.k}, {}, lock)
@@ -429,20 +484,36 @@ def wait_until(cond, timeout=5):
 def test_unselected_request_loads_once_and_frees_at_request_end(lazy):
     assert not lazy.k.loaded
     assert len(list(lazy.synth.stream("af_bella", "One. Two.", 1.0))) == 2
-    assert lazy.events == ["load", "synth start", "synth end", "synth start", "synth end", "close"]
-    assert not lazy.k.loaded and lazy.reclaims == [(False, 0)]  # reclaimed outside the lock, model gone
+    assert lazy.events == [
+        "load",
+        "synth start",
+        "synth end",
+        "synth start",
+        "synth end",
+        "close",
+    ]
+    assert not lazy.k.loaded and lazy.reclaims == [
+        (False, 0)
+    ]  # reclaimed outside the lock, model gone
     list(lazy.synth.stream("cori", "Hi.", 1.0))  # a Piper request never touches Kokoro
     assert len(lazy.made) == 1
 
 
 def test_overlapping_unselected_requests_share_one_load(lazy):
-    a, b = lazy.synth.stream("af_bella", "One. Two.", 1.0), lazy.synth.stream("af_bella", "Three.", 1.0)
+    a, b = (
+        lazy.synth.stream("af_bella", "One. Two.", 1.0),
+        lazy.synth.stream("af_bella", "Three.", 1.0),
+    )
     next(a)
     next(b)
     list(a)
     assert lazy.k.loaded  # b still holds it
     list(b)
-    assert not lazy.k.loaded and lazy.events.count("load") == 1 and lazy.events.count("close") == 1
+    assert (
+        not lazy.k.loaded
+        and lazy.events.count("load") == 1
+        and lazy.events.count("close") == 1
+    )
 
 
 def test_selected_loads_warm_now_stays_resident_and_frees_on_deselect(lazy):
@@ -459,7 +530,9 @@ def test_deselect_mid_synth_frees_after_the_request(lazy):
     k, events = lazy.k, lazy.events
     k.set_pinned(True)
     lazy.made[0].gate = gate = threading.Event()
-    t = threading.Thread(target=lambda: list(lazy.synth.stream("af_bella", "One. Two.", 1.0)))
+    t = threading.Thread(
+        target=lambda: list(lazy.synth.stream("af_bella", "One. Two.", 1.0))
+    )
     t.start()
     wait_until(lambda: events[-1] == "synth start")
     unpin = threading.Thread(target=k.set_pinned, args=(False,))
@@ -469,7 +542,9 @@ def test_deselect_mid_synth_frees_after_the_request(lazy):
     t.join(5)
     unpin.join(5)
     warm = ["load", "synth start", "synth end"]
-    assert events == warm + ["synth start", "synth end"] * 2 + ["close"]  # freed after the 2nd sentence, not between
+    assert events == warm + ["synth start", "synth end"] * 2 + [
+        "close"
+    ]  # freed after the 2nd sentence, not between
     assert not k.loaded
 
 
@@ -478,7 +553,9 @@ def test_failed_synth_still_frees_the_model(lazy):
     with pytest.raises(RuntimeError, match="engine down"):
         list(lazy.synth.stream("af_bella", "One.", 1.0))
     assert not lazy.k.loaded and lazy.k._requests == 0
-    assert lazy.reclaims == [(False, 0)]  # no traceback frame kept the model alive through the reclaim
+    assert lazy.reclaims == [
+        (False, 0)
+    ]  # no traceback frame kept the model alive through the reclaim
 
 
 def test_failed_pin_load_is_retried_by_the_watcher(lazy, tmp_path):
@@ -502,10 +579,14 @@ def test_cpu_fallback_does_not_stick(lazy):
 
 
 def test_handler_frees_unselected_kokoro_after_the_response(lazy):
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(lazy.synth, lambda: {}))
+    srv = ThreadingHTTPServer(
+        ("127.0.0.1", 0), server.make_handler(lazy.synth, lambda: {})
+    )
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        r, data = post(srv.server_address[1], {"text": "One. Two.", "voice": "af_bella"})
+        r, data = post(
+            srv.server_address[1], {"text": "One. Two.", "voice": "af_bella"}
+        )
         assert r.status == 200 and len(data) == 2 * 1600 * 2
         assert lazy.events[-1] == "close" and not lazy.k.loaded
     finally:
@@ -520,7 +601,11 @@ def test_handler_frees_unselected_kokoro_after_the_response(lazy):
         ('{"t1": "cori", "t2": "af_bella"}', True, False),
         ('{"t1": "stock", "t2": "cori"}', False, False),
         ("{}", True, False),  # default voice af_bella
-        ('{"t1": "cori", "t2": "nobody"}', True, True),  # settings.go: any invalid field -> all defaults
+        (
+            '{"t1": "cori", "t2": "nobody"}',
+            True,
+            True,
+        ),  # settings.go: any invalid field -> all defaults
         ('{"t1": "cori", "t2": "cori", "slow": 9}', True, True),
         ('{"t1": "cori"', True, True),
         ('["cori"]', True, True),
@@ -528,14 +613,32 @@ def test_handler_frees_unselected_kokoro_after_the_response(lazy):
         ('{"t1": "cori", "t2": ["cori"]}', True, True),
         ('{"t1": "mari", "t2": "cori"}', True, True),  # mari is Estonian-only
         ('{"lang": "en-US", "t1": "af_bella", "t1_et": "mari"}', True, False),
-        ('{"lang": "et-EE", "t1": "af_bella", "t2": "af_bella"}', False, False),  # E7: the ET stack never pins Kokoro
-        ('{"lang": "fi-FI", "t1": "cori", "t2": "af_bella"}', True, False),  # unsupported lang -> en-US
-        ('{"lang": "et-EE", "t1_et": "af_bella"}', False, True),  # E30: et pair is mari only -> defaults (mari)
+        (
+            '{"lang": "et-EE", "t1": "af_bella", "t2": "af_bella"}',
+            False,
+            False,
+        ),  # E7: the ET stack never pins Kokoro
+        (
+            '{"lang": "fi-FI", "t1": "cori", "t2": "af_bella"}',
+            True,
+            False,
+        ),  # unsupported lang -> en-US
+        (
+            '{"lang": "et-EE", "t1_et": "af_bella"}',
+            False,
+            True,
+        ),  # E30: et pair is mari only -> defaults (mari)
         ('{"lang": "et-EE", "t2_et": "stock"}', False, True),
-        ('{"lang": "en-US", "t1": "cori", "t2": "cori", "t1_et": "af_bella"}', True, True),  # any invalid field -> defaults
+        (
+            '{"lang": "en-US", "t1": "cori", "t2": "cori", "t1_et": "af_bella"}',
+            True,
+            True,
+        ),  # any invalid field -> defaults
     ],
 )
-def test_kokoro_selected_reads_t1_t2_and_invalid_is_defaults(tmp_path, text, pinned, bad):
+def test_kokoro_selected_reads_t1_t2_and_invalid_is_defaults(
+    tmp_path, text, pinned, bad
+):
     f = tmp_path / "myvectorConfig.json"
     f.write_text(text)
     got, err = server.kokoro_selected(f)
@@ -546,7 +649,9 @@ def test_kokoro_selected_missing_file_is_defaults(tmp_path):
     assert server.kokoro_selected(tmp_path / "none.json") == (True, None)
 
 
-def test_watcher_pins_on_select_frees_on_unselect_and_garbled_is_defaults(lazy, tmp_path, caplog):
+def test_watcher_pins_on_select_frees_on_unselect_and_garbled_is_defaults(
+    lazy, tmp_path, caplog
+):
     k = lazy.k
     f = tmp_path / "myvectorConfig.json"
     f.write_text('{"t1": "cori", "t2": "cori"}')
