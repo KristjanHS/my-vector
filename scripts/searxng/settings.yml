@@ -1,0 +1,10 @@
+# SearXNG for my-vector's search provider (web-search Stage 2.3). scripts/searxng.sh copies this into
+# robot/work/searxng/ with a generated secret_key; never put the key here.
+use_default_settings: true
+server:
+  secret_key: "@SECRET@"
+  limiter: false
+  image_proxy: false
+search:
+  formats: [html, json]
+  default_lang: et
