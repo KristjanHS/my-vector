@@ -61,7 +61,8 @@ User ruling: keep the GPU (Adreno 304 + Qualcomm OpenCL is real; GPU init ok on 
 Re-open only on S2 without gdb/fast restarts: then look for an upstream WireOS fix of `tfliteModel.cpp` first.
 
 **E2 — SeAssert (S1), only with a hit or a repro.** Rate ~2 per 20 deploys, so bisecting blind costs ~20 deploys per arm.
-Step 1: catch the values with `robot/seassert/catch.sh -d N` (deploy rounds) — the reading picks corruption vs register (seassert plan §Plan 4).
+Step 1 (user OK'd 2026-11-07): `robot/seassert/catch.sh -d 20` (deploy rounds, stops at first hit) — the reading picks corruption vs register (seassert plan §Plan 4).
+A gdb-round S2/S3 counts as observer-induced (E0), never as a deploy finding.
 Step 2 if corruption: build with P8+P9+P10 reverted (audio arm) → 20 deploys; S1 0/20 ⇒ the writer is in those patches → bisect the 3.
 
 **E3 — volume (S1).** Same 20-deploy count at default master volume (settings.sh volume step skipped). Only if E2 points at SE inputs, not corruption.
