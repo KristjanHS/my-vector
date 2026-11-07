@@ -18,7 +18,7 @@ from et_text import normalize  # noqa: E402
 VOICE = server.VOICES["mari"][1]
 LEVELS = [(0.667, 0.8), (0.4, 0.6), (0.2, 0.4)]  # the model default first
 TIMES = ["20:47", "12:00", "08:05", "09:26"]  # 09:26: the "kuni" filler case (bdea4c0)
-FILLER = re.compile(r"\b(kuni|või)\b")
+FILLER = re.compile(r"\b(kuni|või)\b", re.I)
 STT = os.environ.get("STT_URL", "http://127.0.0.1:8092")
 
 
@@ -50,7 +50,7 @@ def main():
                 if FILLER.search(got):  # the hour-minute seam filler that et_text._time's words removed
                     fillers.append(got)
             print(
-                f"noise {level[0]}/{level[1]}  {t}  miss {len(misses)}/{takes}  filler {len(fillers)}/{takes}  {(misses + fillers)[:2]}",
+                f"noise {level[0]}/{level[1]}  {t}  miss {len(misses)}/{takes}  filler {len(fillers)}/{takes}  {[*fillers[:1], *(m for m in misses if m not in fillers)][:2]}",
                 flush=True,
             )
 
