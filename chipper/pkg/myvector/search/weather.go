@@ -31,9 +31,10 @@ type Place struct {
 // Forecast is Open-Meteo's current + daily reply (forecast_days=3, timezone=auto).
 type Forecast struct {
 	Current struct {
-		Temp float64 `json:"temperature_2m"`
-		Code int     `json:"weather_code"`
-		Wind float64 `json:"wind_speed_10m"`
+		Temp  float64 `json:"temperature_2m"`
+		Code  int     `json:"weather_code"`
+		Wind  float64 `json:"wind_speed_10m"`
+		IsDay int     `json:"is_day"`
 	} `json:"current"`
 	Daily struct {
 		Time    []string  `json:"time"`
@@ -80,7 +81,7 @@ func FetchForecast(ctx context.Context, lat, lon float64) (Forecast, error) {
 	ff := func(v float64) string { return strconv.FormatFloat(v, 'f', 4, 64) }
 	q := url.Values{
 		"latitude": {ff(lat)}, "longitude": {ff(lon)},
-		"current":       {"temperature_2m,weather_code,wind_speed_10m"},
+		"current":       {"temperature_2m,weather_code,wind_speed_10m,is_day"},
 		"daily":         {"weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max"},
 		"forecast_days": {"3"}, "timezone": {"auto"},
 	}
