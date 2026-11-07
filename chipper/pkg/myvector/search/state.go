@@ -54,7 +54,10 @@ type State struct {
 func Open(path string) *State {
 	s := &State{}
 	if b, err := os.ReadFile(path); err == nil {
-		json.Unmarshal(b, s)
+		if err := json.Unmarshal(b, s); err != nil {
+			logf("myvector: search state corrupt, starting empty (quota counts reset):", path, err)
+			s = &State{}
+		}
 	}
 	s.path = path
 	if s.Used == nil {
@@ -171,12 +174,20 @@ func (s *State) save() {
 	if err != nil {
 		return
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
-		logf("myvector: search state write:", err)
-		return
+	f, err := os.CreateTemp(filepath.Dir(s.path), ".myvectorSearch-*")
+	if err == nil {
+		_, err = f.Write(b)
+		if err2 := f.Close(); err == nil {
+			err = err2
+		}
+		if err == nil {
+			err = os.Rename(f.Name(), s.path)
+		}
+		if err != nil {
+			os.Remove(f.Name())
+		}
 	}
-	if err := os.Rename(tmp, s.path); err != nil {
+	if err != nil {
 		logf("myvector: search state write:", err)
 	}
 }
