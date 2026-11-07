@@ -35,7 +35,7 @@ func forkBotZone(esn string) *time.Location {
 }
 
 // forkAIReq: the llm.Resolve target sets the model (E25) and its top_p (CreateAIReq set it for the Knowledge model);
-// then the brain's rendered template replaces the system prompt and its ReplyCap caps the reply.
+// then the brain's rendered template replaces the system prompt and its ReplyCap (LongReplyCap for isKG or a ForkLongAsk) caps the reply.
 // Ollama gets reasoning_effort none (qwen3.5/gemma4 think by default).
 func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.ChatCompletionRequest {
 	l := lang.Current()
