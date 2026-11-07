@@ -2,7 +2,9 @@
 package quiet
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -124,4 +126,34 @@ func Set(until time.Time, source string) error {
 		os.Remove(tmp.Name())
 	}
 	return err
+}
+
+// NapURL is vic-engine's console on the robot; tests point it at httptest.
+var NapURL = func(ip string) string { return "http://" + ip + ":8888" }
+
+// NapTimeout bounds the nap request; the voice reply never waits on it.
+var NapTimeout = 5 * time.Second
+
+// ErrNapOff: $MYVECTOR_NAP=off (routeprobe, tests) — nothing is sent.
+var ErrNapOff = errors.New("quiet: nap off ($MYVECTOR_NAP=off)")
+
+// Nap sets the firmware's SleepCycle_NapUntil_s to until (0 ends the nap); patch 0011 holds the night rules until then.
+func Nap(ip string, until time.Time) error {
+	if os.Getenv("MYVECTOR_NAP") == "off" {
+		return ErrNapOff
+	}
+	sec := int64(0)
+	if !until.IsZero() {
+		sec = until.Unix()
+	}
+	c := http.Client{Timeout: NapTimeout}
+	r, err := c.Get(NapURL(ip) + "/consolevarset?key=SleepCycle_NapUntil_s&value=" + strconv.FormatInt(sec, 10))
+	if err != nil {
+		return err
+	}
+	r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		return fmt.Errorf("quiet: nap: vic-engine %s", r.Status)
+	}
+	return nil
 }
