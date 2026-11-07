@@ -2,7 +2,7 @@
 //
 //	go run ./pkg/myvector/routeprobe [-lang et-EE] [-audio] [-llm] [-plugins] "text"   # run from chipper/, beside apiConfig.json
 //
-// Nothing under chipper/ is written: apiConfig.json, myvectorConfig.json and jdocs/jdocs.json are read from temp copies
+// Nothing under chipper/ is written: apiConfig.json, myvectorConfig.json, myvectorPrompt.json and jdocs/jdocs.json are read from temp copies
 // (vars.ReadConfig rewrites apiConfig.json on every start), removed on exit.
 // -lang / -brain test another language / LLM profile (they edit the temp copy of myvectorConfig.json).
 // -plugins / -plugin f.so / -custom RUN code on a match: plugin Action funcs, and customIntents.json's exec commands and
@@ -32,6 +32,7 @@ import (
 	pb "github.com/digital-dream-labs/api/go/chipperpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	"github.com/kercre123/wire-pod/chipper/pkg/vtt"
 	ttr "github.com/kercre123/wire-pod/chipper/pkg/wirepod/ttr"
@@ -144,7 +145,7 @@ func main() {
 	fmt.Println("llm: " + strings.Join(strings.Fields(a), " "))
 }
 
-// isolate points vars.ApiConfigPath, lang.Path and vars.JdocsPath at temp copies of the files (run from chipper/).
+// isolate points vars.ApiConfigPath, lang.Path, prompt.Path and vars.JdocsPath at temp copies of the files (run from chipper/).
 // vars.ReadConfig rewrites apiConfig.json and, when env STT_SERVICE differs from it, blanks STT.provider; the copy takes that.
 func isolate() {
 	src := vars.ApiConfigPath
@@ -166,10 +167,12 @@ func isolate() {
 	if tmp, err = os.MkdirTemp("", "routeprobe"); err != nil {
 		die(2, "%v", err)
 	}
+	promptSrc := prompt.Path()
 	langSrc := lang.Path() // beside apiConfig.json (vars/fork_lang.go); follows ApiConfigPath to the copy below
 	vars.ApiConfigPath = filepath.Join(tmp, "apiConfig.json")
 	copyFile(src, vars.ApiConfigPath, true)
 	copyFile(langSrc, lang.Path(), false)
+	copyFile(promptSrc, prompt.Path(), false)
 	j := filepath.Join(tmp, "jdocs.json")
 	copyFile(vars.JdocsPath, j, false)
 	vars.JdocsPath = j

@@ -80,6 +80,27 @@ func TestForkPromptEnglishNow(t *testing.T) {
 	}
 }
 
+func TestForkPromptReadsStore(t *testing.T) {
+	lang.UseForTest(t, lang.English)
+	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
+	useBotClock(t, "Asia/Tokyo")
+	old := prompt.Path
+	path := filepath.Join(t.TempDir(), "myvectorPrompt.json")
+	prompt.Path = func() string { return path }
+	t.Cleanup(func() { prompt.Path = old })
+	if err := prompt.Save(prompt.Ollama, "Be a pirate robot.\n\n{user}"); err != nil {
+		t.Fatal(err)
+	}
+	if err := prompt.SaveAbout("Mari lives in Tartu."); err != nil {
+		t.Fatal(err)
+	}
+	c := CreateAIReq("what day is it", "esn", false, true).Messages[0].Content
+	want := "Be a pirate robot.\n\nAbout the person you are talking with:\nMari lives in Tartu.\n\n"
+	if !strings.HasPrefix(c, want) || !strings.Contains(c, "It is Saturday, 7 November 2026, 16:43 (Asia/Tokyo).") {
+		t.Errorf("saved template, about-me or the appended {now} missing: %q", c)
+	}
+}
+
 // Claude and Gemini presets are "custom" too (scripts/llm.sh): only the Ollama port gets the ET model + reasoning.
 func TestForkPromptOpenAIOmitsReasoning(t *testing.T) {
 	lang.UseForTest(t, lang.Estonian)

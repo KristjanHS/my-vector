@@ -1,6 +1,6 @@
 # Prompt templates (slice 2)
 
-Status: Stage 1 committed; Stages 2–4 open. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order 2; its rulings P, U, SP, E, P-guard, P-budget, N bind.
+Status: Stages 1–2 committed; Stages 3–4 open. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order 2; its rulings P, U, SP, E, P-guard, P-budget, N bind.
 
 ## Rulings
 
@@ -16,6 +16,9 @@ Status: Stage 1 committed; Stages 2–4 open. Parent: `2026-11-07-system-prompt-
 | CM | `{commands}` renders only when `vars.APIConfig.Knowledge.CommandsEnable`: one grammar line, one example, `playAnimationWI` + `playAnimation` (stops speech) with emotions from `ValidLLMCommands` `playAnimationWI` `ParamChoices`, `getImage` param `front` only, `newVoiceRequest` only when `SaveChat` and isKG (`forkAIReq(r, esn, isKG)`). Calm voice. ≤170 tokens. | `prompt.Commands`; caller `forkCommands` |
 | OP | `openai_prompt` is ignored (live empty); the `/myvector/prompt` page shows one warning line when it is non-empty. | `prompt.PageHandler` |
 | DBG | `DEBUG_PRINT_PROMPT=true` logs the rendered prompt (upstream logs the discarded one). | `forkAIReq` |
+| UA | `{user}` = "About the person you are talking with:" + newline + the about-me text; empty about renders empty. | `prompt.UserBlock`; `forkAIReq` |
+| VS | Versions = last 5 saves per brain, newest first (= live); Restore(i) re-saves version i; a save equal to the newest adds none. Reset drops the saved template (built-in default goes live), history kept. | `prompt.Save` `Restore` `Reset` |
+| LF | Missing file = defaults, silent; unparsable file, or a brain's template / about failing checks → that part falls back to default + one log line. | `prompt.Load` `Store.Live` `Store.User` |
 
 ## Constants (source is the home; defaults below)
 

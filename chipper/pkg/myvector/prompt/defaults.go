@@ -70,7 +70,7 @@ func Sample(l string) Vars {
 	return Vars{
 		Now:      Now(l, time.Date(2026, 11, 7, 7, 43, 0, 0, time.UTC), Zone("Europe/Tallinn")),
 		Lang:     LangLine(l),
-		User:     "About the user: Mari lives in Tartu and loves football.",
+		User:     UserBlock("Mari lives in Tartu and loves football."),
 		Speech:   SpeechBlock(),
 		Commands: Commands(SampleEmotions, true),
 	}
