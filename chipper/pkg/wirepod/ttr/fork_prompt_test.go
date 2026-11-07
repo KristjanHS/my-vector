@@ -48,7 +48,7 @@ func TestForkPromptEstonian(t *testing.T) {
 	if r.Model != llm.DefaultETModel {
 		t.Errorf("Model = %q, want %q", r.Model, llm.DefaultETModel)
 	}
-	if want := "\n\nPraegu on laupäev, 7. november 2026, kell 9.43 (Europe/Tallinn).\n\nAnswer in Estonian."; !strings.HasSuffix(r.Messages[0].Content, want) {
+	if want := "\n\nPraegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn).\n\nAnswer in Estonian."; !strings.HasSuffix(r.Messages[0].Content, want) {
 		t.Errorf("system prompt lacks the now + language lines: %q", r.Messages[0].Content)
 	}
 	if r.ReasoningEffort != "none" {

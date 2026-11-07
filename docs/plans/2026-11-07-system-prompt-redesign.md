@@ -78,7 +78,7 @@ Severity: CRITICAL / HIGH / MEDIUM / LOW.
 | S-guard | Per-provider monthly counter with a hard cap; results cached per query with a TTL. The future Claude tool gets max 1 search per turn and a daily cap. | `search` quota + cache in gitignored state |
 | V | Claude sees photos only when explicitly chosen in a separate vision setting in the wire-pod UI, even when the brain is Claude. Default: the best local Ollama vision model, picked by a 3–5 photo bench (gemma4:e4b, gemma4:e2b, qwen3.5:4b, gemma3:4b; direct Estonian vs English → EstLLM). | `llm.VisionModel` + config field; `forkCameraReq`; UI selector |
 | M | M2 now: transcripts → per-session fact extraction (evidence-substring check, unconfirmed) → nightly diary entry (append-only) + merge of touched categories + profile rebuilt from facts + fixed question set with revert. M3 extras later. | new `pkg/myvector/memory`; gitignored store |
-| N | `{now}`: zone = robot jdoc `vic.RobotSettings.time_zone` by ESN, else `time.Local`; native line per language ("Praegu on laupäev, 7. november 2026, kell 9.43 (Europe/Tallinn)."), placed before the language line. | `prompt.Now`; `forkAIReq(aireq, esn)` |
+| N | `{now}`: zone = robot jdoc `vic.RobotSettings.time_zone` by ESN, else `time.Local`; native line per language ("Praegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn)."), placed before the language line. | `prompt.Now`; `forkAIReq(aireq, esn)` |
 | M-later | M3: bge-m3 search, weekly Claude pass, "mida sa minust tead?" / "unusta see". Revisit once M2 has run ~2 weeks. | — |
 
 ## Build order (each slice visible on the robot)
