@@ -43,13 +43,13 @@ Candidates: vic-anim console func `RecordMicDataClip` (`kMicData_ClipRecordTime_
 | slice | work | pass bar |
 |---|---|---|
 | Stage 1.1 | Source read: per candidate — trigger path from WSL, output file/location, audible side effect (earcon/get-in anim), firmware change needed? | ≥1 candidate with no audible side effect, reachable without a firmware patch or with ≤1 small patch |
-| Stage 1.2 | `probe.sh`: record a clip while `play.sh` runs a sample set at volume 1, scp it to `robot/work/openmic/`, STT via myvector-stt, pipe to `quietmatch`. PC speaker says "shut up" (af_bella) / "ole vait" (mari) at ~1 m mid-sample. **Live audio test — ask the user first, schedule when the daughter is away.** | R2: ≥4/5 hits per language; 0/5 hits on test speech alone |
+| Stage 1.2 | `probe.sh -m`: record a clip while `play.sh` runs a sample set at volume 1, STT 2 s windows / 1 s hop via myvector-stt → `quietmatch`. PC speaker says "shut up" (af_bella) / "ole vait" (mari) at ~1 m in the pause after Vector's sentence (`-o` over it: recorded, not gated). **Live audio test — ask the user first.** | R2 (ruled 2026-11-07, pause bar): pause run ≥4/5 proc whole hits per language; `-q` 0/5 |
 | Stage 1.3 | Same rig: "Hey Vector, shut up" over the robot's own speech — does the wake word fire? Recorded, not a gate (sets expectations for the wake-word path). | — |
 | Stage 1.4 | Verdict: write `PASS`/`FAIL` + one evidence line per R1/R2 (+ R3 result) into §Stage 1 verdict below; FAIL → Stage 5 status line becomes `CLOSED: <why>`. | — |
 
 ### Stage 1 verdict
 
-(pending)
+(pending) — owed: user re-runs `robot/openmic/probe.sh -m et-EE et-llm piper-et_EE-news-medium-Mari` and the en-US equivalent with the windowed probe.
 
 ## Stage 2 — server whole-phrase matcher
 
