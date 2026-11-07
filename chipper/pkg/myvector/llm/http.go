@@ -243,7 +243,8 @@ func TestHandler(kg func() KG) http.HandlerFunc {
 func ping(ctx context.Context, t Target) (string, int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, TestTimeout)
 	defer cancel()
-	req := openai.ChatCompletionRequest{Model: t.Model, MaxCompletionTokens: 32,
+	// Claude thinks inside max_completion_tokens (~80 tokens typical, plan 2026-11-07-prompt-templates RC): 32 replied empty.
+	req := openai.ChatCompletionRequest{Model: t.Model, MaxCompletionTokens: 256,
 		Messages: []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: TestPrompt}}}
 	if t.Ollama() { // Ollama's /v1 ignores max_completion_tokens
 		req.ReasoningEffort, req.MaxTokens, req.MaxCompletionTokens = "none", 32, 0

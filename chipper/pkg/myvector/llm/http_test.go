@@ -175,7 +175,7 @@ func TestLLMTestHandler(t *testing.T) {
 	if w := postTest(`{"lang":"en-US","provider":"claude","model":"claude-haiku-5-5"}`); w.Code != 200 {
 		t.Fatalf("claude test: %d %s", w.Code, w.Body)
 	}
-	if b := f.ping.Load().(string); !strings.Contains(b, `"max_completion_tokens":32`) || strings.Contains(b, `"max_tokens"`) {
+	if b := f.ping.Load().(string); !strings.Contains(b, `"max_completion_tokens":256`) || strings.Contains(b, `"max_tokens"`) {
 		t.Errorf("claude ping cap: %s, want max_completion_tokens only", b)
 	}
 	if w := postTest(`{"lang":"xx","provider":"ollama","model":"m"}`); w.Code != 400 {
