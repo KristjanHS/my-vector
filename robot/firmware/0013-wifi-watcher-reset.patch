@@ -3,25 +3,65 @@ From: Kristjan Sillmann <kristjan.h.s@gmail.com>
 Date: Sat, 7 Nov 2026 20:10:00 +0200
 Subject: [PATCH] wifi-watcher-reset
 
-vic-switchboard WifiWatcher: reset the failed-autoconnect count whenever the robot is on WiFi,
-so only consecutive failures (5) restart wpa_supplicant + connman. wire-pod's WiFi switch
-(connmanctl connect) makes each switchboard attempt fail InProgress; the count never reset, so
-every 3rd-5th switch restarted connman mid-switch (robot log 2026-11-07 19:58:12, sudo by net).
-Logs my-vector.WifiWatcherReset.
+vic-switchboard WifiWatcher stands aside while wire-pod's WiFi job runs (/run/myvector-wifi-job
+says running:, refreshed each step, ignored past 180 s), and resets the failed-autoconnect count
+whenever the robot is on WiFi, so only 5 consecutive failures restart wpa_supplicant + connman.
+wire-pod's switch (connmanctl connect) made each attempt fail InProgress and the count never
+reset: every 3rd-5th switch restarted connman mid-switch (robot log 2026-11-07 19:58:12, sudo by
+net). Logs my-vector.WifiJob and my-vector.WifiWatcherReset.
 ---
- platform/switchboard/switchboardd/wifiWatcher.cpp | 6 ++++++
- 1 file changed, 6 insertions(+)
+ .../switchboard/switchboardd/wifiWatcher.cpp  | 28 +++++++++++++++++++
+ 1 file changed, 28 insertions(+)
 
 diff --git a/platform/switchboard/switchboardd/wifiWatcher.cpp b/platform/switchboard/switchboardd/wifiWatcher.cpp
-index 5272e52a..421287bb 100644
+index 5272e52a..dc2054d9 100644
 --- a/platform/switchboard/switchboardd/wifiWatcher.cpp
 +++ b/platform/switchboard/switchboardd/wifiWatcher.cpp
-@@ -59,6 +59,12 @@ void WifiWatcher::ConnectIfNoWifi() {
+@@ -15,9 +15,26 @@
+ #include "util/fileUtils/fileUtils.h"
+ #include "wifiWatcher.h"
+ 
++#include <ctime>
++#include <fstream>
++#include <string>
++#include <sys/stat.h>
++
+ namespace Anki {
+ namespace Switchboard {
+ 
++// my-vector: wire-pod's WiFi job (my-vector robot/wifi/wifi.sh test|switch) writes "running: ..." here and refreshes
++// it each step; while it moves networks our connect fails InProgress. Stand aside, for at most 180 s per step.
++static bool MyVectorWifiJobRunning() {
++  struct stat st;
++  if(stat("/run/myvector-wifi-job", &st) != 0 || time(nullptr) - st.st_mtime > 180) {
++    return false;
++  }
++  std::ifstream f("/run/myvector-wifi-job");
++  std::string word;
++  return (f >> word) && word == "running:";
++}
++
+ WifiWatcher::WifiWatcher(struct ev_loop* loop)
+ : _loop(loop),
+ _enabled(true) {
+@@ -44,6 +61,11 @@ void WifiWatcher::ConnectIfNoWifi() {
+     return;
+   }
+ 
++  if(MyVectorWifiJobRunning()) {
++    Log::Write("WifiWatcher: my-vector.WifiJob running, doing nothing this tick.");
++    return;
++  }
++
+   if(Wifi::IsAccessPointMode()) {
+     Log::Write("WifiWatcher: access point mode enabled, doing nothing this tick.");
+     return;
+@@ -59,6 +81,12 @@ void WifiWatcher::ConnectIfNoWifi() {
    if((wifiState.connState == Anki::Wifi::WiFiConnState::CONNECTED) ||
      (wifiState.connState == Anki::Wifi::WiFiConnState::ONLINE)) {
      // robot is on wifi, so carry on!
-+    // my-vector: count only consecutive failed autoconnects. A WiFi switch by another tool (connmanctl connect)
-+    // makes each attempt fail InProgress; never reset, those added up to a wpa_supplicant/connman restart.
++    // my-vector: count only consecutive failed autoconnects (never reset, they added up to a wpa_supplicant/connman
++    // restart). Trade: a link flapping faster than 5 ticks per drop is no longer recovered by a restart.
 +    if(_connectErrorCount > 0) {
 +      Log::Write("WifiWatcher: on wifi again, my-vector.WifiWatcherReset of %d failed autoconnects", _connectErrorCount);
 +      _connectErrorCount = 0;
