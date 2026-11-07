@@ -72,4 +72,7 @@ func TestReplyCap(t *testing.T) {
 	if ReplyCap(Claude) != 1024 || ReplyCap(Ollama) != 300 {
 		t.Errorf("ReplyCap claude %d ollama %d", ReplyCap(Claude), ReplyCap(Ollama))
 	}
+	if LongReplyCap(Claude) != 2048 || LongReplyCap(Ollama) != 1000 {
+		t.Errorf("LongReplyCap claude %d ollama %d", LongReplyCap(Claude), LongReplyCap(Ollama))
+	}
 }
