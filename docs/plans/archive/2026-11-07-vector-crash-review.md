@@ -1,7 +1,7 @@
 # Vector crash review — every change we make, eliminated one by one
 
-Status: **plan, not started.** Method = `systematic-debugging`: reproduce → one variable per test → pre-registered pass/fail.
-Authored 2026-11-07; execution is a fresh session (user: "write .md, don't launch debugging in this session").
+Status: **CLOSED WITHOUT SHIPPING 2026-11-07** — S2/S3 gdb-induced; S1 no repro (0/5 restarts, 0/5 gdb deploys); GPU kept.
+Next crash: `docs/crash-debugging.md`.
 
 ## Symptoms (S)
 
@@ -62,7 +62,7 @@ Re-open only on S2 without gdb/fast restarts: then look for an upstream WireOS f
 
 **E2 — SeAssert (S1), only with a hit or a repro.** Rate ~2 per 20 deploys, so bisecting blind costs ~20 deploys per arm.
 Step 1 (user OK'd 2026-11-07): `robot/seassert/catch.sh -d` 5 deploy rounds (stops at first hit) — the reading picks corruption vs register (seassert plan §Plan 4).
-A gdb-round S2/S3 counts as observer-induced (E0), never as a deploy finding.
+**Result 14:00:** 0 hits in 5 deploys (`robot/work/seassert/catch-20261107-135429`); E3–E6 not run (their triggers never fired).
 Step 2 if corruption: build with P8+P9+P10 reverted (audio arm) → 20 deploys; S1 0/20 ⇒ the writer is in those patches → bisect the 3.
 
 **E3 — volume (S1).** Same 20-deploy count at default master volume (settings.sh volume step skipped). Only if E2 points at SE inputs, not corruption.
