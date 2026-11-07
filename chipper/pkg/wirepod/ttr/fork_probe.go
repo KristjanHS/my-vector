@@ -41,7 +41,7 @@ func ForkProbeLLM(ctx context.Context, transcribedText, esn string) (target, ans
 	case "openai":
 		c = openai.NewClient(k.Key)
 	}
-	if t, ok := llm.Resolve(llm.Load(), lang.Current(), forkKG()); ok {
+	if t, ok := forkResolve(llm.Load(), lang.Current(), forkKG()); ok {
 		target = t.Provider + " " + t.Model
 	} else if c == nil {
 		return "", "", fmt.Errorf("no client for Knowledge provider %q and no fork profile for %s", k.Provider, lang.Current())

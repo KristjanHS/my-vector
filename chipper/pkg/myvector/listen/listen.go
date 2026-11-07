@@ -99,6 +99,21 @@ func (s *State) Active(esn string, now time.Time) bool {
 	return true
 }
 
+// Any is Active for every robot: true when one is on (callers without an ESN).
+func (s *State) Any(now time.Time) bool {
+	s.mu.Lock()
+	esns := make([]string, 0, len(s.bots))
+	for e := range s.bots {
+		esns = append(esns, e)
+	}
+	s.mu.Unlock()
+	on := false
+	for _, e := range esns {
+		on = s.Active(e, now) || on
+	}
+	return on
+}
+
 // Heard and Spoke stamp an utterance / a reply; a robot that is off is left off.
 func (s *State) Heard(esn string, now time.Time) { s.stamp(esn, func(b *bot) { b.lastHeard = now }) }
 func (s *State) Spoke(esn string, now time.Time) { s.stamp(esn, func(b *bot) { b.lastSpoke = now }) }

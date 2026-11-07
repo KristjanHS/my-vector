@@ -258,7 +258,7 @@ func ProcessTextAll(req interface{}, voiceText string, intents []vars.JsonIntent
 	var intentNum int = 0
 	var successMatched bool = false
 	voiceText = vars.ForkNormalizeText(strings.ToLower(voiceText))
-	if forkQuiet(req, voiceText, botSerial) {
+	if forkQuiet(req, voiceText, botSerial) || forkListen(req, voiceText, botSerial) {
 		return true
 	}
 	pluginMatched := pluginFunctionHandler(req, voiceText, botSerial)
