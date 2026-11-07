@@ -1,6 +1,6 @@
 # Estonian active-listening model
 
-Status: 1.1 done; next Stage 1.2. Parent: `2026-11-07-active-listening.md (docs/plans/)` A4/P1.
+Status: CLOSED WITHOUT SHIPPING (E6: no et model reached E4; 1.4–2.2 not run). Parent: `2026-11-07-active-listening.md (docs/plans/)` A4/P1.
 
 Ask: pick the best Ollama model for Estonian active listening; `gemma4:e4b-it-qat` stays the en-US listen model only.
 
@@ -16,7 +16,7 @@ Ask: pick the best Ollama model for Estonian active listening; `gemma4:e4b-it-qa
 | E4 | Selection: the 20 et snippets (dev + holdout). Bar ≥ 17/20, ≤ 1 false SPEAK, median ≤ 2 s; ties → fewer false SPEAK, lower median, smaller model. | `listenprobe -lang et-EE` |
 | E5 | Confirm: winner only, on a new `confirm` set (10 SPEAK + 10 SKIP, et), committed before any Stage 1.3 run; same bar. | `listenprobe` `confirm` |
 | E6 | No winner or confirm fails → et stays `gemma4:e4b-it-qat`, backlog §OWED[USER] line, stop. | `docs/backlog.md` |
-| W1 | (pending Stage 1.3–1.4) | `listen.Models` |
+| W1 | No winner (E6): et stays `gemma4:e4b-it-qat` via `listen.Model`; best et 15/20 fs 3 (`qwen3.5:4b`, `prompt 2 et`). | `listen.Model` |
 
 ## Stages
 
