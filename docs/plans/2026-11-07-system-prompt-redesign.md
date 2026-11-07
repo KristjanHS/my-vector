@@ -88,7 +88,7 @@ Severity: CRITICAL / HIGH / MEDIUM / LOW.
 
 1. `{now}` line through a minimal builder → "mis nädalapäev täna on?" answered. Falsifier: golden test contains the Estonian weekday.
 2. Templates + tags + P-guard + UI editor/preview; speech, persona and language fixes (critique 3–5, 7, 9). → plan: `2026-11-07-prompt-templates.md (docs/plans/)`
-3. History gap and follow-up listening decoupled from commands (critique 8).
+3. History gap and follow-up listening decoupled from commands (critique 8). → plan: `2026-11-07-follow-up-listening.md (docs/plans/)`
 4. Search bench → router + snippets for Ollama (S, S-guard).
 5. Vision setting + local vision bench (V).
 6. Memory M2: transcripts → extraction → nightly pass → `{facts}`/`{diary}` blocks.
