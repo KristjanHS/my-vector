@@ -11,6 +11,7 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	"github.com/sashabaranov/go-openai"
 )
@@ -22,6 +23,9 @@ func forkKG() llm.KG {
 
 // forkNow is the request clock; a var so tests pin it.
 var forkNow = time.Now
+
+// forkSearch fills {search} from the last user message; a var so tests fake it.
+var forkSearch = search.Fill
 
 // forkBotZone is the robot's vic.RobotSettings time_zone (what its clock shows), else time.Local.
 func forkBotZone(esn string) *time.Location {
@@ -64,6 +68,7 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 			Now:      prompt.Now(l, forkNow(), forkBotZone(esn)),
 			Lang:     prompt.LangLine(l),
 			User:     s.User(),
+			Search:   forkSearch(r.Messages[len(r.Messages)-1].Content, l, brain, forkBotZone(esn)),
 			Speech:   prompt.SpeechBlock(),
 			Commands: forkCommands(isKG),
 		})

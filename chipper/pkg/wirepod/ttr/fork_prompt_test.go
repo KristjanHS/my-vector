@@ -298,3 +298,33 @@ func TestForkCameraEstonianUnloads(t *testing.T) {
 		}
 	}
 }
+
+func TestForkAIReqSearch(t *testing.T) {
+	lang.UseForTest(t, lang.Estonian)
+	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
+	useBotClock(t, "Europe/Tallinn")
+	old := forkSearch
+	t.Cleanup(func() { forkSearch = old })
+	var got []string
+	block := ""
+	forkSearch = func(sentence, l, brain string, zone *time.Location) string {
+		got = []string{sentence, l, brain, zone.String()}
+		return block
+	}
+
+	empty := CreateAIReq("mis ilm homme on?", "esn", false, true).Messages[0].Content
+	if want := []string{"mis ilm homme on?", lang.Estonian, prompt.Ollama, "Europe/Tallinn"}; !slices.Equal(got, want) {
+		t.Errorf("forkSearch got %q, want %q", got, want)
+	}
+	if want := prompt.Render(prompt.Default(prompt.Ollama), prompt.Vars{
+		Now:  "Praegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn).",
+		Lang: prompt.LangLine(lang.Estonian), Speech: prompt.SpeechBlock(),
+	}); empty != want {
+		t.Errorf("empty search left residue:\n%q\nwant\n%q", empty, want)
+	}
+
+	block = "Live weather in Tallinn (Open-Meteo):\nNow: 3°C, overcast, wind 9 km/h."
+	if c := CreateAIReq("mis ilm homme on?", "esn", false, true).Messages[0].Content; !strings.Contains(c, block) {
+		t.Errorf("search block missing from the system prompt: %q", c)
+	}
+}
