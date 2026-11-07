@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wire-Pod - WiFi networks</title>
+  <!-- Standalone like the voice page: wire-pod's /css/style.css sets a 1.8em body font. -->
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f7f8; --surface: #ffffff; --surface-2: #eef0f2; --border: #d3d7dc;
+      --text: #1c1e21; --muted: #5f6368;
+      --accent: #00874a; --accent-hover: #006e3c; --on-accent: #ffffff; --accent-soft: #e3f4ea;
+      --warn-bg: #fff4e0; --warn: #7a4300; --err: #b3261e; --ok: #00743f; --focus: #1a73e8;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #1b1d1f; --surface: #24272a; --surface-2: #2d3135; --border: #41464c;
+        --text: #e8eaed; --muted: #a0a6ad;
+        --accent: #00d16d; --accent-hover: #2fe08a; --on-accent: #0b1a12; --accent-soft: #163626;
+        --warn-bg: #3a2a12; --warn: #ffcc80; --err: #ff8a80; --ok: #5ee39b; --focus: #8ab4f8;
+      }
+    }
+    :root[data-theme="light"] { color-scheme: light; }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #1b1d1f; --surface: #24272a; --surface-2: #2d3135; --border: #41464c;
+      --text: #e8eaed; --muted: #a0a6ad;
+      --accent: #00d16d; --accent-hover: #2fe08a; --on-accent: #0b1a12; --accent-soft: #163626;
+      --warn-bg: #3a2a12; --warn: #ffcc80; --err: #ff8a80; --ok: #5ee39b; --focus: #8ab4f8;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    a { color: var(--accent); }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 32px; }
+    .top { position: sticky; top: 0; z-index: 1; background: var(--bg); border-bottom: 1px solid var(--border); }
+    .bar { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
+    .bar h1 { flex: 1; margin: 0; font-size: 18px; font-weight: 600; }
+    .back { font-size: 14px; text-decoration: none; white-space: nowrap; }
+    button, input { font: inherit; color: inherit; }
+    button {
+      border: 1px solid var(--border); background: var(--surface-2); border-radius: 6px;
+      padding: 6px 12px; cursor: pointer; white-space: nowrap;
+    }
+    button:hover:not(:disabled) { border-color: var(--muted); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+    input[type=text], input[type=password] {
+      width: 100%; min-width: 0; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px 9px;
+    }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    #status:empty { display: none; }
+    #status { margin: -4px 0 10px; font-size: 14px; color: var(--muted); }
+    #status.ok { color: var(--ok); } #status.err { color: var(--err); }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-top: 16px; }
+    .card > h2 { margin: 0; padding: 12px 16px 0; font-size: 15px; font-weight: 600; }
+    .body { padding: 12px 16px 16px; display: grid; gap: 14px; }
+    .hint { font-size: 13px; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
+    .nets { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+    .nets li {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px;
+    }
+    .nets .name { flex: 1; font-weight: 600; overflow-wrap: anywhere; }
+    .badge { border-radius: 999px; padding: 2px 9px; font-size: 13px; font-weight: 600; background: var(--surface-2); color: var(--muted); }
+    .badge.on { background: var(--accent-soft); color: var(--ok); }
+    .field { display: grid; gap: 4px; }
+    .field label { font-size: 13px; font-weight: 600; color: var(--muted); }
+    .inline { display: flex; gap: 8px; align-items: center; }
+    .inline > input { flex: 1; }
+    .seen { display: flex; gap: 6px; flex-wrap: wrap; }
+    .seen button { font-size: 13px; padding: 3px 10px; border-radius: 999px; }
+    @media (max-width: 560px) { .back .txt { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <header class="bar">
+        <a class="back" href="/" aria-label="Back to Wire-Pod">&larr;<span class="txt"> Wire-Pod</span></a>
+        <h1>WiFi networks</h1>
+        <button type="button" id="refresh">Refresh</button>
+      </header>
+      <p id="status" role="status" aria-live="polite"></p>
+    </div>
+    <section class="card">
+      <h2>Saved on Vector</h2>
+      <div class="body">
+        <ul class="nets" id="saved"></ul>
+        <p class="hint">At boot Vector joins the strongest saved network in range — save one per floor.
+          It stays on a network while that one works; it switches when the connection drops or at the next boot.</p>
+      </div>
+    </section>
+    <form class="card" id="add" autocomplete="off">
+      <h2>Add a network</h2>
+      <div class="body">
+        <div class="seen" id="seen" aria-label="Networks Vector sees now"></div>
+        <div class="field">
+          <label for="ssid">Network name (SSID)</label>
+          <input type="text" id="ssid" maxlength="32" required spellcheck="false" autocapitalize="off" />
+        </div>
+        <div class="field">
+          <label for="pw">Password</label>
+          <div class="inline">
+            <input type="password" id="pw" minlength="8" maxlength="64" required autocomplete="new-password" />
+            <button type="button" id="show" aria-pressed="false">Show</button>
+          </div>
+        </div>
+        <p class="hint" id="addHint">2.4 GHz WPA/WPA2 networks only. Saving restarts Vector's WiFi (~20 s offline).
+          The password goes to Vector only: wire-pod keeps no copy and this page never shows it again.</p>
+        <div><button type="submit" class="primary" id="save">Save to Vector</button></div>
+      </div>
+    </form>
+  </div>
+  <script>
+    const api = "/myvector/api/wifi";
+    const $ = (id) => document.getElementById(id);
+    const status = (t, kind = "") => { $("status").textContent = t; $("status").className = kind; };
+    const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+    let nets = [], busy = false;
+
+    function setBusy(on) {
+      busy = on;
+      for (const b of document.querySelectorAll("button")) if (b.id !== "show") b.disabled = on || b.dataset.locked === "1";
+    }
+
+    function render() {
+      const saved = nets.filter((n) => n.saved);
+      $("saved").replaceChildren(...(saved.length ? saved.map((n) => {
+        const forget = el("button", { type: "button", textContent: "Forget" });
+        if (n.connected) { forget.dataset.locked = "1"; forget.disabled = true; forget.title = "Vector is on this network now"; }
+        forget.onclick = () => forgetNet(n);
+        return el("li", {}, el("span", { className: "name", textContent: n.ssid }),
+          el("span", { className: "badge" + (n.connected ? " on" : ""), textContent: n.connected ? "Connected now" : n.seen ? "In range" : "Not in range" }),
+          forget);
+      }) : [el("li", { className: "hint", textContent: "None saved." })]));
+      const others = nets.filter((n) => n.seen && !n.saved);
+      $("seen").replaceChildren(...others.map((n) =>
+        el("button", { type: "button", textContent: n.ssid, title: "Vector sees this network now", onclick: () => { $("ssid").value = n.ssid; $("pw").focus(); } })));
+    }
+
+    async function call(method, body) {
+      const r = await fetch(api, method === "GET" ? {} : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const text = await r.text();
+      if (!r.ok) throw new Error(text.trim() || r.statusText);
+      return JSON.parse(text);
+    }
+
+    async function load(quiet = false) {
+      if (!quiet) status("Asking Vector (scans for networks, ~5 s)…");
+      setBusy(true);
+      try {
+        nets = (await call("GET")).networks || [];
+        render();
+        if (!quiet) status("");
+        return true;
+      } catch (e) {
+        if (!quiet) status("Could not reach Vector: " + e.message, "err");
+        return false;
+      } finally { setBusy(false); }
+    }
+
+    // After a change Vector's WiFi restarts: wait, then retry the list until Vector answers.
+    async function afterRestart(msg) {
+      status(msg + " — Vector's WiFi is restarting, checking back in 20 s…", "ok");
+      setBusy(true);
+      await new Promise((r) => setTimeout(r, 20000));
+      for (let i = 0; i < 6; i++) {
+        if (await load(true)) { status(msg + ". Vector is back online.", "ok"); return; }
+        await new Promise((r) => setTimeout(r, 10000));
+      }
+      status(msg + ", but Vector has not answered for 80 s. If it stays offline, reboot it.", "err");
+    }
+
+    async function forgetNet(n) {
+      if (busy || !confirm(`Forget "${n.ssid}" on Vector?`)) return;
+      setBusy(true);
+      try { const r = await call("POST", { action: "forget", hex: n.hex }); await afterRestart(r.message || `Forgot "${n.ssid}"`); }
+      catch (e) { status(e.message, "err"); setBusy(false); }
+    }
+
+    $("add").onsubmit = async (ev) => {
+      ev.preventDefault();
+      if (busy) return;
+      const ssid = $("ssid").value, password = $("pw").value;
+      const known = nets.find((n) => n.ssid === ssid && n.saved);
+      if (known && known.connected) { status(`Vector is on "${ssid}" now: its saved password works, so it is left as is.`, "err"); return; }
+      if (known && !confirm(`"${ssid}" is saved already. Replace its password?`)) return;
+      setBusy(true);
+      try {
+        await call("POST", { action: "add", ssid, password });
+        $("pw").value = ""; $("ssid").value = "";
+        await afterRestart(`Saved "${ssid}"`);
+      } catch (e) { status(e.message, "err"); setBusy(false); }
+    };
+
+    $("show").onclick = () => {
+      const on = $("pw").type === "password";
+      $("pw").type = on ? "text" : "password";
+      $("show").textContent = on ? "Hide" : "Show";
+      $("show").setAttribute("aria-pressed", String(on));
+    };
+    $("refresh").onclick = () => load();
+    load();
+  </script>
+</body>
+</html>
