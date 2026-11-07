@@ -23,7 +23,8 @@ var geo = struct {
 	m map[string]Place
 }{m: map[string]Place{}}
 
-// weatherPlace is search.weather_place in myvectorConfig.json, else zone's city.
+// weatherPlace is search.weather_place in myvectorConfig.json up to any comma (Open-Meteo geocodes a bare
+// name: "Tartu, Estonia" → "Tartu"), else zone's city.
 func weatherPlace(zone *time.Location) string {
 	var c struct {
 		Search struct {
@@ -33,7 +34,8 @@ func weatherPlace(zone *time.Location) string {
 	if b, err := os.ReadFile(lang.Path()); err == nil {
 		json.Unmarshal(b, &c)
 	}
-	if p := strings.TrimSpace(c.Search.WeatherPlace); p != "" {
+	p, _, _ := strings.Cut(c.Search.WeatherPlace, ",")
+	if p = strings.TrimSpace(p); p != "" {
 		return p
 	}
 	return ZoneCity(zone)
@@ -80,15 +82,15 @@ func Fill(sentence, l, brain string, zone *time.Location) string {
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	defer cancel()
 	block, err := weather(ctx, weatherPlace(zone))
-	status := "ok"
+	line := []any{"myvector: search", class.String(), "open-meteo", "ok", time.Since(start).Milliseconds()}
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
-		status = "timeout"
+		line[3] = "timeout"
 	case err != nil:
-		status = "err"
-		logf("myvector: search " + class.String() + ": " + err.Error())
+		line[3] = "err"
+		line = append(line, err.Error())
 	}
-	logf("myvector: search", class.String(), "open-meteo", status, time.Since(start).Milliseconds())
+	logf(line...) // W14: exactly one line per lookup
 	return block
 }
 
