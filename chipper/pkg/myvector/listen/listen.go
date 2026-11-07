@@ -66,12 +66,15 @@ type bot struct {
 
 // State is RAM-only (a wire-pod restart turns every robot off), keyed by ESN.
 type State struct {
-	mu   sync.Mutex
-	bots map[string]*bot
-	Log  func(string)
+	mu    sync.Mutex
+	bots  map[string]*bot
+	Log   func(string)
+	OnOff func(esn string) // every off path, idle + night included; runs under the State lock, so it must not call back into State
 }
 
-func NewState() *State { return &State{bots: map[string]*bot{}, Log: func(string) {}} }
+func NewState() *State {
+	return &State{bots: map[string]*bot{}, Log: func(string) {}, OnOff: func(string) {}}
+}
 
 func (s *State) Activate(esn string, now time.Time) {
 	s.mu.Lock()
@@ -89,6 +92,7 @@ func (s *State) off(esn, why string) {
 	if _, ok := s.bots[esn]; ok {
 		delete(s.bots, esn)
 		s.Log("myvector listen: off (" + why + ")")
+		s.OnOff(esn)
 	}
 }
 

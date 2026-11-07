@@ -46,10 +46,11 @@ func STT(lang string, pcm []byte) (string, error) {
 
 // Joiner turns clips into utterances; Heard runs under its lock, so it must not call Clip.
 type Joiner struct {
-	STT   func(pcm []byte) (string, error)
-	Heard func(Utterance)
-	mu    sync.Mutex
-	bots  map[string]*joined
+	STT     func(pcm []byte) (string, error)
+	Heard   func(Utterance)
+	Clipped func(esn string) // each 204 clip (Runner.Clipped); nil = none
+	mu      sync.Mutex
+	bots    map[string]*joined
 }
 
 type joined struct {
@@ -165,6 +166,9 @@ func ClipHandler(s *State, j *Joiner, logf func(string)) http.HandlerFunc {
 			logf("myvector listen: clip: " + err.Error())
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
+		}
+		if j.Clipped != nil {
+			j.Clipped(esn)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}

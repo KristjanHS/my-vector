@@ -1,6 +1,6 @@
 # Active listening
 
-Status: Stage 1, 2.1, 3.1, 3.2, 4.1, 4.2 committed; next 3.3. Code review from `c0b0efb` deferred to 5.1. Owed live: G5 curl 423 (1.3), en-US phrase STT round trip (1.1, needs saved lang en-US). Stage 3 builds ahead of `2026-11-07-shut-up-sleep.md (docs/plans/)` §Stage 1 verdict (ruled 2026-11-07); the verdict gates 5.2 only.
+Status: Stages 1–4 committed; next 5.1. Code review from `c0b0efb` deferred to 5.1. Owed live: G5 curl 423 (1.3), en-US phrase STT round trip (1.1, needs saved lang en-US), wake word mid-clip (3.3, silent). Stage 3 builds ahead of `2026-11-07-shut-up-sleep.md (docs/plans/)` §Stage 1 verdict (ruled 2026-11-07); the verdict gates 5.2 only.
 
 Ask: Vector listens to all talk, speaks only when he has something relevant. Ollama only, never Claude. On: "hey vector, activate active listening" / "hey vector, aktiveeri aktiivne kuulamine". Off: "deactivate active listening" / "deaktiveeri aktiivne kuulamine". Short forms "active listening on/off", "aktiivne kuulamine sees/välja" too.
 
@@ -18,6 +18,7 @@ Ask: Vector listens to all talk, speaks only when he has something relevant. Oll
 | A8 | Overheard text stays in RAM; journal gets `myvector listen: <n> words → SKIP\|SPEAK <ms>`, never the words. `MYVECTOR_LISTEN_LOG=<dir>` (unset = off) appends `[SKIP\|SPEAK] <text>` to `<dir>/<date>.txt`; use `robot/work/listen/`. | `listen.Heard` |
 | C1 | Capture = `robot/openmic` (ruled 2026-11-07): `RecordMicDataClip` via `:8889/consolefunccall`, scp from `debugCapture`, 2 s windows / 1 s hop → myvector-stt. Refactor-first: move those `probe.sh` pieces into `robot/openmic/lib.sh`; `probe.sh` and the new loop both source it. | `robot/openmic/{lib.sh,probe.sh,listen.sh}` |
 | C2 | Re-ruled 2026-11-07: `listen.sh <esn>` (records only) loops `listen.ClipMS` = 10 s clips back to back, POSTs each processed clip as 16 kHz pcm to `/myvector/listen/clip` (loopback only; 410 = off → exit). Server `listen.Joiner`: previous clip's last 2 s + clip → myvector-stt, overlap-merged words; utterance closes when the clip's last 2 s transcribe empty, or at `listen.MaxClips` = 3. `listen.Runner` starts the script on activate, kills it on off (miccap repo-path precedent). | `robot/openmic/listen.sh`; `listen.Joiner` `listen.Runner`; `ttr/fork_listen.go` |
+| C3 | Ruled 2026-11-07: a dying `listen.sh` restarts after `listen.RestartWait` = 5 s, 30 s, 2 min; the next failure → off (`capture`), log only; a 204 clip resets the count; exit 2 (SETUP, ESN ≠ `ROBOT_ESN`) → off at once. Host test `robot/openmic/tests/listen.sh` in `scripts/check.sh`. | `listen.Runner`; `State.OnOff`; `robot/openmic/tests/listen.sh` |
 | A9 | Re-ruled 2026-11-07: `listen.Backoff` = 30 s, 1, 2, 4 min after the 1st/2nd/3rd/4th+ listen reply in a row; `listen.BackoffReset` = 5 min without one restarts it; overheard text naming Vector bypasses the wait; wake-word answers don't count. SPEAK bar = the Stage 2.1 SPEAK labels. | `listen.State.claim`; `listen.Prompt` |
 | P1 | Ruled 2026-11-07: `listen.Model` = `gemma4:e4b-it-qat` + prompt 2 (held-out 16/20 accepted: 0 false SPEAK, misses silent); saved profiles fail (et SPEAK 0/4). | `listenprobe` |
 
