@@ -26,7 +26,9 @@ OnUnitActiveSec=2min
 
 [Install]
 WantedBy=timers.target"
-etc_put $bin "$(echo "$GUARD" | base64 -d)"
+new=$(echo "$GUARD" | base64 -d)
+[ -n "$new" ] || { echo "FAIL: empty diskguard.sh (GUARD)"; exit 1; }
+etc_put $bin "$new"
 etc_put $u.service "$svc"
 etc_put $u.timer "$tmr"
 if [ -z "$ETC_CHANGED" ] && [ -L "$ETC_ROOT$w" ]; then
