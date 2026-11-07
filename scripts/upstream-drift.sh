@@ -17,7 +17,7 @@ allowed_edits=(
   chipper/pkg/wirepod/ttr/words2num.go   # words2num input = forkTimerText(...) — et-EE timer forms (fork_timer.go)
   chipper/pkg/wirepod/ttr/weather.go     # weatherParser apiLocation = forkWeatherLocation(...) — et-EE city word (fork_weather.go)
   chipper/pkg/wirepod/preqs/server.go    # sttHandler = forkMicCapture(forkSTTRouter(...)) — mic capture (fork_miccap.go) + et-EE STT router (fork_stt.go)
-  chipper/webroot/index.html             # nav link to the fork voice page /myvector/voice (myvector/voice)
+  chipper/webroot/index.html             # nav links to the fork pages /myvector/voice (myvector/voice) and /myvector/wifi (myvector/wifi)
 )
 
 to=(); [[ ${1:-} == --head ]] && to=("$(git rev-parse --verify "${2:-HEAD}^{commit}")")

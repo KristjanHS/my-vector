@@ -1,9 +1,11 @@
-// Package conf writes the fork's settings file (myvectorConfig.json), which several packages share key by key.
+// Package conf writes the fork's settings file (myvectorConfig.json), which several packages share key by key,
+// and finds the repo's robot/ scripts (FindUp).
 package conf
 
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -51,4 +53,23 @@ func Update(path string, kv map[string]any) error {
 		err = os.Rename(tmp.Name(), path)
 	}
 	return err
+}
+
+// FindUp is rel (a file) in the nearest ancestor of the working directory (wire-pod's is chipper/), e.g. a robot/ script.
+func FindUp(rel string) (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for {
+		p := filepath.Join(dir, rel)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("no %s above the working directory", rel)
+		}
+		dir = parent
+	}
 }
