@@ -76,3 +76,19 @@ func TestStateAutoOff(t *testing.T) {
 		t.Fatal("deactivating an off robot logged")
 	}
 }
+
+func TestActivateTwiceKeepsState(t *testing.T) {
+	s := NewState()
+	s.Activate("a", at(7, 12, 0))
+	s.Spoke("a", at(7, 12, 1))
+	s.Spoken("a", at(7, 12, 1), at(7, 12, 2))
+	if c := s.claim("a", at(7, 12, 1), true); c != "" {
+		t.Fatalf("claim = %q, want the slot", c)
+	}
+	s.Activate("a", at(7, 12, 3))
+	b := s.bots["a"]
+	if !b.busy || b.streak != 1 || !s.Echo("a", at(7, 12, 1), at(7, 12, 2)) || !b.since.Equal(at(7, 12, 3)) {
+		t.Fatalf("second Activate: busy=%v streak=%d since=%v echo=%v, want busy, 1, 12:03, echo kept",
+			b.busy, b.streak, b.since, s.Echo("a", at(7, 12, 1), at(7, 12, 2)))
+	}
+}

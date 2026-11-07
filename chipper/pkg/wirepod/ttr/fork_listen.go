@@ -35,6 +35,7 @@ var forkJoiner = &listen.Joiner{
 	STT:     func(pcm []byte) (string, error) { return listen.STT(lang.Current(), pcm) },
 	Heard:   func(u listen.Utterance) { go forkHearer.Heard(u) },
 	Clipped: func(esn string) { forkCapture.Clipped(esn) },
+	Log:     func(l string) { logger.Println(l) },
 }
 
 func init() {
