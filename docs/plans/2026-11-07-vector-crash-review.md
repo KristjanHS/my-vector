@@ -12,6 +12,20 @@ Status: **stub** — evidence so far; review + elimination order not yet written
 | 11-07 12:33:13 | vic-anim | start timeout → fault 800 | catch.sh round 6, no gdb on that pid |
 | 11-07 12:37:02 | vic-engine | SIGSEGV → fault 914 | catch.sh -d deploy round 1 |
 
+Complete crash dumps (`crashDumps/*.dmp` + `.log`) since unlock — the organic set:
+
+| dump time | process | context |
+|---|---|---|
+| 11-04 12:39:51 | vic-engine | ? |
+| 11-05 09:22:33 | vic-anim | SeAssert, ship deploy |
+| 11-06 05:18:19 | vic-engine | **night idle — no deploy** |
+| 11-06 19:15:36 | vic-switchboard | ? |
+| 11-07 11:54:29 | vic-anim | SeAssert, ship deploy |
+| 11-07 12:31:26 / 12:36:59 | vic-engine | catch loop / deploy round |
+| 11-07 12:33:14 | vic-switchboard | fault-800 cascade (SIGQUIT) |
+
+`.dmp~` (incomplete) dumps come in 4-process groups (vic-robot/anim/engine/switchboard within 2 s): 11-03 21:21, 21:30;
+11-04 07:13, 08:49, 19:39; 11-05 10:43, 18:27; 11-06 19:22; 11-07 10:09, 11:54:58, 12:37:17 = whole-stack kills (fault handler or deploy stop?).
 vic-switchboard SIGQUIT / vic-cloud SIGTERM = fault-handler cascade, not causes.
 Observer effect: 12:22–12:39 the catch loop restarted every ~45 s, ptrace-attached and SIGSTOP'd vic-anim.
 
