@@ -297,9 +297,11 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 	})
 	fmt.Println("LLM stream response: ")
 	go func() {
+		var cut bool // my-vector: the reply cap cut the reply (fork_split.go forkDropCut)
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
+				forkDropCut(cut, fullRespSlice, &fullfullRespText, &fullRespText) // my-vector: drop the cut-off sentence (fork_split.go)
 				var held string
 				fullRespSlice, fullRespText, held = forkFlushHeld(fullRespSlice, fullRespText) // my-vector: a sentence held at a digit '.' (fork_split.go)
 				forkSignalHeld(speakReady, held)
@@ -362,6 +364,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 				logger.Println("Empty response")
 				return
 			}
+			cut = cut || response.Choices[0].FinishReason == openai.FinishReasonLength // my-vector
 
 			fullfullRespText = fullfullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
 			fullRespText = fullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)

@@ -69,7 +69,7 @@ func TestEstimate(t *testing.T) {
 }
 
 func TestReplyCap(t *testing.T) {
-	if ReplyCap(Claude) != 400 || ReplyCap(Ollama) != 300 {
+	if ReplyCap(Claude) != 1024 || ReplyCap(Ollama) != 300 {
 		t.Errorf("ReplyCap claude %d ollama %d", ReplyCap(Claude), ReplyCap(Ollama))
 	}
 }

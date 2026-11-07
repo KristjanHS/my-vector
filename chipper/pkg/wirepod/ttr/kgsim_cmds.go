@@ -520,9 +520,11 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 
 	fmt.Println("LLM stream response: ")
 	go func() {
+		var cut bool // my-vector: the reply cap cut the reply (fork_split.go forkDropCut)
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
+				forkDropCut(cut, fullRespSlice, &fullfullRespText, &fullRespText) // my-vector: drop the cut-off sentence (fork_split.go)
 				var held string
 				fullRespSlice, fullRespText, held = forkFlushHeld(fullRespSlice, fullRespText) // my-vector: a sentence held at a digit '.' (fork_split.go)
 				forkSignalHeld(speakReady, held)
@@ -564,6 +566,7 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 				logger.Println("Stream error: " + err.Error())
 				return
 			}
+			cut = cut || response.Choices[0].FinishReason == openai.FinishReasonLength // my-vector
 			fullfullRespText = fullfullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
 			fullRespText = fullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
 			for sentence, rest, ok := forkSplitSentence(fullRespText); ok; sentence, rest, ok = forkSplitSentence(fullRespText) { // my-vector: no split at a '.' between digits (fork_split.go)
