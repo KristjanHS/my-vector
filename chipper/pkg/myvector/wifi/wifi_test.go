@@ -69,7 +69,7 @@ func TestGetLists(t *testing.T) {
 }
 
 func TestAddPassesPasswordOnStdinOnly(t *testing.T) {
-	calls := fake(t, "ok: saved 'Linwifi2_1k'; robot WiFi restarts now (~10-20 s offline)\n", "", 0)
+	calls := fake(t, "ok: saved 'Linwifi2_1k'; it counts from the robot's next boot\n", "", 0)
 	w := do(http.MethodPost, `{"action":"add","ssid":"Linwifi2_1k","password":"s3cret pass\"x"}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("add: %d %s", w.Code, w.Body)
@@ -84,7 +84,7 @@ func TestAddPassesPasswordOnStdinOnly(t *testing.T) {
 }
 
 func TestForget(t *testing.T) {
-	calls := fake(t, "ok: forgot it; robot WiFi restarts now\n", "", 0)
+	calls := fake(t, "ok: forgot it; it counts from the robot's next boot\n", "", 0)
 	if w := do(http.MethodPost, `{"action":"forget","hex":"4c696e77696669325f316b"}`); w.Code != http.StatusOK {
 		t.Fatalf("forget: %d %s", w.Code, w.Body)
 	}
