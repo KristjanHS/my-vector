@@ -119,7 +119,7 @@ var tables = map[string]cues{
 				"kas * lahti", "kas * kinni", "kas * avatud", "kas * suletud", "mis kell * lahti", "mis kell * kinni",
 				"kui palju * maksab", "kui palju * maksavad", "mis * maksab", "mis * maksavad"),
 		},
-		recent: table{phrases: words("kes on", "kes oli", "mis juhtus", "mis toimub", "mis toimus")},
+		recent: table{phrases: words("kes on", "kes oli", "mis * juhtus", "mis * toimub", "mis * toimus")},
 		self: []string{"sa", "sina", "sinu", "su", "sind", "sul", "sulle", "sinuga", "sinust", "ma", "mina", "minu",
 			"mu", "mind", "mul", "mulle", "minuga", "minust", "me", "meie", "meil", "meile", "te", "teie", "teil"},
 		deictic: []string{"ta", "tema", "see", "too", "seal", "siin", "nad", "nemad"},
@@ -174,8 +174,8 @@ func Route(sentence, l string) Class {
 	return None
 }
 
-// recentAsk: a recent phrase followed by at least minRecent non-deictic tokens ("kes on Eesti peaminister",
-// not "kes on ta" or a bare name like "kes on Tuuli").
+// recentAsk: a recent phrase with at least minRecent non-deictic tokens in or after its gaps ("kes on Eesti
+// peaminister", "mis täna Eestis juhtus"; not "kes on ta", "mis siis juhtus" or a bare name like "kes on Tuuli").
 func (c cues) recentAsk(toks []string) bool {
 	for i := range toks {
 		for _, ph := range c.recent.phrases {
@@ -183,9 +183,14 @@ func (c cues) recentAsk(toks []string) bool {
 				continue
 			}
 			n := 0
-			for _, w := range toks[i+len(ph):] {
+			for _, w := range toks[i:] {
 				if !slices.Contains(c.deictic, w) {
 					n++
+				}
+			}
+			for _, w := range ph {
+				if w != gap {
+					n--
 				}
 			}
 			if n >= minRecent {
