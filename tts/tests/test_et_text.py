@@ -6,10 +6,11 @@ import et_text
 @pytest.mark.parametrize(
     "text, want",
     [
-        ("Kell on 14.05.", "Kell on 14 null 5."),
-        ("Kell on 10:30.", "Kell on 10 30."),
-        ("kell 7.00", "kell 7"),
-        ("Kell on 14.00.", "Kell on 14."),
+        ("Kell on 14.05.", "Kell on neliteist null viis."),
+        ("Kell on 10:30.", "Kell on kümme kolmkümmend."),
+        ("kell on 09.26,", "kell on üheksa kakskümmend kuus,"),
+        ("kell 7.00", "kell seitse"),
+        ("Kell on 14.00.", "Kell on neliteist."),
         ("Täna on 5. november.", "Täna on viies november."),
         ("6. novembril", "kuuendal novembril"),
         ("1. mail", "esimesel mail"),
@@ -17,7 +18,7 @@ import et_text
         ("15. juuni", "viieteistkümnes juuni"),
         ("12. detsembri hommikul", "kaheteistkümnenda detsembri hommikul"),
         ("30. augustist", "kolmekümnendast augustist"),
-        ("Kell on 14.25. novembris", "Kell on 14 25. novembris"),
+        ("Kell on 14.25. novembris", "Kell on neliteist kakskümmend viis. novembris"),
         ("Neid oli 5. Mai algul", "Neid oli 5. Mai algul"),
     ],
 )
@@ -40,6 +41,21 @@ def test_normalize_times_and_day_month(text, want):
 )
 def test_normalize_leaves_other_numbers(text):
     assert et_text.normalize(text) == text
+
+
+def test_cardinal_forms_and_range():
+    assert [et_text.cardinal(n) for n in (0, 10, 11, 17, 20, 26, 59)] == [
+        "null",
+        "kümme",
+        "üksteist",
+        "seitseteist",
+        "kakskümmend",
+        "kakskümmend kuus",
+        "viiskümmend üheksa",
+    ]
+    for bad in (-1, 60):
+        with pytest.raises(ValueError):
+            et_text.cardinal(bad)
 
 
 def test_ordinal_forms_and_range():

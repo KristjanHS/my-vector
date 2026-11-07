@@ -1,6 +1,6 @@
 """Estonian text normaliser for Piper et_EE (espeak-ng `et` reads cardinals itself, not times or ordinals).
 
-normalize("Kell on 14.05.") -> "Kell on 14 null 5."; normalize("5. novembril") -> "viiendal novembril".
+normalize("Kell on 14.05.") -> "Kell on neliteist null viis."; normalize("5. novembril") -> "viiendal novembril".
 """
 
 import re
@@ -70,11 +70,42 @@ _TIME = re.compile(r"(?<![\d.,:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d]|[.:,]\d)")
 _DAY_MONTH = re.compile(r"(?<![\d.,])([1-9]|[12]\d|3[01])\.(\s+)([a-zõäöüšž]+)\b")
 
 
+_DIGITS = [
+    "null",
+    "üks",
+    "kaks",
+    "kolm",
+    "neli",
+    "viis",
+    "kuus",
+    "seitse",
+    "kaheksa",
+    "üheksa",
+]
+
+
+def cardinal(n):
+    """0-59 -> Estonian cardinal in words."""
+    if not 0 <= n <= 59:
+        raise ValueError(n)
+    if n < 10:
+        return _DIGITS[n]
+    if n == 10:
+        return "kümme"
+    if n < 20:
+        return _DIGITS[n - 10] + "teist"
+    tens = _DIGITS[n // 10] + "kümmend"
+    return f"{tens} {_DIGITS[n % 10]}" if n % 10 else tens
+
+
 def _time(m):
+    # in words: espeak's digit reading of "26" ("kaks | kümmendkuus") gives mari a seam she fills
+    # with a "kuni"/"või"-like syllable in ~1 take of 3; spelled-out minutes measured 0/8
     hour, mm = int(m.group(1)), m.group(2)
     if mm == "00":
-        return str(hour)
-    return f"{hour} {f'null {mm[1]}' if mm[0] == '0' else mm}"
+        return cardinal(hour)
+    minutes = f"null {_DIGITS[int(mm[1])]}" if mm[0] == "0" else cardinal(int(mm))
+    return f"{cardinal(hour)} {minutes}"
 
 
 def _day_month(m):
