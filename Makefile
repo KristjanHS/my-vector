@@ -9,12 +9,13 @@ help: ## List available targets (default)
 	@grep -E '^[a-zA-Z0-9_.-]+:.*## ' $(firstword $(MAKEFILE_LIST)) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
 	@echo "  syncwt|commit|commitwt  shared worktree targets (~/.config/make/worktree.mk, from dotfiles)"
 
-start: ## Restart wire-pod.service once daemon-enable ran, else run the server in the foreground (NOPASSWD sudoers rules)
+start: ## Restart wire-pod.service (runs the last shipped commit, robot/work/server-sha) once daemon-enable ran, else go run the working tree in the foreground (NOPASSWD sudoers rules)
 	@if systemctl is-enabled -q wire-pod 2>/dev/null; then $(CURDIR)/scripts/restart-service.sh; \
 	else sudo -n $(CURDIR)/chipper/start.sh || { echo "no sudoers rule? see docs/run-without-sudo-password.md"; exit 1; }; fi
 
-daemon-enable: ## Install + (re)start wire-pod.service (starts with WSL, restarts on crash); asks the sudo password
+daemon-enable: ## Install + (re)start wire-pod.service (builds + runs the pinned commit; starts with WSL, restarts on crash); asks the sudo password
 	@systemctl is-active -q wire-pod || [ -z "$$(ss -Hltn 'sport = :443')" ] || { echo "something already listens on :443 (a foreground wire-pod?): stop it first"; exit 1; }
+	@[ -s $(CURDIR)/robot/work/server-sha ] || { git -C $(CURDIR) rev-parse HEAD >$(CURDIR)/robot/work/server-sha && echo "pinned the server to HEAD (make ship moves the pin)"; }
 	sed 's|@REPO@|$(CURDIR)|g' $(CURDIR)/scripts/wire-pod.service | sudo tee /etc/systemd/system/wire-pod.service >/dev/null
 	sudo systemctl daemon-reload
 	sudo systemctl enable wire-pod
