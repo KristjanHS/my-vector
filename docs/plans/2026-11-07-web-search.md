@@ -1,6 +1,6 @@
 # Web search + weather
 
-Status: W1–W15, B1 ruled; Stage 1.1–1.4, 2.1–3.3 done; 1.5 automated half done (USER audible half owed). Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 4.
+Status: W1–W15, B1 ruled; Stage 1.1–1.4, 2.1–4.1 done (3.2 USER); next 5.1; 1.5 automated half done (USER audible half owed). Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 4.
 Touches `forkAIReq` like `2026-11-07-follow-up-listening.md (docs/plans/)` F3/F5 — this plan adds ONE line there (W13); all logic stays in `pkg/myvector/search`.
 
 ## Rulings
