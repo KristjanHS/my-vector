@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
@@ -133,13 +135,13 @@ func TestForkWMOClad(t *testing.T) {
 	}
 }
 
-// fakeWeather serves weatherapi forecast.json and Open-Meteo geocode/forecast with the given statuses; returns the weatherapi call count.
-func fakeWeather(t *testing.T, key string, waStatus, geoStatus, fcStatus int) *int {
-	waCalls := new(int)
+// fakeWeather serves weatherapi forecast.json and Open-Meteo geocode/forecast with the given statuses; wait() returns the weatherapi call count once the race's loser is done.
+func fakeWeather(t *testing.T, key string, waStatus, geoStatus, fcStatus int) (wait func() int32) {
+	var waCalls int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/wa":
-			*waCalls++
+			atomic.AddInt32(&waCalls, 1)
 			w.WriteHeader(waStatus)
 			w.Write([]byte(`{"location":{"name":"Tallinn"},"current":{"last_updated":"2026-11-07 17:00","temp_c":4.4,"temp_f":39.9,"condition":{"text":"Sunny"}},` +
 				`"forecast":{"forecastday":[{"date":"2026-11-07","day":{"maxtemp_c":5,"maxtemp_f":41,"condition":{"text":"Sunny"}}},` +
@@ -155,14 +157,20 @@ func fakeWeather(t *testing.T, key string, waStatus, geoStatus, fcStatus int) *i
 		}
 	}))
 	t.Cleanup(srv.Close)
-	oldW, oldWA, oldGeo, oldFc, oldMap := vars.APIConfig.Weather, forkWeatherAPIForecastURL, search.GeocodeURL, search.ForecastURL, forkWeatherMapPath
+	oldW, oldWA, oldGeo, oldFc, oldMap, oldGo := vars.APIConfig.Weather, forkWeatherAPIForecastURL, search.GeocodeURL, search.ForecastURL, forkWeatherMapPath, forkWeatherGo
 	t.Cleanup(func() {
-		vars.APIConfig.Weather, forkWeatherAPIForecastURL, search.GeocodeURL, search.ForecastURL, forkWeatherMapPath = oldW, oldWA, oldGeo, oldFc, oldMap
+		vars.APIConfig.Weather, forkWeatherAPIForecastURL, search.GeocodeURL, search.ForecastURL, forkWeatherMapPath, forkWeatherGo = oldW, oldWA, oldGeo, oldFc, oldMap, oldGo
 	})
+	var wg sync.WaitGroup
+	t.Cleanup(wg.Wait) // runs first: no goroutine reads the URLs while they are restored
+	forkWeatherGo = func(f func()) {
+		wg.Add(1)
+		go func() { defer wg.Done(); f() }()
+	}
 	vars.APIConfig.Weather.Enable, vars.APIConfig.Weather.Key, vars.APIConfig.Weather.Provider = key != "", key, "weatherapi.com"
 	forkWeatherAPIForecastURL, search.GeocodeURL, search.ForecastURL = srv.URL+"/wa", srv.URL+"/geo", srv.URL+"/fc"
 	forkWeatherMapPath = "../../../weather-map.json"
-	return waCalls
+	return func() int32 { wg.Wait(); return atomic.LoadInt32(&waCalls) }
 }
 
 func TestForkGetWeather(t *testing.T) {
@@ -171,7 +179,7 @@ func TestForkGetWeather(t *testing.T) {
 		name, key, speech, units    string
 		wa, geo, fc                 int
 		cond, at, place, temp, unit string
-		waCalls                     int
+		waCalls                     int32 // -1: weatherapi lost the race, cancelled before or after its request
 	}{
 		{"keyless now °C", "", "mis ilm on?", "C", 200, 200, 200, "Stars", "", "Keila", "-2", "C", 0},
 		{"keyless now °F", "", "mis ilm on?", "F", 200, 200, 200, "Stars", "", "Keila", "28", "F", 0},
@@ -179,23 +187,25 @@ func TestForkGetWeather(t *testing.T) {
 		{"keyless ülehomme", "", "kas ülehomme sajab?", "C", 200, 200, 200, "Snow", "2026-11-09 12:00", "Keila", "-1", "C", 0},
 		{"open-meteo down → weatherapi homme", "K", "mis ilm homme on?", "C", 200, 500, 200, "Rain", "2026-11-08 12:00", "Tallinn", "9", "C", 1},
 		{"open-meteo down → weatherapi now °F", "K", "mis ilm on?", "F", 200, 200, 500, "Sunny", "2026-11-07 17:00", "Tallinn", "40", "F", 1},
-		{"weatherapi down → open-meteo homme", "K", "mis ilm homme on?", "C", 500, 200, 200, "Thunderstorms", "2026-11-08 12:00", "Keila", "10", "C", 1},
+		{"weatherapi down → open-meteo homme", "K", "mis ilm homme on?", "C", 500, 200, 200, "Thunderstorms", "2026-11-08 12:00", "Keila", "10", "C", -1},
 		{"both down", "K", "mis ilm homme on?", "C", 500, 500, 500, "", "test", "Home", "", "", 1},
 	}
 	for _, c := range cases {
-		waCalls := fakeWeather(t, c.key, c.wa, c.geo, c.fc)
-		cond, _, at, place, temp, unit := weatherParser(c.speech, "Home", c.units)
-		if c.at == "" { // Open-Meteo "now" is the server clock
-			at = ""
-		}
-		if c.at == "test" {
-			cond, temp, unit = "", "", ""
-		}
-		got := strings.Join([]string{cond, at, place, temp, unit}, "|")
-		want := strings.Join([]string{c.cond, c.at, c.place, c.temp, c.unit}, "|")
-		if got != want || *waCalls != c.waCalls {
-			t.Errorf("%s: %s, weatherapi calls %d; want %s, %d", c.name, got, *waCalls, want, c.waCalls)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			wait := fakeWeather(t, c.key, c.wa, c.geo, c.fc)
+			cond, _, at, place, temp, unit := weatherParser(c.speech, "Home", c.units)
+			if c.at == "" { // Open-Meteo "now" is the server clock
+				at = ""
+			}
+			if c.at == "test" {
+				cond, temp, unit = "", "", ""
+			}
+			got := strings.Join([]string{cond, at, place, temp, unit}, "|")
+			want := strings.Join([]string{c.cond, c.at, c.place, c.temp, c.unit}, "|")
+			if n := wait(); got != want || (c.waCalls >= 0 && n != c.waCalls) {
+				t.Errorf("%s, weatherapi calls %d; want %s, %d", got, n, want, c.waCalls)
+			}
+		})
 	}
 }
 
