@@ -41,6 +41,14 @@ func Budget(brain string) int {
 	return 2000
 }
 
+// SearchBudget is the token ceiling for brain's {search} block (plan web-search W9).
+func SearchBudget(brain string) int {
+	if brain == Ollama {
+		return 250
+	}
+	return 800
+}
+
 var logf = logger.Println
 
 // Invalid marks a rejected brain, template, about-me or version (the page's 400); any other store error is I/O.
