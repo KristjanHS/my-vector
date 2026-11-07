@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
@@ -13,9 +14,6 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	"github.com/sashabaranov/go-openai"
 )
-
-// forkETLine is the language line the Stage 1.3 bench scored EstLLM with (robot/et-llm/bench.py).
-const forkETLine = "\n\nAnswer in Estonian."
 
 func forkKG() llm.KG {
 	k := vars.APIConfig.Knowledge
@@ -36,16 +34,11 @@ func forkBotZone(esn string) *time.Location {
 	return prompt.Zone(s.TimeZone)
 }
 
-// forkAIReq: the system prompt gets the prompt.Now line, then (et-EE) forkETLine; the llm.Resolve target sets the
-// model (E25) and its top_p (CreateAIReq set it for the Knowledge model). Ollama gets reasoning_effort none (qwen3.5/gemma4 think by default).
-func forkAIReq(r openai.ChatCompletionRequest, esn string) openai.ChatCompletionRequest {
+// forkAIReq: the llm.Resolve target sets the model (E25) and its top_p (CreateAIReq set it for the Knowledge model);
+// then the brain's rendered template replaces the system prompt and its ReplyCap caps the reply.
+// Ollama gets reasoning_effort none (qwen3.5/gemma4 think by default).
+func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.ChatCompletionRequest {
 	l := lang.Current()
-	if len(r.Messages) > 0 && r.Messages[0].Role == openai.ChatMessageRoleSystem {
-		r.Messages[0].Content += "\n\n" + prompt.Now(l, forkNow(), forkBotZone(esn))
-		if l == lang.Estonian {
-			r.Messages[0].Content += forkETLine
-		}
-	}
 	kg := forkKG()
 	ollama := llm.IsOllama(kg)
 	if t, ok := llm.Resolve(llm.Load(), l, kg); ok {
@@ -56,7 +49,42 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string) openai.ChatCompletion
 	if ollama {
 		r.ReasoningEffort = "none"
 	}
+	brain := forkBrain(ollama)
+	r.MaxCompletionTokens = prompt.ReplyCap(brain)
+	if len(r.Messages) > 0 && r.Messages[0].Role == openai.ChatMessageRoleSystem {
+		r.Messages[0].Content = prompt.Render(prompt.Default(brain), prompt.Vars{
+			Now:      prompt.Now(l, forkNow(), forkBotZone(esn)),
+			Lang:     prompt.LangLine(l),
+			Speech:   prompt.SpeechBlock(),
+			Commands: forkCommands(isKG),
+		})
+		if os.Getenv("DEBUG_PRINT_PROMPT") == "true" {
+			logger.Println(r.Messages[0].Content)
+		}
+	}
 	return r
+}
+
+func forkBrain(ollama bool) string {
+	if ollama {
+		return prompt.Ollama
+	}
+	return prompt.Claude
+}
+
+// forkCommands is the {commands} block: empty unless CommandsEnable; newVoiceRequest only on the KG path with SaveChat.
+func forkCommands(isKG bool) string {
+	k := vars.APIConfig.Knowledge
+	if !k.CommandsEnable {
+		return ""
+	}
+	emotions := prompt.SampleEmotions
+	for _, c := range ValidLLMCommands {
+		if c.Command == "playAnimationWI" {
+			emotions = c.ParamChoices
+		}
+	}
+	return prompt.Commands(emotions, isKG && k.SaveChat)
 }
 
 // forkCameraReq readies the getImage follow-up; defer the returned func. et-EE on Ollama (E26): the ET model is
@@ -64,6 +92,7 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string) openai.ChatCompletion
 func forkCameraReq(r *openai.ChatCompletionRequest) func() {
 	l, c, kg := lang.Current(), llm.Load(), forkKG()
 	t, ok := llm.Resolve(c, l, kg)
+	r.MaxCompletionTokens = prompt.ReplyCap(forkBrain((ok && t.Ollama()) || (!ok && llm.IsOllama(kg))))
 	if !ok {
 		if kg.Provider == "openai" && kg.Model != "" {
 			r.Model = kg.Model // upstream DoGetImage hardcodes GPT4oMini for openai

@@ -1,6 +1,6 @@
 # Prompt templates (slice 2)
 
-Status: staged, no code yet. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order 2; its rulings P, U, SP, E, P-guard, P-budget, N bind.
+Status: Stage 1 committed; Stages 2–4 open. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order 2; its rulings P, U, SP, E, P-guard, P-budget, N bind.
 
 ## Rulings
 
@@ -13,7 +13,7 @@ Status: staged, no code yet. Parent: `2026-11-07-system-prompt-redesign.md (docs
 | PE | Persona (English): warm, playful companion robot called Vector; 2–4 short sentences unless asked for more; sometimes a question back; vary openings; no stock catchphrases. | `prompt.Default` |
 | LA | `{lang}` = "Answer in Estonian. Keep names, brands and titles as written." for et-EE only; en-US renders empty. `forkETLine` is deleted. | `prompt.LangLine` |
 | SP | `{speech}`: input is speech-to-text and may be misheard; times and dates as digits, every other number as words; normal punctuation; no markdown, emoji, lists. Replaces the upstream STT note. | `prompt.SpeechBlock` |
-| CM | `{commands}` renders only when `vars.APIConfig.Knowledge.CommandsEnable`: one grammar line, one example, emotions from `ValidLLMCommands` `playAnimationWI` `ParamChoices`, `getImage` param `front` only, `newVoiceRequest` only when `SaveChat`. Calm voice. ≤170 tokens. | `prompt.Commands`; caller `forkCommands` |
+| CM | `{commands}` renders only when `vars.APIConfig.Knowledge.CommandsEnable`: one grammar line, one example, `playAnimationWI` + `playAnimation` (stops speech) with emotions from `ValidLLMCommands` `playAnimationWI` `ParamChoices`, `getImage` param `front` only, `newVoiceRequest` only when `SaveChat` and isKG (`forkAIReq(r, esn, isKG)`). Calm voice. ≤170 tokens. | `prompt.Commands`; caller `forkCommands` |
 | OP | `openai_prompt` is ignored (live empty); the `/myvector/prompt` page shows one warning line when it is non-empty. | `prompt.PageHandler` |
 | DBG | `DEBUG_PRINT_PROMPT=true` logs the rendered prompt (upstream logs the discarded one). | `forkAIReq` |
 

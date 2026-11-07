@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
+	"github.com/sashabaranov/go-openai"
 )
 
 func useKnowledge(t *testing.T, provider, endpoint, model string) {
@@ -48,7 +51,7 @@ func TestForkPromptEstonian(t *testing.T) {
 	if r.Model != llm.DefaultETModel {
 		t.Errorf("Model = %q, want %q", r.Model, llm.DefaultETModel)
 	}
-	if want := "\n\nPraegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn).\n\nAnswer in Estonian."; !strings.HasSuffix(r.Messages[0].Content, want) {
+	if want := "\n\nPraegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn).\n\nAnswer in Estonian. Keep names, brands and titles as written."; !strings.HasSuffix(r.Messages[0].Content, want) {
 		t.Errorf("system prompt lacks the now + language lines: %q", r.Messages[0].Content)
 	}
 	if r.ReasoningEffort != "none" {
@@ -60,11 +63,16 @@ func TestForkPromptEnglishNow(t *testing.T) {
 	lang.UseForTest(t, lang.English)
 	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
 	useBotClock(t, "Asia/Tokyo")
+	vars.APIConfig.Knowledge.OpenAIPrompt = "You are a pirate."
 	r := CreateAIReq("what day is it", "esn", false, true)
-	want := CreatePrompt("You are a helpful, animated robot called Vector. Keep the response concise yet informative.", "qwen3.5:4b", true) +
-		"\n\nIt is Saturday, 7 November 2026, 16:43 (Asia/Tokyo)."
+	want := prompt.Render(prompt.Default(prompt.Ollama), prompt.Vars{
+		Now: "It is Saturday, 7 November 2026, 16:43 (Asia/Tokyo).", Speech: prompt.SpeechBlock(),
+	})
 	if r.Model != "qwen3.5:4b" || r.Messages[0].Content != want {
 		t.Errorf("English request: model %q, prompt %q", r.Model, r.Messages[0].Content)
+	}
+	if c := r.Messages[0].Content; strings.Contains(c, "pirate") || strings.Contains(c, "concise yet informative") || strings.Contains(c, "Answer in") {
+		t.Errorf("upstream prompt or a language line survived: %q", c)
 	}
 	if r.ReasoningEffort != "none" {
 		t.Errorf("Ollama ReasoningEffort = %q, want none", r.ReasoningEffort)
@@ -84,9 +92,69 @@ func TestForkPromptOpenAIOmitsReasoning(t *testing.T) {
 		if r.ReasoningEffort != "" || r.Model != k[2] {
 			t.Errorf("%s %s: ReasoningEffort %q, Model %q", k[0], k[1], r.ReasoningEffort, r.Model)
 		}
-		if !strings.HasSuffix(r.Messages[0].Content, forkETLine) {
+		if !strings.HasSuffix(r.Messages[0].Content, prompt.LangLine(lang.Estonian)) {
 			t.Errorf("%s: language line missing", k[1])
 		}
+	}
+}
+
+func TestForkPromptReplyCap(t *testing.T) {
+	lang.UseForTest(t, lang.English)
+	for _, k := range []struct {
+		endpoint, model string
+		want            int
+	}{
+		{ollamaEndpoint, "qwen3.5:4b", 300},
+		{"https://api.anthropic.com/v1", "claude-haiku-5-5", 400},
+	} {
+		useKnowledge(t, "custom", k.endpoint, k.model)
+		if r := CreateAIReq("hi", "esn", false, true); r.MaxCompletionTokens != k.want {
+			t.Errorf("%s: MaxCompletionTokens = %d, want %d", k.model, r.MaxCompletionTokens, k.want)
+		}
+		cam := openai.ChatCompletionRequest{Model: k.model, MaxCompletionTokens: 2048}
+		forkCameraReq(&cam)()
+		if cam.MaxCompletionTokens != k.want {
+			t.Errorf("%s camera: MaxCompletionTokens = %d, want %d", k.model, cam.MaxCompletionTokens, k.want)
+		}
+	}
+}
+
+// Every {{command||param}} the block offers must parse: the command exists and lists the param.
+func TestForkCommandsSample(t *testing.T) {
+	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
+	vars.APIConfig.Knowledge.CommandsEnable, vars.APIConfig.Knowledge.SaveChat = true, true
+	byName := map[string]LLMCommand{}
+	for _, c := range ValidLLMCommands {
+		byName[c.Command] = c
+	}
+	if byName["playAnimationWI"].ParamChoices != prompt.SampleEmotions {
+		t.Errorf("prompt.SampleEmotions drifted from playAnimationWI ParamChoices %q", byName["playAnimationWI"].ParamChoices)
+	}
+	block := forkCommands(true)
+	for _, name := range []string{"playAnimationWI", "playAnimation", "getImage", "newVoiceRequest"} {
+		if !strings.Contains(block, name) {
+			t.Errorf("block lacks %s", name)
+		}
+	}
+	for _, m := range regexp.MustCompile(`(\w+)\|\|(\w+)`).FindAllStringSubmatch(block, -1) {
+		c, ok := byName[m[1]]
+		if m[1] == "command" {
+			continue // the grammar line itself
+		}
+		if !ok || !strings.Contains(c.ParamChoices, m[2]) {
+			t.Errorf("block offers {{%s||%s}}, not a valid command/param", m[1], m[2])
+		}
+	}
+	if strings.Contains(forkCommands(false), "newVoiceRequest") {
+		t.Error("intent-graph path offers newVoiceRequest")
+	}
+	vars.APIConfig.Knowledge.SaveChat = false
+	if strings.Contains(forkCommands(true), "newVoiceRequest") {
+		t.Error("newVoiceRequest offered without SaveChat")
+	}
+	vars.APIConfig.Knowledge.CommandsEnable = false
+	if forkCommands(true) != "" {
+		t.Error("commands block rendered with CommandsEnable off")
 	}
 }
 
