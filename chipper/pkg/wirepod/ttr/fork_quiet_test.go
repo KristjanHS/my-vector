@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -48,6 +50,7 @@ func quietRig(t *testing.T, ip string) (*vtt.IntentGraphRequest, *quietStream, c
 	}
 	PluginNames = []string{"test"}
 	t.Cleanup(func() {
+		forkNaps.Wait()
 		quiet.NapURL, vars.BotInfo = oldURL, oldBots
 		PluginUtterances, PluginFunctions, PluginNames = oldU, oldF, oldN
 	})
@@ -70,8 +73,10 @@ func TestForkQuietShortCircuits(t *testing.T) {
 	}
 	select {
 	case q := <-naps:
-		if want := "key=SleepCycle_NapUntil_s&value="; len(q) <= len(want) || q[:len(want)] != want {
-			t.Errorf("nap query %q", q)
+		v, err := url.ParseQuery(q)
+		sec, _ := strconv.ParseInt(v.Get("value"), 10, 64)
+		if want := before.Add(quiet.NapFor).Unix(); err != nil || v.Get("key") != "SleepCycle_NapUntil_s" || sec < want-2 || sec > want+2 {
+			t.Errorf("nap query %q, want SleepCycle_NapUntil_s=%d (epoch s, now+NapFor)", q, want)
 		}
 	case <-time.After(2 * time.Second):
 		t.Error("no nap request")
