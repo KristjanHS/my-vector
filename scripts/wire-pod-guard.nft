@@ -1,6 +1,6 @@
 #!/usr/sbin/nft -f
-# Loaded by wire-pod.service (run-server.sh, the pinned commit's copy) + myvector-tts.service (ExecStartPre, the tree's copy); an nft error stops the service. :80/:8080 serve the same
-# unauthenticated API (LLM key included), :8091 the TTS service: only this PC and `allowed` reach them. Add a device here, then commit + `make ship` (wire-pod) / `make tts-enable`.
+# Loaded by scripts/load-guard.sh (the pinned commit's copy) for wire-pod + myvector-tts; an nft error stops the service. :80/:8080 serve the same
+# unauthenticated API (LLM key included), :8091 the TTS service: only this PC and `allowed` reach them. Add a device here, then commit + `make server-pin`.
 # The ports are hardcoded: a WEBSERVER_PORT override in source.sh needs the same change here.
 table inet wirepod_guard
 delete table inet wirepod_guard

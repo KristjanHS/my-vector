@@ -25,7 +25,7 @@ Claude) wins: `scripts/llm.sh use` no longer changes the brain. Delete `"llm"` f
 
 ```bash
 scripts/llm.sh backup        # snapshot of the current settings -> robot/work/llm/kg-<time>.json
-make start                   # once: restarts wire-pod so it runs the Claude fix (step 3); Vector reconnects in ~30 s
+make server-pin              # once: pins + restarts wire-pod on HEAD so it runs the Claude fix (step 3); Vector reconnects in ~30 s
 journalctl -u wire-pod -f    # optional, second terminal: watch requests ("Using <model>", "LLM returned no response")
 ```
 
@@ -110,7 +110,7 @@ wire-pod reaches Claude through Anthropic's OpenAI-compatible endpoint. Two thin
 
 - **The fork fix.** wire-pod always sent `top_p: 1`, and Claude rejects it
   (`400 "top_p is deprecated for this model"`). `chipper/pkg/wirepod/ttr/fork_llm.go` drops it for
-  `claude*` models. Run `make start` once (step 0) so the server picks it up.
+  `claude*` models. Run `make server-pin` once (step 0) so the server picks it up.
 - **The key must be workspace-scoped** (same rule as crash-dash). An org-level key fails every call.
 
 ```bash
@@ -224,6 +224,6 @@ e.g. `https://openrouter.ai/api/v1`.
 
 - **Vector says nothing, or asks you to check the LLM settings:** run `scripts/llm.sh ping`. It uses the
   same endpoint, key and model, so a key, credit or model error shows up there with the provider's message.
-  If `ping` works but Vector doesn't on Claude, the server predates the fix: `make start`.
+  If `ping` works but Vector doesn't on Claude, the server predates the fix: `make server-pin`.
 - **"Hey Vector" ignored:** behavior control may be held (SDK "Assume"); release it in the web UI.
 - **Back to where you started:** `scripts/llm.sh restore robot/work/llm/kg-<time>.json` (from step 0), or `scripts/llm.sh off`.
