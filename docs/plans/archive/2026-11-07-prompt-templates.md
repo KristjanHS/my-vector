@@ -1,6 +1,6 @@
 # Prompt templates (slice 2)
 
-Status: Stages 1–3 committed; Stage 4 open: rulings RC + CT (Claude empty story replies — cause measured: hidden thinking eats the 400 cap), live checks, fakebot stream, review. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order 2; its rulings P, U, SP, E, P-guard, P-budget, N bind.
+Status: ✅ SHIPPED to main 2026-11-07 (Stages 1–4 + review fixes); user by-ear/eye confirm → `docs/backlog.md` §OWED[USER]. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order 2.
 
 ## Rulings
 
