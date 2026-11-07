@@ -2,8 +2,9 @@
 # Night-window check (0011-night-window.patch): did Vector do anything overnight besides sleep and answer "Hey Vector"?
 # Reads the robot's kept log (/data/log/keep, ~20 h deep) for the night that starts on DATE at NIGHT_FROM.
 # Usage: night-check.sh [YYYY-MM-DD]   default: the most recent night start (yesterday's if run before NIGHT_FROM).
-#   env NIGHT_FROM=21:00 NIGHT_TO=09:00 (the firmware's SleepTracker defaults).
-# Allowed: GoToSleep anims, and anything within 60 s after a voice event (wake word, listening, TTS, SDK, voice intent).
+#   env NIGHT_FROM=21:00 NIGHT_TO=09:00 (the firmware's SleepTracker defaults); NIGHT_LOG_DIR=<dir> reads that local dir, no ssh (host test).
+# Allowed: GoToSleep anims, the InitialWakeUp anim ≤30 s after a vic-engine start (a ship; counted as restarts),
+#   and anything within 60 s after a voice event (wake word, listening, TTS, SDK, voice intent).
 # Hit: any other logged animation or feature start, a wake_up not for VoiceCommand/TimerShouldRing, a fall into LightSleep.
 # Blind spots: DAS-muted idle anims (e.g. ObservingLookUp) and scripted head moves are never logged as animations.
 # Exit: 0 PASS (no hits; the log spans the whole night and shows him asleep) | 1 FAIL (hits) | 2 setup error
@@ -11,7 +12,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
-. "$here/../env.sh"
+[[ -n ${NIGHT_LOG_DIR:-} ]] || . "$here/../env.sh"
 from=${NIGHT_FROM:-21:00} to=${NIGHT_TO:-09:00}
 day=${1:-$(if [[ $(date +%H:%M) < $from ]]; then date -d yesterday +%F; else date +%F; fi)}
 start=$(date -d "$day $from" +%s) || { echo "FAIL: bad date or NIGHT_FROM: $day $from" >&2; exit 2; }
@@ -25,24 +26,27 @@ echo "night $(fmt "$start") .. $(fmt "$end")"
 
 # Log stamps are "MM-DD HH:MM:SS.mmm" with no year: awk compares them as strings; a January line after a December
 # start (a New Year night) is shifted to month 13. ssh joins the remote args into one string, hence the inner quotes.
-ssh "${ssh_opts[@]}" "root@$ip" sh -s -- "'$(fmt "$start")'" "'$(fmt "$end")'" "$((now >= end))" <<'EOF'
+prog=$(cat <<'EOF'
 s=$1 e=$2 over=$3
-cd /data/log/keep || { echo "FAIL: no /data/log/keep on the robot (robot/logkeep/apply.sh)"; exit 2; }
+cd "${4:-/data/log/keep}" || { echo "FAIL: no ${4:-/data/log/keep} (robot/logkeep/apply.sh)"; exit 2; }
 cat $(ls -tr messages.* 2>/dev/null) messages | awk -v s="$s" -v e="$e" -v over="$over" '
   function key(stamp,   m) { m = substr(stamp, 1, 2) + 0; if (sm == 12 && m == 1) m = 13; return sprintf("%02d%s", m, substr(stamp, 3)) }
   function sec(t) { return substr(t, 7, 2) * 3600 + substr(t, 10, 2) * 60 + substr(t, 13, 2) }
   function hit(what) { hits++; print "  hit (" what "): " substr(l, 1, 170) }
-  BEGIN { sm = substr(s, 1, 2) + 0; ks = key(s); ke = key(e); vlast = -1e9 }
+  BEGIN { sm = substr(s, 1, 2) + 0; ks = key(s); ke = key(e); vlast = estart = -1e9 }
   $1 !~ /^[0-9][0-9]-[0-9][0-9]$/ { next }
   # first/last in file order: a boot line can carry the stale pre-sync clock (e.g. "10-25" in a November log)
   { k = key($1 " " $2); if (first == "") first = k; last = k }
   k < ks || k >= ke { next }
+  { t = sec(k) + (substr(k, 1, 5) != substr(ks, 1, 5)) * 86400 }
+  / systemd 1 Started Victor engine daemon\./ { estart = t; next }
   index($0, "@") == 0 { next }
   {
-    l = $0; gsub("\037", "|", l); t = sec(k) + (substr(k, 1, 5) != substr(ks, 1, 5)) * 86400
+    l = $0; gsub("\037", "|", l)
     if (l ~ /wakeword\.triggered|speech_trigger_recognized|\|VC_|tts|\|SDK\||voice_command|VoiceIntent|\|Voice\|/) vlast = t
     invoice = t >= vlast && t - vlast <= 60
   }
+  l ~ /@action\.play_animation\|[^|]*\|[^|]*\|InitialWakeUp\|/ && t >= estart && t - estart <= 30 { restarts++; next }
   l ~ /\|GoToSleepSleeping\|/ { asleep++ }
   l ~ /@behavior\.sleeping\.falling_asleep/ { sleeps++; if (l ~ /NightWindow/) nw++ }
   l ~ /@behavior\.sleeping\.falling_asleep\|[^|]*\|LightSleep/ { hit("light sleep at night") }
@@ -53,9 +57,12 @@ cat $(ls -tr messages.* 2>/dev/null) messages | awk -v s="$s" -v e="$e" -v over=
     why = first == "" || first > ks ? "log does not reach back to the night start" \
       : !over ? "night not over yet" : last < ke ? "log stops at " last " (robot down or syslog stalled?)" \
       : !asleep ? "no sleeping anim in the window" : ""
-    printf "log %s .. %s: hits %d, sleeping anims %d, falling asleep %d (NightWindow %d)\n", first, last, hits, asleep, sleeps, nw
+    printf "log %s .. %s: hits %d, restarts %d, sleeping anims %d, falling asleep %d (NightWindow %d)\n", first, last, hits, restarts, asleep, sleeps, nw
     v = hits ? "FAIL" : why != "" ? "INCOMPLETE" : "PASS"
     if (v == "INCOMPLETE") print "  (" why ")"
     print v; exit v == "PASS" ? 0 : v == "FAIL" ? 1 : 3
   }'
 EOF
+)
+if [[ -n ${NIGHT_LOG_DIR:-} ]]; then sh -s -- "$(fmt "$start")" "$(fmt "$end")" "$((now >= end))" "$NIGHT_LOG_DIR" <<<"$prog"
+else ssh "${ssh_opts[@]}" "root@$ip" sh -s -- "'$(fmt "$start")'" "'$(fmt "$end")'" "$((now >= end))" <<<"$prog"; fi
