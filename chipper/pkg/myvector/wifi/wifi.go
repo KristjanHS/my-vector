@@ -176,7 +176,9 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		if msg == "" {
 			msg = fmt.Sprintf("wifi.sh exit %d", code)
 		}
-		logger.Println("myvector wifi " + args[0] + ": " + msg) // never the password: it is not in args or stderr
+		if args[0] != "status" { // the page polls status through the switch, when SSH fails by design
+			logger.Println("myvector wifi " + args[0] + ": " + msg) // never the password: it is not in args or stderr
+		}
 		status := http.StatusBadGateway
 		if code == ExitConnected || code == ExitBusy {
 			status = http.StatusConflict

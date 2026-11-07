@@ -203,8 +203,13 @@ func TestRoamTicksAndSkipsWhileChanging(t *testing.T) {
 		t.Fatalf("roamed %d times while a page change held the lock", len(n))
 	}
 	changing.Unlock()
-	if args := <-n; !reflect.DeepEqual(args, []string{"roam"}) {
-		t.Fatalf("roam args %v", args)
+	select {
+	case args := <-n:
+		if !reflect.DeepEqual(args, []string{"roam"}) {
+			t.Fatalf("roam args %v", args)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no roam tick after the lock was released")
 	}
 	cancel()
 	<-done

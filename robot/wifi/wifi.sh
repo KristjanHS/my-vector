@@ -15,7 +15,8 @@
 #                                   ("ok: roam …"), else print nothing. A failed switch target is skipped for 60 min.
 #                                   iw dBm, not connman's Strength: that read 30 for the connected network next to a stale
 #                                   73 for an idle one (2026-11-07; iw: -61 vs -47 dBm).
-#                                   wire-pod runs it every few minutes (myvector/wifi Roam).
+#                                   wire-pod runs it every few minutes (myvector/wifi Roam). SSIDs with a backslash or
+#                                   edge spaces never match iw's escaped names, so they are never roamed to.
 #   add/forget only change connman's files and never restart connman: the robot stays online, and the change
 #   counts from its next boot (a restart can get a new DHCP address, so the robot looks offline: 2026-11-07).
 #   Re-saving a saved network drops connman's in-memory copy (else it saves the old password back): until the next
@@ -38,10 +39,11 @@ fi
 # in), $s the stage dir; connected = the online/ready service ("*AO …" / "*AR …").
 prelude='mac=$(tr -d : </sys/class/net/wlan0/address); id=wifi_${mac}_${hex}_managed_psk; d=/data/lib/connman/$id
 s=/data/lib/connman-staged j=/run/myvector-wifi-job
+busy() { grep -qs ^running $j && kill -0 "$(cat $j.pid 2>/dev/null)" 2>/dev/null; } # a dead job is not busy
 connected() { connmanctl services | awk '\''substr($0, 3, 1) ~ /[OR]/ { print $NF }'\''; }'
 # Remote apply: clear any stage left by an earlier cut-off add (it may hold a password), refuse the connected
 # network, and for a saved one drop connman's in-memory copy (connmanctl config --remove).
-apply='grep -qs ^running $j && { echo busy; exit 0; }
+apply='busy && { echo busy; exit 0; }
 rm -rf $s; connected | grep -qx "$id" && { echo connected; exit 0; }
 [ -d "$d" ] && connmanctl config "$id" --remove >/dev/null 2>&1
 '
@@ -102,15 +104,16 @@ grep -q "^Passphrase=" $d/settings 2>/dev/null && echo done || echo "move into $
   test | switch)
     (($# == 2)) && [[ $2 =~ ^([0-9a-f]{2}){1,32}$ ]] || die "usage: wifi.sh $1 <ssid-hex>"
     # The job runs detached (setsid, own fds) so it outlives this SSH session, which the network change cuts.
-    out=$(remote "$2" 'grep -qs ^running $j && { echo busy; exit 0; }
+    out=$(remote "$2" 'busy && { echo busy; exit 0; }
 old=$(connected | head -n 1)
 [ "$old" = "$id" ] && { echo connected; exit 0; }
 grep -qs "^Passphrase=" $d/settings || { echo "not saved on the robot"; exit 0; }
 [ -n "$old" ] || { echo "the robot is not online on any network"; exit 0; }
 mode='"$1"' ip0=$(ip -4 -o addr show wlan0 | awk "{ split(\$4, a, \"/\"); print a[1]; exit }")
 export id old mode ip0 j
-echo "running: $mode starting" >$j
+rm -f $j.pid; echo "running: $mode starting" >$j
 setsid sh -c '\''
+echo $$ >$j.pid
 name() { connmanctl services "$1" 2>/dev/null | awk -F" = " "\$1 ~ /^ *Name\$/ { print \$2 }"; }
 state() { connmanctl services "$1" 2>/dev/null | awk "\$1 == \"State\" { print \$3 }"; }
 up() { n=0; while [ $n -lt 25 ]; do case $(state "$1") in online|ready) return 0 ;; failure) return 1 ;; esac; sleep 1; n=$((n + 1)); done; return 1; }
@@ -120,7 +123,7 @@ reach() { n=0; until c=$(curl -sk -m 4 -o /dev/null -w "%{http_code}" https://es
 to=$(name "$id") from=$(name "$old") why=
 echo "running: $mode: joining $to" >$j
 timeout 30 connmanctl connect "$id" >/dev/null 2>&1
-if ! up "$id"; then why="did not connect (wrong password, or out of range)"
+if ! up "$id"; then why="did not connect (wrong password, out of range, or saved since Vector last booted: reboot it first)"
 elif ! same; then why="got address ${a:-none}, not $ip0: wire-pod would lose Vector"
 elif ! reach; then why="connected, but cannot reach wire-pod (curl https://escapepod.local/ok: exit $rc, HTTP $c)"
 fi
@@ -130,7 +133,7 @@ if [ -n "$why" ] || [ "$mode" = test ]; then
   timeout 30 connmanctl connect "$old" >/dev/null 2>&1
   up "$old" && back="Vector is back on $from" || back="Vector could not get back to $from: it picks a saved network itself, else BLE setup"
 fi
-if [ -n "$why" ]; then echo "$id" >$j.fail; echo "failed: $to $why. $back." >$j
+if [ -n "$why" ]; then echo "$id $(date +%s)" >>$j.fail; echo "failed: $to $why. $back." >$j
 elif [ "$mode" = test ]; then echo "ok: $to works (signal $sig dBm, same address $ip0). $back." >$j
 else echo "ok: Vector is on $to now (signal $sig dBm, same address $ip0)." >$j
 fi
@@ -143,16 +146,17 @@ echo started' </dev/null) || exit
     ;;
   roam)
     (($# == 1)) || die "usage: wifi.sh roam"
-    out=$(remote 0 'grep -qs ^running $j && exit 0
+    out=$(remote 0 'busy && exit 0
 old=$(connected | head -n 1); [ -n "$old" ] || exit 0
-iw dev wlan0 scan 2>/dev/null | awk "/^BSS/ { s = \"\" } /signal:/ { s = int(\$2) } /^[ \t]*SSID: / { sub(/^[ \t]*SSID: /, \"\"); if (s != \"\") print s, \$0 }" >$j.scan
+iw dev wlan0 scan 2>/dev/null | awk "/^BSS/ { s = \"\" } /signal:/ { s = int(\$2) } /^[ \t]*SSID: / { sub(/^[ \t]*SSID: /, \"\"); if (s != \"\" && \$0 != \"\") print s, \$0 }" >$j.scan
 sig() { awk -v n="$1" "{ d = \$1; sub(/^[^ ]+ /, \"\"); if (\$0 == n && (m == \"\" || d + 0 > m + 0)) m = d } END { print m }" $j.scan; }
 name() { connmanctl services "$1" 2>/dev/null | awk -F" = " "\$1 ~ /^ *Name\$/ { print \$2 }"; }
 cur=$(sig "$(name "$old")") bd=-999 best=
 for f in /data/lib/connman/wifi_${mac}_*_managed_psk; do
   id=${f##*/}; [ "$id" = "$old" ] && continue; grep -qs "^Passphrase=" $f/settings || continue
-  [ -n "$(find $j.fail -mmin -60 2>/dev/null)" ] && grep -qsx "$id" $j.fail && continue
-  v=$(sig "$(name "$id")"); [ -n "$v" ] && [ "$v" -gt "$bd" ] && bd=$v best=$id
+  awk -v id="$id" -v now="$(date +%s)" "\$1 == id && now - \$2 < 3600 { f = 1 } END { exit !f }" $j.fail 2>/dev/null && continue
+  nm=$(name "$id"); [ -n "$nm" ] || continue # out of range: no connman service (and "" would match a hidden SSID)
+  v=$(sig "$nm"); [ -n "$v" ] && [ "$v" -gt "$bd" ] && bd=$v best=$id
 done
 [ -n "$best" ] && [ -n "$cur" ] && [ "$bd" -ge $((cur + 8)) ] && echo "roam $best $cur $bd"; exit 0' </dev/null) || exit
     [[ ${out##*$'\n'} =~ ^roam\ wifi_[0-9a-f]+_([0-9a-f]+)_managed_psk\ (-?[0-9]+)\ (-?[0-9]+)$ ]] || exit 0
@@ -161,7 +165,8 @@ done
     ;;
   status)
     (($# == 1)) || die "usage: wifi.sh status"
-    out=$(remote 0 'cat $j 2>/dev/null || echo none' </dev/null) || exit
+    out=$(remote 0 'if grep -qs ^running $j && ! busy; then echo "failed: the job stopped without a result; Refresh shows the network Vector is on"
+else cat $j 2>/dev/null || echo none; fi' </dev/null) || exit
     printf '%s\n' "${out##*$'\n'}"
     ;;
   *) die "usage: wifi.sh list | add | forget <ssid-hex> | test|switch <ssid-hex> | status | roam" ;;

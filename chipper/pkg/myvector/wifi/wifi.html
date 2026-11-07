@@ -195,7 +195,7 @@
       status(`${action === "test" ? "Testing" : "Switching to"} "${n.ssid}" — Vector is offline for a moment…`);
       try {
         await call("POST", { action, hex: n.hex });
-        const end = Date.now() + 150000;
+        const end = Date.now() + 200000; // the job's worst case is ~170 s
         let line = "";
         while (Date.now() < end) {
           await new Promise((r) => setTimeout(r, 3000));
