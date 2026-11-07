@@ -124,24 +124,45 @@ func TestForkPromptReplyCap(t *testing.T) {
 	lang.UseForTest(t, lang.English)
 	for _, k := range []struct {
 		endpoint, model string
+		ollama          bool
 		want            int
 	}{
-		{ollamaEndpoint, "qwen3.5:4b", 300},
-		{"https://api.anthropic.com/v1", "claude-haiku-5-5", 1024},
+		{ollamaEndpoint, "qwen3.5:4b", true, 300},
+		{"https://api.anthropic.com/v1", "claude-haiku-5-5", false, 1024},
 	} {
 		useKnowledge(t, "custom", k.endpoint, k.model)
-		checkCap(t, k.model, CreateAIReq("hi", "esn", false, true), k.want)
+		checkCap(t, k.model, CreateAIReq("hi", "esn", false, false), k.ollama, k.want)
 		cam := openai.ChatCompletionRequest{Model: k.model, MaxCompletionTokens: 2048}
 		forkCameraReq(&cam)()
-		checkCap(t, k.model+" camera", cam, k.want)
+		checkCap(t, k.model+" camera", cam, k.ollama, k.want)
+	}
+}
+
+// A long ask (phrase hit, either language) or the KG path gets LongReplyCap; a plain non-KG question keeps ReplyCap.
+func TestForkPromptReplyCapLongAsk(t *testing.T) {
+	for _, k := range []struct {
+		endpoint, model string
+		ollama          bool
+	}{
+		{ollamaEndpoint, "qwen3.5:4b", true},
+		{"https://api.anthropic.com/v1", "claude-haiku-5-5", false},
+	} {
+		useKnowledge(t, "custom", k.endpoint, k.model)
+		long, short := prompt.LongReplyCap(forkBrain(k.ollama)), prompt.ReplyCap(forkBrain(k.ollama))
+		lang.UseForTest(t, lang.English)
+		checkCap(t, k.model+" story", CreateAIReq("Tell me a story about a robot", "esn", false, false), k.ollama, long)
+		checkCap(t, k.model+" KG hi", CreateAIReq("hi", "esn", false, true), k.ollama, long)
+		checkCap(t, k.model+" capital", CreateAIReq("what is the capital of france", "esn", false, false), k.ollama, short)
+		lang.UseForTest(t, lang.Estonian)
+		checkCap(t, k.model+" muinasjutt", CreateAIReq("räägi mulle muinasjutt", "esn", false, false), k.ollama, long)
 	}
 }
 
 // checkCap: an Ollama reply is capped by max_tokens (its /v1 ignores max_completion_tokens), Claude's by max_completion_tokens.
-func checkCap(t *testing.T, what string, r openai.ChatCompletionRequest, want int) {
+func checkCap(t *testing.T, what string, r openai.ChatCompletionRequest, ollama bool, want int) {
 	t.Helper()
 	exp := [2]int{0, want}
-	if want == prompt.ReplyCap(prompt.Ollama) {
+	if ollama {
 		exp = [2]int{want, 0}
 	}
 	if got := [2]int{r.MaxTokens, r.MaxCompletionTokens}; got != exp {
@@ -161,14 +182,15 @@ func TestForkPromptReplyCapProfile(t *testing.T) {
 	} {
 		useKnowledge(t, "custom", k.endpoint, k.model)
 		saveLLM(t, lang.English, llm.Config{Profiles: map[string]llm.Profile{lang.English: k.profile}, ClaudeKey: strings.Repeat("k", 20)})
-		r := CreateAIReq("hi", "esn", false, true)
+		r := CreateAIReq("hi", "esn", false, false)
 		if r.Model != k.profile.Model {
 			t.Errorf("%s profile: model %q", k.profile.Provider, r.Model)
 		}
-		checkCap(t, k.profile.Provider+" profile", r, k.want)
+		ollama := k.profile.Provider == llm.Ollama
+		checkCap(t, k.profile.Provider+" profile", r, ollama, k.want)
 		cam := openai.ChatCompletionRequest{Model: k.model}
 		forkCameraReq(&cam)()
-		checkCap(t, k.profile.Provider+" profile camera", cam, k.want)
+		checkCap(t, k.profile.Provider+" profile camera", cam, ollama, k.want)
 	}
 }
 

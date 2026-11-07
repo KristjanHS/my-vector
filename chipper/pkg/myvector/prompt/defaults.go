@@ -35,6 +35,14 @@ func ReplyCap(brain string) int {
 	return 1024 // Claude thinks inside the cap (plan ruling RC)
 }
 
+// LongReplyCap replaces ReplyCap for a long ask: a story, detail, N sentences, or the KG path (ttr forkAIReq).
+func LongReplyCap(brain string) int {
+	if brain == Ollama {
+		return 1000
+	}
+	return 2048
+}
+
 // LangLine is the {lang} block: et-EE only.
 func LangLine(l string) string {
 	if l == lang.Estonian {
