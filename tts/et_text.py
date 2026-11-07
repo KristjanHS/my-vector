@@ -70,18 +70,7 @@ _TIME = re.compile(r"(?<![\d.,:])([01]?\d|2[0-3])[.:]([0-5]\d)(?![\d]|[.:,]\d)")
 _DAY_MONTH = re.compile(r"(?<![\d.,])([1-9]|[12]\d|3[01])\.(\s+)([a-zõäöüšž]+)\b")
 
 
-_DIGITS = [
-    "null",
-    "üks",
-    "kaks",
-    "kolm",
-    "neli",
-    "viis",
-    "kuus",
-    "seitse",
-    "kaheksa",
-    "üheksa",
-]
+_DIGITS = ["null", "üks", "kaks", "kolm", "neli", "viis", "kuus", "seitse", "kaheksa", "üheksa"]
 
 
 def cardinal(n):
@@ -99,8 +88,8 @@ def cardinal(n):
 
 
 def _time(m):
-    # in words: espeak's digit reading of "26" ("kaks | kümmendkuus") gives mari a seam she fills
-    # with a "kuni"/"või"-like syllable in ~1 take of 3; spelled-out minutes measured 0/8
+    # in words: espeak's digit reading of "26" ("kaks | kümmendkuus") gives mari a seam she fills with a
+    # "kuni"/"või"-like syllable (STT: 3/8 takes of "kell on 9 26"); spelled out measured 0/40 over 4 times
     hour, mm = int(m.group(1)), m.group(2)
     if mm == "00":
         return cardinal(hour)

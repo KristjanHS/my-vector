@@ -44,15 +44,9 @@ def test_normalize_leaves_other_numbers(text):
 
 
 def test_cardinal_forms_and_range():
-    assert [et_text.cardinal(n) for n in (0, 10, 11, 17, 20, 26, 59)] == [
-        "null",
-        "kümme",
-        "üksteist",
-        "seitseteist",
-        "kakskümmend",
-        "kakskümmend kuus",
-        "viiskümmend üheksa",
-    ]
+    got = [et_text.cardinal(n) for n in (0, 10, 11, 12, 17, 20, 26, 40, 50, 59)]
+    assert got == ["null", "kümme", "üksteist", "kaksteist", "seitseteist", "kakskümmend", "kakskümmend kuus",
+                   "nelikümmend", "viiskümmend", "viiskümmend üheksa"]
     for bad in (-1, 60):
         with pytest.raises(ValueError):
             et_text.cardinal(bad)
