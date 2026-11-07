@@ -130,14 +130,22 @@ func TestForkPromptReplyCap(t *testing.T) {
 		{"https://api.anthropic.com/v1", "claude-haiku-5-5", 400},
 	} {
 		useKnowledge(t, "custom", k.endpoint, k.model)
-		if r := CreateAIReq("hi", "esn", false, true); r.MaxCompletionTokens != k.want {
-			t.Errorf("%s: MaxCompletionTokens = %d, want %d", k.model, r.MaxCompletionTokens, k.want)
-		}
+		checkCap(t, k.model, CreateAIReq("hi", "esn", false, true), k.want)
 		cam := openai.ChatCompletionRequest{Model: k.model, MaxCompletionTokens: 2048}
 		forkCameraReq(&cam)()
-		if cam.MaxCompletionTokens != k.want {
-			t.Errorf("%s camera: MaxCompletionTokens = %d, want %d", k.model, cam.MaxCompletionTokens, k.want)
-		}
+		checkCap(t, k.model+" camera", cam, k.want)
+	}
+}
+
+// checkCap: an Ollama reply is capped by max_tokens (its /v1 ignores max_completion_tokens), Claude's by max_completion_tokens.
+func checkCap(t *testing.T, what string, r openai.ChatCompletionRequest, want int) {
+	t.Helper()
+	exp := [2]int{0, want}
+	if want == prompt.ReplyCap(prompt.Ollama) {
+		exp = [2]int{want, 0}
+	}
+	if got := [2]int{r.MaxTokens, r.MaxCompletionTokens}; got != exp {
+		t.Errorf("%s: max_tokens, max_completion_tokens = %v, want %v", what, got, exp)
 	}
 }
 
@@ -153,14 +161,14 @@ func TestForkPromptReplyCapProfile(t *testing.T) {
 	} {
 		useKnowledge(t, "custom", k.endpoint, k.model)
 		saveLLM(t, lang.English, llm.Config{Profiles: map[string]llm.Profile{lang.English: k.profile}, ClaudeKey: strings.Repeat("k", 20)})
-		if r := CreateAIReq("hi", "esn", false, true); r.MaxCompletionTokens != k.want || r.Model != k.profile.Model {
-			t.Errorf("%s profile: MaxCompletionTokens %d model %q, want %d", k.profile.Provider, r.MaxCompletionTokens, r.Model, k.want)
+		r := CreateAIReq("hi", "esn", false, true)
+		if r.Model != k.profile.Model {
+			t.Errorf("%s profile: model %q", k.profile.Provider, r.Model)
 		}
+		checkCap(t, k.profile.Provider+" profile", r, k.want)
 		cam := openai.ChatCompletionRequest{Model: k.model}
 		forkCameraReq(&cam)()
-		if cam.MaxCompletionTokens != k.want {
-			t.Errorf("%s profile camera: MaxCompletionTokens = %d, want %d", k.profile.Provider, cam.MaxCompletionTokens, k.want)
-		}
+		checkCap(t, k.profile.Provider+" profile camera", cam, k.want)
 	}
 }
 
