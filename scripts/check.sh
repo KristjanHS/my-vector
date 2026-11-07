@@ -19,7 +19,7 @@ echo "shell syntax OK"
 if [[ -f $dir/scripts/wire-pod-guard.nft ]] && unshare -rn true 2>/dev/null; then
   unshare -rn /usr/sbin/nft -c -f "$dir/scripts/wire-pod-guard.nft" || { echo "nft syntax: scripts/wire-pod-guard.nft" >&2; exit 1; }
   echo "nft guard syntax OK"
-  if [[ ${#head[@]} -eq 0 ]]; then "$dir"/scripts/tests/guard.sh; fi # diffs against HEAD: tree mode only
+  "$dir"/scripts/tests/guard.sh
 elif [[ -f $dir/scripts/wire-pod-guard.nft ]]; then echo "nft guard check skipped: no unprivileged unshare"; fi
 "$dir"/robot/firmware/check-static.sh
 if [[ -f $dir/robot/firmware/tests/pc-voice.sh ]]; then "$dir"/robot/firmware/tests/pc-voice.sh; fi # SKIPs itself without g++/clone
