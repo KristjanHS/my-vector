@@ -14,23 +14,25 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 deploy=0
 [[ ${1:-} == -d ]] && { deploy=1; shift; }
 max=${1:-10}
-# The offset was read from this exact vic-anim build (built 2026-11-06 21:03); refuse any other binary.
-want_md5=74a2435a7abac2e12fbc9c32f0922cf2
-off=0x157804
 window=30 # s attached per round; both crashes came ~13 s after vic-anim started
 src=$here/../work/wire-os-victor
+bin=$src/_build/vicos/Release/bin
 
 setup() { echo "SETUP: $*" >&2; exit 2; }
 command -v gdb-multiarch >/dev/null || setup "no gdb-multiarch on the host (sudo apt install gdb-multiarch)"
+[[ -f $bin/vic-anim && -f $bin/vic-anim.full ]] || setup "no vic-anim build in $bin (build the clone first)"
+# Breakpoint = the line-191 failure branch: the `ldr r0` right before `mov r3, #191` in NrGainLookupCore, read from
+# the clone's symbol build; the robot must run that same build (md5 of the stripped binary).
+want_md5=$(md5sum "$bin/vic-anim" | cut -d' ' -f1)
+off=$(gdb-multiarch -q -batch -ex 'set arm force-mode arm' -ex 'disas NrGainLookupCore' "$bin/vic-anim.full" 2>/dev/null |
+  grep -B1 'mov[[:space:]]*r3, #191' | sed -n '1s/^ *\(0x[0-9a-f]*\) .*ldr[[:space:]]*r0.*/\1/p')
+[[ $off =~ ^0x[0-9a-f]+$ ]] || setup "no ldr r0 / mov r3, #191 pair in NrGainLookupCore of $bin/vic-anim.full"
 # shellcheck disable=SC2029 # the remote commands are built here on purpose
 ssh_() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 robot_md5() { ssh_ md5sum /anki/bin/vic-anim | cut -d' ' -f1; }
-[[ $(robot_md5) == "$want_md5" ]] || setup "robot /anki/bin/vic-anim is not the build $off was read from"
+((deploy)) || [[ $(robot_md5) == "$want_md5" ]] ||
+  setup "robot /anki/bin/vic-anim is not the clone's build (ship it, or use -d to deploy it)"
 ssh_ 'command -v gdbserver >/dev/null' || setup "no gdbserver on the robot"
-if ((deploy)); then
-  [[ $(md5sum "$src/_build/vicos/Release/bin/vic-anim" | cut -d' ' -f1) == "$want_md5" ]] ||
-    setup "the clone's built vic-anim is not the robot's build: a deploy would change the binary"
-fi
 
 out=$here/../work/seassert/catch-$(date +%Y%m%d-%H%M%S)
 mkdir -p "$out/no-sysroot" # empty: gdb must not pull ~50 robot libs over ssh (ate the whole window); bp is a raw address
@@ -147,7 +149,7 @@ EOF
   if ((deploy)); then
     wait "$dpid" || true
     st+=" | $(grep '^== ' "$out/deploy-$i.log" | tr '\n' ' ')"
-    [[ $(robot_md5) == "$want_md5" ]] || { log "round $i: the deploy changed vic-anim — stop"; exit 2; }
+    [[ $(robot_md5) == "$want_md5" ]] || { log "round $i: robot vic-anim is not the clone build after the deploy — stop"; exit 2; }
   fi
   crash=$(ssh_ "journalctl -o short-iso --no-pager --since @$t0 | grep -E 'SeAssert|terminated by signal|Handle fault code|Failed with result' | head -4" || true)
   if grep -q 'mov[[:space:]]*r3, #191' "$g" && grep -q '^s16 ' "$g" && ((s >= window)); then
