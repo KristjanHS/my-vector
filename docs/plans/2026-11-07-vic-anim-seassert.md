@@ -41,23 +41,23 @@ re-ship, **C = dig deeper with robot restarts (chosen; the power-on sound on eac
 
 ## Plan (pre-registered)
 
-1. **User:** run `! sudo apt install -y gdb-multiarch` (no ARM gdb on the host; the robot has `gdbserver`).
-2. Run `robot/seassert/catch.sh 60`. Each round restarts anki-robot.target like a deploy, attaches gdbserver
+1. ✔ gdb-multiarch 12.1 installed on the host (2026-11-07).
+2. Run `robot/seassert/catch.sh 20`. Each round restarts anki-robot.target like a deploy, attaches gdbserver
    (stdio over ssh) to the new vic-anim, and breaks at vic-anim+0x157804 (line-191 failure branch, before fprintf).
    On a hit it dumps s16 (result), s18 (ratio), s4 (gain), s2 (1−floor), the table at r4, caller d8 (floor) at sp+8,
    inputs [r6]/[r5], and bt. Output goes to `robot/work/seassert/catch-*/`. ~40 s/round, ≤ 40 min.
    - Not yet run even once: watch round 1 (attach works? `handle all` too noisy? does a timeout INT detach
      cleanly?) before leaving it to loop.
    - Code review of `catch.sh` is owed after the first working run.
-3. **Stopping rule:** stop at the first hit. 60 rounds with no hit (P ≈ 0.7 % at the observed 8 % rate) ⇒ a plain
-   restart doesn't reproduce it, or the attach changes the timing. Then try the exact deploy sequence
-   (`make ship NO_DEPLOY` + `deploy-v.sh`) or stop the hunt.
+3. **Stopping rule (user ruling 2026-11-07):** stop at the first hit. 20 rounds with no hit (P ≈ 19 % at 8 %) ⇒
+   re-run the clone's `deploy-v.sh` (same binary, user OK'd) with the catcher attached after its restart.
 4. **Read the hit:**
    - table ≠ file values → **runtime memory corruption** of `.data` → find the writer (watchpoint on the table
      with the same gdb tooling).
    - table intact but floor/d8 out of range or NaN → **register/VFP-state corruption**, or the caller passing an
      unchecked floor (re-read the caller).
    - otherwise → re-derive from the values.
+   On a hit: record the reading here, commit, then the fix is a user round (no patch before it).
 5. **Possible fixes** (se_lib can't be rebuilt): link vic-anim with `-Wl,--wrap=DoNrGainLookup_flt32` and supply a
    safe wrapper (clamp/NaN-guard), as a new firmware patch `0012`; or fix the corrupting writer if it is in our or
    Anki's source. Fallback: option A (smoke tolerates this exact signature once).
