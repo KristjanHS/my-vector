@@ -22,6 +22,7 @@ type rig struct {
 	said   []string
 	quiet  []string
 	locked bool
+	onAsk  func() // runs inside the LLM call
 }
 
 const esn = "00e20100"
@@ -33,6 +34,9 @@ func newRig(t *testing.T) *rig {
 		json.NewDecoder(q.Body).Decode(&req)
 		r.calls++
 		r.user = req.Messages[len(req.Messages)-1].Content
+		if r.onAsk != nil {
+			r.onAsk()
+		}
 		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]string{"role": "assistant", "content": r.reply}}}})
 	}))
 	t.Cleanup(srv.Close)
@@ -152,5 +156,41 @@ func TestHeardLockedAndLog(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(r.h.LogDir, r.now.Format("2006-01-02")+".txt"))
 	if !strings.Contains(string(b), "[SPEAK] mars is closest to the sun") {
 		t.Fatalf("listen log %q", b)
+	}
+}
+
+func TestHeardOneInFlight(t *testing.T) {
+	r := newRig(t)
+	r.reply = "Good question."
+	entered, release := make(chan struct{}), make(chan struct{})
+	r.onAsk = func() { entered <- struct{}{}; <-release }
+	done := make(chan struct{})
+	go func() { r.hear(time.Second, "is anyone hungry?"); close(done) }()
+	<-entered
+	r.onAsk = nil
+	r.h.Heard(Utterance{ESN: esn, Text: "what should we eat?", Start: r.now.Add(-2 * time.Second), End: r.now})
+	close(release)
+	<-done
+	if r.calls != 1 || len(r.said) != 1 {
+		t.Fatalf("a second utterance during an LLM call: calls %d said %v", r.calls, r.said)
+	}
+}
+
+func TestHeardOffDuringAsk(t *testing.T) {
+	r := newRig(t)
+	r.reply = "Hello."
+	r.onAsk = func() { r.h.State.Deactivate(esn, "phrase") }
+	r.hear(time.Second, "vector, are you awake?")
+	if len(r.said) != 0 {
+		t.Fatalf("off while the LLM answered: said %v", r.said)
+	}
+}
+
+func TestTurnKeepsIdleOff(t *testing.T) {
+	s, t0 := NewState(), time.Date(2026, 11, 7, 12, 0, 0, 0, time.Local)
+	s.Activate(esn, t0)
+	s.Turn(esn, t0.Add(IdleOff+time.Minute))
+	if s.Active(esn, t0.Add(IdleOff+time.Minute)) {
+		t.Fatal("a wake-word ask after IdleOff must not revive listening")
 	}
 }

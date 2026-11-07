@@ -122,10 +122,11 @@ func (h *Hearer) Heard(u Utterance) {
 	s.Heard(u.ESN, now)
 	before := s.hear(u.ESN, now, u.Text)
 	words := len(strings.Fields(u.Text))
-	if now.Sub(s.LastSpoke(u.ESN)) < Cooldown {
-		s.Log(fmt.Sprintf("myvector listen: %d words → COOL", words))
+	if why := s.claim(u.ESN, now); why != "" {
+		s.Log(fmt.Sprintf("myvector listen: %d words → %s", words, why))
 		return
 	}
+	defer s.release(u.ESN)
 	c, model, ok := h.Client()
 	if !ok {
 		s.Log("myvector listen: no Ollama target")

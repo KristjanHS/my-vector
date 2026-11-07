@@ -28,7 +28,8 @@ func (s *listenStream) Send(r *pb.IntentGraphResponse) error {
 func freshListening(t *testing.T) {
 	old := forkListening
 	forkListening = listen.NewState()
-	t.Cleanup(func() { forkListening = old })
+	forkHearer.State = forkListening
+	t.Cleanup(func() { forkListening, forkHearer.State = old, old })
 }
 
 func TestForkListenShortCircuits(t *testing.T) {

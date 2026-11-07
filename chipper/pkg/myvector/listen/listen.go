@@ -60,6 +60,7 @@ type bot struct {
 	since, lastHeard, lastSpoke time.Time
 	echo                        []span // A6 windows, EchoPad included
 	lines                       []line // A5 transcript, last Window
+	busy                        bool   // an LLM call + reply in flight
 }
 
 // State is RAM-only (a wire-pod restart turns every robot off), keyed by ESN.
@@ -94,6 +95,10 @@ func (s *State) off(esn, why string) {
 func (s *State) Active(esn string, now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.active(esn, now)
+}
+
+func (s *State) active(esn string, now time.Time) bool {
 	b, ok := s.bots[esn]
 	if !ok {
 		return false
@@ -144,8 +149,33 @@ func (s *State) LastSpoke(esn string) time.Time {
 
 // Turn stamps a wake-word ask at: an utterance for IdleOff, and its echo window up to TurnTail.
 func (s *State) Turn(esn string, at time.Time) {
-	s.stamp(esn, func(b *bot) { b.lastHeard = at; b.addEcho(at, at.Add(TurnTail)) })
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active(esn, at) {
+		b := s.bots[esn]
+		b.lastHeard = at
+		b.addEcho(at, at.Add(TurnTail))
+	}
 }
+
+// claim takes esn's one in-flight LLM slot: "COOL" inside Cooldown, "BUSY" while another utterance holds it.
+func (s *State) claim(esn string, now time.Time) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b, ok := s.bots[esn]
+	switch {
+	case !ok:
+		return "OFF"
+	case now.Sub(b.lastSpoke) < Cooldown:
+		return "COOL"
+	case b.busy:
+		return "BUSY"
+	}
+	b.busy = true
+	return ""
+}
+
+func (s *State) release(esn string) { s.stamp(esn, func(b *bot) { b.busy = false }) }
 
 // Spoken stamps Vector's own speech from..to as an echo window.
 func (s *State) Spoken(esn string, from, to time.Time) {
