@@ -6,7 +6,7 @@ Status: **ROOT CAUSE FOUND 2026-11-07 19:30** (3rd hit, ship 44a8b57) — fix aw
 
 `make ship` b70e53a (2026-11-07 11:53) failed its smoke test: vic-anim died ~13 s after the deploy restart with
 `SeAssert: ../../../se_lib/nrgainv.c:191`, then SIGILL (exit status 246). The robot's fault-code-handler restarted
-anki-robot.target ~15 s later and it recovered. Nothing was pushed; `main` is 6 commits ahead of `origin`.
+anki-robot.target ~15 s later and it recovered. 3rd hit: ship 44a8b57 (19:20), not pushed.
 
 The user suspected same-day changes. User's options round: A = smoke tolerates this one signature, B = do nothing and
 re-ship, **C = dig deeper with robot restarts (chosen; the power-on sound on each restart is accepted).**
@@ -19,8 +19,8 @@ re-ship, **C = dig deeper with robot restarts (chosen; the power-on sound on eac
 - **Same binary passed and failed.** The robot's vic-anim (md5 `74a2435a…`, built 2026-11-06 21:03) passed 5 ships
   earlier on 11-07. The deploys copy only `lib/libc++.so.1` every time: same content (md5 `d315fd6c…`), the build
   only refreshes its mtime. Every ship log since 11-05 shows it.
-- **Rate:** 2 crashes, both on deploys (~21 ship deploys); 0 in 5 gdb deploys, 5 gdb restarts, 5 plain restarts (11-07).
-- **Timing:** both asserts fire in the same instant vic-engine reaches `engine_ready` and plays `anim_power_offon`,
+- **Rate:** 3 crashes, all on ship deploys (~23); 0 in 5 gdb deploys, 5 gdb restarts, 5 plain restarts (11-07).
+- **Timing:** all three asserts fire in the same instant vic-engine reaches `engine_ready` and plays `anim_power_offon`,
   the first speaker audio after start. In `micDataProcessor.cpp`, speaker-active → `hasRobotNoise` →
   `SigEsBeamformingOff` → SE policy `FBF_FORCE_ECHO_CANCEL_WITH_NR`. The SE echo reference is a constant zero
   buffer (`dummySpeakerOut`). This lines up in time; it is **not proven** to be the cause.
@@ -42,7 +42,8 @@ re-ship, **C = dig deeper with robot restarts (chosen; the power-on sound on eac
 ## Root cause
 
 `libsignalessence_softfp.a(nrgainv.o)` is soft-float ABI and calls hard-float libc `__isinff` unbridged (no
-`__se_isinff` in `math_abi_bridge.o`), so it tests the numerator; ratio +inf (bin den = 0) overruns the table.
+`__se_isinff` in `math_abi_bridge.o`), so it tests the numerator; ratio +inf overruns the table. Inferred, unseen
+(dump VFP regs = 0): the trigger is den == 0 at bin 0/3, with the `.data` table intact.
 
 ## Fix (user round — no patch before the ruling)
 
@@ -53,11 +54,11 @@ re-ship, **C = dig deeper with robot restarts (chosen; the power-on sound on eac
 | F1c | `robot/firmware/series` + `markers.tsv` src row (`math_abi_bridge.c`) + bin row | `robot/firmware/` |
 | F2 | _owed_ — `policy_actions.o` calls unbridged `sin` (double): same rename as F1 (`sin=__se_sin`) recommended | same patch |
 
-Falsifier: `robot/seassert/isinff-abi.c` built unfixed exits non-zero on args `1 0` on the robot, `-DFIX` exits 0.
+Falsifier: `robot/seassert/isinff-abi.c` built unfixed exits 139 (SIGSEGV) on args `1 0` on the robot, `-DFIX` exits 0.
 Ship gate: `nm vic-anim.full | grep -E ' U (__isinff|sin)$'` empty; `isinff-abi` against the patched archive (no `-DFIX`) exits 0 on `1 0`.
 
 ## Files
 
 - `robot/seassert/isinff-abi.c`: on-robot repro (build flags in its header). `robot/seassert/catch.sh`: gdb capture loop. `robot/seassert/md.py`: ARM minidump reader. Runbook: `docs/crash-debugging.md`.
-- `robot/work/seassert/`: crash dumps, `.dmp.log`s, the 11-07 crash-window journal (gitignored).
+- `robot/work/seassert/`: 11-05 + 11:54 dumps, `.dmp.log`s, crash-window journal; 19:20 dump: `robot/work/crash-review/dumps/` (gitignored).
 - Memory note: `vic-anim-seassert-startup-flake`.
