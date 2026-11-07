@@ -1,6 +1,6 @@
 # Reply cap by kind of ask
 
-Status: D1 ruled (D1-c); stages below. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` ruling P-budget.
+Status: ✅ SHIPPED to main (Stages 1.1–1.2 + review); 2.1 fakebot/journalctl + 2.2 audible owed → `docs/backlog.md` §OWED[USER]. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` ruling P-budget.
 
 ## Rulings
 
