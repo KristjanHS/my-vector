@@ -1,6 +1,6 @@
 # System prompt redesign
 
-Status: critique + options; no code yet. Trigger: "mis nädalapäev täna on?" → the robot says it doesn't know the date.
+Status: rulings done; slices 1–3 shipped or planned, rung 4 planned; 5–6 unplanned. Trigger: "mis nädalapäev täna on?" → the robot says it doesn't know the date.
 
 ## Rulings (user, 2026-11-07)
 
@@ -89,6 +89,6 @@ Severity: CRITICAL / HIGH / MEDIUM / LOW.
 1. `{now}` line through a minimal builder → "mis nädalapäev täna on?" answered. Falsifier: golden test contains the Estonian weekday.
 2. Templates + tags + P-guard + UI editor/preview; speech, persona and language fixes (critique 3–5, 7, 9). → plan: `2026-11-07-prompt-templates.md (docs/plans/)`
 3. History gap and follow-up listening decoupled from commands (critique 8). → plan: `2026-11-07-follow-up-listening.md (docs/plans/)`
-4. Search bench → router + snippets for Ollama (S, S-guard).
+4. Search bench → router + snippets for every brain, plus Open-Meteo weather (S, S-guard). → plan: `2026-11-07-web-search.md (docs/plans/)`
 5. Vision setting + local vision bench (V).
 6. Memory M2: transcripts → extraction → nightly pass → `{facts}`/`{diary}` blocks.
