@@ -12,5 +12,4 @@
 
 ## Assistant-owed
 
-- ⚠ robot sshd host keys ship in the WireOS image (same on every bot → MITM on shared WiFi) · seam: per-robot keys under `/data` via `HostKey` · falsifier: `ssh root@<ip> "sshd -T | grep -q '^hostkey /data/'"`
 - ⚠ et-EE story ask answers ~14 words, no story (gemma4:e2b-it-qat, not cap-cut) · seam: et prompt/model · falsifier (from chipper/): `go run ./pkg/myvector/routeprobe -llm -lang et-EE "räägi mulle muinasjutt robotist" | awk '/^llm: /{exit NF<60}'`
