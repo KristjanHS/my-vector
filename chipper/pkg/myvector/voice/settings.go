@@ -22,6 +22,7 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
@@ -183,7 +184,47 @@ type settingsReply struct {
 	// PushError is why a saved T2 did not reach the robot; the save itself stands.
 	PushError string `json:"pushError,omitempty"`
 	// IntentError is why the language switch was rolled back (its intents did not load); the other saves stand.
-	IntentError string `json:"intentError,omitempty"`
+	IntentError string      `json:"intentError,omitempty"`
+	Search      searchReply `json:"search"`
+}
+
+// searchReply is the W12 search block; keys are llm.Mask'ed.
+type searchReply struct {
+	Provider     string       `json:"provider"`
+	TavilyKey    string       `json:"tavilyKey"`
+	OllamaKey    string       `json:"ollamaKey"`
+	SearxngURL   string       `json:"searxngUrl"`
+	WeatherPlace string       `json:"weatherPlace"`
+	Usage        []search.Use `json:"usage"`
+}
+
+func currentSearch() searchReply {
+	c := search.LoadConfig()
+	if c.Provider == "" {
+		c.Provider = "auto"
+	}
+	return searchReply{c.Provider, llm.Mask(c.TavilyKey), llm.Mask(c.OllamaKey), c.SearxngURL, c.WeatherPlace, search.Usage(time.Now())}
+}
+
+// searchRequest is the POST's "search" object: an absent field keeps its saved value, a key "" clears it.
+type searchRequest struct {
+	Provider     *string `json:"provider"`
+	TavilyKey    *string `json:"tavily_key"`
+	OllamaKey    *string `json:"ollama_key"`
+	SearxngURL   *string `json:"searxng_url"`
+	WeatherPlace *string `json:"weather_place"`
+}
+
+// config is the saved search.Config with q's fields over it.
+func (q *searchRequest) config() search.Config {
+	c := search.LoadConfig()
+	for dst, src := range map[*string]*string{&c.Provider: q.Provider, &c.TavilyKey: q.TavilyKey, &c.OllamaKey: q.OllamaKey,
+		&c.SearxngURL: q.SearxngURL, &c.WeatherPlace: q.WeatherPlace} {
+		if src != nil {
+			*dst = *src
+		}
+	}
+	return c
 }
 
 type settingsRequest struct {
@@ -193,6 +234,7 @@ type settingsRequest struct {
 	LLM       map[string]llm.Profile `json:"llm"`
 	OllamaURL *string                `json:"ollama_url"`
 	ClaudeKey *string                `json:"claude_key"`
+	Search    *searchRequest         `json:"search"`
 }
 
 func (q *settingsRequest) llmChanged() bool {
@@ -228,6 +270,11 @@ func (q *settingsRequest) valid() error {
 			return err
 		}
 	}
+	if q.Search != nil {
+		if err := search.Validate(q.Search.config()); err != nil {
+			return err
+		}
+	}
 	return q.Validate()
 }
 
@@ -247,6 +294,11 @@ func save(q *settingsRequest) (intentErr string, err error) {
 			return "", fmt.Errorf("save llm: %w", err)
 		}
 	}
+	if q.Search != nil {
+		if err := search.Save(q.Search.config()); err != nil {
+			return "", fmt.Errorf("save search: %w", err)
+		}
+	}
 	old := lang.Current()
 	if q.Lang == old {
 		return "", nil
@@ -264,7 +316,7 @@ func save(q *settingsRequest) (intentErr string, err error) {
 	return intentErr, nil
 }
 
-// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings + lang + optional llm, ollama_url, claude_key) validates,
+// SettingsHandler serves SettingsAPI: GET reads, POST (application/json Settings + lang + optional llm, ollama_url, claude_key, search) validates,
 // saves, switches the language (reloading intents; rolled back if they fail) and pushes the current language's T2.
 func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	pushErr, intentErr := "", ""
@@ -296,7 +348,7 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(settingsReply{Settings: Current(), Lang: lang.Current(), Langs: lang.Supported, Voices: voices,
 		SlowMin: SlowMin, SlowMax: SlowMax, LLM: profiles, Defaults: defaults, OllamaURL: url, ClaudeKey: llm.Mask(c.ClaudeKey), KGEnabled: vars.APIConfig.Knowledge.Enable,
 		LLMSaved: c.Profiles != nil, Knowledge: strings.TrimSpace(kg.Provider + " " + kg.Model),
-		PushError: pushErr, IntentError: intentErr})
+		PushError: pushErr, IntentError: intentErr, Search: currentSearch()})
 }
 
 // decode reads an application/json POST body into v and runs valid on it; on failure it has written the error.
