@@ -40,10 +40,10 @@ dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
 trap 'rm -rf "$head"' EXIT
 # fork_smoke.go + myvector/voice too: check-static.sh S5 reads them repo-relative and fails if smoke.sh is there without them.
-# robot/env.sh: settings.sh + smoke.sh source it from $pd/.. ; ls-tree drops it (and voice/) for an older sha, which has none.
+# robot/env.sh: settings.sh + smoke.sh source it from $pd/.. (robot/lib: diskguard's apply.sh); ls-tree drops what an older sha lacks.
 # shellcheck disable=SC2046 # unquoted on purpose: empty for an older sha
 git -C "$repo" archive "$full" robot/firmware chipper/pkg/wirepod/sdkapp/fork_smoke.go \
-  $(git -C "$repo" ls-tree --name-only "$full" robot/env.sh robot/diskguard chipper/pkg/myvector/voice) |
+  $(git -C "$repo" ls-tree --name-only "$full" robot/env.sh robot/lib robot/diskguard chipper/pkg/myvector/voice) |
   tar -x -C "$head"
 pd=$head/robot/firmware
 if ((deploy)); then
