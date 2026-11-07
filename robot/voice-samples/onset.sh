@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Time-to-first-sound of a robot-internal (T2) line per arm: engine console SayText → output capture → onset.
-# Arms: stock · cori · af_bella · mari (et-EE) (PC up) · refused (PC port closed) · blackhole (PC host gone). Restores the voice file.
+# Arms: stock · cori · af_bella · mari/albert/kalev (et-EE) (PC up) · refused (PC port closed) · blackhole (PC host gone). Restores the voice file.
 # Usage: [RUNS=3] [WORD=bla-bla-…] onset.sh [arm…] — V2 of 2026-11-05-vector-voice-verify.md (docs/plans/).
 set -uo pipefail
 self=$(cd "$(dirname "$0")" && pwd)
@@ -25,7 +25,7 @@ for arm in "${arms[@]}"; do
   l=''
   case $arm in
     refused) v=cori u=${url%:*}:8099 ;; blackhole) v=cori u=http://10.255.255.1:8091 ;;
-    mari) v=mari u=$url l=',"lang":"et-EE"' ;; *) v=$arm u=$url ;;
+    mari | albert | kalev) v=$arm u=$url l=',"lang":"et-EE"' ;; *) v=$arm u=$url ;;
   esac
   r "printf '{\"url\":\"%s\",\"voice\":\"%s\",\"slow\":%s%s}' '$u' '$v' '$slow' '$l' > $F"
   for i in $(seq "$RUNS"); do

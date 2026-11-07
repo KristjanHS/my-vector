@@ -197,6 +197,11 @@ def test_parse_request_rejects(body):
         server.parse_request(body)
 
 
+def test_gains_file_covers_every_voice():
+    # a voice missing here silently plays at 0 dB: re-run tts/calibrate.py after adding one
+    assert set(json.loads(server.GAINS_FILE.read_text())) == set(server.VOICES)
+
+
 def test_load_gains_missing_file_is_unity(tmp_path):
     assert server.load_gains(tmp_path / "none.json") == {v: 1.0 for v in server.VOICES}
 

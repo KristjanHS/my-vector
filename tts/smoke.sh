@@ -10,9 +10,9 @@ trap 'rm -f "$out"' EXIT
 curl -fsS --max-time 5 "$url/health"
 echo
 fail=0
-for voice in cori af_bella mari; do
+for voice in cori af_bella mari albert kalev; do
   t=$text
-  [[ $voice == mari ]] && t=$text_et
+  [[ $voice =~ ^(mari|albert|kalev)$ ]] && t=$text_et
   w=$(curl -sS --max-time 60 -o "$out" -w '%{http_code} %{time_starttransfer} %{time_total}' \
     -H 'Content-Type: application/json' -d "{\"text\": \"$t\", \"voice\": \"$voice\"}" "$url/tts") || w="000 0 0"
   read -r code first total <<<"$w"
