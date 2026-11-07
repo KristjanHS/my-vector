@@ -3,6 +3,7 @@ package wirepod_ttr
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestForkSplitSentence(t *testing.T) {
@@ -33,11 +34,11 @@ func forkStream(chunks ...string) []string {
 	buf := ""
 	for _, c := range chunks {
 		buf += c
-		if s, r, ok := forkSplitSentence(buf); ok {
+		for s, r, ok := forkSplitSentence(buf); ok; s, r, ok = forkSplitSentence(buf) {
 			out, buf = append(out, s), r
 		}
 	}
-	out, buf = forkFlushHeld(out, buf)
+	out, buf, _ = forkFlushHeld(out, buf)
 	out, _ = forkFlushUnpunctuated(out, buf)
 	return out
 }
@@ -51,9 +52,46 @@ func TestForkStreamKeepsNumbers(t *testing.T) {
 		{[]string{"Pii on 3", ".", "14", " ehk", " nii", ". Jah", "."}, []string{"Pii on 3.14 ehk nii.", "Jah."}},
 		{[]string{"Tere", ".", " Aasta on 2026", "."}, []string{"Tere.", "Aasta on 2026."}}, // held to EOF, then flushed
 		{[]string{"Kell on 10", ".", "10", "."}, []string{"Kell on 10.10."}},
+		{[]string{"Tere. Kuidas läheb? Hästi! Jah.", " Ok", "."}, []string{"Tere.", "Kuidas läheb?", "Hästi!", "Jah.", "Ok."}},
 	} {
 		if got := forkStream(c.chunks...); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("forkStream(%q) = %q, want %q", c.chunks, got, c.want)
 		}
+	}
+}
+
+// A speak loop that caught up waits on speakReady; the held last sentence must wake it.
+func TestForkSignalHeldWakesWaitingLoop(t *testing.T) {
+	ch := make(chan string)
+	chunks, tail, held := forkFlushHeld([]string{"Tere!"}, " Kell on 10.10.")
+	if want := []string{"Tere!", "Kell on 10.10."}; !reflect.DeepEqual(chunks, want) || tail != "" || held != "Kell on 10.10." {
+		t.Fatalf("forkFlushHeld = %q, %q, %q", chunks, tail, held)
+	}
+	forkSignalHeld(ch, held)
+	select {
+	case got := <-ch:
+		if got != held {
+			t.Errorf("speakReady got %q, want %q", got, held)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("speak loop never woken: the held sentence would hang it")
+	}
+}
+
+// No receiver (the loop is still speaking): the signal gives up instead of leaking, and nothing to flush sends nothing.
+func TestForkSignalHeldGivesUp(t *testing.T) {
+	old := forkHeldWait
+	forkHeldWait = 10 * time.Millisecond
+	t.Cleanup(func() { forkHeldWait = old })
+	ch := make(chan string)
+	forkSignalHeld(ch, "x")
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-ch:
+		t.Error("signal still pending after forkHeldWait")
+	default:
+	}
+	if _, _, held := forkFlushHeld([]string{"Tere."}, "  "); held != "" {
+		t.Errorf("forkFlushHeld with a blank tail held %q", held)
 	}
 }
