@@ -10,8 +10,8 @@ import (
 
 const DefaultSearxngURL = "http://127.0.0.1:8888"
 
-// DefaultOrder is the W8 fallback order; Stage 3.3 (row B1) rewrites it from the bench verdict.
-var DefaultOrder = []string{"tavily", "ollama", "searxng"}
+// DefaultOrder is the W8 fallback order (row B1); ollama is left out: its web search is 402 on the free tier.
+var DefaultOrder = []string{"tavily", "searxng"}
 
 // Config is "search" in myvectorConfig.json (W12).
 type Config struct {
