@@ -186,7 +186,7 @@ func CreateAIReq(transcribedText, esn string, gpt3tryagain, isKG bool) openai.Ch
 		Messages:            nChat,
 		Stream:              true,
 	}
-	return forkAIReq(aireq)
+	return forkAIReq(aireq, esn)
 }
 
 func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bool) (string, error) {

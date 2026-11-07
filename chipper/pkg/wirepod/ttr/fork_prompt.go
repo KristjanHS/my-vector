@@ -9,6 +9,7 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	"github.com/sashabaranov/go-openai"
 )
@@ -21,12 +22,29 @@ func forkKG() llm.KG {
 	return llm.KG{Provider: k.Provider, Endpoint: k.Endpoint, Model: k.Model}
 }
 
-// forkAIReq: et-EE adds forkETLine to the system prompt; the llm.Resolve target sets the model (E25) and its
-// top_p (CreateAIReq set it for the Knowledge model). Ollama gets reasoning_effort none (qwen3.5/gemma4 think by default).
-func forkAIReq(r openai.ChatCompletionRequest) openai.ChatCompletionRequest {
+// forkNow is the request clock; a var so tests pin it.
+var forkNow = time.Now
+
+// forkBotZone is the robot's vic.RobotSettings time_zone (what its clock shows), else time.Local.
+func forkBotZone(esn string) *time.Location {
+	var s struct {
+		TimeZone string `json:"time_zone"`
+	}
+	if j, ok := vars.GetJdoc("vic:"+esn, "vic.RobotSettings"); ok {
+		json.Unmarshal([]byte(j.JsonDoc), &s)
+	}
+	return prompt.Zone(s.TimeZone)
+}
+
+// forkAIReq: the system prompt gets the prompt.Now line, then (et-EE) forkETLine; the llm.Resolve target sets the
+// model (E25) and its top_p (CreateAIReq set it for the Knowledge model). Ollama gets reasoning_effort none (qwen3.5/gemma4 think by default).
+func forkAIReq(r openai.ChatCompletionRequest, esn string) openai.ChatCompletionRequest {
 	l := lang.Current()
-	if l == lang.Estonian && len(r.Messages) > 0 && r.Messages[0].Role == openai.ChatMessageRoleSystem {
-		r.Messages[0].Content += forkETLine
+	if len(r.Messages) > 0 && r.Messages[0].Role == openai.ChatMessageRoleSystem {
+		r.Messages[0].Content += "\n\n" + prompt.Now(l, forkNow(), forkBotZone(esn))
+		if l == lang.Estonian {
+			r.Messages[0].Content += forkETLine
+		}
 	}
 	kg := forkKG()
 	ollama := llm.IsOllama(kg)
