@@ -1,6 +1,8 @@
 package wirepod_ttr
 
 import (
+	"context"
+	"os"
 	"time"
 
 	pb "github.com/digital-dream-labs/api/go/chipperpb"
@@ -8,7 +10,11 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/listen"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/voice"
+	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	"github.com/kercre123/wire-pod/chipper/pkg/vtt"
+	openai "github.com/sashabaranov/go-openai"
 )
 
 var forkListening = func() *listen.State {
@@ -17,16 +23,46 @@ var forkListening = func() *listen.State {
 	return s
 }()
 
-// forkListen runs right after forkQuiet (ProcessTextAll): an on/off phrase flips active listening and says so.
+// forkHearer decides overheard utterances (Stage 3.2's /myvector/listen/heard calls Heard).
+var forkHearer = &listen.Hearer{
+	State: forkListening,
+	Client: func() (*openai.Client, string, bool) {
+		t, ok := llm.ResolveOllama(llm.Load(), lang.Current(), forkKG(), listen.Model)
+		return llm.NewClient(t), t.Model, ok
+	},
+	Say:      forkListenSay,
+	Locked:   func(now time.Time) bool { _, l := quiet.Line(now); return l },
+	Quiet:    func(esn, phrase string) { forkQuietLock(esn, phrase, time.Now()) },
+	Estonian: func() bool { return lang.Current() == lang.Estonian },
+	LogDir:   os.Getenv("MYVECTOR_LISTEN_LOG"),
+}
+
+// forkListenSay speaks a listen reply in the saved T1 voice under behavior control, as sdkapp forkSay does.
+func forkListenSay(esn, text string) error {
+	robot, err := vars.GetRobot(esn)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	release, err := voice.Control(ctx, robot)
+	if err != nil {
+		return err
+	}
+	defer release()
+	_, err = voice.Speak(voice.WithFirstAudio(ctx, 7*time.Second), robot, text, voice.Current().For(lang.Current()))
+	return err
+}
+
+// forkListen runs right after forkQuiet (ProcessTextAll): it stamps a wake-word turn (A6), and an on/off phrase
+// flips active listening and says so.
 func forkListen(req interface{}, voiceText, botSerial string) bool {
+	forkListening.Turn(botSerial, time.Now())
 	on, ok := listen.Match(voiceText)
 	if !ok {
 		return false
 	}
-	text := map[bool]map[bool]string{
-		false: {true: "Active listening on.", false: "Active listening off."},
-		true:  {true: "Aktiivne kuulamine sees.", false: "Aktiivne kuulamine väljas."},
-	}[lang.Current() == lang.Estonian][on]
+	text := listen.Confirm(on, lang.Current() == lang.Estonian)
 	if on {
 		forkListening.Activate(botSerial, time.Now())
 		logger.Println("myvector listen: on")
