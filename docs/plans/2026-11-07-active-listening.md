@@ -19,7 +19,7 @@ Ask: Vector listens to all talk, speaks only when he has something relevant. Oll
 | C1 | Capture = `robot/openmic` (ruled 2026-11-07): `RecordMicDataClip` via `:8889/consolefunccall`, scp from `debugCapture`, 2 s windows / 1 s hop → myvector-stt. Refactor-first: move those `probe.sh` pieces into `robot/openmic/lib.sh`; `probe.sh` and the new loop both source it. | `robot/openmic/{lib.sh,probe.sh,listen.sh}` |
 | C2 | `listen.sh` (silent=1, records only) loops clips back to back, keeps the previous clip's last 2 s ahead of the next so a cut sentence is whole, joins windows into utterances, and POSTs each to `/myvector/listen/heard`. Server starts it on activate, kills it on deactivate (miccap repo-path precedent). | `robot/openmic/listen.sh`; `listen.Runner` |
 | A9 | Chattiness normal: `listen.Cooldown` = 45 s between replies; SPEAK bar = a question in the air, a factual slip, his name, a clear fun opening (the Stage 2.1 SPEAK labels). | `listen.Cooldown`; `listen.Prompt` |
-| P1 | No winner on saved profiles: best 14/20 (et SPEAK 0/4 on `gemma4:e2b-it-qat`). Only passing cell = alternate `gemma4:e4b-it-qat` + prompt 2: 17/20, 0 false SPEAK, median 120 ms. Model choice owed (backlog §OWED[USER]). | `listenprobe` |
+| P1 | No winner on saved profiles: best 14/20 (et SPEAK 0/4 on `gemma4:e2b-it-qat`). `gemma4:e4b-it-qat` + prompt 2: dev 17/20, held-out (`-set holdout`) 16/20, 0 false SPEAK in both, all misses silent. Ruling owed (backlog §OWED[USER]). | `listenprobe` |
 
 ## Stages
 
