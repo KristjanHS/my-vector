@@ -4,67 +4,195 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Wire-Pod - Language, brain &amp; voice</title>
-  <link rel="stylesheet" type="text/css" href="/css/style.css" />
+  <!-- Standalone on purpose: wire-pod's /css/style.css sets a 1.8em body font and leaves table/form text unstyled on its dark background. -->
   <style>
-    .voice-box { max-width: 640px; margin: 24px auto; padding: 0 16px; }
-    .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .top h2 { margin: 0; flex: 1; }
-    .seg label { display: inline-block; margin: 0 2px; }
-    .grid { width: 100%; border-collapse: collapse; margin: 12px 0; }
-    .grid th { text-align: left; font-weight: normal; white-space: nowrap; padding-right: 8px; }
-    .grid td { padding: 3px 4px; }
-    .grid select { width: 100%; min-width: 0; }
-    .llm { display: flex; gap: 4px; }
-    .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
-    .row input[type=text], .row input[type=password], .row input[type=range] { flex: 1; min-width: 0; }
-    details { margin: 10px 0; }
-    #status, #warn { min-height: 1.4em; margin: 4px 0; }
-    #warn { color: #b35c00; }
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f7f8; --surface: #ffffff; --surface-2: #eef0f2; --border: #d3d7dc;
+      --text: #1c1e21; --muted: #5f6368;
+      --accent: #00874a; --accent-hover: #006e3c; --on-accent: #ffffff; --accent-soft: #e3f4ea;
+      --warn-bg: #fff4e0; --warn: #7a4300; --err: #b3261e; --ok: #00743f; --focus: #1a73e8;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #1b1d1f; --surface: #24272a; --surface-2: #2d3135; --border: #41464c;
+        --text: #e8eaed; --muted: #a0a6ad;
+        --accent: #00d16d; --accent-hover: #2fe08a; --on-accent: #0b1a12; --accent-soft: #163626;
+        --warn-bg: #3a2a12; --warn: #ffcc80; --err: #ff8a80; --ok: #5ee39b; --focus: #8ab4f8;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #1b1d1f; --surface: #24272a; --surface-2: #2d3135; --border: #41464c;
+      --text: #e8eaed; --muted: #a0a6ad;
+      --accent: #00d16d; --accent-hover: #2fe08a; --on-accent: #0b1a12; --accent-soft: #163626;
+      --warn-bg: #3a2a12; --warn: #ffcc80; --err: #ff8a80; --ok: #5ee39b; --focus: #8ab4f8;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    a { color: var(--accent); }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 32px; }
+    .bar {
+      position: sticky; top: 0; z-index: 1; background: var(--bg);
+      display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border);
+    }
+    .bar h1 { flex: 1; margin: 0; font-size: 18px; font-weight: 600; }
+    .back { font-size: 14px; text-decoration: none; white-space: nowrap; }
+    button, select, input, textarea { font: inherit; color: inherit; }
+    button {
+      border: 1px solid var(--border); background: var(--surface-2); border-radius: 6px;
+      padding: 6px 12px; cursor: pointer; white-space: nowrap;
+    }
+    button:hover:not(:disabled) { border-color: var(--muted); }
+    button:disabled { opacity: .55; cursor: progress; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+    button.primary.dirty::after { content: " •"; }
+    button.link { border: 0; background: none; padding: 0; color: var(--accent); font-size: 13px; }
+    button.link:hover { text-decoration: underline; }
+    select, input[type=text], input[type=password], textarea {
+      width: 100%; min-width: 0; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px 9px;
+    }
+    textarea { resize: vertical; }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    optgroup[disabled] { color: var(--muted); }
+    #status:empty { display: none; }
+    #status { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+    #status.ok { color: var(--ok); } #status.err { color: var(--err); }
+    .notices { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+    .notices li { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 7px 10px; font-size: 14px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-top: 16px; }
+    .card > h2 { margin: 0; padding: 12px 16px 0; font-size: 15px; font-weight: 600; }
+    .body { padding: 12px 16px 16px; display: grid; gap: 14px; }
+    .tabs { display: flex; gap: 4px; padding: 8px 8px 0; border-bottom: 1px solid var(--border); }
+    .tabs button {
+      border: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; background: none;
+      padding: 8px 14px; color: var(--muted); font-weight: 600;
+    }
+    .tabs button[aria-selected=true] { color: var(--text); border-bottom-color: var(--accent); }
+    .tabs .dot { color: var(--accent); font-size: 12px; font-weight: 400; margin-left: 6px; }
+    .active-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 14px; }
+    .badge { background: var(--accent-soft); color: var(--ok); border-radius: 999px; padding: 3px 10px; font-weight: 600; }
+    .field { display: grid; gap: 4px; }
+    .field > .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .field label, .field .lab { font-size: 13px; font-weight: 600; color: var(--muted); }
+    .hint { font-size: 13px; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
+    .hint.ok { color: var(--ok); } .hint.err { color: var(--err); }
+    .inline { display: flex; gap: 8px; align-items: center; }
+    .inline > select, .inline > input, .inline > textarea { flex: 1; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .range { display: flex; align-items: center; gap: 10px; }
+    .range input { flex: 1; accent-color: var(--accent); }
+    .range output { font-variant-numeric: tabular-nums; min-width: 3.5em; text-align: right; }
+    details.card > summary { padding: 12px 16px; cursor: pointer; font-weight: 600; }
+    details.card > summary .hint { display: inline; font-weight: 400; margin-left: 8px; }
+    details.card[open] > summary { border-bottom: 1px solid var(--border); }
+    @media (max-width: 560px) {
+      .two { grid-template-columns: 1fr; }
+      .inline.wrap-sm { flex-wrap: wrap; }
+      .inline.wrap-sm > select, .inline.wrap-sm > textarea { flex-basis: 100%; }
+      .inline.wrap-sm > button { flex: 1; }
+      .back { display: none; }
+    }
   </style>
 </head>
 <body>
-  <div class="voice-box">
-    <p><a href="/">&larr; Wire-Pod</a></p>
+  <div class="wrap">
+    <header class="bar">
+      <a class="back" href="/">&larr; Wire-Pod</a>
+      <h1>Language, brain &amp; voice</h1>
+      <button type="submit" form="form" class="primary" id="save">Save</button>
+    </header>
+    <p id="status" role="status" aria-live="polite"></p>
+    <ul id="warn" class="notices"></ul>
     <form id="form">
-      <div class="top">
-        <h2>Language, brain &amp; voice</h2>
-        <span class="seg" id="lang"></span>
-        <button type="submit">Save</button>
-      </div>
-      <table class="grid">
-        <tr><th><button type="button" id="refresh" title="Reload the model lists">&#8635;</button></th><th>EN</th><th>ET</th></tr>
-        <tr><th>LLM</th>
-          <td><div class="llm"><select id="llm_en-US"><optgroup label="Local (Ollama)" data-provider="ollama"></optgroup><optgroup label="Claude API" data-provider="claude"></optgroup></select><button type="button" data-test="en-US">Test</button></div></td>
-          <td><div class="llm"><select id="llm_et-EE"><optgroup label="Local (Ollama)" data-provider="ollama"></optgroup><optgroup label="Claude API" data-provider="claude"></optgroup></select><button type="button" data-test="et-EE">Test</button></div></td></tr>
-        <tr><th>Answer (T1)</th><td><select id="t1"></select></td><td><select id="t1_et"></select></td></tr>
-        <tr><th>Robot (T2)</th><td><select id="t2"></select></td><td><select id="t2_et"></select></td></tr>
-      </table>
-      <div class="row">Speed <input type="range" id="slow" step="0.05" /> <output id="slowOut"></output></div>
-      <div class="row">
-        <input type="text" id="sample" maxlength="599" value="Hi, I'm Vector. It's a lovely day, and I'm happy to help. What would you like to know?" />
-        <button type="button" id="speak" title="Speak the active language's T1 on Vector">&#9654;</button>
-      </div>
-      <details>
-        <summary>Claude key / Ollama URL</summary>
-        <div class="row">Claude key <input type="password" id="claude_key" autocomplete="off" spellcheck="false" maxlength="200" /> <button type="button" id="clearKey">clear</button></div>
-        <div class="row">Ollama URL <input type="text" id="ollama_url" maxlength="200" spellcheck="false" /></div>
+      <span id="lang" hidden></span>
+      <section class="card">
+        <div class="tabs" role="tablist" id="tabs"></div>
+        <div class="body panel" role="tabpanel" data-lang="en-US" hidden>
+          <div class="active-line" data-active="en-US"></div>
+          <div class="field">
+            <div class="head"><label for="llm_en-US">Brain (LLM)</label><button type="button" class="link refresh" title="Reload the model lists">&#8635; Refresh lists</button></div>
+            <div class="inline wrap-sm"><select id="llm_en-US"><optgroup label="Local (Ollama)" data-provider="ollama"></optgroup><optgroup label="Claude API" data-provider="claude"></optgroup></select><button type="button" data-test="en-US">Test</button></div>
+            <p class="hint" id="pick_en-US"></p>
+            <p class="hint" id="res_en-US" aria-live="polite"></p>
+          </div>
+          <div class="two">
+            <div class="field"><label for="t1">Answer voice (T1)</label><select id="t1"></select><p class="hint">Speaks LLM answers</p></div>
+            <div class="field"><label for="t2">Robot voice (T2)</label><select id="t2"></select><p class="hint">Vector's built-in lines</p></div>
+          </div>
+        </div>
+        <div class="body panel" role="tabpanel" data-lang="et-EE" hidden>
+          <div class="active-line" data-active="et-EE"></div>
+          <div class="field">
+            <div class="head"><label for="llm_et-EE">Brain (LLM)</label><button type="button" class="link refresh" title="Reload the model lists">&#8635; Refresh lists</button></div>
+            <div class="inline wrap-sm"><select id="llm_et-EE"><optgroup label="Local (Ollama)" data-provider="ollama"></optgroup><optgroup label="Claude API" data-provider="claude"></optgroup></select><button type="button" data-test="et-EE">Test</button></div>
+            <p class="hint" id="pick_et-EE"></p>
+            <p class="hint" id="res_et-EE" aria-live="polite"></p>
+          </div>
+          <div class="two">
+            <div class="field"><label for="t1_et">Answer voice (T1)</label><select id="t1_et"></select><p class="hint">Speaks LLM answers</p></div>
+            <div class="field"><label for="t2_et">Robot voice (T2)</label><select id="t2_et"></select><p class="hint">Vector's built-in lines</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Try it</h2>
+        <div class="body">
+          <div class="field">
+            <label for="slow">Speech pace <span class="hint">(both languages · 1 = normal, higher = slower)</span></label>
+            <div class="range"><input type="range" id="slow" step="0.05" /><output id="slowOut" for="slow"></output></div>
+          </div>
+          <div class="field">
+            <label for="sample">Sample text</label>
+            <div class="inline wrap-sm">
+              <textarea id="sample" rows="2" maxlength="599">Hi, I'm Vector. It's a lovely day, and I'm happy to help. What would you like to know?</textarea>
+              <button type="button" id="speak">&#9654; Speak on Vector</button>
+            </div>
+            <p class="hint" id="speakHint"></p>
+          </div>
+        </div>
+      </section>
+
+      <details class="card">
+        <summary>Connections <span class="hint" id="connHint"></span></summary>
+        <div class="body">
+          <div class="field">
+            <label for="claude_key">Claude API key</label>
+            <div class="inline"><input type="password" id="claude_key" autocomplete="off" spellcheck="false" maxlength="200" /><button type="button" id="clearKey">Clear</button></div>
+            <p class="hint">Leave blank to keep the current key.</p>
+          </div>
+          <div class="field">
+            <label for="ollama_url">Ollama URL</label>
+            <input type="text" id="ollama_url" maxlength="200" spellcheck="false" />
+          </div>
+        </div>
       </details>
     </form>
-    <p id="status"></p>
-    <p id="warn"></p>
   </div>
   <script>
     const api = "/myvector/api/voice", modelsApi = "/myvector/api/llm/models", testApi = "/myvector/api/llm/test";
     const $ = (id) => document.getElementById(id);
-    const status = (t) => { $("status").textContent = t; };
-    const short = { "en-US": "EN", "et-EE": "ET" };
+    const status = (t, kind = "") => { $("status").textContent = t; $("status").className = kind; };
+    const short = { "en-US": "EN", "et-EE": "ET" }, names = { "en-US": "English", "et-EE": "Eesti" };
+    const t1Of = { "en-US": "t1", "et-EE": "t1_et" };
     const samples = { "en-US": $("sample").value, "et-EE": "Tere, mina olen Vector. Täna on ilus päev. Millega saan aidata?" };
-    let cur = null, lists = null, clearKey = false;
+    let cur = null, lists = null, clearKey = false, view = null;
     const opt = (value, text = value) => Object.assign(document.createElement("option"), { value, textContent: text });
     const pick = (t) => { const r = document.querySelector(`input[name=${t}]:checked`); return r && r.value; };
+    const dirty = (on) => $("save").classList.toggle("dirty", on);
     function choice(l) { // the dropdown's {provider, model}; the group gives the provider
       const o = $("llm_" + l).selectedOptions[0];
       return o ? { provider: o.parentElement.dataset.provider, model: o.value } : cur.llm[l];
+    }
+    function showPick(l) { // the full model id under the dropdown, which a narrow screen may cut
+      const c = choice(l);
+      $("pick_" + l).textContent = c ? (c.provider === "claude" ? "Claude API" : "Ollama") + " · " + c.model : "";
     }
     function fillLLM(l, want) {
       const [local, claude] = $("llm_" + l).querySelectorAll("optgroup");
@@ -72,7 +200,7 @@
       local.replaceChildren(...o.models.map((m) => opt(m)));
       claude.replaceChildren(...c.models.map((m) => opt(m.id, m.name || m.id)));
       claude.disabled = !c.keySet;
-      claude.label = c.keySet ? "Claude API" : "Claude API — add a Claude key below";
+      claude.label = c.keySet ? "Claude API" : "Claude API — add a Claude key under Connections";
       const group = want.provider === "claude" ? claude : local;
       let sel = [...group.children].find((x) => x.value === want.model);
       if (!sel) {
@@ -80,34 +208,68 @@
         group.append(sel = opt(want.model, want.model + why));
       }
       sel.selected = true;
+      showPick(l);
     }
     function warnings() {
       const w = [];
       if (cur && !cur.kgEnabled) w.push("Knowledge graph is off in wire-pod setup, so no LLM answers.");
-      if (cur && !cur.llmSaved) w.push(`Save hands the brain from wire-pod Knowledge (${cur.knowledge || "unset"}) to the LLM picks above.`);
+      if (cur && !cur.llmSaved) w.push(`Save hands the brain from wire-pod Knowledge (${cur.knowledge || "unset"}) to the LLM picks below.`);
       if (lists && lists.ollama.error) w.push("Ollama: " + lists.ollama.error);
       if (lists && lists.claude.error) w.push("Claude: " + lists.claude.error);
-      if (cur && !cur.claudeKey) w.push("Claude API: add a Claude key below.");
-      $("warn").textContent = w.join(" ");
+      if (cur && !cur.claudeKey) w.push("Claude API: add a Claude key under Connections.");
+      $("warn").replaceChildren(...w.map((t) => Object.assign(document.createElement("li"), { textContent: t })));
+    }
+    function setActive(l) { // the language Vector speaks; saved on Save
+      const r = document.querySelector(`input[name=lang][value="${l}"]`);
+      if (r) r.checked = true;
+      renderLang();
+      syncSample();
+    }
+    function renderLang() { // tabs show what you edit; the dot and badge show what Vector speaks
+      const act = pick("lang");
+      $("tabs").replaceChildren(...cur.langs.map((l) => {
+        const b = Object.assign(document.createElement("button"), { type: "button", textContent: names[l] || l });
+        b.setAttribute("role", "tab");
+        b.setAttribute("aria-selected", String(l === view));
+        if (l === act) b.append(Object.assign(document.createElement("span"), { className: "dot", textContent: "● active" }));
+        b.addEventListener("click", () => { view = l; renderLang(); });
+        return b;
+      }));
+      for (const p of document.querySelectorAll(".panel")) p.hidden = p.dataset.lang !== view;
+      for (const el of document.querySelectorAll("[data-active]")) {
+        const l = el.dataset.active;
+        if (l === act) el.replaceChildren(Object.assign(document.createElement("span"), { className: "badge", textContent: "● Vector speaks " + (names[l] || l) }));
+        else {
+          const b = Object.assign(document.createElement("button"), { type: "button", textContent: "Make " + (names[l] || l) + " active" });
+          b.addEventListener("click", () => { setActive(l); dirty(true); });
+          el.replaceChildren(Object.assign(document.createElement("span"), { className: "hint", textContent: "Vector speaks " + (names[act] || act) + "." }), b);
+        }
+      }
+      speakHint();
+    }
+    function speakHint() {
+      const l = pick("lang");
+      $("speakHint").textContent = l ? `Plays in ${names[l] || l} with the ${$(t1Of[l]).value} answer voice.` : "";
     }
     function show(s) {
       cur = s;
-      $("lang").replaceChildren(...s.langs.map((l) => {
-        const lab = document.createElement("label");
-        lab.append(Object.assign(document.createElement("input"), { type: "radio", name: "lang", value: l, checked: l === s.lang }), " " + (short[l] || l));
-        return lab;
-      }));
+      $("lang").replaceChildren(...s.langs.map((l) =>
+        Object.assign(document.createElement("input"), { type: "radio", name: "lang", value: l, checked: l === s.lang })));
       for (const [t, l] of [["t1", "en-US"], ["t2", "en-US"], ["t1_et", "et-EE"], ["t2_et", "et-EE"]]) {
         $(t).replaceChildren(...s.voices[l].map((v) => opt(v)));
         $(t).value = s[t];
       }
       for (const l of s.langs) fillLLM(l, s.llm[l]);
+      if (!s.langs.includes(view)) view = s.lang;
+      renderLang();
       syncSample();
       Object.assign($("slow"), { min: s.slowMin, max: s.slowMax, value: s.slow });
-      $("slowOut").textContent = s.slow.toFixed(2);
+      $("slowOut").textContent = s.slow.toFixed(2) + "×";
       $("ollama_url").value = s.ollamaUrl;
       Object.assign($("claude_key"), { value: "", placeholder: s.claudeKey || "not set" });
+      $("connHint").textContent = (s.claudeKey ? "Claude key set" : "no Claude key") + " · Ollama " + s.ollamaUrl.replace(/^https?:\/\//, "");
       clearKey = false;
+      dirty(false);
       warnings();
     }
     async function call(opts, url = api) {
@@ -131,30 +293,41 @@
       const l = pick("lang");
       if (Object.values(samples).includes($("sample").value) && samples[l]) $("sample").value = samples[l];
     }
-    $("lang").addEventListener("change", syncSample);
-    $("slow").addEventListener("input", (e) => { $("slowOut").textContent = Number(e.target.value).toFixed(2); });
-    $("refresh").addEventListener("click", () => loadModels(true));
+    $("form").addEventListener("change", (e) => {
+      if (e.target.id === "sample") return;
+      if (e.target.id.startsWith("llm_")) showPick(e.target.id.slice(4));
+      speakHint();
+      dirty(true);
+    });
+    $("slow").addEventListener("input", (e) => { $("slowOut").textContent = Number(e.target.value).toFixed(2) + "×"; });
+    for (const b of document.querySelectorAll(".refresh")) b.addEventListener("click", async () => {
+      status("Reloading model lists…");
+      await loadModels(true);
+      status("Model lists reloaded.", "ok");
+    });
     $("clearKey").addEventListener("click", () => {
       clearKey = true;
       Object.assign($("claude_key"), { value: "", placeholder: "cleared on Save" });
+      dirty(true);
     });
     for (const b of document.querySelectorAll("[data-test]")) b.addEventListener("click", async () => {
-      const l = b.dataset.test, c = choice(l);
+      const l = b.dataset.test, c = choice(l), out = $("res_" + l);
       b.disabled = true;
-      status(`Testing ${short[l]} ${c.model}…`);
-      try { const r = await call(json({ lang: l, ...c }), testApi); status(`${short[l]} ${c.model}: ${r.reply} (${r.ms} ms)`); }
-      catch (err) { status(`${short[l]} test failed: ` + err.message); }
+      Object.assign(out, { className: "hint", textContent: `Testing ${c.model}…` });
+      try { const r = await call(json({ lang: l, ...c }), testApi); Object.assign(out, { className: "hint ok", textContent: `“${r.reply}” · ${r.ms} ms` }); }
+      catch (err) { Object.assign(out, { className: "hint err", textContent: `${short[l]} test failed: ` + err.message }); }
       finally { b.disabled = false; }
     });
     $("speak").addEventListener("click", async () => {
       $("speak").disabled = true;
       status("Speaking on Vector…");
-      try { status("Spoke: " + (await call(post({ text: $("sample").value }), api + "/test")).voice); }
-      catch (err) { status("Test failed: " + err.message); }
+      try { status("Spoke: " + (await call(post({ text: $("sample").value }), api + "/test")).voice, "ok"); }
+      catch (err) { status("Test failed: " + err.message, "err"); }
       finally { $("speak").disabled = false; }
     });
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
+      $("save").disabled = true;
       status("Saving…");
       const extra = { llm: Object.fromEntries(cur.langs.map((l) => [l, choice(l)])), ollama_url: $("ollama_url").value };
       if (clearKey) extra.claude_key = "";
@@ -166,10 +339,11 @@
         const notes = [];
         if (s.intentError) notes.push("language not switched: " + s.intentError);
         notes.push(s.pushError ? "robot not updated: " + s.pushError : "robot updated.");
-        status("Saved; " + notes.join("; "));
-      } catch (err) { status("Not saved: " + err.message); }
+        status("Saved; " + notes.join("; "), s.intentError || s.pushError ? "err" : "ok");
+      } catch (err) { status("Not saved: " + err.message, "err"); }
+      finally { $("save").disabled = false; }
     });
-    call().then((s) => { show(s); loadModels(false); }).catch((err) => status("Could not load: " + err.message));
+    call().then((s) => { show(s); loadModels(false); }).catch((err) => status("Could not load: " + err.message, "err"));
   </script>
 </body>
 </html>
