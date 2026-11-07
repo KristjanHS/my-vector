@@ -143,6 +143,7 @@ this. The same goes for `tailscale funnel` (the guard file already warns: serve/
 ## Recommended plan (stages, cheapest visible first)
 
 0. **Baseline, all options, also improves home.** Do this before Vector leaves the house.
+   → plan: `2026-11-07-wifi-baseline-hardening.md (docs/plans/)` (0.1–0.4 + T2 server key; D follows it).
    - **0.1** Replace the robot's root SSH key with a freshly generated key of our own (keep the old public repo key
      out of `authorized_keys`), and turn password login off. Keep a recovery path: confirm the new key works in a
      second session before removing the old one. Update `ROBOT_KEY` in `robot/robot.env`.
