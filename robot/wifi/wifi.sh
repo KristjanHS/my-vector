@@ -10,6 +10,8 @@
 #        wifi.sh test|switch <ssid-hex>   start a job on the robot and return: join that saved network, check the robot
 #                                   kept its address and reaches wire-pod (https://escapepod.local/ok), then test goes
 #                                   back and switch stays; any failed check goes back. SSH drops while it runs.
+#                                   Firmware 0013 keeps vic-switchboard's own reconnect out while $j says "running:"
+#                                   (path and prefix are shared with wifiWatcher.cpp; each step rewrites $j).
 #        wifi.sh status             the job's line: none | running: … | ok: … | failed: …
 #        wifi.sh roam               fresh iw scan; when a saved network is >= 8 dB above the current one, switch to it
 #                                   ("ok: roam …"), else print nothing. A failed switch target is skipped for 60 min.
@@ -138,6 +140,7 @@ elif [ "$mode" = test ]; then echo "ok: $to works (signal $sig dBm, same address
 else echo "ok: Vector is on $to now (signal $sig dBm, same address $ip0)." >$j
 fi
 '\'' </dev/null >/dev/null 2>&1 &
+echo $! >$j.pid
 echo started' </dev/null) || exit
     case ${out##*$'\n'} in
       started) echo "ok: $1 started" ;;
