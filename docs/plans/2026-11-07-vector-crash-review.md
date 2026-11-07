@@ -29,8 +29,9 @@ Complete crash dumps (`crashDumps/*.dmp` + `.log`) since unlock — the organic 
 vic-switchboard SIGQUIT / vic-cloud SIGTERM = fault-handler cascade, not causes.
 
 Dump `.log` reads (robot `crashDumps/*.dmp.log`, tail of syslog at dump time):
-- 11-07 12:31:28 + 12:37:02 vic-engine SIGSEGV: identical `#00 vic-engine+0xccbd` = `DebuggerHook` (tombstoneHooks.cpp:73),
-  i.e. the crash handler frame; the faulting pc is only in the minidump — next: `robot/seassert/md.py` on both.
+- 11-07 12:31:28 + 12:37:02 vic-engine SIGSEGV, both minidumps identical (`md.py`, copies in `robot/work/crash-review/`):
+  pc = 0 (NULL call), lr = `libOpenCL.so+0xa480`, stack → `tflite::gpu::cl::CreateDefaultGPUDevice+52` (libcozmo_engine.so+0x7747b4).
+  ⇒ TFLite GPU-delegate init calls an unresolved OpenCL entry in stock `/usr/lib/libOpenCL.so` (78 KB, 2011). Not our patch code.
 - Both came ~3–7 s after a stop→start (12:31:19 stop; 12:36:46 deploy stop): crash in the new instance's startup or the old one's shutdown — unresolved.
 - 11-04 12:39 vic-engine and 11-06 19:15 vic-switchboard logs show only systemd SIGTERM/SIGKILL shutdown lines: likely stop-time dumps, not organic.
 - 11-06 05:18 vic-engine (night idle): its log ends with syslog-ng `No space left on device (28)` from 11-05 21:08 — /data full
