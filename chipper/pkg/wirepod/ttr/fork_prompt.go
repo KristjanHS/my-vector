@@ -50,7 +50,7 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 		r.ReasoningEffort = "none"
 	}
 	brain := forkBrain(ollama)
-	r.MaxCompletionTokens = prompt.ReplyCap(brain)
+	forkReplyCap(&r, ollama)
 	if len(r.Messages) > 0 && r.Messages[0].Role == openai.ChatMessageRoleSystem {
 		s := prompt.Load()
 		r.Messages[0].Content = prompt.Render(s.Live(brain), prompt.Vars{
@@ -65,6 +65,16 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 		}
 	}
 	return r
+}
+
+// forkReplyCap sets the brain's ReplyCap: Ollama's /v1 honours only max_tokens (0.40.14 ignores max_completion_tokens).
+func forkReplyCap(r *openai.ChatCompletionRequest, ollama bool) {
+	n := prompt.ReplyCap(forkBrain(ollama))
+	if ollama {
+		r.MaxTokens, r.MaxCompletionTokens = n, 0
+	} else {
+		r.MaxTokens, r.MaxCompletionTokens = 0, n
+	}
 }
 
 func forkBrain(ollama bool) string {
@@ -94,7 +104,7 @@ func forkCommands(isKG bool) string {
 func forkCameraReq(r *openai.ChatCompletionRequest) func() {
 	l, c, kg := lang.Current(), llm.Load(), forkKG()
 	t, ok := llm.Resolve(c, l, kg)
-	r.MaxCompletionTokens = prompt.ReplyCap(forkBrain((ok && t.Ollama()) || (!ok && llm.IsOllama(kg))))
+	forkReplyCap(r, (ok && t.Ollama()) || (!ok && llm.IsOllama(kg)))
 	if !ok {
 		if kg.Provider == "openai" && kg.Model != "" {
 			r.Model = kg.Model // upstream DoGetImage hardcodes GPT4oMini for openai
