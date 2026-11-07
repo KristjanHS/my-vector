@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Open-mic probe (shut-up-sleep Stage 1.2): probe.sh [-n N] [-q] <lang> <set> [sample ...] — N trials of: robot plays the
-# voice-samples set, a 15 s RecordMicDataClip runs, the PC speaker says the stop phrase at +5 s (-q: silent control run).
+# voice-samples set, a 15 s RecordMicDataClip runs, the PC speaker says the stop phrase at +5 s (-q: silent control run;
+# -m: no WSL audio — prints ▶ PLAY NOW and the user plays C:\Users\Public\say-<lang>.wav; run it in your own terminal so the cue shows live).
 # Each clip (processed + raw 4-mic mix) → myvector-stt (saved lang must be <lang>) → quietmatch whole/-any. Output in robot/work/openmic/.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -11,11 +12,11 @@ W=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)
 tts=${TTS_URL:-http://127.0.0.1:8091} stt=${STT_URL:-http://127.0.0.1:8092} api=${WIREPOD_URL:-http://127.0.0.1:8080}
 ffmpeg=$(command -v ffmpeg || echo /opt/ffmpeg/ffmpeg)
 D=/data/data/com.anki.victor/cache/micdata/debugCapture
-n=5 say=1
+n=5 say=1 manual=0
 while [[ ${1:-} == -* ]]; do
-  case $1 in -n) n=$2; shift 2 ;; -q) say=0; shift ;; *) echo "unknown flag $1" >&2; exit 2 ;; esac
+  case $1 in -n) n=$2; shift 2 ;; -q) say=0; shift ;; -m) manual=1; shift ;; *) echo "unknown flag $1" >&2; exit 2 ;; esac
 done
-(($# >= 2)) || { echo "usage: probe.sh [-n N] [-q] <en-US|et-EE> <voice-samples set> [sample ...]" >&2; exit 2; }
+(($# >= 2)) || { echo "usage: probe.sh [-n N] [-q | -m] <en-US|et-EE> <voice-samples set> [sample ...]" >&2; exit 2; }
 lang=$1; shift
 case $lang in en-US) voice=af_bella phrase="shut up" ;; et-EE) voice=mari phrase="ole vait" ;; *) echo "lang: en-US or et-EE" >&2; exit 2 ;; esac
 saved=$(curl -fsS --max-time 5 "$api/myvector/api/voice" | jq -r '.lang // empty') || { echo "SETUP: wire-pod not up at $api" >&2; exit 2; }
@@ -26,6 +27,11 @@ mkdir -p "$W/bin"
 say_pcm=$W/say-$lang.pcm
 jq -nc --arg t "$phrase" --arg v "$voice" --arg l "$lang" '{text: $t, voice: $v, lang: $l}' |
   curl -fsS --max-time 60 -H 'Content-Type: application/json' -d @- -o "$say_pcm" "$tts/tts"
+if ((manual)); then # no PC audio from WSL: the user plays this file on cue
+  win_dir=${WIN_DIR:-/mnt/c/Users/Public}
+  "$ffmpeg" -v error -y -f s16le -ar 16000 -ac 1 -i "$say_pcm" "$win_dir/say-$lang.wav"
+  win_path="C:${win_dir#/mnt/c}/say-$lang.wav" win_path=${win_path//\//\\}
+fi
 rsh() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 transcribe() { curl -fsS --max-time 120 -H 'Content-Type: application/octet-stream' --data-binary @"$1" "$stt/stt?lang=$lang" | jq -r '.text // ""'; }
 match() { "$W/bin/quietmatch" "$@" <<<"$text" >/dev/null && echo - || echo HIT; }
@@ -36,12 +42,19 @@ curl -fsS -o /dev/null "http://$ip:8889/consolevarset?key=MicData_ClipRecordTime
 printf 'trial\tsrc\twhole\tany\ttext\n' | tee "$run/results.tsv"
 for ((i = 1; i <= n; i++)); do
   rsh "rm -rf $D"
+  ((manual)) && printf 'trial %d: get ready…\n' "$i" >&2
   "$here/../voice-samples/play.sh" "$@" >/dev/null &
   play=$!
   sleep 1
   curl -fsS -o /dev/null "http://$ip:8889/consolefunccall?func=RecordMicDataClip&args="
-  sleep 5
-  ((say)) && paplay --raw --rate=16000 --channels=1 --format=s16le "$say_pcm"
+  if ((manual && say)); then
+    sleep 3
+    printf '\a▶ PLAY NOW: %s (trial %d)\n' "$win_path" "$i" >&2
+    sleep 2
+  else
+    sleep 5
+    ((say)) && paplay --raw --rate=16000 --channels=1 --format=s16le "$say_pcm"
+  fi
   wait "$play" || true
   sleep 11
   for _ in {1..10}; do
