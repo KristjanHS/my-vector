@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# `make start` once wire-pod.service is enabled: restart it, wait for :443 (go run compiles first), else print the journal and exit 1.
+# `make start` once wire-pod.service is enabled: restart it, wait for :443 (the service builds the pinned commit first), else print the journal and exit 1.
 set -uo pipefail
 sudo -n systemctl restart wire-pod || { echo "restart refused: no sudoers rule (docs/run-without-sudo-password.md) or start-limit hit (wait 2 min)" >&2; exit 1; }
 for ((i = 0; i < 120; i++)); do

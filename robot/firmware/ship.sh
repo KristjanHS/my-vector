@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Ship the patched firmware: tests, patches, robot compat + myvector-stt freshness checks, build (live progress), built-asset check, wire-pod restart
-# (only if chipper/ or the firewall changed since the running server's sha), deploy, robot settings, robot smoke check, git push.
+# (only if chipper/, the firewall or run-server.sh changed since the running server's sha), deploy, robot settings, robot smoke check, git push.
 # Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no server restart, no deploy, no push).
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
 # HEAD-only: checks, patches and apply.sh come from the committed HEAD; uncommitted fork files are ignored.
-#   The server is the exception: wire-pod.service runs `go run` from the working tree, so a needed restart
-#   requires HEAD's chipper/ + firewall = the shipped sha's and no uncommitted ones (else FAIL before the build).
+#   The server too: the restart pins the shipped sha in robot/work/server-sha and wire-pod.service (scripts/run-server.sh)
+#   builds that commit from a clean copy. Only the tree's run-server.sh itself must equal the shipped sha's (systemd runs it).
 # Log: every run is recorded to robot/work/ship-logs/ship-<time>-<sha>.log (latest.log = newest); the newest 20 are kept.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -79,13 +79,13 @@ if ((deploy)); then
   echo "$out"
   add_warns "$out"
 
-  # Server inputs: the Go tree, plus the firewall that ExecStartPre loads on each (re)start.
-  srv=(chipper scripts/wire-pod-guard.nft)
-  # start.sh stamps `git rev-parse --short HEAD` into the `go run` child of the service's main pid; empty = no server.
+  # Server inputs: the Go tree, the firewall and the launcher that builds + runs the pinned commit on each (re)start.
+  srv=(chipper scripts/wire-pod-guard.nft scripts/run-server.sh)
+  # run-server.sh execs robot/work/server-build/<full sha>/chipper as the service's main pid; empty = no server (or still building).
   server_sha() {
     local pid; pid=$(systemctl show -p MainPID --value wire-pod 2>/dev/null || true)
     [[ -n $pid && $pid != 0 ]] || return 0
-    pgrep -a -P "$pid" | grep -o 'vars\.CommitSHA=[0-9a-f]*' | head -1 | cut -d= -f2 || true
+    ps -o args= -p "$pid" | grep -o 'server-build/[0-9a-f]*/chipper' | cut -d/ -f2 || true
   }
   # Sets running + restart. An unknown sha (git diff exits 128) counts as changed.
   server_check() {
@@ -94,14 +94,16 @@ if ((deploy)); then
     if ((restart)); then
       systemctl is-enabled -q wire-pod ||
         die "server inputs changed since the running server (${running:-none}) and wire-pod.service is not enabled: make daemon-enable"
-      server_tree_ok
+      server_unit_ok
     fi
   }
-  # The restart runs the working tree: its server inputs must be exactly the shipped sha's (HEAD may move elsewhere).
-  server_tree_ok() {
-    git -C "$repo" diff --quiet HEAD "$full" -- "${srv[@]}" || die "HEAD's ${srv[*]} differ from $sha: a wire-pod restart would run other server code"
-    local d; d=$(git -C "$repo" status --porcelain --untracked-files=normal -- "${srv[@]}")
-    [[ -z $d ]] || die "uncommitted server changes, which a wire-pod restart would run live: $d"
+  # The restart must build the pin, not run the tree: the installed unit uses run-server.sh, and the tree's copy
+  # (which systemd runs) is the shipped sha's. Uncommitted edits anywhere else are ignored.
+  server_unit_ok() {
+    grep -q 'ExecStart=.*/scripts/run-server\.sh' /etc/systemd/system/wire-pod.service 2>/dev/null ||
+      die "installed wire-pod.service does not run scripts/run-server.sh (a restart would go run the working tree): make daemon-enable"
+    git -C "$repo" diff --quiet "$full" -- scripts/run-server.sh ||
+      die "the tree's scripts/run-server.sh differs from $sha's, and systemd runs the tree's copy: commit it or restore it"
   }
   server_check
   # The unit file is a template that only make daemon-enable installs; a restart doesn't apply it.
@@ -139,14 +141,13 @@ echo "built firmware matches the tree"
 # reboots straight onto the new server; smoke.sh's wire-pod link check then covers both.
 server_check # again: the server may have been restarted during the build
 if ((restart)); then
-  step "server: ${srv[*]} changed since ${running:-none (not running)} -> restart wire-pod on $sha"
+  step "server: ${srv[*]} changed since ${running:-none (not running)} -> pin $sha, restart wire-pod"
+  printf '%s\n' "$full" >"$repo/robot/work/server-sha.tmp" && mv "$repo/robot/work/server-sha.tmp" "$repo/robot/work/server-sha"
   "$repo/scripts/restart-service.sh" ||
-    die "wire-pod not up on :443 within the wait (journal above; it may still be compiling) — robot untouched, not pushed; fix and ship again"
-  server_tree_ok # again: go run compiled from the tree while we waited
+    die "wire-pod not up on :443 within the wait (journal above; it may still be building $sha) — robot untouched, not pushed; fix and ship again"
   now=$(server_sha)
-  # shellcheck disable=SC2015 # die on either failure is the intent
-  [[ -n $now ]] && git -C "$repo" diff --quiet "$now" "$full" -- "${srv[@]}" 2>/dev/null ||
-    die "wire-pod restarted but reports ${now:-no sha}, whose server code is not $sha's — robot untouched, not pushed"
+  [[ $now == "$full" ]] ||
+    die "wire-pod restarted but runs ${now:-no pinned build}, not $sha — robot untouched, not pushed"
   echo "wire-pod runs $now (server code = $sha)"
 else
   step "server: wire-pod already runs $running, ${srv[*]} unchanged — no restart"
