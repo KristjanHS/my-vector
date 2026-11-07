@@ -52,9 +52,11 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 	brain := forkBrain(ollama)
 	r.MaxCompletionTokens = prompt.ReplyCap(brain)
 	if len(r.Messages) > 0 && r.Messages[0].Role == openai.ChatMessageRoleSystem {
-		r.Messages[0].Content = prompt.Render(prompt.Default(brain), prompt.Vars{
+		s := prompt.Load()
+		r.Messages[0].Content = prompt.Render(s.Live(brain), prompt.Vars{
 			Now:      prompt.Now(l, forkNow(), forkBotZone(esn)),
 			Lang:     prompt.LangLine(l),
+			User:     s.User(),
 			Speech:   prompt.SpeechBlock(),
 			Commands: forkCommands(isKG),
 		})

@@ -48,4 +48,5 @@
 /chipper/session-certs/*
 !/chipper/session-certs/placeholder
 /chipper/myvectorConfig.json
+/chipper/myvectorPrompt.json
 /chipper/.myvectorConfig-*
