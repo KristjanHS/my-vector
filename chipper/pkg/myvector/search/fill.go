@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
@@ -17,11 +16,6 @@ import (
 var Timeout = 2500 * time.Millisecond
 
 var logf = logger.Println
-
-var geo = struct {
-	sync.Mutex
-	m map[string]Place
-}{m: map[string]Place{}}
 
 // weatherPlace is search.weather_place in myvectorConfig.json up to any comma (Open-Meteo geocodes a bare
 // name: "Tartu, Estonia" → "Tartu"), else zone's city.
@@ -56,17 +50,13 @@ func ZoneCity(zone *time.Location) string {
 }
 
 func geocode(ctx context.Context, place string) (Place, error) {
-	geo.Lock()
-	p, ok := geo.m[place]
-	geo.Unlock()
-	if ok {
+	st := current()
+	if p, ok := st.place(place); ok {
 		return p, nil
 	}
 	p, err := Geocode(ctx, place)
 	if err == nil {
-		geo.Lock()
-		geo.m[place] = p
-		geo.Unlock()
+		st.setPlace(place, p)
 	}
 	return p, err
 }

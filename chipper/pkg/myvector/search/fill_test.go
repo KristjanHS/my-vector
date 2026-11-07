@@ -16,7 +16,7 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
 )
 
-// useConfig points lang.Path at a temp myvectorConfig.json holding body and empties the geocode cache.
+// useConfig points lang.Path (so StatePath: fresh quota, cache and geocodes) at a temp myvectorConfig.json holding body.
 func useConfig(t *testing.T, body string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "myvectorConfig.json")
@@ -25,8 +25,7 @@ func useConfig(t *testing.T, body string) {
 	}
 	old := lang.Path
 	lang.Path = func() string { return path }
-	geo.m = map[string]Place{}
-	t.Cleanup(func() { lang.Path = old; geo.m = map[string]Place{} })
+	t.Cleanup(func() { lang.Path = old })
 }
 
 // fakeOpenMeteo serves geoTallinn at GeocodeURL and forecastJS at ForecastURL, recording each query.
