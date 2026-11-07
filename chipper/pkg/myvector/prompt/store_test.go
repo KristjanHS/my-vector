@@ -34,10 +34,10 @@ func TestValidateUnknownTag(t *testing.T) {
 
 func TestRenderAppendsMissing(t *testing.T) {
 	got, appended := Complete("Be brief.\n\n{now}\n{speech}\n")
-	if strings.Join(appended, " ") != "{lang} {commands}" {
+	if strings.Join(appended, " ") != "{commands} {lang}" {
 		t.Errorf("appended = %v", appended)
 	}
-	if !strings.HasSuffix(got, "{speech}\n\n{lang}\n\n{commands}") {
+	if !strings.HasSuffix(got, "{speech}\n\n{commands}\n\n{lang}") {
 		t.Errorf("completed template = %q", got)
 	}
 	if _, appended := Complete(Default(Ollama)); appended != nil {
