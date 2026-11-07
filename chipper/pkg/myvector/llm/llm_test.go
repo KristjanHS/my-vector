@@ -155,20 +155,18 @@ func TestLLMResolveOllama(t *testing.T) {
 	c := Config{OllamaURL: "http://pc:11434", ClaudeKey: "k", LegacyETModel: "estllm:x", Profiles: map[string]Profile{
 		lang.English: {Claude, "claude-haiku-5-5"}, lang.Estonian: {Ollama, "estllm:y"}}}
 	for _, w := range []struct {
-		c    Config
-		l    string
-		want string
-	}{{c, lang.English, DefaultENModel}, {c, lang.Estonian, "estllm:y"}, {Config{LegacyETModel: "estllm:x"}, lang.English, DefaultENModel}} {
-		got, ok := ResolveOllama(w.c, w.l, kg)
-		if !ok || !got.Ollama() || got.Model != w.want || got.Key != "ollama" {
-			t.Errorf("%s: %+v %v, want Ollama %s", w.l, got, ok, w.want)
+		c Config
+		l string
+	}{{c, lang.English}, {c, lang.Estonian}, {Config{LegacyETModel: "estllm:x"}, lang.English}} {
+		got, ok := ResolveOllama(w.c, w.l, kg, "listen:m")
+		if !ok || !got.Ollama() || got.Model != "listen:m" || got.Key != "ollama" {
+			t.Errorf("%s: %+v %v, want Ollama listen:m", w.l, got, ok)
 		}
 	}
-	c.Profiles[lang.Estonian] = Profile{Claude, "claude-haiku-5-5"}
-	if got, _ := ResolveOllama(c, lang.Estonian, kg); got.Model != "estllm:x" || got.BaseURL != "http://pc:11434/v1" {
-		t.Errorf("et claude: %+v, want the et_model on the saved Ollama URL", got)
+	if got, _ := ResolveOllama(c, lang.Estonian, kg, "listen:m"); got.BaseURL != "http://pc:11434/v1" {
+		t.Errorf("et: %+v, want the saved Ollama URL", got)
 	}
-	if _, ok := ResolveOllama(c, "xx", kg); ok {
+	if _, ok := ResolveOllama(c, "xx", kg, "listen:m"); ok {
 		t.Error("unknown language resolved")
 	}
 }

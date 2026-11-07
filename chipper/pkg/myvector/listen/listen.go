@@ -16,6 +16,9 @@ var (
 	Off = []string{"deactivate active listening", "active listening off", "deaktiveeri aktiivne kuulamine", "aktiivne kuulamine välja"}
 )
 
+// Model answers every LLM call while on, both languages (P1: listenprobe held-out 16/20, 0 false SPEAK).
+const Model = "gemma4:e4b-it-qat"
+
 const (
 	IdleOff   = 30 * time.Minute
 	NightFrom = 21 // patch 0011 night window, robot local time

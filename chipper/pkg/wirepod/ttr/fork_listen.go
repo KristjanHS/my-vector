@@ -49,10 +49,10 @@ func forkSpeak(req interface{}, esn, voiceText, text string) {
 	}
 }
 
-// forkResolve is llm.Resolve, Ollama-only while any robot listens (model and client must agree); the saved profile is untouched.
+// forkResolve is llm.Resolve, listen.Model while any robot listens (model and client must agree); the saved profile is untouched.
 func forkResolve(c llm.Config, l string, kg llm.KG) (llm.Target, bool) {
 	if forkListening.Any(time.Now()) {
-		return llm.ResolveOllama(c, l, kg)
+		return llm.ResolveOllama(c, l, kg, listen.Model)
 	}
 	return llm.Resolve(c, l, kg)
 }
