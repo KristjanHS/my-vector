@@ -40,10 +40,12 @@ def test_split_sentences_estonian_abbreviations_and_ordinals():
 def test_stream_normalises_estonian_voice_only():
     piper = FakeEngine(22050)
     synth = server.Synth({"piper": piper, "kokoro": FakeEngine(24000)}, {})
-    for voice in ("mari", "cori"):
+    for voice in ("mari", "albert", "kalev", "cori"):
         list(synth.stream(voice, "Kell on 14.05.", 1.0))
     assert [c[:2] for c in piper.calls] == [
         ("et_EE-news-medium@Mari", "Kell on neliteist null viis."),
+        ("et_EE-news-medium@Albert", "Kell on neliteist null viis."),
+        ("et_EE-news-medium@Kalev", "Kell on neliteist null viis."),
         ("en_GB-cori-high", "Kell on 14.05."),
     ]
 
@@ -292,7 +294,7 @@ def test_health(serve):
     port = serve({"piper": FakeEngine(22050), "kokoro": FakeEngine(24000)})
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     c.request("GET", "/health")
-    assert json.loads(c.getresponse().read())["voices"] == ["af_bella", "cori", "mari"]
+    assert json.loads(c.getresponse().read())["voices"] == ["af_bella", "albert", "cori", "kalev", "mari"]
 
 
 def raw_chunks(port, body):
@@ -530,7 +532,7 @@ def test_handler_frees_unselected_kokoro_after_the_response(lazy):
         ('{"lang": "en-US", "t1": "af_bella", "t1_et": "mari"}', True, False),
         ('{"lang": "et-EE", "t1": "af_bella", "t2": "af_bella"}', False, False),  # E7: the ET stack never pins Kokoro
         ('{"lang": "fi-FI", "t1": "cori", "t2": "af_bella"}', True, False),  # unsupported lang -> en-US
-        ('{"lang": "et-EE", "t1_et": "af_bella"}', False, True),  # E30: et pair is mari only -> defaults (mari)
+        ('{"lang": "et-EE", "t1_et": "af_bella"}', False, True),  # the et pair is Estonian voices only -> defaults (mari)
         ('{"lang": "et-EE", "t2_et": "stock"}', False, True),
         ('{"lang": "en-US", "t1": "cori", "t2": "cori", "t1_et": "af_bella"}', True, True),  # any invalid field -> defaults
     ],

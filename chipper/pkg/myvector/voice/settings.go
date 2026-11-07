@@ -40,10 +40,10 @@ const (
 // DefaultETVoice is the et-EE T1 and T2 default (Estonian plan E30).
 const DefaultETVoice = "mari"
 
-// voices are each language's T1 and T2 choices (plan R8, E30); every name but Stock must be a tts/server.py VOICES key.
+// voices are each language's T1 and T2 choices (plan R8, E30 + the two male news-model speakers); every name but Stock must be a tts/server.py VOICES key.
 var voices = map[string][]string{
 	lang.English:  {DefaultVoice, "cori", Stock},
-	lang.Estonian: {DefaultETVoice},
+	lang.Estonian: {DefaultETVoice, "albert", "kalev"},
 }
 
 // VoicesFor is language l's T1 and T2 choices; nil for an unsupported l.

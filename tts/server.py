@@ -42,6 +42,8 @@ VOICES = {
     "cori": ("piper", "en_GB-cori-high"),
     "af_bella": ("kokoro", "af_bella"),
     "mari": ("piper", "et_EE-news-medium@Mari"),
+    "albert": ("piper", "et_EE-news-medium@Albert"),
+    "kalev": ("piper", "et_EE-news-medium@Kalev"),
 }
 # Piper id -> (noise_scale, noise_w_scale) over the model's own; re-pick with tts/noise_sweep.py
 PIPER_NOISE = {"et_EE-news-medium@Mari": (0.4, 0.6)}
