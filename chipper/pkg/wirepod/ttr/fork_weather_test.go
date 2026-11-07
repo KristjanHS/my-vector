@@ -161,6 +161,9 @@ func fakeWeather(t *testing.T, key string, waStatus, geoStatus, fcStatus int) (w
 	t.Cleanup(func() {
 		vars.APIConfig.Weather, forkWeatherAPIForecastURL, search.GeocodeURL, search.ForecastURL, forkWeatherMapPath, forkWeatherGo = oldW, oldWA, oldGeo, oldFc, oldMap, oldGo
 	})
+	oldState, dir := search.StatePath, t.TempDir()
+	search.StatePath = func() string { return dir + "/myvectorSearch.json" } // fresh geocode cache + quota per test
+	t.Cleanup(func() { search.StatePath = oldState })
 	var wg sync.WaitGroup
 	t.Cleanup(wg.Wait) // runs first: no goroutine reads the URLs while they are restored
 	forkWeatherGo = func(f func()) {
