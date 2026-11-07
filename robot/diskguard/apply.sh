@@ -8,9 +8,9 @@ here=$(cd "$(dirname "$0")" && pwd)
 
 guard=$(base64 -w0 "$here/diskguard.sh")
 # shellcheck disable=SC2029 # GUARD expands on the client: the point
-ssh "${ssh_opts[@]}" "root@$ip" "GUARD=$guard sh -s" <<'EOF'
+cat "$here/../lib/etc.sh" - <<'EOF' | ssh "${ssh_opts[@]}" "root@$ip" "GUARD=$guard sh -s"
 set -e
-bin=/etc/myvector/diskguard.sh u=/etc/systemd/system/myvector-diskguard
+bin=/etc/myvector/diskguard.sh u=/etc/systemd/system/myvector-diskguard w=/etc/systemd/system/timers.target.wants/myvector-diskguard.timer
 svc="[Unit]
 Description=my-vector: stop a runaway output capture before it fills /data
 
@@ -26,23 +26,19 @@ OnUnitActiveSec=2min
 
 [Install]
 WantedBy=timers.target"
-new=$(echo "$GUARD" | base64 -d)
-if [ "$(cat $bin 2>/dev/null)" = "$new" ] && [ "$(cat $u.service 2>/dev/null)" = "$svc" ] &&
-  [ "$(cat $u.timer 2>/dev/null)" = "$tmr" ] && [ -L /etc/systemd/system/timers.target.wants/myvector-diskguard.timer ]; then
+etc_put $bin "$(echo "$GUARD" | base64 -d)"
+etc_put $u.service "$svc"
+etc_put $u.timer "$tmr"
+if [ -z "$ETC_CHANGED" ] && [ -L "$ETC_ROOT$w" ]; then
   echo "diskguard: already installed"
 else
-  mount -o remount,rw /
-  trap 'mount -o remount,ro /' EXIT
-  mkdir -p /etc/myvector
-  printf '%s\n' "$new" >$bin
-  printf '%s\n' "$svc" >$u.service
-  printf '%s\n' "$tmr" >$u.timer
+  etc_rw
   systemctl daemon-reload
   systemctl enable myvector-diskguard.timer 2>/dev/null
-  trap - EXIT; mount -o remount,ro /
+  etc_ro
   echo "diskguard: installed $bin + myvector-diskguard.timer"
 fi
-awk '$2 == "/" && $4 ~ /^ro(,|$)/ { ro = 1 } END { exit !ro }' /proc/mounts || { echo "FAIL: / is not read-only"; exit 1; }
+etc_ro_check
 systemctl start myvector-diskguard.timer
 systemctl start myvector-diskguard.service || { echo "FAIL: myvector-diskguard.service run failed"; exit 1; }
 systemctl is-active -q myvector-diskguard.timer || { echo "FAIL: myvector-diskguard.timer not active"; exit 1; }
