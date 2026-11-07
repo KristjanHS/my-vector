@@ -1,5 +1,6 @@
 // Package wifi is the fork's WiFi page: the robot's saved networks, kept by connman on the robot.
-// connman joins the strongest saved network in range at boot, so two saved networks let the robot move between floors.
+// connman rejoins its last network at boot and never leaves a working one, so the page's Test/Switch and Roam (a
+// stronger saved network in range) move it between floors.
 // Every robot step is robot/wifi/wifi.sh over SSH. Passwords are write-only: the page sends one, wire-pod hands it to
 // wifi.sh on stdin and keeps no copy (no file, no log, no reply); on the robot it is in connman's root-only store.
 package wifi
@@ -32,7 +33,12 @@ const (
 	API  = "/myvector/api/wifi"
 	// ExitConnected is wifi.sh's exit for "the robot is on that network now": it is left as is.
 	ExitConnected = 3
+	// ExitBusy is wifi.sh's exit for "a test/switch job is running on the robot".
+	ExitBusy = 4
 )
+
+// RoamEvery is how often Roam asks wifi.sh roam (a ~4 s scan on the robot).
+var RoamEvery = 3 * time.Minute
 
 // Timeout bounds one wifi.sh run (list scans ~4 s; its SSH ConnectTimeout is 8 s).
 var Timeout = 20 * time.Second
@@ -59,7 +65,7 @@ type reply struct {
 	Message  string    `json:"message,omitempty"`
 }
 
-// request is a POST: {"action":"add","ssid","password"} or {"action":"forget","hex"}.
+// request is a POST: {"action":"add","ssid","password"} or {"action":"forget"|"test"|"switch","hex"}.
 type request struct {
 	Action   string `json:"action"`
 	SSID     string `json:"ssid"`
@@ -85,12 +91,12 @@ func (q *request) valid() error {
 		if !psk.MatchString(q.Password) {
 			return errors.New("password: 8 to 63 printable ASCII characters (WPA/WPA2)")
 		}
-	case "forget":
+	case "forget", "test", "switch":
 		if !hexSSID.MatchString(q.Hex) {
 			return errors.New("hex: the SSID as lowercase hex")
 		}
 	default:
-		return errors.New(`action: "add" or "forget"`)
+		return errors.New(`action: "add", "forget", "test" or "switch"`)
 	}
 	return nil
 }
@@ -135,13 +141,17 @@ func Parse(out string) []Network {
 	return list
 }
 
-// Handler serves API: GET lists the networks; POST (application/json request) adds or forgets one.
-// A refusal (the robot is on that network) is a 409; a wifi.sh or SSH failure is a 502 with its last line.
+// Handler serves API: GET lists the networks (?job: the test/switch job's line instead); POST (application/json
+// request) adds, forgets, tests or switches to one — test/switch only start the robot-side job.
+// A refusal (the robot is on that network, or a job runs) is a 409; a wifi.sh or SSH failure is a 502 with its last line.
 func Handler(w http.ResponseWriter, r *http.Request) {
 	var q request
 	args, stdin := []string{"list"}, ""
 	switch r.Method {
 	case http.MethodGet:
+		if r.URL.Query().Has("job") {
+			args = []string{"status"}
+		}
 	case http.MethodPost:
 		if !decode(w, r, &q) {
 			return
@@ -149,7 +159,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		if q.Action == "add" {
 			args, stdin = []string{"add"}, q.SSID+"\n"+q.Password+"\n"
 		} else {
-			args = []string{"forget", q.Hex}
+			args = []string{q.Action, q.Hex}
 		}
 	default:
 		w.Header().Set("Allow", "GET, POST")
@@ -168,16 +178,16 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		}
 		logger.Println("myvector wifi " + args[0] + ": " + msg) // never the password: it is not in args or stderr
 		status := http.StatusBadGateway
-		if code == ExitConnected {
+		if code == ExitConnected || code == ExitBusy {
 			status = http.StatusConflict
 		}
 		http.Error(w, msg, status)
 		return
 	}
 	rep := reply{Message: lastLine(out)}
-	if r.Method == http.MethodGet {
+	if r.Method == http.MethodGet && args[0] == "list" {
 		rep = reply{Networks: Parse(out)}
-	} else {
+	} else if r.Method == http.MethodPost {
 		logger.Println("myvector wifi " + strings.Join(args, " ") + ": " + rep.Message)
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -203,6 +213,36 @@ func decode(w http.ResponseWriter, r *http.Request, q *request) bool {
 		return false
 	}
 	return true
+}
+
+// Roam runs wifi.sh roam every RoamEvery, skipping a tick while the page changes something; it logs roams and a
+// changed failure once (an unreachable robot would otherwise log every tick).
+func Roam(ctx context.Context) {
+	t := time.NewTicker(RoamEvery)
+	defer t.Stop()
+	last := ""
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if !changing.TryLock() {
+			continue
+		}
+		out, errOut, code := Run(ctx, "", "roam")
+		changing.Unlock()
+		msg := strings.TrimSpace(out)
+		if code != 0 {
+			msg = "myvector wifi roam: " + lastLine(errOut)
+		} else if msg != "" {
+			msg = "myvector wifi " + strings.ReplaceAll(msg, "\n", "; ")
+		}
+		if msg != "" && (code == 0 || msg != last) {
+			logger.Println(msg)
+		}
+		last = msg
+	}
 }
 
 func lastLine(s string) string {

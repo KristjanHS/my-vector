@@ -94,8 +94,10 @@
       <h2>Saved on Vector</h2>
       <div class="body">
         <ul class="nets" id="saved"></ul>
-        <p class="hint">At boot Vector joins the strongest saved network in range — save one per floor.
-          It stays on a network while that one works; it switches when the connection drops or at the next boot.</p>
+        <p class="hint">Save one network per floor. Vector stays on a network while it works (at boot it rejoins the last one),
+          so wire-pod checks every 3 minutes and switches Vector to a saved network at least 8 dB stronger.
+          <b>Test</b> joins a network, checks Vector keeps its address and reaches wire-pod, then goes back;
+          <b>Switch</b> does the same and stays. Either goes back if a check fails. Vector is offline for ~10–40 s meanwhile.</p>
       </div>
     </section>
     <form class="card" id="add" autocomplete="off">
@@ -138,17 +140,19 @@
         const forget = el("button", { type: "button", textContent: "Forget" });
         if (n.connected) { forget.dataset.locked = "1"; forget.disabled = true; forget.title = "Vector is on this network now"; }
         forget.onclick = () => forgetNet(n);
+        const jobs = n.connected || !n.seen ? [] : ["test", "switch"].map((a) =>
+          el("button", { type: "button", textContent: a === "test" ? "Test" : "Switch", onclick: () => job(a, n) }));
         return el("li", {}, el("span", { className: "name", textContent: n.ssid }),
           el("span", { className: "badge" + (n.connected ? " on" : ""), textContent: n.connected ? "Connected now" : n.seen ? "In range" : "Not in range" }),
-          forget);
+          ...jobs, forget);
       }) : [el("li", { className: "hint", textContent: "None saved." })]));
       const others = nets.filter((n) => n.seen && !n.saved && !n.ssid.includes("�")); // a non-UTF-8 name cannot be typed back
       $("seen").replaceChildren(...others.map((n) =>
         el("button", { type: "button", textContent: n.ssid, title: "Vector sees this network now", onclick: () => { $("ssid").value = n.ssid; $("pw").focus(); } })));
     }
 
-    async function call(method, body) {
-      const r = await fetch(api, method === "GET" ? {} : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    async function call(method, body, query = "") {
+      const r = await fetch(api + query, method === "GET" ? {} : { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const text = await r.text();
       if (!r.ok) throw new Error(text.trim() || r.statusText);
       return JSON.parse(text);
@@ -182,6 +186,29 @@
       status("Forgetting…");
       try { await call("POST", { action: "forget", hex: n.hex }); await changed(`Forgot "${n.ssid}"`); }
       catch (e) { status(e.message, "err"); setBusy(false); }
+    }
+
+    // job starts test/switch on Vector, then polls its line; SSH fails while Vector changes network, so errors are waited out.
+    async function job(action, n) {
+      if (busy) return;
+      setBusy(true);
+      status(`${action === "test" ? "Testing" : "Switching to"} "${n.ssid}" — Vector is offline for a moment…`);
+      try {
+        await call("POST", { action, hex: n.hex });
+        const end = Date.now() + 150000;
+        let line = "";
+        while (Date.now() < end) {
+          await new Promise((r) => setTimeout(r, 3000));
+          try { line = (await call("GET", null, "?job")).message || ""; } catch { continue; }
+          if (line.startsWith("running: ")) status(line.slice(9) + "…");
+          else if (line.startsWith("ok: ") || line.startsWith("failed: ")) break;
+        }
+        const ok = line.startsWith("ok: ");
+        const msg = ok ? line.slice(4) : line.startsWith("failed: ") ? line.slice(8) : "No answer from Vector yet: press Refresh in a minute.";
+        status(msg, ok ? "ok" : "err");
+        if (await load(true)) status(msg, ok ? "ok" : "err");
+      } catch (e) { status(e.message, "err"); }
+      finally { setBusy(false); }
     }
 
     $("add").onsubmit = async (ev) => {
