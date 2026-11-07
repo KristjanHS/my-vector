@@ -24,7 +24,8 @@ const (
 	NapFor  = 2 * time.Hour
 )
 
-func tokens(text string) []string {
+// Tokens lowercases text, splits on non-letters/digits and drops Fillers (listen matches on it too).
+func Tokens(text string) []string {
 	fillers := map[string]bool{}
 	for _, f := range Fillers {
 		fillers[f] = true
@@ -42,7 +43,7 @@ func tokens(text string) []string {
 
 // Match reports the phrase text equals once lowercased, de-punctuated and stripped of fillers.
 func Match(text string) (string, bool) {
-	got := strings.Join(tokens(text), " ")
+	got := strings.Join(Tokens(text), " ")
 	for _, p := range Phrases {
 		if got == p {
 			return p, true
@@ -53,7 +54,7 @@ func Match(text string) (string, bool) {
 
 // MatchAny reports a phrase found as a whole-word run anywhere in text (open-mic clips carry the robot's own speech).
 func MatchAny(text string) (string, bool) {
-	got := " " + strings.Join(tokens(text), " ") + " "
+	got := " " + strings.Join(Tokens(text), " ") + " "
 	for _, p := range Phrases {
 		if strings.Contains(got, " "+p+" ") {
 			return p, true
