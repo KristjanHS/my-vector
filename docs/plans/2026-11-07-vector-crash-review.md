@@ -27,6 +27,14 @@ Complete crash dumps (`crashDumps/*.dmp` + `.log`) since unlock — the organic 
 `.dmp~` (incomplete) dumps come in 4-process groups (vic-robot/anim/engine/switchboard within 2 s): 11-03 21:21, 21:30;
 11-04 07:13, 08:49, 19:39; 11-05 10:43, 18:27; 11-06 19:22; 11-07 10:09, 11:54:58, 12:37:17 = whole-stack kills (fault handler or deploy stop?).
 vic-switchboard SIGQUIT / vic-cloud SIGTERM = fault-handler cascade, not causes.
+
+Dump `.log` reads (robot `crashDumps/*.dmp.log`, tail of syslog at dump time):
+- 11-07 12:31:28 + 12:37:02 vic-engine SIGSEGV: identical `#00 vic-engine+0xccbd` = `DebuggerHook` (tombstoneHooks.cpp:73),
+  i.e. the crash handler frame; the faulting pc is only in the minidump — next: `robot/seassert/md.py` on both.
+- Both came ~3–7 s after a stop→start (12:31:19 stop; 12:36:46 deploy stop): crash in the new instance's startup or the old one's shutdown — unresolved.
+- 11-04 12:39 vic-engine and 11-06 19:15 vic-switchboard logs show only systemd SIGTERM/SIGKILL shutdown lines: likely stop-time dumps, not organic.
+- 11-06 05:18 vic-engine (night idle): its log ends with syslog-ng `No space left on device (28)` from 11-05 21:08 — /data full
+  is a suspect for that crash (diskguard came after; check `git log -- robot/diskguard`).
 Observer effect: 12:22–12:39 the catch loop restarted every ~45 s, ptrace-attached and SIGSTOP'd vic-anim.
 
 ## Change surface to review
