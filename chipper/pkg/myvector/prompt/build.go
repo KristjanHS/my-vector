@@ -16,9 +16,10 @@ var squeeze = regexp.MustCompile(`\n{3,}`)
 // Render fills the tags in one pass (block text is never rescanned, so {{cmd||param}} survives) and squeezes
 // the gaps empty blocks leave.
 func Render(tmpl string, v Vars) string {
+	t := strings.TrimSpace
 	out := strings.NewReplacer(
-		"{now}", v.Now, "{lang}", v.Lang, "{user}", v.User, "{facts}", v.Facts,
-		"{diary}", v.Diary, "{search}", v.Search, "{speech}", v.Speech, "{commands}", v.Commands,
+		"{now}", t(v.Now), "{lang}", t(v.Lang), "{user}", t(v.User), "{facts}", t(v.Facts),
+		"{diary}", t(v.Diary), "{search}", t(v.Search), "{speech}", t(v.Speech), "{commands}", t(v.Commands),
 	).Replace(tmpl)
 	return strings.TrimSpace(squeeze.ReplaceAllString(out, "\n\n"))
 }
