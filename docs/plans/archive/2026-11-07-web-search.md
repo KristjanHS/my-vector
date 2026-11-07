@@ -1,6 +1,6 @@
 # Web search + weather
 
-Status: W1–W17, B1 ruled; Stage 1.1–1.4, 2.1–6.1 done (3.2 USER); next 6.2; 1.5 + 6.1 automated halves done (USER audible halves owed). Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 4.
+Status: ✅ SHIPPED — W1–W17, B1 ruled; Stages 1.1–6.2 done; USER audible check → `docs/backlog.md` §OWED[USER]. Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 4.
 Touches `forkAIReq` like `2026-11-07-follow-up-listening.md (docs/plans/)` F3/F5 — this plan adds ONE line there (W13); all logic stays in `pkg/myvector/search`.
 
 ## Rulings
