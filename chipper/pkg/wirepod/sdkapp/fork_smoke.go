@@ -15,6 +15,7 @@ import (
 
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/voice"
 )
 
@@ -113,6 +114,9 @@ func forkFace(w http.ResponseWriter, r *http.Request) {
 
 // forkSay speaks ?text= in the saved language's T1 (waiting up to 7 s for PC audio) and writes "FINISHED <voice>", "FINISHED fallback: <why>" or the error.
 func forkSay(w http.ResponseWriter, r *http.Request) {
+	if quiet.Refuse(w) {
+		return
+	}
 	robot, ok := forkRobot(w, r)
 	if !ok {
 		return

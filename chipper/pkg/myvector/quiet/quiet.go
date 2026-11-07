@@ -100,6 +100,24 @@ func Until() (time.Time, string, error) {
 	return time.Unix(sec, 0), src, nil
 }
 
+// Line is the QUIET refusal when the lock holds at now; an unreadable lock file reads as unlocked (fail-open, as Set treats it).
+func Line(now time.Time) (string, bool) {
+	u, src, err := Until()
+	if err != nil || !now.Before(u) {
+		return "", false
+	}
+	return fmt.Sprintf("QUIET: robot sound locked until %s (%s); make unquiet lifts it", u.Local().Format("15:04"), src), true
+}
+
+// Refuse writes 423 + Line and reports true while locked; every server robot-sound handler calls it first.
+func Refuse(w http.ResponseWriter) bool {
+	line, locked := Line(time.Now())
+	if locked {
+		http.Error(w, line, http.StatusLocked)
+	}
+	return locked
+}
+
 // Set locks until max(current, until), written tmp+rename so the root server and user scripts never see half a file.
 func Set(until time.Time, source string) error {
 	p := Path()

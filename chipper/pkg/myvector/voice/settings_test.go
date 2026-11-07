@@ -21,6 +21,7 @@ import (
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
@@ -599,5 +600,20 @@ func TestSettingsSearch(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &got)
 	if got.Search.Provider != "tavily" || got.Search.SearxngURL != want.SearxngURL {
 		t.Fatalf("a rejected POST changed search: %+v", got.Search)
+	}
+}
+
+func TestDemoHandlerQuiet(t *testing.T) {
+	tempSettings(t)
+	t.Setenv("MYVECTOR_QUIET_FILE", filepath.Join(t.TempDir(), "quiet-until"))
+	if err := quiet.Set(time.Now().Add(time.Hour), "test"); err != nil {
+		t.Fatal(err)
+	}
+	w, rb := demo(t, "application/json", `{"t1":"stock","slow":1,"text":"hello there"}`, nil)
+	if w.Code != http.StatusLocked || !strings.HasPrefix(w.Body.String(), "QUIET: robot sound locked until ") {
+		t.Errorf("locked demo: %d %q, want 423 + QUIET line", w.Code, w.Body)
+	}
+	if len(rb.said)+len(rb.sent) != 0 || rb.controlled || rb.released != 0 {
+		t.Errorf("locked demo touched the robot: said %d, sent %d, control %v/%d", len(rb.said), len(rb.sent), rb.controlled, rb.released)
 	}
 }

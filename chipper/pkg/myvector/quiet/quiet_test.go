@@ -154,3 +154,28 @@ func TestNapValueAndStatus(t *testing.T) {
 		t.Errorf("Nap on a 500 = %v, sent %v; want an error and value in epoch seconds", err, got)
 	}
 }
+
+func TestLine(t *testing.T) {
+	p := lockFile(t)
+	now := time.Now()
+	if line, ok := Line(now); ok || line != "" {
+		t.Fatalf("no file: Line = %q %v, want unlocked", line, ok)
+	}
+	until := time.Date(2026, 11, 7, 23, 5, 0, 0, time.Local)
+	if err := Set(until, "make quiet"); err != nil {
+		t.Fatal(err)
+	}
+	want := "QUIET: robot sound locked until 23:05 (make quiet); make unquiet lifts it"
+	if line, ok := Line(until.Add(-time.Minute)); !ok || line != want {
+		t.Errorf("locked: Line = %q %v, want %q", line, ok, want)
+	}
+	if _, ok := Line(until); ok {
+		t.Error("Line at until reads locked, want expired")
+	}
+	if err := os.WriteFile(p, []byte("garbage\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := Line(until.Add(-time.Minute)); ok {
+		t.Error("garbage lock file reads locked, want fail-open")
+	}
+}
