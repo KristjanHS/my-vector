@@ -1,6 +1,6 @@
 # Web search + weather
 
-Status: W1–W15, B1 ruled; Stage 1.1–1.4, 2.1–4.1 done (3.2 USER); next 5.1; 1.5 automated half done (USER audible half owed). Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 4.
+Status: W1–W17, B1 ruled; Stage 1.1–1.4, 2.1–5.1 done (3.2 USER); next 6.1; 1.5 automated half done (USER audible half owed). Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 4.
 Touches `forkAIReq` like `2026-11-07-follow-up-listening.md (docs/plans/)` F3/F5 — this plan adds ONE line there (W13); all logic stays in `pkg/myvector/search`.
 
 ## Rulings
@@ -24,6 +24,8 @@ Touches `forkAIReq` like `2026-11-07-follow-up-listening.md (docs/plans/)` F3/F5
 | W15 | Built-in `intent_weather_extend` answers via `forkGetWeather` (hook atop `getWeather`), except an OWM provider with a key: weatherapi.com `forecast.json` (`days=3`; only with its provider + key) and keyless Open-Meteo (`search.Geocode`/`FetchForecast` + `is_day`) race, first ok wins, the other is the fallback; both fail → DoWeatherError. Day = (hour + hoursFromNow) / 24, max 2: 0 → current, else that day's max; WMO → `Thunderstorms`/`Rain`/`Snow`/`Cloudy`/`Sunny`/`Stars`; keyless `forkLocationExists` probes via `search.Geocode`. | `ttr/fork_weather.go`, one hook line in `ttr/weather.go`, `search/weather.go`, `scripts/upstream-drift.sh` |
 | OOS | Claude's paid native `web_search` (and its 1-per-turn + daily cap, S-guard) → a later slice. | — |
 | B1 | `DefaultOrder` = tavily, searxng (user pick; bench tie 2.20 vs 2.30, Tavily 4× faster and independent of manual SearXNG); ollama out (402 Payment Required). | `search/config.go` |
+| W16 | Provider `off` stops web search only; the Weather class still fills from Open-Meteo. | `search.Fill` |
+| W17 | A provider answering with zero results (`Block` = "") fails like an error: log `err … no results`, next provider; all empty → `Unavailable`. Every Open-Meteo HTTP call `Take`s; failures are never cached. | `search.Fill` |
 
 ## Stages
 
