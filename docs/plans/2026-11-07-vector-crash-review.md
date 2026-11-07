@@ -52,11 +52,11 @@ Dumps + `.dmp.log` copies: `robot/work/crash-review/`, `robot/work/seassert/`; r
 ## Elimination stages (in order; stop when a stage explains a symptom)
 
 **E0 — measure exposure, no instrumentation (S2, S3, S5).** Read the 4 smoke-FAIL logs → map each to S1/S2/S3.
-Then 20 plain restarts (stop, 5 s, start; no gdb), log per round: S1/S2/S3 from journal + new crashDumps.
-Pass rule: S3 = 0/20 ⇒ S3 was observer-induced (C7), drop it. S2 ≥ 2/20 ⇒ reliable repro for E1. Needs `catch.sh -n` (no-attach) or a 10-line loop.
+Then 5 plain restarts (user ruling) via `robot/crash-review/restarts.sh` (stop, 5 s, start; no gdb; 60 s watch), log per round: S1/S2/S3 + new crashDumps.
+Pass rule: S3 = 0/5 ⇒ S3 was observer-induced (C7), drop it. S2 count only sizes E1's evidence — E1's patch lands regardless (user ruling).
 
 **E1 — GPU delegate (S2).** First: `ls -l /lib/libOpenCL.so` (what `ShouldUseGpu` checks) and WireOS upstream log of `tfliteModel.cpp` for a fix.
-Then patch 0012 forcing `useGpu=false` → user ships → 20 restarts. Pass: S2 0/20 when E0 had ≥ 2/20 ⇒ C3 confirmed; keep the patch.
+Then patch 0012 forcing `useGpu=false` → user ships → `restarts.sh 5`. Pass: S2 0/5 ⇒ keep the patch (C3 confirmed only if E0 had S2 ≥ 1).
 
 **E2 — SeAssert (S1), only with a hit or a repro.** Rate ~2 per 20 deploys, so bisecting blind costs ~20 deploys per arm.
 Step 1: catch the values with `robot/seassert/catch.sh -d N` (deploy rounds) — the reading picks corruption vs register (seassert plan §Plan 4).
