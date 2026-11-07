@@ -1,6 +1,6 @@
 #!/usr/sbin/nft -f
 # Loaded by scripts/load-guard.sh (the pinned commit's copy) for wire-pod + myvector-tts; an nft error stops the service. :80/:8080 serve the same
-# unauthenticated API (LLM key included), :8091 the TTS service: only this PC and `allowed` reach them. Add a device here, then commit + `make server-pin`.
+# unauthenticated API (LLM key included), :8091 the TTS service: only this PC, `allowed` and `tailnet` (own devices via tailscale0) reach them. Add a device here, then commit + `make server-pin`.
 # The ports are hardcoded: a WEBSERVER_PORT override in source.sh needs the same change here.
 table inet wirepod_guard
 delete table inet wirepod_guard
@@ -13,12 +13,23 @@ table inet wirepod_guard {
 	set allowed6 {
 		type ipv6_addr; flags interval
 	}
+	# Own devices over Tailscale (phone: S24 FE), matched with iifname tailscale0 so a LAN host can't pose as a 100.x address
+	set tailnet4 {
+		type ipv4_addr; flags interval
+		elements = { 100.76.26.53 }
+	}
+	set tailnet6 {
+		type ipv6_addr; flags interval
+		elements = { fd7a:115c:a1e0::cb01:1aae }
+	}
 	chain input {
 		type filter hook input priority filter; policy accept;
 		# lo = WSL itself; loopback0 = Windows localhost under mirrored networking
 		tcp dport { 80, 8080, 8091 } iifname { "lo", "loopback0" } accept
 		tcp dport { 80, 8080, 8091 } ip saddr @allowed4 accept
 		tcp dport { 80, 8080, 8091 } ip6 saddr @allowed6 accept
+		tcp dport { 80, 8080, 8091 } iifname "tailscale0" ip saddr @tailnet4 accept
+		tcp dport { 80, 8080, 8091 } iifname "tailscale0" ip6 saddr @tailnet6 accept
 		tcp dport { 80, 8080, 8091 } limit rate 6/minute log prefix "wirepod-guard drop: "
 		tcp dport { 80, 8080, 8091 } drop
 	}
