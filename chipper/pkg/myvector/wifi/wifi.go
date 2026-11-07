@@ -156,7 +156,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "GET or POST", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.Method == http.MethodPost { // one change at a time: two would overlap their connman restarts
+	if r.Method == http.MethodPost { // one change at a time: two would race on the stage dir
 		changing.Lock()
 		defer changing.Unlock()
 	}
