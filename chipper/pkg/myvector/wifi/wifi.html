@@ -113,7 +113,7 @@
             <button type="button" id="show" aria-pressed="false">Show</button>
           </div>
         </div>
-        <p class="hint" id="addHint">2.4 GHz WPA/WPA2 networks only. Saving restarts Vector's WiFi (~10 s offline).
+        <p class="hint" id="addHint">2.4 GHz WPA/WPA2 networks only. Vector stays online; a saved network counts from its next boot.
           The password is stored on Vector only: wire-pod keeps no copy and this page never shows it again.
           It crosses your home network to wire-pod unencrypted (wire-pod's web UI is plain HTTP).</p>
         <div><button type="submit" class="primary" id="save">Save to Vector</button></div>
@@ -154,39 +154,31 @@
       return JSON.parse(text);
     }
 
-    // load(true) is a retry while Vector restarts its WiFi: no status, and a failure keeps the buttons locked.
+    // load(true) re-reads quietly after a change.
     async function load(quiet = false) {
       if (!quiet) status("Asking Vector (scans for networks, ~5 s)…");
       setBusy(true);
-      let ok = false;
       try {
         nets = (await call("GET")).networks || [];
         render();
         if (!quiet) status("");
-        return ok = true;
+        return true;
       } catch (e) {
         if (!quiet) status("Could not reach Vector: " + e.message, "err");
         return false;
-      } finally { if (ok || !quiet) setBusy(false); }
+      } finally { setBusy(false); }
     }
 
-    // After a change Vector's WiFi restarts: wait, then retry the list until Vector answers.
-    async function afterRestart(msg) {
-      status(msg + " — Vector's WiFi is restarting, checking back in 20 s…", "ok");
-      setBusy(true);
-      await new Promise((r) => setTimeout(r, 20000));
-      for (let i = 0; i < 6; i++) {
-        if (await load(true)) { status(msg + ". Vector is back online.", "ok"); return; }
-        await new Promise((r) => setTimeout(r, 10000));
-      }
-      status(msg + ", but Vector has not answered for 80 s. If it stays offline, reboot it.", "err");
-      setBusy(false);
+    // A change counts from Vector's next boot (no WiFi restart): show it, then re-read the list.
+    async function changed(msg) {
+      await load(true);
+      status(msg + ". Vector uses this from its next boot — reboot it once when convenient.", "ok");
     }
 
     async function forgetNet(n) {
       if (busy || !confirm(`Forget "${n.ssid}" on Vector?`)) return;
       setBusy(true);
-      try { const r = await call("POST", { action: "forget", hex: n.hex }); await afterRestart(r.message || `Forgot "${n.ssid}"`); }
+      try { const r = await call("POST", { action: "forget", hex: n.hex }); await changed(`Forgot "${n.ssid}"`); }
       catch (e) { status(e.message, "err"); setBusy(false); }
     }
 
@@ -201,7 +193,7 @@
       try {
         await call("POST", { action: "add", ssid, password });
         $("pw").value = ""; $("ssid").value = "";
-        await afterRestart(`Saved "${ssid}"`);
+        await changed(`Saved "${ssid}"`);
       } catch (e) { status(e.message, "err"); setBusy(false); }
     };
 
