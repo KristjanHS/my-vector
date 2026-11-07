@@ -50,13 +50,22 @@ var pairs = []pair{
 type noThinking struct{}
 
 func (noThinking) RoundTrip(r *http.Request) (*http.Response, error) {
-	var m map[string]any
 	b, err := io.ReadAll(r.Body)
-	if err == nil && json.Unmarshal(b, &m) == nil {
-		m["thinking"] = map[string]string{"type": "disabled"}
-		b, _ = json.Marshal(m)
+	r.Body.Close()
+	if err != nil {
+		return nil, err
 	}
-	r.Body, r.ContentLength = io.NopCloser(bytes.NewReader(b)), int64(len(b))
+	var m map[string]any
+	if json.Unmarshal(b, &m) == nil {
+		m["thinking"] = map[string]string{"type": "disabled"}
+		if b, err = json.Marshal(m); err != nil {
+			return nil, err
+		}
+	}
+	r = r.Clone(r.Context())
+	r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(b)), nil }
+	r.Body, _ = r.GetBody()
+	r.ContentLength = int64(len(b))
 	return http.DefaultTransport.RoundTrip(r)
 }
 
@@ -122,6 +131,7 @@ func main() {
 	}
 	_, base := llm.Effective(c, llm.KG{})
 	for _, m := range strings.Split(*also, ",") {
+		m = strings.TrimSpace(m)
 		if _, seen := byModel[m]; m != "" && !seen {
 			byModel[m] = len(ts)
 			ts = append(ts, target{"ollama " + m, llm.Target{Provider: llm.Ollama, BaseURL: base + "/v1", Key: "ollama", Model: m}, []string{lang.Estonian}})
