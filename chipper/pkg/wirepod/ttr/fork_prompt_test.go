@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
@@ -28,28 +30,41 @@ func useKnowledge(t *testing.T, provider, endpoint, model string) {
 
 const ollamaEndpoint = "http://localhost:11434/v1"
 
+// useBotClock pins forkNow to Saturday 2026-11-07 07:43 UTC and gives robot "esn" the zone in its RobotSettings jdoc.
+func useBotClock(t *testing.T, zone string) {
+	t.Helper()
+	oldNow, oldDocs, oldPath := forkNow, vars.BotJdocs, vars.JdocsPath
+	t.Cleanup(func() { forkNow, vars.BotJdocs, vars.JdocsPath = oldNow, oldDocs, oldPath })
+	forkNow = func() time.Time { return time.Date(2026, 11, 7, 7, 43, 0, 0, time.UTC) }
+	vars.BotJdocs, vars.JdocsPath = nil, filepath.Join(t.TempDir(), "jdocs.json")
+	vars.AddJdoc("vic:esn", "vic.RobotSettings", vars.AJdoc{JsonDoc: `{"time_zone": "` + zone + `"}`})
+}
+
 func TestForkPromptEstonian(t *testing.T) {
 	lang.UseForTest(t, lang.Estonian)
 	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
-	r := CreateAIReq("mis kell on?", "esn", false, true)
+	useBotClock(t, "Europe/Tallinn")
+	r := CreateAIReq("mis nädalapäev täna on?", "esn", false, true)
 	if r.Model != llm.DefaultETModel {
 		t.Errorf("Model = %q, want %q", r.Model, llm.DefaultETModel)
 	}
-	if !strings.HasSuffix(r.Messages[0].Content, "\n\nAnswer in Estonian.") {
-		t.Errorf("system prompt lacks the language line: %q", r.Messages[0].Content)
+	if want := "\n\nPraegu on laupäev, 7. november 2026, kell 9.43 (Europe/Tallinn).\n\nAnswer in Estonian."; !strings.HasSuffix(r.Messages[0].Content, want) {
+		t.Errorf("system prompt lacks the now + language lines: %q", r.Messages[0].Content)
 	}
 	if r.ReasoningEffort != "none" {
 		t.Errorf("ReasoningEffort = %q", r.ReasoningEffort)
 	}
 }
 
-func TestForkPromptEnglishUnchanged(t *testing.T) {
+func TestForkPromptEnglishNow(t *testing.T) {
 	lang.UseForTest(t, lang.English)
 	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
-	r := CreateAIReq("what time is it", "esn", false, true)
-	want := CreatePrompt("You are a helpful, animated robot called Vector. Keep the response concise yet informative.", "qwen3.5:4b", true)
+	useBotClock(t, "Asia/Tokyo")
+	r := CreateAIReq("what day is it", "esn", false, true)
+	want := CreatePrompt("You are a helpful, animated robot called Vector. Keep the response concise yet informative.", "qwen3.5:4b", true) +
+		"\n\nIt is Saturday, 7 November 2026, 16:43 (Asia/Tokyo)."
 	if r.Model != "qwen3.5:4b" || r.Messages[0].Content != want {
-		t.Errorf("English request changed: model %q, prompt %q", r.Model, r.Messages[0].Content)
+		t.Errorf("English request: model %q, prompt %q", r.Model, r.Messages[0].Content)
 	}
 	if r.ReasoningEffort != "none" {
 		t.Errorf("Ollama ReasoningEffort = %q, want none", r.ReasoningEffort)
