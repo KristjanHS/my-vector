@@ -131,18 +131,20 @@ check_clock() {
 }
 
 check_ttsdown() {
-  local api=${WIREPOD_URL:-http://127.0.0.1:8080} esn t1 r
+  local api=${WIREPOD_URL:-http://127.0.0.1:8080} esn lang t1 r one="Test one." two="Test two."
   esn=$(jq -r '.robots[0].esn // empty' "$repo/chipper/jdocs/botSdkInfo.json" 2>/dev/null) || true
   [[ -n $esn ]] || setup "no robot in chipper/jdocs/botSdkInfo.json"
-  t1=$(curl -fsS --max-time 5 "$api/myvector/api/voice" | jq -r 'if .lang == "et-EE" then .t1_et else .t1 end') || setup "wire-pod not up"
+  read -r lang t1 < <(curl -fsS --max-time 5 "$api/myvector/api/voice" | jq -r '"\(.lang) \(if .lang == "et-EE" then .t1_et else .t1 end)"') &&
+    [[ -n ${t1:-} ]] || setup "wire-pod not up"
   [[ $t1 != stock ]] || setup "T1 is stock for the saved lang: nothing to fall back from"
+  [[ $lang != et-EE ]] || one="Proov üks." two="Proov kaks." # the saved lang's voice reads its own language
   say() { curl -sS --max-time 35 "$api/api-sdk/fork_say?serial=$esn" --data-urlencode "text=$1"; }
-  r=$(say "Test one.") || r="curl failed: $?"
+  r=$(say "$one") || r="curl failed: $?"
   [[ $r == "FINISHED $t1" ]] && pass "TTS up → $r" || fail "TTS up: want FINISHED $t1, got $r"
   sudo systemctl stop myvector-tts || setup "sudo refused"
   trap 'sudo systemctl start myvector-tts' EXIT # restart even if what follows aborts
   # voice.Say falls back to SayText: fork_say writes "FINISHED fallback: <why>" (voice.Fallback + ": " + why)
-  r=$(say "Test two.") || r="curl failed: $?"
+  r=$(say "$two") || r="curl failed: $?"
   [[ $r =~ ^FINISHED\ fallback:\  ]] && pass "TTS down → $r" || fail "TTS down: want FINISHED fallback: …, got $r"
   sudo systemctl start myvector-tts && trap - EXIT
   for _ in {1..60}; do curl -fsS --max-time 2 "$tts/health" >/dev/null 2>&1 && break; sleep 1; done
