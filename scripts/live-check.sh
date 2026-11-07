@@ -118,15 +118,16 @@ check_clock() {
   need_lang et-EE
   # each take is a fresh Piper sample that can blur "Kell" (tts/server.py PIPER_NOISE) → up to 3 takes; a service error FAILs at once
   for t in 08:05 20:47 12:00; do
-    heard=() got=
+    heard=() got= filler=
     for take in 1 2 3; do
       synth mari et-EE "$t" "$f" || { heard+=("tts failed"); break; }
       got=$(transcribe et-EE "$f") || { got= heard+=("stt failed (saved lang must be et-EE)"); break; }
       heard+=("$got")
+      [[ $got =~ (kuni|või) ]] && filler=1 # mari's digit-seam filler (tts/et_text.py _time): any take fails, no retry
       [[ $got =~ ^Kell\ on\  ]] && break
     done
-    [[ $got =~ ^Kell\ on\  ]] && pass "clock $t → $got (take $take)" ||
-      fail "clock $t → $(printf '"%s" ' "${heard[@]}")want Kell on …"
+    [[ $got =~ ^Kell\ on\  && -z $filler ]] && pass "clock $t → $got (take $take)" ||
+      fail "clock $t → $(printf '"%s" ' "${heard[@]}")want Kell on … without kuni/või"
   done
 }
 
