@@ -17,8 +17,10 @@ printf '%s\n' ROBOT_ESN=00e20100 ROBOT_IP=10.9.9.9 ROBOT_SERVER=10.9.9.1 ROBOT_K
 cat >"$tmp/bin/ssh" <<'F'
 #!/bin/sh
 for c; do :; done
-echo "ssh $c" >>"$T/calls"
-case $c in "ls -l"*) echo "2 100" ;; esac
+case $c in
+*"mv \$D \$D.prev"*) echo "ssh park" >>"$T/calls" ;;
+*) echo "ssh $c" >>"$T/calls" ;;
+esac
 F
 cat >"$tmp/bin/scp" <<'F'
 #!/bin/sh
@@ -30,6 +32,7 @@ cat >"$tmp/bin/ffmpeg" <<'F'
 #!/bin/sh
 for o; do :; done
 echo "ffmpeg" >>"$T/calls"
+[ "$(grep -c '^ffmpeg$' "$T/calls")" = "${FFMPEG_FAIL_AT:-0}" ] && exit 2
 echo pcm >"$o"
 F
 cat >"$tmp/bin/curl" <<'F'
@@ -55,11 +58,14 @@ run() {
 c=$tmp/run/calls
 (($(grep -c '^post .*esn=00e20100&start=[0-9]\{13\}$' "$c") == 3)) || die "want 3 clip POSTs: $(grep post "$c")"
 (($(grep -c 'RecordMicDataClip' "$c") == 4)) || die "want 4 recordings (next one starts before each POST): $(grep -c RecordMicDataClip "$c")"
+(($(grep -c '^ssh park$' "$c") == 3)) || die "want 3 clips parked, one ssh each: $(grep -c '^ssh park$' "$c")"
 (($(grep -c '^ssh rm -rf .*debugCapture.prev$' "$c") == 4)) || die "want the start cleanup + 3 parked clips removed"
 grep -q 'MicData_ClipRecordTime_ms&value=0' "$c" || die "CLIP_MS not set on the robot"
 [[ -z $(find "$tree/work" -mindepth 1) ]] || die "temp clip dir left in work/"
 
 [[ $(run "204 500") == 1 ]] || die "a 500 POST did not exit 1"
+[[ $(FFMPEG_FAIL_AT=2 run "204 204") == 1 ]] || die "a tool exiting 2 mid-loop did not exit 1"
+(($(grep -c '^post ' "$tmp/run/calls") == 1)) || die "want the tool failure on the 2nd clip, after 1 POST"
 [[ $(run "204" 00e2ffff) == 2 ]] || die "another ESN did not exit 2"
 grep -q '^ssh' "$tmp/run/calls" 2>/dev/null && die "another ESN reached the robot"
 echo "listen.sh host test OK"

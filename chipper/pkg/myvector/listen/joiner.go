@@ -20,8 +20,9 @@ const (
 	ClipAPI    = "/myvector/listen/clip"
 	ClipMS     = 10000 // listen.sh CLIP_MS default
 	MaxClips   = 3
-	tailBytes  = 2 * 32000 // 2 s of 16 kHz s16le mono
-	maxOverlap = 8         // words the 2 s tail can repeat
+	GapReset   = 5 * time.Second // a longer gap since the previous clip drops its tail and held words
+	tailBytes  = 2 * 32000       // 2 s of 16 kHz s16le mono
+	maxOverlap = 8               // words the 2 s tail can repeat
 )
 
 // STTURL is myvector-stt, as processreqs forkSTTURL.
@@ -49,6 +50,7 @@ type Joiner struct {
 	STT     func(pcm []byte) (string, error)
 	Heard   func(Utterance)
 	Clipped func(esn string) // each 204 clip (Runner.Clipped); nil = none
+	Log     func(string)     // nil = none
 	mu      sync.Mutex
 	bots    map[string]*joined
 }
@@ -69,7 +71,10 @@ func (j *Joiner) Clip(esn string, start time.Time, pcm []byte) error {
 		j.bots = map[string]*joined{}
 	}
 	b := j.bots[esn]
-	if b == nil {
+	if b != nil && j.Log != nil {
+		j.Log(fmt.Sprintf("myvector listen: clip gap %d ms", start.Sub(b.end).Milliseconds()))
+	}
+	if b == nil || start.Sub(b.end) > GapReset {
 		b = &joined{}
 		j.bots[esn] = b
 	}

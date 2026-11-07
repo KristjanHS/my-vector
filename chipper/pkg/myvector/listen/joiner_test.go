@@ -15,6 +15,7 @@ type joinRig struct {
 	j          *Joiner
 	full, last map[byte]string
 	got        []Utterance
+	lens       []int // pcm length of each STT call
 	t0         time.Time
 }
 
@@ -23,6 +24,7 @@ func newJoinRig() *joinRig {
 	r.j = &Joiner{
 		STT: func(pcm []byte) (string, error) {
 			n := pcm[len(pcm)-1]
+			r.lens = append(r.lens, len(pcm))
 			if len(pcm) == tailBytes {
 				return r.last[n], nil
 			}
@@ -69,6 +71,29 @@ func TestJoinerCap(t *testing.T) {
 	r.clip(3)
 	if len(r.got) != 1 || r.got[0].Text != "news at nine the weather" {
 		t.Fatalf("at MaxClips: %+v", r.got)
+	}
+}
+
+func TestJoinerGapResets(t *testing.T) {
+	r := newJoinRig()
+	var logs []string
+	r.j.Log = func(l string) { logs = append(logs, l) }
+	r.full[1], r.last[1] = "old held words", "words"
+	r.full[2] = "new words"
+	r.clip(1)
+	r.lens = nil
+	late := r.t0.Add(3*time.Second + GapReset + time.Second)
+	if err := r.j.Clip(esn, late, []byte(strings.Repeat("\x02", clipBytes))); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.got) != 1 || r.got[0].Text != "new words" || r.got[0].Start != late {
+		t.Fatalf("got %+v, want only the new clip's words from %v", r.got, late)
+	}
+	if len(r.lens) == 0 || r.lens[0] != clipBytes {
+		t.Fatalf("STT pcm lengths %v, want %d first (no stale tail)", r.lens, clipBytes)
+	}
+	if len(logs) != 1 || logs[0] != "myvector listen: clip gap 6000 ms" {
+		t.Fatalf("logs = %q, want one 6000 ms gap", logs)
 	}
 }
 
