@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Open-mic probe (shut-up-sleep Stage 1.2): probe.sh [-n N] [-q] <lang> <set> [sample ...] — N trials of: robot plays the
 # voice-samples set, a 15 s RecordMicDataClip runs, the PC speaker says the stop phrase at +5 s (-q: silent control run;
-# -m: no WSL audio — prints ▶ PLAY NOW and the user plays C:\Users\Public\say-<lang>.wav; run it in your own terminal so the cue shows live).
+# -m: no WSL audio — prints ▶ PLAY NOW and the user plays C:\Users\PC\Documents\say-<lang>.wav; run it in your own terminal so the cue shows live).
 # Each clip (processed + raw 4-mic mix) → myvector-stt (saved lang must be <lang>) → quietmatch whole/-any. Output in robot/work/openmic/.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -28,7 +28,7 @@ say_pcm=$W/say-$lang.pcm
 jq -nc --arg t "$phrase" --arg v "$voice" --arg l "$lang" '{text: $t, voice: $v, lang: $l}' |
   curl -fsS --max-time 60 -H 'Content-Type: application/json' -d @- -o "$say_pcm" "$tts/tts"
 if ((manual)); then # no PC audio from WSL: the user plays this file on cue
-  win_dir=${WIN_DIR:-/mnt/c/Users/Public}
+  win_dir=${WIN_DIR:-/mnt/c/Users/PC/Documents}
   "$ffmpeg" -v error -y -f s16le -ar 16000 -ac 1 -i "$say_pcm" "$win_dir/say-$lang.wav"
   win_path="C:${win_dir#/mnt/c}/say-$lang.wav" win_path=${win_path//\//\\}
 fi
