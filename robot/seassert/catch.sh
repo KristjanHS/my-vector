@@ -26,7 +26,7 @@ ssh_() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 ssh_ 'command -v gdbserver >/dev/null' || setup "no gdbserver on the robot"
 
 out=$here/../work/seassert/catch-$(date +%Y%m%d-%H%M%S)
-mkdir -p "$out"
+mkdir -p "$out/no-sysroot" # empty: gdb must not pull ~50 robot libs over ssh (ate the whole window); bp is a raw address
 log() { printf '%s %s\n' "$(date +%T)" "$*" | tee -a "$out/rounds.log"; }
 ssh_cmd=$(printf '%q ' ssh "${ssh_opts[@]}" "root@$ip")
 trap 'ssh_ "systemctl start anki-robot.target" || true' EXIT
@@ -49,8 +49,12 @@ for ((i = 1; i <= max; i++)); do
 set pagination off
 set confirm off
 set architecture arm
+set auto-solib-add off
+set arm force-mode arm
+set sysroot $out/no-sysroot
 target remote | $ssh_cmd gdbserver - --attach $pid
 handle all nostop noprint pass
+handle SIGSTOP stop print nopass
 break *$bp
 commands
   silent
@@ -68,17 +72,31 @@ commands
   detach
   quit
 end
+echo --- live code at bp (want: ldr r0 / mov r3, #191)\n
+x/2i $bp
 continue
 detach
 quit
 EOF
-  timeout -s INT -k 10 "$window" gdb-multiarch -q -batch -x "$out/round.gdb" >"$g" 2>&1 || true
+  gdb-multiarch -q -batch -x "$out/round.gdb" >"$g" 2>&1 &
+  gpid=$!
+  for ((s = 0; s < window; s++)); do kill -0 $gpid 2>/dev/null || break; sleep 1; done
+  if kill -0 $gpid 2>/dev/null; then
+    # gdbserver's interrupt signals vic-anim's process group, which vic-anim doesn't lead; SIGSTOP it directly
+    # (gdb stops on it, drops it — nopass — and detaches).
+    ssh_ "grep -q 'TracerPid:[[:space:]]*[1-9]' /proc/$pid/status && kill -STOP $pid" || true
+    for _ in $(seq 15); do kill -0 $gpid 2>/dev/null || break; sleep 1; done
+    kill -0 $gpid 2>/dev/null && { kill -9 $gpid; log "round $i: gdb did not detach, killed"; }
+  fi
+  wait $gpid || true
+  ssh_ 'killall gdbserver 2>/dev/null; true'
+  st=$(ssh_ "grep -E '^(State|TracerPid)' /proc/$pid/status 2>/dev/null | tr -s '\t\n' '  '" || true)
   if grep -q '=== HIT' "$g"; then
     log "round $i: HIT (pid $pid, attached at +${age}s) -> $g"
     exit 0
   fi
   crash=$(ssh_ "journalctl -o short-iso --no-pager --since @$t0 | grep -E 'SeAssert|terminated by signal' | head -3" || true)
-  log "round $i: no hit (pid $pid, attached at +${age}s)${crash:+ — UNCAUGHT crash: $crash}"
+  log "round $i: no hit (pid $pid, attached at +${age}s; after: ${st:-gone})${crash:+ — UNCAUGHT crash: $crash}"
 done
 log "no hit in $max rounds"
 exit 1
