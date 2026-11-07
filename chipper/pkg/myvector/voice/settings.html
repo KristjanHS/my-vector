@@ -15,13 +15,16 @@
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
+        color-scheme: dark;
         --bg: #1b1d1f; --surface: #24272a; --surface-2: #2d3135; --border: #41464c;
         --text: #e8eaed; --muted: #a0a6ad;
         --accent: #00d16d; --accent-hover: #2fe08a; --on-accent: #0b1a12; --accent-soft: #163626;
         --warn-bg: #3a2a12; --warn: #ffcc80; --err: #ff8a80; --ok: #5ee39b; --focus: #8ab4f8;
       }
     }
+    :root[data-theme="light"] { color-scheme: light; }
     :root[data-theme="dark"] {
+      color-scheme: dark;
       --bg: #1b1d1f; --surface: #24272a; --surface-2: #2d3135; --border: #41464c;
       --text: #e8eaed; --muted: #a0a6ad;
       --accent: #00d16d; --accent-hover: #2fe08a; --on-accent: #0b1a12; --accent-soft: #163626;
@@ -35,10 +38,8 @@
     }
     a { color: var(--accent); }
     .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 32px; }
-    .bar {
-      position: sticky; top: 0; z-index: 1; background: var(--bg);
-      display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border);
-    }
+    .top { position: sticky; top: 0; z-index: 1; background: var(--bg); border-bottom: 1px solid var(--border); }
+    .bar { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
     .bar h1 { flex: 1; margin: 0; font-size: 18px; font-weight: 600; }
     .back { font-size: 14px; text-decoration: none; white-space: nowrap; }
     button, select, input, textarea { font: inherit; color: inherit; }
@@ -61,7 +62,7 @@
     :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
     optgroup[disabled] { color: var(--muted); }
     #status:empty { display: none; }
-    #status { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+    #status { margin: -4px 0 10px; font-size: 14px; color: var(--muted); }
     #status.ok { color: var(--ok); } #status.err { color: var(--err); }
     .notices { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
     .notices li { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 7px 10px; font-size: 14px; }
@@ -96,18 +97,20 @@
       .inline.wrap-sm { flex-wrap: wrap; }
       .inline.wrap-sm > select, .inline.wrap-sm > textarea { flex-basis: 100%; }
       .inline.wrap-sm > button { flex: 1; }
-      .back { display: none; }
+      .back .txt { display: none; }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <header class="bar">
-      <a class="back" href="/">&larr; Wire-Pod</a>
-      <h1>Language, brain &amp; voice</h1>
-      <button type="submit" form="form" class="primary" id="save">Save</button>
-    </header>
-    <p id="status" role="status" aria-live="polite"></p>
+    <div class="top">
+      <header class="bar">
+        <a class="back" href="/" aria-label="Back to Wire-Pod">&larr;<span class="txt"> Wire-Pod</span></a>
+        <h1>Language, brain &amp; voice</h1>
+        <button type="submit" form="form" class="primary" id="save">Save</button>
+      </header>
+      <p id="status" role="status" aria-live="polite"></p>
+    </div>
     <ul id="warn" class="notices"></ul>
     <form id="form">
       <span id="lang" hidden></span>
@@ -225,25 +228,49 @@
       renderLang();
       syncSample();
     }
-    function renderLang() { // tabs show what you edit; the dot and badge show what Vector speaks
-      const act = pick("lang");
+    function buildLang() { // once per load: tabs and each panel's active line, updated in place by renderLang (keeps focus)
       $("tabs").replaceChildren(...cur.langs.map((l) => {
-        const b = Object.assign(document.createElement("button"), { type: "button", textContent: names[l] || l });
+        const b = Object.assign(document.createElement("button"), { type: "button", id: "tab_" + l, textContent: names[l] || l });
         b.setAttribute("role", "tab");
-        b.setAttribute("aria-selected", String(l === view));
-        if (l === act) b.append(Object.assign(document.createElement("span"), { className: "dot", textContent: "● active" }));
+        b.setAttribute("aria-controls", "panel_" + l);
+        b.append(Object.assign(document.createElement("span"), { className: "dot", textContent: "● active" }));
         b.addEventListener("click", () => { view = l; renderLang(); });
+        b.addEventListener("keydown", (e) => { // arrow keys move between tabs
+          const d = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+          if (!d) return;
+          const ls = cur.langs;
+          view = ls[(ls.indexOf(l) + d + ls.length) % ls.length];
+          renderLang();
+          $("tab_" + view).focus();
+        });
         return b;
       }));
-      for (const p of document.querySelectorAll(".panel")) p.hidden = p.dataset.lang !== view;
+      for (const p of document.querySelectorAll(".panel")) {
+        p.id = "panel_" + p.dataset.lang;
+        p.setAttribute("aria-labelledby", "tab_" + p.dataset.lang);
+      }
       for (const el of document.querySelectorAll("[data-active]")) {
         const l = el.dataset.active;
-        if (l === act) el.replaceChildren(Object.assign(document.createElement("span"), { className: "badge", textContent: "● Vector speaks " + (names[l] || l) }));
-        else {
-          const b = Object.assign(document.createElement("button"), { type: "button", textContent: "Make " + (names[l] || l) + " active" });
-          b.addEventListener("click", () => { setActive(l); dirty(true); });
-          el.replaceChildren(Object.assign(document.createElement("span"), { className: "hint", textContent: "Vector speaks " + (names[act] || act) + "." }), b);
-        }
+        const b = Object.assign(document.createElement("button"), { type: "button", className: "make", textContent: "Make " + (names[l] || l) + " active" });
+        b.addEventListener("click", () => { setActive(l); dirty(true); });
+        el.replaceChildren(Object.assign(document.createElement("span"), { className: "badge", textContent: "● Vector speaks " + (names[l] || l) }),
+          Object.assign(document.createElement("span"), { className: "hint other" }), b);
+      }
+    }
+    function renderLang() { // tabs show what you edit; the dot and badge show what Vector speaks
+      const act = pick("lang");
+      for (const l of cur.langs) {
+        const b = $("tab_" + l);
+        b.setAttribute("aria-selected", String(l === view));
+        b.tabIndex = l === view ? 0 : -1;
+        b.querySelector(".dot").hidden = l !== act;
+      }
+      for (const p of document.querySelectorAll(".panel")) p.hidden = p.dataset.lang !== view;
+      for (const el of document.querySelectorAll("[data-active]")) {
+        const on = el.dataset.active === act;
+        el.querySelector(".badge").hidden = !on;
+        el.querySelector(".make").hidden = on;
+        Object.assign(el.querySelector(".other"), { hidden: on, textContent: "Vector speaks " + (names[act] || act) + "." });
       }
       speakHint();
     }
@@ -261,6 +288,7 @@
       }
       for (const l of s.langs) fillLLM(l, s.llm[l]);
       if (!s.langs.includes(view)) view = s.lang;
+      buildLang();
       renderLang();
       syncSample();
       Object.assign($("slow"), { min: s.slowMin, max: s.slowMax, value: s.slow });
@@ -295,7 +323,11 @@
     }
     $("form").addEventListener("change", (e) => {
       if (e.target.id === "sample") return;
-      if (e.target.id.startsWith("llm_")) showPick(e.target.id.slice(4));
+      if (e.target.id.startsWith("llm_")) { // a new pick makes the last test result stale
+        const l = e.target.id.slice(4);
+        showPick(l);
+        $("res_" + l).textContent = "";
+      }
       speakHint();
       dirty(true);
     });
@@ -303,7 +335,8 @@
     for (const b of document.querySelectorAll(".refresh")) b.addEventListener("click", async () => {
       status("Reloading model lists…");
       await loadModels(true);
-      status("Model lists reloaded.", "ok");
+      const bad = lists.ollama.error || lists.claude.error;
+      status(bad ? "Model lists reloaded with errors (see notices)." : "Model lists reloaded.", bad ? "err" : "ok");
     });
     $("clearKey").addEventListener("click", () => {
       clearKey = true;
@@ -314,7 +347,7 @@
       const l = b.dataset.test, c = choice(l), out = $("res_" + l);
       b.disabled = true;
       Object.assign(out, { className: "hint", textContent: `Testing ${c.model}…` });
-      try { const r = await call(json({ lang: l, ...c }), testApi); Object.assign(out, { className: "hint ok", textContent: `“${r.reply}” · ${r.ms} ms` }); }
+      try { const r = await call(json({ lang: l, ...c }), testApi); Object.assign(out, { className: "hint ok", textContent: `${c.model}: “${r.reply}” · ${r.ms} ms` }); }
       catch (err) { Object.assign(out, { className: "hint err", textContent: `${short[l]} test failed: ` + err.message }); }
       finally { b.disabled = false; }
     });
@@ -327,6 +360,7 @@
     });
     $("form").addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (!cur) return status("Nothing to save: the settings did not load. Reload the page.", "err");
       $("save").disabled = true;
       status("Saving…");
       const extra = { llm: Object.fromEntries(cur.langs.map((l) => [l, choice(l)])), ollama_url: $("ollama_url").value };
