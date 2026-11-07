@@ -51,4 +51,11 @@ cmp -s "$r/etc/myvector/diskguard.sh" "$robot/diskguard/diskguard.sh" || die "di
 out2=$(GUARD=$guard run "$r" "$body") || die "diskguard 2nd run: $out2"
 [[ $out1 == *"diskguard: installed"* && $out2 == "diskguard: already installed"$'\n'"PASS: "* ]] ||
   die "diskguard runs: 1st=[$out1] 2nd=[$out2]"
+tmr=/etc/systemd/system/myvector-diskguard.timer
+echo stale >"$r$tmr"; : >"$r/calls"
+out3=$(GUARD=$guard run "$r" "$body") || die "diskguard upgrade run: $out3"
+[[ $out3 == *"changed $tmr"*"diskguard: installed"* ]] && grep -q 'daemon-reload' "$r/calls" && grep -q ' ro ' "$r/proc/mounts" ||
+  die "diskguard upgrade (unit changed, wants link present): [$out3] calls=[$(cat "$r/calls")]"
+if out4=$(GUARD=bad! run "$r" "$body" 2>&1); then die "diskguard with an undecodable GUARD passed: $out4"; fi
+cmp -s "$r/etc/myvector/diskguard.sh" "$robot/diskguard/diskguard.sh" || die "an undecodable GUARD overwrote diskguard.sh"
 echo "etc.sh host test OK"
