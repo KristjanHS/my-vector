@@ -1,6 +1,9 @@
 package quiet
 
 import (
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
@@ -104,5 +107,23 @@ func TestUntilRejectsGarbage(t *testing.T) {
 	os.WriteFile(p, []byte("soon\n"), 0o644)
 	if _, _, err := Until(); err == nil {
 		t.Fatal("garbage lock file parsed without error")
+	}
+}
+
+func TestNapTimeout(t *testing.T) {
+	t.Setenv("MYVECTOR_NAP", "")
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-block }))
+	t.Cleanup(func() { close(block); srv.Close() })
+	oldURL, oldT := NapURL, NapTimeout
+	NapURL, NapTimeout = func(string) string { return srv.URL }, 50*time.Millisecond
+	t.Cleanup(func() { NapURL, NapTimeout = oldURL, oldT })
+	start := time.Now()
+	if err := Nap("x", time.Now().Add(time.Hour)); err == nil || time.Since(start) > time.Second {
+		t.Errorf("Nap = %v after %v, want a timeout error within NapTimeout", err, time.Since(start))
+	}
+	t.Setenv("MYVECTOR_NAP", "off")
+	if err := Nap("x", time.Time{}); !errors.Is(err, ErrNapOff) {
+		t.Errorf("MYVECTOR_NAP=off: Nap = %v, want ErrNapOff", err)
 	}
 }

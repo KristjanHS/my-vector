@@ -145,7 +145,7 @@ func main() {
 	fmt.Println("llm: " + strings.Join(strings.Fields(a), " "))
 }
 
-// isolate points vars.ApiConfigPath, lang.Path, prompt.Path and vars.JdocsPath at temp copies of the files (run from chipper/).
+// isolate points vars.ApiConfigPath, lang.Path, prompt.Path, vars.JdocsPath and the quiet lock at temp copies (run from chipper/); no nap.
 // vars.ReadConfig rewrites apiConfig.json and, when env STT_SERVICE differs from it, blanks STT.provider; the copy takes that.
 func isolate() {
 	src := vars.ApiConfigPath
@@ -167,6 +167,8 @@ func isolate() {
 	if tmp, err = os.MkdirTemp("", "routeprobe"); err != nil {
 		die(2, "%v", err)
 	}
+	os.Setenv("MYVECTOR_QUIET_FILE", filepath.Join(tmp, "quiet-until")) // a probed "shut up" never locks the real robot
+	os.Setenv("MYVECTOR_NAP", "off")
 	promptSrc := prompt.Path()
 	langSrc := lang.Path() // beside apiConfig.json (vars/fork_lang.go); follows ApiConfigPath to the copy below
 	vars.ApiConfigPath = filepath.Join(tmp, "apiConfig.json")
