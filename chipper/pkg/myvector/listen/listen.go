@@ -49,7 +49,18 @@ func Match(text string) (on, ok bool) {
 	return false, false
 }
 
-type bot struct{ since, lastHeard, lastSpoke time.Time }
+type span struct{ from, to time.Time }
+
+type line struct {
+	at   time.Time
+	text string
+}
+
+type bot struct {
+	since, lastHeard, lastSpoke time.Time
+	echo                        []span // A6 windows, EchoPad included
+	lines                       []line // A5 transcript, last Window
+}
 
 // State is RAM-only (a wire-pod restart turns every robot off), keyed by ESN.
 type State struct {
@@ -129,6 +140,60 @@ func (s *State) LastSpoke(esn string) time.Time {
 		return b.lastSpoke
 	}
 	return time.Time{}
+}
+
+// Turn stamps a wake-word ask at: an utterance for IdleOff, and its echo window up to TurnTail.
+func (s *State) Turn(esn string, at time.Time) {
+	s.stamp(esn, func(b *bot) { b.lastHeard = at; b.addEcho(at, at.Add(TurnTail)) })
+}
+
+// Spoken stamps Vector's own speech from..to as an echo window.
+func (s *State) Spoken(esn string, from, to time.Time) {
+	s.stamp(esn, func(b *bot) { b.addEcho(from, to) })
+}
+
+func (b *bot) addEcho(from, to time.Time) {
+	keep := b.echo[:0]
+	for _, w := range b.echo {
+		if w.to.After(from.Add(-Window)) {
+			keep = append(keep, w)
+		}
+	}
+	b.echo = append(keep, span{from.Add(-EchoPad), to.Add(EchoPad)})
+}
+
+// Echo reports whether start..end overlaps one of esn's echo windows.
+func (s *State) Echo(esn string, start, end time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if b, ok := s.bots[esn]; ok {
+		for _, w := range b.echo {
+			if start.Before(w.to) && end.After(w.from) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hear returns the transcript lines within Window of now, then appends text.
+func (s *State) hear(esn string, now time.Time, text string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b, ok := s.bots[esn]
+	if !ok {
+		return nil
+	}
+	var before []string
+	keep := b.lines[:0]
+	for _, l := range b.lines {
+		if now.Sub(l.at) <= Window {
+			keep = append(keep, l)
+			before = append(before, l.text)
+		}
+	}
+	b.lines = append(keep, line{now, text})
+	return before
 }
 
 func (s *State) stamp(esn string, f func(*bot)) {
