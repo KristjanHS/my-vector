@@ -58,3 +58,20 @@ func TestForkDoSayTextUsesSavedVoice(t *testing.T) {
 		t.Errorf("et-EE: service asked %v, want the saved T1 mari", asked)
 	}
 }
+
+func TestForkClockColon(t *testing.T) {
+	for in, want := range map[string]string{
+		"Kell on 10.10.":          "Kell on 10:10.",
+		"Praegu on kell 9.43.":    "Praegu on kell 9:43.",
+		"kell 23.05 ja kell 0.05": "kell 23:05 ja kell 0:05",
+		"kella 10.10-ks":          "kella 10:10-ks",
+		"kell 10:10 juba":         "kell 10:10 juba",
+		"Pii on 3.14.":            "Pii on 3.14.",
+		"kell 24.10 ei ole aeg":   "kell 24.10 ei ole aeg",
+		"kell 10.100 ei ole aeg":  "kell 10.100 ei ole aeg",
+	} {
+		if got := forkClockColon(in); got != want {
+			t.Errorf("forkClockColon(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
