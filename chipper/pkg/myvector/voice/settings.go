@@ -22,6 +22,7 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
@@ -396,6 +397,9 @@ func DemoHandler(robotFor func(*http.Request) (context.Context, *vector.Vector, 
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", "POST")
 			http.Error(w, "POST", http.StatusMethodNotAllowed)
+			return
+		}
+		if quiet.Refuse(w) {
 			return
 		}
 		d := demoRequest{Settings: Settings{T2: DefaultVoice, T1ET: DefaultETVoice, T2ET: DefaultETVoice}} // the demo speaks T1; t2, t1_et, t2_et may be omitted
