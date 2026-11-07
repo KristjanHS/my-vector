@@ -1,5 +1,5 @@
-"""STT misses of "Kell on" (and hour-minute fillers) in mari's clock line per Piper noise level → server.PIPER_NOISE (needs myvector-stt, et-EE):
-robot/work/tts/venv/bin/python -I tts/noise_sweep.py [takes=20]"""
+"""STT misses of "Kell on" (and hour-minute fillers) in an Estonian voice's clock line per Piper noise level → server.PIPER_NOISE (needs myvector-stt, et-EE):
+robot/work/tts/venv/bin/python -I tts/noise_sweep.py [takes=20] [voice=mari]"""
 
 import json
 import os
@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import server  # noqa: E402
 from et_text import normalize  # noqa: E402
 
-VOICE = server.VOICES["mari"][1]
+VOICE = server.VOICES[sys.argv[2] if len(sys.argv) > 2 else "mari"][1]
 LEVELS = [(0.667, 0.8), (0.4, 0.6), (0.2, 0.4)]  # the model default first
 TIMES = ["20:47", "12:00", "08:05", "09:26"]  # 09:26: the "kuni" filler case (bdea4c0)
 FILLER = re.compile(r"\b(kuni|või)\b", re.I)

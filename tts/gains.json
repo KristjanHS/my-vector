@@ -10,5 +10,13 @@
   "mari": {
     "gain_db": 2.0,
     "measured_lufs": -16.0
+  },
+  "albert": {
+    "gain_db": 3.7,
+    "measured_lufs": -17.7
+  },
+  "kalev": {
+    "gain_db": 2.8,
+    "measured_lufs": -16.8
   }
 }

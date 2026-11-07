@@ -76,7 +76,9 @@ func TestSettingsValidate(t *testing.T) {
 		{en("cori", "bella", 1), false},
 		{en("mari", "cori", 1), false}, // Estonian-only
 		{en("cori", "mari", 1), false},
-		{Settings{"cori", "cori", "af_bella", "mari", 1}, false}, // E30: the et pair is mari only
+		{Settings{"cori", "cori", "af_bella", "mari", 1}, false}, // the et pair takes Estonian voices only
+		{Settings{"cori", "cori", "albert", "kalev", 1}, true},
+		{en("kalev", "cori", 1), false},
 		{Settings{"cori", "cori", "mari", Stock, 1}, false},
 		{Settings{"cori", "cori", "", "mari", 1}, false},
 		{en("cori", "cori", 0.49), false},
@@ -168,7 +170,7 @@ func TestSettingsHandler(t *testing.T) {
 		t.Fatalf("GET: %d %s", w.Code, w.Body)
 	}
 	if got.Settings != Defaults() || got.Lang != "en-US" || strings.Join(got.Langs, ",") != "en-US,et-EE" ||
-		strings.Join(got.Voices["en-US"], ",") != "af_bella,cori,stock" || strings.Join(got.Voices["et-EE"], ",") != "mari" ||
+		strings.Join(got.Voices["en-US"], ",") != "af_bella,cori,stock" || strings.Join(got.Voices["et-EE"], ",") != "mari,albert,kalev" ||
 		got.SlowMin != 0.5 || got.SlowMax != 2 {
 		t.Fatalf("GET reply: %+v", got)
 	}
