@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Crash-review E0/E1: N plain restarts of anki-robot.target (stop, 5 s, start; no gdb), 60 s watch each.
+# Crash rate per robot start, no gdb: N plain restarts of anki-robot.target (stop, 5 s, start), or with -d N ship-style
+# deploys of the clone's current _build (deploy-v.sh, then settings.sh — build first); 60 s watch each.
 # Per round: S1 (vic-anim SeAssert), S2 (vic-engine SIGSEGV), S3 (vic-anim start timeout), other crashes, new dumps.
-# Every restart plays the power-on sound. Usage: restarts.sh [rounds=5]   exit 0 = no crash, 1 = crash seen, 2 = setup.
-# Output: robot/work/crash-review/restarts-<timestamp>/rounds.log (+ round-N.journal).
+# Every round plays the power-on sound. Usage: restarts.sh [-d] [rounds=5]   exit 0 = no crash, 1 = crash seen, 2 = setup.
+# Output: robot/work/crash-review/restarts-<timestamp>/rounds.log (+ round-N.journal, deploy-N.log).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=robot/env.sh
 . "$here/../env.sh"
+deploy=0
+[[ ${1:-} == -d ]] && { deploy=1; shift; }
 max=${1:-5}
+src=$here/../work/wire-os-victor
 [[ $max =~ ^[1-9][0-9]*$ ]] || { echo "SETUP: rounds must be a positive integer" >&2; exit 2; }
 watch=60
 dumps=/data/data/com.anki.victor/cache/crashDumps
@@ -16,6 +20,11 @@ mark=/tmp/myvector-restarts.mark
 # shellcheck disable=SC2029 # the remote commands are built here on purpose
 ssh_() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 ssh_ true || { echo "SETUP: robot unreachable over ssh" >&2; exit 2; }
+if ((deploy)); then
+  tip=$("$here/../firmware/apply.sh" --check 2>/dev/null | tail -1) || tip=
+  [[ -n $tip && $(git -C "$src" rev-parse HEAD) == "$tip" ]] ||
+    { echo "SETUP: the clone is not at the series tip (run robot/firmware/apply.sh, then build)" >&2; exit 2; }
+fi
 
 out=$here/../work/crash-review/restarts-$(date +%Y%m%d-%H%M%S)
 mkdir -p "$out"
@@ -27,8 +36,14 @@ for ((i = 1; i <= max; i++)); do
   # A fault-code restart in flight (fault 800 = a unit failed) would race our restart.
   for _ in $(seq 30); do ssh_ 'systemctl is-active -q fault-code.service' 2>/dev/null || break; sleep 2; done
   t0=$(ssh_ "touch $mark; date +%s") || { log "round $i: ssh failed"; sleep 10; continue; }
-  ssh_ 'systemctl stop anki-robot.target; sleep 5; systemctl start --no-block anki-robot.target' ||
-    { log "round $i: restart ssh failed"; continue; }
+  if ((deploy)); then
+    # Same order as robot/firmware/ship.sh: deploy-v.sh (stop, rsync, start), then settings.sh.
+    (cd "$src" && script -qec ./build/deploy-v.sh /dev/null && "$here/../firmware/settings.sh") \
+      >"$out/deploy-$i.log" 2>&1 </dev/null || { log "round $i: deploy failed, see $out/deploy-$i.log"; exit 2; }
+  else
+    ssh_ 'systemctl stop anki-robot.target; sleep 5; systemctl start --no-block anki-robot.target' ||
+      { log "round $i: restart ssh failed"; continue; }
+  fi
   sleep "$watch"
   j=$out/round-$i.journal
   ssh_ "journalctl -o short-iso --no-pager --since @$t0" >"$j" 2>/dev/null || true
