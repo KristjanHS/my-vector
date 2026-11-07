@@ -92,7 +92,7 @@ main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-d
 src=${VICTOR_SRC:-$main/robot/work/wire-os-victor}
 if [[ ! -d $src/.git ]]; then
   ((!built)) || die "--built needs the victor clone at $src"
-  echo "SKIP: no victor clone at $src (patch re-export, src markers)"; exit 0
+  echo "SKIP: no victor clone at $src (patch re-export, src markers, S6 se_lib math)"; exit 0
 fi
 
 # S2: *.patch + series are a byte-identical re-export of pin + series.
@@ -113,16 +113,33 @@ echo "src markers OK ($n)"
 
 # S6: the soft-float se_lib archive calls hard-float libm only through math_abi_bridge.o's pcs("aapcs") wrappers
 # (a direct call passes floats in core registers; libm reads VFP ones: the vic-anim nrgainv.c:191 SeAssert).
+# Float functions = the SDK's libm exports + libc's float classifiers (glibc keeps __isinff & co. in libc).
+# Flagged: an undefined ref (U or w) to one of them, outside the bridge, that no archive member defines itself.
 se_a=3rd/signalEssence/v009/vicos-highres/platform/anki_victor_example/build/libsignalessence_softfp.a
-math_re='(a?sin|a?cos|a?tan|atan2|sinh|cosh|tanh|sincos|exp|exp2|expm1|log|log2|log10|log1p|pow|sqrt|cbrt|hypot|ceil|floor|round|lround|trunc|rint|lrint|fmod|fabs|ldexp|frexp|modf|__isinf|__isnan|__finite|__fpclassify|__signbit)f?'
-se_tmp=$(mktemp)
-git -C "$src" show "$tip:$se_a" >"$se_tmp"
-se_syms=$(nm -A "$se_tmp" 2>/dev/null || true)
-rm -f "$se_tmp"
-grep -qE ':math_abi_bridge.o: *[0-9a-f]+ T __se_pow$' <<<"$se_syms" || die "S6: nm cannot read $se_a (the check would pass vacuously)"
-unbridged=$(grep -E " U ${math_re}(_finite)?\$" <<<"$se_syms" | grep -v ':math_abi_bridge.o:' | sed 's/^[^:]*://' || true)
-[[ -z $unbridged ]] || die "S6: $se_a calls libm without a math_abi_bridge.o wrapper: $(echo $unbridged)"
-echo "se_lib math bridged OK"
+sysroot=$src/anki-deps/vicos-sdk/dist/6.0.0-r08/sysroot/usr/lib
+if [[ ! -f $sysroot/libm.so.6 || ! -f $sysroot/libc.so.6 ]]; then
+  ((!built)) || die "S6: no SDK libm/libc at $sysroot"
+  echo "SKIP: S6 (no SDK sysroot at $sysroot; the first build fetches it)"
+else
+  dyn() { nm -D --defined-only "$1" 2>/dev/null | awk '{sub(/@.*/, "", $NF); print $NF}' || true; }
+  float_fns=$({ dyn "$sysroot/libm.so.6"
+    dyn "$sysroot/libc.so.6" | grep -E '^(__)?(isinf|isnan|finite|frexp|ldexp|modf|scalbn|copysign|signbit|fpclassify)[fl]?$' || true
+  } | sort -u)
+  grep -qx sin <<<"$float_fns" && grep -qx __isinff <<<"$float_fns" || die "S6: cannot read the SDK libm/libc exports (the check would pass vacuously)"
+  se_tmp=$(mktemp)
+  git -C "$src" show "$tip:$se_a" >"$se_tmp" || { rm -f "$se_tmp"; die "S6: cannot read $se_a at tip"; }
+  se_syms=$(nm -A "$se_tmp" 2>/dev/null || true)
+  rm -f "$se_tmp"
+  grep -qE ':math_abi_bridge.o: *[0-9a-f]+ T ' <<<"$se_syms" || die "S6: nm cannot read $se_a, or it has no math_abi_bridge.o (the check would pass vacuously)"
+  # nm -A rows: <archive>:<member>:[addr] <type> <name>
+  unbridged=$(awk 'FILENAME == ARGV[1] {fn[$0] = 1; next}
+    {split($1, f, ":"); t = $(NF-1); s = $NF}
+    t ~ /^[TtWVDdBbRr]$/ {def[s] = 1}
+    t ~ /^[Uw]$/ && f[2] != "math_abi_bridge.o" && (s in fn) {ref[f[2] ": " s] = s}
+    END {for (r in ref) if (!(ref[r] in def)) print r}' <(printf '%s\n' "$float_fns") - <<<"$se_syms" | sort)
+  [[ -z $unbridged ]] || die "S6: $se_a calls libm/libc float functions without a math_abi_bridge.o wrapper: $(echo $unbridged)"
+  echo "se_lib math bridged OK ($(wc -l <<<"$float_fns") float functions)"
+fi
 ((built)) || exit 0
 
 # S4: each bin marker is in the built file, and every patched JSON is copied into _build unchanged.

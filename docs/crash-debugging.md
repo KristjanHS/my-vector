@@ -22,4 +22,4 @@ Order: catalogue → plain restarts → no-gdb deploys → gdb only once a crash
 ## Setup
 
 Host: `gdb-multiarch` (apt). Robot: `gdbserver` ships in the WireOS image. Outputs: gitignored `robot/work/crash-review/`, `robot/work/seassert/`.
-Last hunt: `2026-11-07-vector-crash-review.md (docs/plans/)`; SeAssert evidence + resume steps: `2026-11-07-vic-anim-seassert.md (docs/plans/)`.
+Last hunt: `2026-11-07-vector-crash-review.md (docs/plans/)`; SeAssert root cause + fix (patch 0012): `2026-11-07-vic-anim-seassert.md (docs/plans/archive/)`.
