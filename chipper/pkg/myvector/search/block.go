@@ -14,8 +14,8 @@ type Result struct{ Title, URL, Snippet, Date string }
 // Snippets per brain and their rune caps (plan W9); titles are capped at titleRunes.
 const (
 	SnippetsOllama, SnippetsClaude = 3, 5
-	runesOllama, runesClaude       = 280, 400
-	titleRunes                     = 100
+	runesOllama, runesClaude       = 160, 360
+	titleRunes                     = 60
 )
 
 func clip(s string, n int) string {
@@ -34,10 +34,15 @@ func render(rs []Result, runes int) string {
 		if u, err := url.Parse(r.URL); err == nil && u.Host != "" {
 			src = strings.TrimPrefix(u.Host, "www.")
 		}
-		if r.Date != "" {
-			src += ", " + r.Date
+		if r.Date != "" && src != "" {
+			src += ", "
 		}
-		fmt.Fprintf(&b, "\n- %s (%s): %s", clip(r.Title, titleRunes), clip(src, titleRunes), clip(r.Snippet, runes))
+		src += r.Date
+		fmt.Fprintf(&b, "\n- %s", clip(r.Title, titleRunes))
+		if src != "" {
+			fmt.Fprintf(&b, " (%s)", clip(src, titleRunes))
+		}
+		fmt.Fprintf(&b, ": %s", clip(r.Snippet, runes))
 	}
 	return b.String()
 }
