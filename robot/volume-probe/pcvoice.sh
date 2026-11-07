@@ -3,7 +3,7 @@
 # T1 = wire-pod demo endpoint (LLM-answer path: SDK stream, or SayText for stock);
 # T2 = engine console SayText with the robot voice file set (robot-internal path). Restores the voice file.
 # Pass = a PC voice's active level within $BAR dB of the same track's stock line.
-# Usage: [RUNS=2] [BAR=3] [WORDS=a-b-c] pcvoice.sh [voice…] — default voices: af_bella cori; mari speaks T1 as et-EE, the rest en-US.
+# Usage: [RUNS=2] [BAR=3] [WORDS=a-b-c] pcvoice.sh [voice…] — default voices: af_bella cori; mari/albert/kalev speak T1 as et-EE, the rest en-US.
 set -uo pipefail
 self=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/volume-probe/lib.sh
@@ -22,7 +22,7 @@ drop() { mv "$1" "$1.bad"; echo "WARN: $2 — run dropped" >&2; } # a fallback o
 voices=(stock "$@"); ((${#voices[@]} > 1)) || voices=(stock af_bella cori)
 for v in "${voices[@]}"; do
   case $v in # the demo speaks lang's T1 (default: the active lang) — name it, or another lang's pair would speak
-  mari) pick="\"lang\":\"et-EE\",\"t1\":\"af_bella\",\"t1_et\":\"$v\"" ;; # t1 must still be a valid en-US voice
+  mari | albert | kalev) pick="\"lang\":\"et-EE\",\"t1\":\"af_bella\",\"t1_et\":\"$v\"" ;; # t1 must still be a valid en-US voice
   *) pick="\"lang\":\"en-US\",\"t1\":\"$v\"" ;;
   esac
   for i in $(seq "$RUNS"); do # T1: the call returns once the line has played
