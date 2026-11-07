@@ -3,7 +3,8 @@
 # Reads the robot's kept log (/data/log/keep, ~20 h deep) for the night that starts on DATE at NIGHT_FROM.
 # Usage: night-check.sh [YYYY-MM-DD]   default: the most recent night start (yesterday's if run before NIGHT_FROM).
 #   env NIGHT_FROM=21:00 NIGHT_TO=09:00 (the firmware's SleepTracker defaults); NIGHT_LOG_DIR=<dir> reads that local dir, no ssh (host test).
-# Allowed: GoToSleep anims, the InitialWakeUp anim ≤30 s after a vic-engine start (a ship; counted as restarts),
+# Allowed: GoToSleep anims, the InitialWakeUp anim ≤30 s after a vic-engine start ≤60 s after a system-partition remount
+#   (a ship; printed + counted as ships — a reboot's remount carries the stale boot clock, so a reboot stays a hit),
 #   and anything within 60 s after a voice event (wake word, listening, TTS, SDK, voice intent).
 # Hit: any other logged animation or feature start, a wake_up not for VoiceCommand/TimerShouldRing, a fall into LightSleep.
 # Blind spots: DAS-muted idle anims (e.g. ObservingLookUp) and scripted head moves are never logged as animations.
@@ -33,20 +34,21 @@ cat $(ls -tr messages.* 2>/dev/null) messages | awk -v s="$s" -v e="$e" -v over=
   function key(stamp,   m) { m = substr(stamp, 1, 2) + 0; if (sm == 12 && m == 1) m = 13; return sprintf("%02d%s", m, substr(stamp, 3)) }
   function sec(t) { return substr(t, 7, 2) * 3600 + substr(t, 10, 2) * 60 + substr(t, 13, 2) }
   function hit(what) { hits++; print "  hit (" what "): " substr(l, 1, 170) }
-  BEGIN { sm = substr(s, 1, 2) + 0; ks = key(s); ke = key(e); vlast = estart = -1e9 }
+  BEGIN { sm = substr(s, 1, 2) + 0; ks = key(s); ke = key(e); vlast = estart = rmnt = -1e9 }
   $1 !~ /^[0-9][0-9]-[0-9][0-9]$/ { next }
   # first/last in file order: a boot line can carry the stale pre-sync clock (e.g. "10-25" in a November log)
   { k = key($1 " " $2); if (first == "") first = k; last = k }
   k < ks || k >= ke { next }
   { t = sec(k) + (substr(k, 1, 5) != substr(ks, 1, 5)) * 86400 }
-  / systemd 1 Started Victor engine daemon\./ { estart = t; next }
+  / kernel  EXT4-fs \(mmcblk0p22\): re-mounted\./ { rmnt = t; next }
+  / systemd 1 Started Victor engine daemon\./ { if (t - rmnt <= 60) estart = t; next }
   index($0, "@") == 0 { next }
   {
     l = $0; gsub("\037", "|", l)
     if (l ~ /wakeword\.triggered|speech_trigger_recognized|\|VC_|tts|\|SDK\||voice_command|VoiceIntent|\|Voice\|/) vlast = t
     invoice = t >= vlast && t - vlast <= 60
   }
-  l ~ /@action\.play_animation\|[^|]*\|[^|]*\|InitialWakeUp\|/ && t >= estart && t - estart <= 30 { restarts++; next }
+  l ~ /@action\.play_animation\|[^|]*\|[^|]*\|InitialWakeUp\|/ && t >= estart && t - estart <= 30 { ships++; print "  ship: " substr(l, 1, 170); next }
   l ~ /\|GoToSleepSleeping\|/ { asleep++ }
   l ~ /@behavior\.sleeping\.falling_asleep/ { sleeps++; if (l ~ /NightWindow/) nw++ }
   l ~ /@behavior\.sleeping\.falling_asleep\|[^|]*\|LightSleep/ { hit("light sleep at night") }
@@ -57,7 +59,7 @@ cat $(ls -tr messages.* 2>/dev/null) messages | awk -v s="$s" -v e="$e" -v over=
     why = first == "" || first > ks ? "log does not reach back to the night start" \
       : !over ? "night not over yet" : last < ke ? "log stops at " last " (robot down or syslog stalled?)" \
       : !asleep ? "no sleeping anim in the window" : ""
-    printf "log %s .. %s: hits %d, restarts %d, sleeping anims %d, falling asleep %d (NightWindow %d)\n", first, last, hits, restarts, asleep, sleeps, nw
+    printf "log %s .. %s: hits %d, ships %d, sleeping anims %d, falling asleep %d (NightWindow %d)\n", first, last, hits, ships, asleep, sleeps, nw
     v = hits ? "FAIL" : why != "" ? "INCOMPLETE" : "PASS"
     if (v == "INCOMPLETE") print "  (" why ")"
     print v; exit v == "PASS" ? 0 : v == "FAIL" ? 1 : 3
