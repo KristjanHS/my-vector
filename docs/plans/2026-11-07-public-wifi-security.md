@@ -113,6 +113,8 @@ only to the laptop's tunnel IP, on any network, home included, and nothing needs
 - **Remaining unknowns (spike):** `tailscaled` resident memory next to vic-engine/vic-anim (budget ~40 MB); startup ordering
   with connman; keeping the tailnet node key in `/data` (tag the node, turn key expiry off, revoke if the robot is lost);
   vic-cloud reaching `escapepod.local` → laptop tailnet IP via `/etc/hosts` (ship through `ship.sh`, rootfs is RO).
+- **WireGuard variant:** `wireguard-go` + `wg` + iproute2 6.19 (present) works on the same TUN, but needs a reachable UDP
+  endpoint (home port-forward + DDNS, or a WG server on the home router): no NAT traversal or relay, so it fails in S1 under client isolation.
 - **Robot firewall:** iptables INPUT on `wlan0` → allow ESTABLISHED, DHCP and Tailscale's UDP; drop the rest
   (22/443/8080/8888–8890/5102–5103). SSH and SDK are reachable on `tailscale0` only.
 - **Doesn't fix** captive portals (the robot's WiFi still has to get online), so a phone hotspot or travel router is still
