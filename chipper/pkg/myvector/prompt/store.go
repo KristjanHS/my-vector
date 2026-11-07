@@ -53,21 +53,30 @@ type Store struct {
 	About     string              `json:"about,omitempty"`
 }
 
-// Load reads the store; a missing file is empty, an unreadable or unparsable one is empty and logged.
+// Load reads the store for rendering; an unreadable or unparsable file is empty and logged.
 func Load() Store {
+	s, err := load()
+	if err != nil {
+		logf("myvector prompt: " + err.Error() + "; using the built-in templates")
+	}
+	return s
+}
+
+// load reads the store; a missing file is empty, an unreadable or unparsable one an error (I/O, not Invalid),
+// so a write never replaces a file it could not read.
+func load() (Store, error) {
 	var s Store
 	b, err := os.ReadFile(Path())
 	if errors.Is(err, fs.ErrNotExist) {
-		return s
+		return s, nil
 	}
 	if err == nil {
 		err = json.Unmarshal(b, &s)
 	}
 	if err != nil {
-		logf("myvector prompt: " + Path() + ": " + err.Error() + "; using the built-in templates")
-		return Store{}
+		return Store{}, fmt.Errorf("%s: %w; fix or delete it", Path(), err)
 	}
-	return s
+	return s, nil
 }
 
 // Live is brain's template to render, completed: the saved one if it passes Validate, else Default (logged).
@@ -163,7 +172,10 @@ var mu sync.Mutex
 func Save(brain, tmpl string) error {
 	mu.Lock()
 	defer mu.Unlock()
-	s := Load()
+	s, err := load()
+	if err != nil {
+		return err
+	}
 	if err := Validate(brain, tmpl, s.about()); err != nil {
 		return err
 	}
@@ -174,7 +186,10 @@ func Save(brain, tmpl string) error {
 func Restore(brain string, i int) error {
 	mu.Lock()
 	defer mu.Unlock()
-	s := Load()
+	s, err := load()
+	if err != nil {
+		return err
+	}
 	v := s.Versions[brain]
 	if i < 0 || i >= len(v) {
 		return Invalid{fmt.Errorf("no %s version %d", brain, i)}
@@ -192,7 +207,11 @@ func Reset(brain string) error {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	t := maps.Clone(Load().Templates)
+	s, err := load()
+	if err != nil {
+		return err
+	}
+	t := maps.Clone(s.Templates)
 	delete(t, brain)
 	return conf.Update(Path(), map[string]any{"templates": t})
 }
@@ -205,7 +224,10 @@ func SaveAbout(about string) error {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	s := Load()
+	s, err := load()
+	if err != nil {
+		return err
+	}
 	for _, b := range []string{Claude, Ollama} {
 		t, ok := s.Templates[b]
 		if !ok {

@@ -1,11 +1,15 @@
 package prompt
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 )
 
 // useStore points Path at a temp file for t and captures log lines.
@@ -136,5 +140,46 @@ func TestReset(t *testing.T) {
 	s := Load()
 	if s.Live(Claude) != Default(Claude) || s.Templates[Ollama] != "theirs" || s.About != "Mari" || len(s.Versions[Claude]) != 1 {
 		t.Errorf("after reset: %+v", s)
+	}
+}
+
+func TestCorruptStoreNotOverwritten(t *testing.T) {
+	path, _ := useStore(t)
+	writes := map[string]func() error{
+		"Save":      func() error { return Save(Claude, "Hi.") },
+		"SaveAbout": func() error { return SaveAbout("Mari") },
+		"Reset":     func() error { return Reset(Claude) },
+		"Restore":   func() error { return Restore(Claude, 0) },
+	}
+	for _, bad := range []string{`{not json`, `{"versions":{"claude":"x"},"about":"keep me"}`} {
+		for name, write := range writes {
+			os.WriteFile(path, []byte(bad), 0o644)
+			err := write()
+			if err == nil || errors.As(err, new(Invalid)) || !strings.Contains(err.Error(), "fix or delete it") {
+				t.Errorf("%s on %s: err = %v, want a non-Invalid fix-or-delete error", name, bad, err)
+			}
+			if b, _ := os.ReadFile(path); string(b) != bad {
+				t.Errorf("%s on %s rewrote the file: %s", name, bad, b)
+			}
+		}
+	}
+}
+
+// Every tag renders at least as long in et-EE as in en-US, so only an Estonian-only overrun is constructible.
+func TestValidateBudgetBothLanguages(t *testing.T) {
+	render := func(tmpl, l string) string {
+		v := Sample(l)
+		v.User = ""
+		return Render(tmpl, v)
+	}
+	tmpl := Default(Ollama) + "\n"
+	pad := 3*Budget(Ollama) + 1 - utf8.RuneCountInString(render(tmpl, lang.Estonian))
+	tmpl += strings.Repeat("x", pad)
+	et, en := Estimate(render(tmpl, lang.Estonian)), Estimate(render(tmpl, lang.English))
+	if et != Budget(Ollama)+1 || en > Budget(Ollama) {
+		t.Fatalf("setup: et-EE %d en-US %d tokens, want %d and <= %d", et, en, Budget(Ollama)+1, Budget(Ollama))
+	}
+	if err := Validate(Ollama, tmpl, ""); err == nil || !strings.Contains(err.Error(), "budget") {
+		t.Errorf("over budget in et-EE only: err = %v", err)
 	}
 }

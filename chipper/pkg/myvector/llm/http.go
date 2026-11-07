@@ -245,8 +245,8 @@ func ping(ctx context.Context, t Target) (string, int64, error) {
 	defer cancel()
 	req := openai.ChatCompletionRequest{Model: t.Model, MaxCompletionTokens: 32,
 		Messages: []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: TestPrompt}}}
-	if t.Ollama() {
-		req.ReasoningEffort = "none"
+	if t.Ollama() { // Ollama's /v1 ignores max_completion_tokens
+		req.ReasoningEffort, req.MaxTokens, req.MaxCompletionTokens = "none", 32, 0
 	}
 	start := time.Now()
 	resp, err := NewClient(t).CreateChatCompletion(ctx, req)

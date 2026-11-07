@@ -27,7 +27,7 @@ func Default(brain string) string {
 	return defaults[Claude]
 }
 
-// ReplyCap is MaxCompletionTokens for brain's replies.
+// ReplyCap caps brain's reply tokens: sent as max_tokens to Ollama, else max_completion_tokens (ttr forkReplyCap).
 func ReplyCap(brain string) int {
 	if brain == Ollama {
 		return 300

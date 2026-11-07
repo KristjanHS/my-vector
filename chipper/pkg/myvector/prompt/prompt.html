@@ -51,7 +51,7 @@
     button:disabled { opacity: .55; cursor: progress; }
     button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
     button.primary:hover:not(:disabled) { background: var(--accent-hover); }
-    button.primary.dirty::after { content: " •"; }
+    button.dirty::after { content: " •"; }
     button.link { border: 0; background: none; padding: 0; color: var(--accent); font-size: 13px; }
     button.link:hover { text-decoration: underline; }
     select, input[type=text], input[type=password], textarea {
@@ -151,21 +151,29 @@
       return r.json();
     }
 
-    function show() {
+    const tmplDirty = () => !!cur && $("tmpl").value !== cur.brains[brain].template;
+    const aboutDirty = () => !!cur && $("about").value.trim() !== cur.about;
+
+    // keep.tmpl / keep.about leave that textarea's unsaved text in place.
+    function show(keep = {}) {
       const b = cur.brains[brain];
       document.querySelectorAll("#tabs button").forEach((t) => t.setAttribute("aria-selected", t.dataset.brain === brain));
-      $("tmpl").value = b.template;
+      if (!keep.tmpl) $("tmpl").value = b.template;
       $("versions").replaceChildren(...(b.versions || []).map((v, i) => {
         const li = document.createElement("li"), code = document.createElement("code"), btn = document.createElement("button");
         code.textContent = (i === 0 && b.saved && v === b.template ? "live · " : "") + v.replace(/\s+/g, " ");
-        btn.type = "button"; btn.textContent = "Restore"; btn.onclick = () => post({ action: "restore", brain, version: i }, "Restored");
+        btn.type = "button"; btn.textContent = "Restore";
+        btn.onclick = () => (!tmplDirty() || confirm("Discard unsaved template changes?")) &&
+          post({ action: "restore", brain, version: i }, "Restored", { about: aboutDirty() });
         li.append(code, btn); return li;
       }));
       if (!(b.versions || []).length) $("versions").innerHTML = '<li class="hint">None yet: the built-in template is live.</li>';
-      $("about").value = cur.about;
-      $("warn").innerHTML = cur.upstream_prompt_ignored ?
-        "<li>Wire-pod's own “LLM prompt” setting is ignored: this page's template is used instead.</li>" : "";
-      dirty(false); count(); preview();
+      if (!keep.about) $("about").value = cur.about;
+      const notes = [];
+      if (cur.load_error) notes.push("The saved prompt file didn't load, so the built-in templates are shown and saving is refused: " + cur.load_error);
+      if (cur.upstream_prompt_ignored) notes.push("Wire-pod's own “LLM prompt” setting is ignored: this page's template is used instead.");
+      $("warn").replaceChildren(...notes.map((t) => { const li = document.createElement("li"); li.textContent = t; return li; }));
+      marks(); count(); preview();
     }
 
     function chips(appended) {
@@ -185,8 +193,8 @@
       $("count").className = "hint" + (n > cur.about_cap ? " err" : "");
     }
 
-    function dirty(on) { $("save").classList.toggle("dirty", on); }
-    function edited() { dirty($("tmpl").value !== cur.brains[brain].template); clearTimeout(timer); timer = setTimeout(preview, 250); }
+    function marks() { $("save").classList.toggle("dirty", tmplDirty()); $("saveAbout").classList.toggle("dirty", aboutDirty()); }
+    function edited() { marks(); clearTimeout(timer); timer = setTimeout(preview, 250); }
 
     async function preview() {
       try {
@@ -201,23 +209,24 @@
       } catch (e) { $("tokens").textContent = "Preview failed: " + e.message; $("tokens").className = "hint err"; }
     }
 
-    async function post(body, done) {
-      try { cur = await call("/myvector/api/prompt", body); show(); status(done, "ok"); }
+    async function post(body, done, keep) {
+      try { cur = await call("/myvector/api/prompt", body); show(keep); status(done, "ok"); }
       catch (e) { status(e.message, "err"); }
     }
 
     $("tabs").onclick = (e) => {
       const b = e.target.dataset && e.target.dataset.brain;
       if (!b || b === brain) return;
-      if ($("save").classList.contains("dirty") && !confirm("Discard unsaved template changes?")) return;
-      brain = b; show();
+      if (tmplDirty() && !confirm("Discard unsaved template changes?")) return;
+      brain = b; show({ about: true });
     };
     $("tmpl").oninput = edited;
-    $("about").oninput = () => { count(); clearTimeout(timer); timer = setTimeout(preview, 250); };
+    $("about").oninput = () => { count(); edited(); };
     $("plang").onchange = preview;
-    $("save").onclick = () => post({ action: "save", brain, template: $("tmpl").value }, "Saved");
-    $("reset").onclick = () => confirm(`Use the built-in ${brain} template?`) && post({ action: "reset", brain }, "Reset to built-in");
-    $("saveAbout").onclick = () => post({ action: "about", about: $("about").value }, "About me saved");
+    $("save").onclick = () => post({ action: "save", brain, template: $("tmpl").value }, "Saved", { about: aboutDirty() });
+    $("reset").onclick = () => confirm(`Use the built-in ${brain} template?`) &&
+      post({ action: "reset", brain }, "Reset to built-in", { about: aboutDirty() });
+    $("saveAbout").onclick = () => post({ action: "about", about: $("about").value }, "About me saved", { tmpl: tmplDirty() });
     call("/myvector/api/prompt").then((r) => { cur = r; show(); }).catch((e) => status("Load failed: " + e.message, "err"));
   </script>
 </body>
