@@ -18,6 +18,7 @@ for f in "$dir"/robot/*.sh "$dir"/robot/*/*.sh "$dir"/robot/firmware/tests/*.sh 
 echo "shell syntax OK"
 "$dir"/robot/firmware/check-static.sh
 if [[ -f $dir/robot/firmware/tests/pc-voice.sh ]]; then "$dir"/robot/firmware/tests/pc-voice.sh; fi # SKIPs itself without g++/clone
+if [[ -f $dir/robot/firmware/tests/night-check.sh ]]; then "$dir"/robot/firmware/tests/night-check.sh; fi
 (cd "$dir/chipper" && go vet ./pkg/wirepod/sdkapp/)
 echo "go vet sdkapp OK"
 if [[ -d $dir/chipper/pkg/myvector ]]; then (cd "$dir/chipper" && go test ./pkg/myvector/...); fi
