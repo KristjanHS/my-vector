@@ -2,7 +2,7 @@
 // Usage (on the robot): isinff-abi <numerator> <denominator>   `1 1` passes; `1 0` (ratio +inf) dies with SIGSEGV
 // (exit 139: zeros follow the table here; in vic-anim NaN neighbours make it the line-191 assert).
 // se_lib is soft-float ABI (float args in core registers); everything else here is hard-float, so its entry points
-// are declared pcs("aapcs"). -DFIX -Wl,--wrap=__isinff supplies the soft-float __isinff bridge the archive lacks.
+// are declared pcs("aapcs"). -DFIX -Wl,--wrap=__isinff supplies the soft-float __isinff bridge the pin archive lacks (0012 adds __se_isinff: build without -DFIX).
 // Build: $SDK/prebuilt/bin/arm-oe-linux-gnueabi-clang --sysroot=$SDK/sysroot -O1 -mcpu=cortex-a7 -mfloat-abi=hard
 //   -mfpu=neon-vfpv4 -Wl,--allow-multiple-definition,--no-warn-mismatch,-z,now isinff-abi.c <softfp.a> -lm
 // (SDK = robot/work/wire-os-victor/anki-deps/vicos-sdk/dist/6.0.0-r08; flags = vic-anim's link line.)
