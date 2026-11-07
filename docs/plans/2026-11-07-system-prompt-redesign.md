@@ -54,10 +54,26 @@ Severity: CRITICAL / HIGH / MEDIUM / LOW.
 | 9 | Language contract (MEDIUM) | The prompt is English, with "Answer in Estonian." tacked on last. No rule for names or terms (R6). en-US gets no language line at all. | EstLLM was benchmarked with exactly this line, so changing it needs a re-check. Without R6 the model may Estonianise names ("Tšatt-GPT"). | One language line per language: reply language + "keep names, brands and titles as written". |
 | 10 | Maintainability (MEDIUM) | Assembled by string concatenation across 3 files in upstream code. `openai_prompt` replaces only the persona. The rendered prompt is untested; it is only visible via `DEBUG_PRINT_PROMPT`. | Changes drift unseen. The upstream diff grows if we keep editing `kgsim_cmds.go`. | One fork-owned builder (`chipper/pkg/myvector/prompt/`) from blocks with token estimates; a golden test of the rendered prompt per profile; upstream calls it through one `fork_*.go` hook. |
 
-## Research
+## Research (2026-11-07, 4 agents; † = unverified)
 
-<!-- pending: web search, vision for Estonian, long-term memory (3 agents running) -->
+| Topic | Finding | Source |
+|---|---|---|
+| Search, Claude | Compat `/v1/chat/completions` supports function `tools`, including streaming. The server-side `web_search` tool is native `/v1/messages` only, at $10 per 1k searches plus result tokens. | platform.claude.com/docs/en/api/openai-sdk, …/web-search-tool |
+| Search, Ollama | All 4 local models list `tools`. Probe (n=1): EstLLM searched for every prompt, qwen3.5/gemma4 answered fresh facts from memory and made them up. The compat endpoint has no `tool_choice`. | probe in session scratchpad; docs.ollama.com/api/openai-compatibility |
+| Search provider | Tavily: 1k free per month, no card. Brave: $5 credit per month, card required, Estonian support unverified. Google custom-search API: closed. DuckDuckGo scraping: against ToS. SearXNG: free, self-hosted. | tavily.com/pricing, brave.com/search/api |
+| Vision, ET | No Estonian vision model exists. qwen3.5:4b's Estonian is poor (Qwen3-4B scores 0.21 vs EstLLM 0.45 on the Estonian Native benchmark). Keeping both models loaded needs ≈10.5 GB, more than the card has. | arxiv 2510.21193 |
+| Vision, ET options | Claude for camera turns: ~2–4 s†, EstLLM stays loaded. Offline: vision model writes English → EstLLM answers, ≈ today's total time because the EstLLM reload happens anyway. | bench `robot/work/et-llm/*/models.jsonl` |
+| Memory, patterns | Reimplement in Go: Mem0-style extraction, Generative Agents scoring, Zep-style "supersede, never delete". Letta, Graphiti and Cognee are Python sidecars. Anthropic's memory tool only works on Claude and adds round-trips. | arxiv 2504.19413, 2304.03442 |
+| Memory, sleep | When an LLM keeps rewriting memory, its usefulness first rises, then falls below no memory. Keep raw episodes; consolidate only on new evidence; keep a daily diary layer (MemoryBank); predict-calibrate (Nemori); store event time and learned time separately; rank by heat (MemoryOS). | arxiv 2605.12978, 2305.10250, 2508.03341, 2506.06326 |
+| Memory, budgets | Ollama: core profile ≤150 tokens + ≤3 keyword facts ≈ 300 tokens. Claude: ≤3k tokens. Use 5-character prefixes or Vabamorf lemmas instead of embeddings until there are about 300 facts; then bge-m3 on CPU. | ollama.com/library/bge-m3 |
 
 ## Alternatives
 
-<!-- pending -->
+Applies to every option: the date/weekday/time line ships first. It is ~20 tokens, the weekday comes from a Go Estonian name table, and it fixes the original bug.
+
+| Decision | Option 1 (thin) | Option 2 | Option 3 (most mature) |
+|---|---|---|---|
+| P: prompt build | Patch the strings in place | Fork builder `pkg/myvector/prompt`, two tiers (Ollama ≈250 tokens core, Claude ≈600 tokens + extras), budgets per profile, golden tests | P2 + user-editable templates per language and tier in gitignored config |
+| S: web search | Keyword router + pre-fetched snippets for both backends | Claude: function tool; Ollama: router + snippets (one Go search client, Tavily) | S2, but Claude uses the native server `web_search` (citations, dynamic filtering) |
+| V: ET vision | Claude for camera turns when a key is saved, else today's qwen | V1 + offline fallback: vision model writes English → EstLLM answers | Offline only (V2's fallback), photos never leave home |
+| M: memory | Hand-edited gitignored profile file only | Daily diary + facts (evidence-checked) + nightly per-category merge + profile rebuilt each night + fixed question set | M2 + bge-m3 search + weekly Claude whole-store pass + voice "mida sa minust tead / unusta see" |
