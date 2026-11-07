@@ -1,6 +1,6 @@
 # Active listening
 
-Status: Stage 1 + 2.1 probe committed; Stage 2.1 verdict blocked on the P1 model choice. Code review of `c0b0efb..b6a71d9` deferred to 5.1. Owed live: G5 curl 423 (1.3), en-US phrase STT round trip (1.1, needs saved lang en-US). Stage 3 reuses `robot/openmic` and waits on `2026-11-07-shut-up-sleep.md (docs/plans/)` §Stage 1 verdict.
+Status: Stage 1 + 2.1 committed; Stage 3 waits on the verdict below, so 4.1 runs first. Code review of `c0b0efb..b6a71d9` deferred to 5.1. Owed live: G5 curl 423 (1.3), en-US phrase STT round trip (1.1, needs saved lang en-US). Stage 3 reuses `robot/openmic` and waits on `2026-11-07-shut-up-sleep.md (docs/plans/)` §Stage 1 verdict.
 
 Ask: Vector listens to all talk, speaks only when he has something relevant. Ollama only, never Claude. On: "hey vector, activate active listening" / "hey vector, aktiveeri aktiivne kuulamine". Off: "deactivate active listening" / "deaktiveeri aktiivne kuulamine". Short forms "active listening on/off", "aktiivne kuulamine sees/välja" too.
 
@@ -11,15 +11,15 @@ Ask: Vector listens to all talk, speaks only when he has something relevant. Oll
 | A1 | Whole-phrase match on `quiet.Match`'s tokenizer + `quiet.Fillers`. On: `activate active listening`, `active listening on`, `aktiveeri aktiivne kuulamine`, `aktiivne kuulamine sees`; off: `deactivate active listening`, `active listening off`, `deaktiveeri aktiivne kuulamine`, `aktiivne kuulamine välja`. STT variants added only from the Stage 1.1 round trip. | new `pkg/myvector/listen` `On` `Off` `Match` |
 | A2 | `forkListen` in `ProcessTextAll` right after `forkQuiet`: match → state → spoken confirmation via `IntentPass` → return true. Off phrase also matched on overheard text (Stage 4). | `ttr/fork_listen.go`; `matchIntentSend.go` drift comment |
 | A3 | State in RAM per ESN `{on, since, lastHeard, lastSpoke}`; off on: wire-pod restart, a quiet-lock match, `listen.IdleOff` = 30 min with no utterance, entering the night window (`listen.NightFrom`/`NightTo` mirror patch 0011's `IsNightTime`: `NightFrom` = 21, `NightTo` = 9). Auto-off logs one line, no sound. | `listen.State` |
-| A4 | Brain while on: every LLM call (overheard and wake-word asks) uses the language's `llm.Effective` Ollama profile; a Claude profile is replaced by `llm.DefaultENModel` / `Config.etModel()`. Only while on: the saved profile is never written, Claude returns at off. | `ttr/fork_listen.go` helper wrapping both `llm.Resolve` calls in `ttr/fork_prompt.go` |
-| A5 | One Ollama call per utterance: rolling transcript (~2 min) + new utterance → exactly `SKIP` or a 1–2 sentence reply. Under the Stage 2.1 bar → two calls (follow-up YES/NO decider, then answer). | `listen.Prompt` `listen.Parse` |
+| A4 | Brain while on: every LLM call (overheard and wake-word asks, both languages) uses `listen.Model` on the saved Ollama URL (P1). Only while on: the saved profile is never written, Claude returns at off. | `ttr/fork_listen.go` helper wrapping both `llm.Resolve` calls in `ttr/fork_prompt.go` |
+| A5 | One `listen.Model` call per utterance with `listenprobe` prompt 2 (system) + its `user()` shape (rolling ~2 min transcript, newest line) → `SKIP` prefix (any case) or a 1–2 sentence reply. | `listen.Prompt` `listen.Parse` |
 | A6 | Echo gate: drop overheard text from clips that overlap Vector's own speech (+1 s). | `listen.Heard` |
 | A7 | G5 pulled in from `2026-11-07-shut-up-sleep.md (docs/plans/)` (Stage 1.3); listen replies pass the same lock check before speaking. | `sdkapp/fork_quiet.go`; `ttr/fork_listen.go` |
 | A8 | Overheard text stays in RAM; journal gets `myvector listen: <n> words → SKIP\|SPEAK <ms>`, never the words. `MYVECTOR_LISTEN_LOG=<dir>` (unset = off) appends `[SKIP\|SPEAK] <text>` to `<dir>/<date>.txt`; use `robot/work/listen/`. | `listen.Heard` |
 | C1 | Capture = `robot/openmic` (ruled 2026-11-07): `RecordMicDataClip` via `:8889/consolefunccall`, scp from `debugCapture`, 2 s windows / 1 s hop → myvector-stt. Refactor-first: move those `probe.sh` pieces into `robot/openmic/lib.sh`; `probe.sh` and the new loop both source it. | `robot/openmic/{lib.sh,probe.sh,listen.sh}` |
 | C2 | `listen.sh` (silent=1, records only) loops clips back to back, keeps the previous clip's last 2 s ahead of the next so a cut sentence is whole, joins windows into utterances, and POSTs each to `/myvector/listen/heard`. Server starts it on activate, kills it on deactivate (miccap repo-path precedent). | `robot/openmic/listen.sh`; `listen.Runner` |
 | A9 | Chattiness normal: `listen.Cooldown` = 45 s between replies; SPEAK bar = a question in the air, a factual slip, his name, a clear fun opening (the Stage 2.1 SPEAK labels). | `listen.Cooldown`; `listen.Prompt` |
-| P1 | No winner on saved profiles: best 14/20 (et SPEAK 0/4 on `gemma4:e2b-it-qat`). `gemma4:e4b-it-qat` + prompt 2: dev 17/20, held-out (`-set holdout`) 16/20, 0 false SPEAK in both, all misses silent. Ruling owed (backlog §OWED[USER]). | `listenprobe` |
+| P1 | Ruled 2026-11-07: `listen.Model` = `gemma4:e4b-it-qat` + prompt 2 (held-out 16/20 accepted: 0 false SPEAK, misses silent); saved profiles fail (et SPEAK 0/4). | `listenprobe` |
 
 ## Stages
 

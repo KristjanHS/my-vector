@@ -79,8 +79,8 @@ func TestResolveWhileOn(t *testing.T) {
 		t.Fatalf("off: %q, want the saved Claude profile", got)
 	}
 	forkListening.Activate("00e20100", forkNow())
-	if got := brain(); got != "ollama "+llm.DefaultENModel {
-		t.Errorf("on: %q, want the Ollama default", got)
+	if got := brain(); got != "ollama "+listen.Model {
+		t.Errorf("on: %q, want listen.Model", got)
 	}
 	forkListening.Deactivate("00e20100", "phrase")
 	if got := brain(); got != "claude claude-haiku-5-5" {

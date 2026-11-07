@@ -154,20 +154,13 @@ func Resolve(c Config, l string, kg KG) (Target, bool) {
 	return Target{}, false
 }
 
-// ResolveOllama is Resolve with a Claude (or legacy Knowledge) brain swapped for the language's Ollama default (active listening).
-func ResolveOllama(c Config, l string, kg KG) (Target, bool) {
+// ResolveOllama is model on the saved Ollama URL for any language Resolve knows (active listening).
+func ResolveOllama(c Config, l string, kg KG, model string) (Target, bool) {
 	ps, u := Effective(c, kg)
-	p, ok := ps[l]
-	if !ok {
+	if _, ok := ps[l]; !ok {
 		return Target{}, false
 	}
-	if p.Provider != Ollama || p.Model == "" {
-		p.Model = DefaultENModel
-		if l == lang.Estonian {
-			p.Model = c.etModel()
-		}
-	}
-	return Target{Ollama, u + "/v1", "ollama", p.Model}, true
+	return Target{Ollama, u + "/v1", "ollama", model}, true
 }
 
 // VisionModel is the Ollama model an et-EE photo question uses (E26): the en-US one when that is Ollama.
