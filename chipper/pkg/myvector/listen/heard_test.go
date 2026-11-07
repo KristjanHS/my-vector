@@ -77,18 +77,27 @@ func TestHeardSkipAndSpeak(t *testing.T) {
 	}
 }
 
-func TestHeardCooldown(t *testing.T) {
+func TestHeardBackoff(t *testing.T) {
 	r := newRig(t)
 	r.reply = "Hi there."
-	r.hear(time.Second, "does vector like the shelf?")
-	r.hear(20*time.Second, "do you think so, vector?")
-	if r.calls != 1 || len(r.said) != 1 {
-		t.Fatalf("inside Cooldown: calls %d said %v", r.calls, r.said)
+	want := func(calls, said int, why string) {
+		t.Helper()
+		if r.calls != calls || len(r.said) != said {
+			t.Fatalf("%s: calls %d said %v", why, r.calls, r.said)
+		}
 	}
-	r.hear(Cooldown, "vector, are you there?")
-	if r.calls != 2 || len(r.said) != 2 {
-		t.Fatalf("after Cooldown: calls %d said %v", r.calls, r.said)
-	}
+	r.hear(time.Second, "is the shelf level?")
+	r.hear(Backoff[0]-time.Second, "the shelf looks level")
+	want(1, 1, "inside the 1st wait")
+	r.hear(time.Second, "what did you say?")
+	want(2, 2, "after the 1st wait")
+	r.hear(Backoff[1]/2, "nothing")
+	want(2, 2, "inside the 2nd wait")
+	r.hear(time.Second, "do you agree, vektor?")
+	want(3, 3, "named inside a wait")
+	r.hear(BackoffReset, "anyone want tea?")
+	r.hear(Backoff[0], "green tea, please")
+	want(5, 5, "after BackoffReset the wait restarts at Backoff[0]")
 }
 
 func TestHeardAutoOff(t *testing.T) {
@@ -130,7 +139,7 @@ func TestHeardEchoGate(t *testing.T) {
 	}
 	r.hear(3*time.Second+EchoPad, "what time is it?") // clip clear of the answer + EchoPad
 	if r.calls != 1 || len(r.said) != 1 {
-		t.Fatalf("wake-word answers must not start Cooldown: calls %d said %v", r.calls, r.said)
+		t.Fatalf("wake-word answers must not start Backoff: calls %d said %v", r.calls, r.said)
 	}
 	r = newRig(t)
 	r.h.State.Turn(esn, r.now)

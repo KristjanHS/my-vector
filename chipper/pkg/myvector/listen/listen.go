@@ -61,6 +61,7 @@ type bot struct {
 	echo                        []span // A6 windows, EchoPad included
 	lines                       []line // A5 transcript, last Window
 	busy                        bool   // an LLM call + reply in flight
+	streak                      int    // listen replies in a row (A9 Backoff)
 }
 
 // State is RAM-only (a wire-pod restart turns every robot off), keyed by ESN.
@@ -135,7 +136,15 @@ func (s *State) Any(now time.Time) bool {
 
 // Heard and Spoke stamp an utterance / a reply; a robot that is off is left off.
 func (s *State) Heard(esn string, now time.Time) { s.stamp(esn, func(b *bot) { b.lastHeard = now }) }
-func (s *State) Spoke(esn string, now time.Time) { s.stamp(esn, func(b *bot) { b.lastSpoke = now }) }
+func (s *State) Spoke(esn string, now time.Time) {
+	s.stamp(esn, func(b *bot) {
+		if b.lastSpoke.IsZero() || now.Sub(b.lastSpoke) >= BackoffReset {
+			b.streak = 0
+		}
+		b.streak++
+		b.lastSpoke = now
+	})
+}
 
 // LastSpoke is the zero time when esn is off or has not replied.
 func (s *State) LastSpoke(esn string) time.Time {
@@ -158,21 +167,31 @@ func (s *State) Turn(esn string, at time.Time) {
 	}
 }
 
-// claim takes esn's one in-flight LLM slot: "COOL" inside Cooldown, "BUSY" while another utterance holds it.
-func (s *State) claim(esn string, now time.Time) string {
+// claim takes esn's one in-flight LLM slot: "COOL" inside the Backoff wait unless named, "BUSY" while another utterance holds it.
+func (s *State) claim(esn string, now time.Time, named bool) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	b, ok := s.bots[esn]
 	switch {
 	case !ok:
 		return "OFF"
-	case now.Sub(b.lastSpoke) < Cooldown:
+	case !named && now.Sub(b.lastSpoke) < b.wait(now):
 		return "COOL"
 	case b.busy:
 		return "BUSY"
 	}
 	b.busy = true
 	return ""
+}
+
+func (b *bot) wait(now time.Time) time.Duration {
+	if b.streak == 0 || now.Sub(b.lastSpoke) >= BackoffReset {
+		return 0
+	}
+	if b.streak > len(Backoff) {
+		return Backoff[len(Backoff)-1]
+	}
+	return Backoff[b.streak-1]
 }
 
 func (s *State) release(esn string) { s.stamp(esn, func(b *bot) { b.busy = false }) }

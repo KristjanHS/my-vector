@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -13,12 +14,18 @@ import (
 )
 
 const (
-	Cooldown = 45 * time.Second // A9: between listen replies
-	TurnTail = 10 * time.Second // A6: a wake-word turn's echo window after the ask
-	EchoPad  = 1 * time.Second
-	Window   = 2 * time.Minute // A5: rolling transcript
-	askWait  = 60 * time.Second
+	BackoffReset = 5 * time.Minute  // A9: this long without a listen reply restarts Backoff
+	TurnTail     = 10 * time.Second // A6: a wake-word turn's echo window after the ask
+	EchoPad      = 1 * time.Second
+	Window       = 2 * time.Minute // A5: rolling transcript
+	askWait      = 60 * time.Second
 )
+
+// Backoff is the A9 wait after the 1st, 2nd, 3rd, 4th+ listen reply in a row.
+var Backoff = []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute, 4 * time.Minute}
+
+// named spots Vector's name in overheard text (et case endings included); it skips the Backoff wait.
+var named = regexp.MustCompile(`(?i)\b(?:vector|victor|vektor)\w*`)
 
 // Persona, SpeakRules and QuietRules also build listenprobe's other arms.
 const (
@@ -122,7 +129,7 @@ func (h *Hearer) Heard(u Utterance) {
 	s.Heard(u.ESN, now)
 	before := s.hear(u.ESN, now, u.Text)
 	words := len(strings.Fields(u.Text))
-	if why := s.claim(u.ESN, now); why != "" {
+	if why := s.claim(u.ESN, now, named.MatchString(u.Text)); why != "" {
 		s.Log(fmt.Sprintf("myvector listen: %d words → %s", words, why))
 		return
 	}
