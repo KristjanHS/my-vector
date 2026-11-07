@@ -62,7 +62,7 @@ def test_piper_engine_speaker_and_noise_from_voice_id_one_load_per_model():
     loads, configs = [], []
 
     class Voice:
-        config = types.SimpleNamespace(speaker_id_map={"Mari": 2}, sample_rate=22050)
+        config = types.SimpleNamespace(speaker_id_map={"Mari": 2, "Albert": 0}, sample_rate=22050)
 
         def synthesize(self, text, syn_config):
             configs.append(syn_config)
@@ -72,11 +72,13 @@ def test_piper_engine_speaker_and_noise_from_voice_id_one_load_per_model():
     eng._voices, eng._dir, eng._cfg = {}, server.Path("/m"), dict
     eng._load = lambda path: loads.append(path) or Voice()
     eng.synth("et_EE-news-medium@Mari", "Tere.", 1.2)
-    eng.synth("et_EE-news-medium", "Tere.", 1.0)
-    assert loads == ["/m/et_EE-news-medium.onnx"]
-    # mari's noise override; a voice id without one keeps the model's own noise
+    eng.synth("et_EE-news-medium@Albert", "Tere.", 1.0)
+    eng.synth("en_GB-cori-high", "Hi.", 1.0)
+    assert loads == ["/m/et_EE-news-medium.onnx", "/m/en_GB-cori-high.onnx"]
+    # the ET model's noise override covers every speaker of it; a model without one keeps its own noise
     assert configs == [
         {"speaker_id": 2, "length_scale": 1.2, "noise_scale": 0.4, "noise_w_scale": 0.6},
+        {"speaker_id": 0, "length_scale": 1.0, "noise_scale": 0.4, "noise_w_scale": 0.6},
         {"speaker_id": None, "length_scale": 1.0},
     ]
 
