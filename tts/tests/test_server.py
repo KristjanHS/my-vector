@@ -58,7 +58,8 @@ def test_stream_translates_robot_lines_on_et_ee_only():
     assert [c[1] for c in piper.calls] == ["üheksa null viis", "üheksa null viis", "Kell on üheksa null viis"]
 
 
-def test_piper_engine_speaker_and_noise_from_voice_id_one_load_per_model():
+def test_piper_engine_speaker_from_voice_id_noise_per_model_one_load_per_model(monkeypatch):
+    monkeypatch.setattr(server, "PIPER_NOISE", {"et_EE-news-medium": (0.1, 0.2)})  # the keying, not the tuned level
     loads, configs = [], []
 
     class Voice:
@@ -77,8 +78,8 @@ def test_piper_engine_speaker_and_noise_from_voice_id_one_load_per_model():
     assert loads == ["/m/et_EE-news-medium.onnx", "/m/en_GB-cori-high.onnx"]
     # the ET model's noise override covers every speaker of it; a model without one keeps its own noise
     assert configs == [
-        {"speaker_id": 2, "length_scale": 1.2, "noise_scale": 0.4, "noise_w_scale": 0.6},
-        {"speaker_id": 0, "length_scale": 1.0, "noise_scale": 0.4, "noise_w_scale": 0.6},
+        {"speaker_id": 2, "length_scale": 1.2, "noise_scale": 0.1, "noise_w_scale": 0.2},
+        {"speaker_id": 0, "length_scale": 1.0, "noise_scale": 0.1, "noise_w_scale": 0.2},
         {"speaker_id": None, "length_scale": 1.0},
     ]
 
