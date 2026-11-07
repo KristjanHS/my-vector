@@ -13,12 +13,12 @@ func TestForkLongAsk(t *testing.T) {
 		miss []string
 	}{
 		{lang.English,
-			[]string{"Tell me a story about a robot", "any bedtime stories", "read me a fairy tale", "explain it in detail",
+			[]string{"Tell me a story about a robot", "Stories about robots", "any bedtime stories", "read me a fairy tale", "explain it in detail",
 				"give me a detailed answer", "show me step by step", "answer in ten sentences", "write two paragraphs"},
 			[]string{"how much storage is left", "tell me some history", "who is a storyteller", "what is the capital of france"}},
 		{lang.Estonian,
 			[]string{"räägi mulle lugu", "tea mõned lugusid", "jutusta midagi", "räägi mulle muinasjutt robotist",
-				"seleta pikemalt", "anna üksikasjalikum vastus", "räägi põhjalikult", "näita samm-sammult",
+				"seleta pikemalt", "Üksikasjalikum vastus", "anna üksikasjalikum vastus", "räägi põhjalikult", "näita samm-sammult",
 				"vasta kümne lause asemel viis lauset", "kirjuta kaks lõiku"},
 			[]string{"räägi ajalugu", "vasta kahe lausega", "mis kell on"}},
 	} {
