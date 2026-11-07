@@ -1,6 +1,6 @@
 # vic-anim SeAssert nrgainv.c:191 — root-cause hunt (option C)
 
-Status: **ROOT CAUSE FOUND 2026-11-07 19:30** (3rd hit, ship 44a8b57) — fix awaits the user's ruling on §Fix.
+Status: **FIX BUILT 2026-11-07** — patch `0012-se-isinff-bridge.patch` (F1+F2), gates green; owed: merge to main + `make ship` (user).
 
 ## Background
 
@@ -45,7 +45,7 @@ re-ship, **C = dig deeper with robot restarts (chosen; the power-on sound on eac
 `__se_isinff` in `math_abi_bridge.o`), so it tests the numerator; ratio +inf overruns the table. Inferred, unseen
 (dump VFP regs = 0): the trigger is den == 0 at bin 0/3, with the `.data` table intact.
 
-## Fix (user round — no patch before the ruling)
+## Fix (ruled 2026-11-07, built 2026-11-07)
 
 | id | ruling | edit site |
 |---|---|---|
@@ -55,7 +55,18 @@ re-ship, **C = dig deeper with robot restarts (chosen; the power-on sound on eac
 | F2 | **same rename** (user 2026-11-07): `sin=__se_sin` on `policy_actions.o` + `double pcs("aapcs") __se_sin(double)` bridge | same patch 0012 |
 
 Falsifier: `robot/seassert/isinff-abi.c` built unfixed exits 139 (SIGSEGV) on args `1 0` on the robot, `-DFIX` exits 0.
-Ship gate: `nm vic-anim.full | grep -E ' U (__isinff|sin)$'` empty; `isinff-abi` against the patched archive (no `-DFIX`) exits 0 on `1 0`.
+Ship gate (user 2026-11-07: archive-level, replacing `nm vic-anim.full | grep ' U sin$'` — `U sin` stays in a linked
+binary while anything calls libm sin, here `__se_sin` itself): `check-static.sh` S6 fails on any libm U-ref in the
+archive outside `math_abi_bridge.o`; red at pin (`policy_actions.o: U sin`, `nrgainv.o: U __isinff`), green at 0012.
+
+Done 2026-11-07:
+- Before the fix, only `nrgainv.o` (`__isinff`) and `policy_actions.o` (`sin`) called libm unbridged; no other member did.
+- Bridge `.o` rebuilt with SDK clang 20.1.8 `-O2 -g -march=armv7-a -mthumb -mfpu=neon-vfpv4 -mfloat-abi=hard`: same
+  disassembly, relocations and ABI attributes as the shipped `.o` for the old functions. The archive's two identical
+  `math_abi_bridge.o` members collapse to one, and the member order is otherwise unchanged.
+- Robot, `isinff-abi` (no `-DFIX`): pin archive `1 0` → exit 139; patched → exit 0, gain 1. `-1 0` now gives gain 1
+  (was 0.1), as the table rule gives for any isinf; the gain inputs are energies, so a negative ratio is not expected.
+- `build-v.sh` green; `check-static.sh --built` green (bin marker `__se_isinff` in `vic-anim.full`); `make check` green.
 
 ## Files
 
