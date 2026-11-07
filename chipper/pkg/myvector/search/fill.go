@@ -2,14 +2,11 @@ package search
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
-	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 )
 
 // Timeout bounds the whole Fill on the voice path (plan W10).
@@ -20,15 +17,7 @@ var logf = logger.Println
 // weatherPlace is search.weather_place in myvectorConfig.json up to any comma (Open-Meteo geocodes a bare
 // name: "Tartu, Estonia" → "Tartu"), else zone's city.
 func weatherPlace(zone *time.Location) string {
-	var c struct {
-		Search struct {
-			WeatherPlace string `json:"weather_place"`
-		} `json:"search"`
-	}
-	if b, err := os.ReadFile(lang.Path()); err == nil {
-		json.Unmarshal(b, &c)
-	}
-	p, _, _ := strings.Cut(c.Search.WeatherPlace, ",")
+	p, _, _ := strings.Cut(LoadConfig().WeatherPlace, ",")
 	if p = strings.TrimSpace(p); p != "" {
 		return p
 	}
