@@ -3,7 +3,9 @@ package wirepod_ttr
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
@@ -12,7 +14,27 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
-func init() { memory.Pass = forkMemoryPass }
+func init() {
+	memory.Pass = forkMemoryPass
+	forkStartMemory(os.Args[0])
+}
+
+// forkStartMemory starts the nightly loop (M21) unless bin is a go test binary; true = started.
+func forkStartMemory(bin string) bool {
+	if strings.HasSuffix(bin, ".test") {
+		return false
+	}
+	go memory.Loop(forkMemoryZone)
+	return true
+}
+
+// forkMemoryZone is the first paired robot's zone, else time.Local (M20).
+func forkMemoryZone() *time.Location {
+	if r := vars.BotInfo.Robots; len(r) > 0 {
+		return forkBotZone(r[0].Esn)
+	}
+	return time.Local
+}
 
 // forkMemoryPass is one memory.Run on the memory target with each robot's zone; off or no target → an error, nothing run.
 func forkMemoryPass(ctx context.Context) error {

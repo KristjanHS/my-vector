@@ -159,3 +159,9 @@ func TestMemoryPathStubbed(t *testing.T) {
 		t.Fatalf("memory.Path() = %q: ttr tests would write episodes under chipper/", p)
 	}
 }
+
+func TestMemoryLoopNotInTests(t *testing.T) {
+	if forkStartMemory(os.Args[0]) {
+		t.Fatalf("memory loop started in test binary %q", os.Args[0])
+	}
+}
