@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -62,6 +63,7 @@ func Parse(reply string) bool {
 func Ask(ctx context.Context, c *openai.Client, model, user string) (string, error) {
 	r := openai.ChatCompletionRequest{Model: model, ReasoningEffort: "none", MaxTokens: 80, Messages: []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: Prompt}, {Role: openai.ChatMessageRoleUser, Content: user}}}
+	llm.SamplingFor(llm.Ollama, model).Apply(&r)
 	res, err := c.CreateChatCompletion(ctx, r)
 	if err != nil || len(res.Choices) == 0 {
 		return "", fmt.Errorf("no answer: %v", err)

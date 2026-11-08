@@ -134,6 +134,7 @@ type target struct {
 func ask(c *openai.Client, model, sys, msg string, max int) (string, error) {
 	r := openai.ChatCompletionRequest{Model: model, ReasoningEffort: "none", MaxTokens: max, Messages: []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: sys}, {Role: openai.ChatMessageRoleUser, Content: msg}}}
+	llm.SamplingFor(llm.Ollama, model).Apply(&r) // same sampling as listen.Ask
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	res, err := c.CreateChatCompletion(ctx, r)

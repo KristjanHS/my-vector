@@ -107,6 +107,27 @@ func TestForkClientOllamaURL(t *testing.T) {
 	}
 }
 
+// llm.SamplingFor reaches the wire: each family's model-card sampling, whatever upstream CreateAIReq set.
+func TestForkClientModelSampling(t *testing.T) {
+	for model, want := range map[string][]string{
+		"qwen3.5:4b":        {`"temperature":0.7`, `"top_p":0.8`, `"presence_penalty":1.5`},
+		"gemma4:e4b-it-qat": {`"temperature":1`, `"top_p":0.95`},
+	} {
+		f := newFakeLLM(t)
+		useKnowledge(t, "custom", "http://192.0.2.1:11434/v1", "qwen3.5:4b")
+		saveLLM(t, lang.English, llm.Config{OllamaURL: f.URL, Profiles: map[string]llm.Profile{lang.English: {Provider: llm.Ollama, Model: model}}})
+		ask(t)
+		for _, w := range want {
+			if !strings.Contains(f.body, w) {
+				t.Errorf("%s: no %s in %s", model, w, f.body)
+			}
+		}
+		if model == "gemma4:e4b-it-qat" && strings.Contains(f.body, "presence_penalty") {
+			t.Errorf("gemma4 sent presence_penalty: %s", f.body)
+		}
+	}
+}
+
 func TestForkCameraETUnloadsAtProfileURL(t *testing.T) {
 	f := newFakeLLM(t)
 	useKnowledge(t, "openai", "", "gpt-4o-mini")
