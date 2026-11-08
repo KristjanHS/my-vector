@@ -2,6 +2,7 @@ package probekit
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -47,8 +48,17 @@ func countServer(t *testing.T, sent *[]openai.ChatCompletionRequest) *httptest.S
 			http.NotFound(w, r)
 			return
 		}
+		raw, _ := io.ReadAll(r.Body)
+		var m struct{ Messages []map[string]any }
+		_ = json.Unmarshal(raw, &m)
+		for _, x := range m.Messages {
+			if _, ok := x["content"]; !ok { // as Ollama: "invalid message content type: <nil>"
+				http.Error(w, "no content", http.StatusBadRequest)
+				return
+			}
+		}
 		var q openai.ChatCompletionRequest
-		_ = json.NewDecoder(r.Body).Decode(&q)
+		_ = json.Unmarshal(raw, &q)
 		*sent = append(*sent, q)
 		n := 9
 		if len(q.Messages) > 0 {
