@@ -24,7 +24,7 @@ daemon-enable: ## Install + (re)start wire-pod.service (builds + runs the pinned
 	sed -e 's|@REPO@|$(CURDIR)|g' -e 's|@USER@|$(USER)|g' $(CURDIR)/scripts/wire-pod.service | sudo tee /etc/systemd/system/wire-pod.service >/dev/null
 	sudo systemctl daemon-reload
 	sudo systemctl stop wire-pod
-	sudo find $(CURDIR) $(wildcard $(HOME)/.anki_vector) -xdev -user root -exec chown $(USER): {} + # what a root wire-pod wrote
+	sudo find $(CURDIR) $(wildcard $(HOME)/.anki_vector) -xdev -user root -exec chown -h $(USER): {} + # what a root wire-pod/setup.sh wrote
 	sudo systemctl enable wire-pod
 	sudo systemctl restart wire-pod
 	@echo "logs: journalctl -u wire-pod -f"

@@ -32,7 +32,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
 . "$here/../env.sh"
 die() { echo "wifi: $*" >&2; exit 1; }
-# Root (wire-pod's service, HOME=/root) checks the robot's host key against the repo owner's known_hosts.
+# Root (a foreground `sudo chipper/start.sh` wire-pod) checks the robot's host key against the repo owner's known_hosts.
 if ((EUID == 0)) && owner_home=$(getent passwd "$(stat -c %U "$robot_dir")" | cut -d: -f6) && [[ -n $owner_home ]]; then
   ssh_opts+=(-o "UserKnownHostsFile=$owner_home/.ssh/known_hosts")
 fi
