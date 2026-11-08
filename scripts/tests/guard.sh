@@ -2,7 +2,7 @@
 # wire-pod-guard.nft loaded in a throwaway user+net namespace: every `tcp dport` rule's port set = want.
 set -euo pipefail
 dir=$(cd "$(dirname "$0")/../.." && pwd)
-want="80 443 8080 8084 8091"
+want="80 443 8080 8084 8091 8093"
 nft=/usr/sbin/nft
 unshare -rn true 2>/dev/null || { echo "guard test skipped: no unprivileged unshare"; exit 0; }
 rules=$(unshare -rn sh -c "$nft -f - && $nft list table inet wirepod_guard" <"$dir/scripts/wire-pod-guard.nft" | grep 'tcp dport')
