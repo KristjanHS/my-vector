@@ -45,19 +45,19 @@ EOF
 chmod +x "$tmp/bin/"*
 # env_file <key> [old]: a robot.env with ROBOT_KEY=<key>, ROBOT_KEY_OLD=<old> (default old); prints its path
 env_file() { printf '%s\n' ROBOT_ESN=0 ROBOT_IP=192.0.2.9 ROBOT_SERVER=x "ROBOT_KEY=$k/$1" "ROBOT_KEY_OLD=$k/${2:-old}" >"$tmp/$1-${2:-old}.env"; echo "$tmp/$1-${2:-old}.env"; }
-# fresh <name>: a fake robot root, / ro, the image key in both AuthorizedKeysFile paths (%h = /root); prints its path
+# fresh <name>: a fake robot root as probed: / ro, the image key only in /etc/ssh/authorized_keys (600), no /root/.ssh; prints its path
 fresh() {
   local r=$tmp/$1
-  mkdir -p "$r/proc" "$r/etc/ssh" "$r/root/.ssh"
+  mkdir -p "$r/proc" "$r/etc/ssh" "$r/root"
   echo "/dev/root / ext4 ro 0 0" >"$r/proc/mounts"
   echo 'root:x:0:0:root:/root:/bin/sh' >"$r/etc/passwd"
   echo 'root:*:19000:0:99999:7:::' >"$r/etc/shadow"
-  for f in etc/ssh/authorized_keys root/.ssh/authorized_keys; do ssh-keygen -y -f "$k/old" >"$r/$f"; chmod 600 "$r/$f"; done
+  ssh-keygen -y -f "$k/old" >"$r/etc/ssh/authorized_keys"; chmod 600 "$r/etc/ssh/authorized_keys"
   echo "$r"
 }
 # run <root> [VAR=value…]: apply.sh with the fakes first on PATH (1 s per arm minute, 1-minute window)
 run() { local r=$1; shift; env ETC_ROOT="$r" ETC_ARM_SCALE=1 ROLLBACK_MIN=1 PATH="$tmp/bin:$PATH" ROBOT_ENV="$(env_file new)" "$@" "$robot/sshkey/apply.sh" 2>&1; }
-keys() { cat "$1/etc/ssh/authorized_keys" "$1/root/.ssh/authorized_keys"; }
+keys() { cat "$1/etc/ssh/authorized_keys" "$1/root/.ssh/authorized_keys" 2>/dev/null || true; }
 seq_of() { grep -E '^(ssh|setsid)' "$1/calls" | paste -sd'|'; }
 
 r=$(fresh missing-pub)
@@ -74,7 +74,7 @@ rc=0; out=$(run "$r" ROBOT_ENV="$(env_file old)") || rc=$?
 r=$(fresh reject)
 rc=0; out=$(run "$r" FAKE_REJECT="$newb") || rc=$?
 [[ $rc == 1 && $out == *"new-key login (new connection) is refused"* ]] || die "new key refused: rc=$rc out=[$out]"
-[[ $(keys "$r" | grep -cF -- "$oldb") == 2 ]] || die "new key refused: the image key was removed"
+[[ $(keys "$r" | grep -cF -- "$oldb") == 1 ]] || die "new key refused: the image key was removed"
 grep -q setsid "$r/calls" && die "new key refused: armed a rollback"
 
 r=$(fresh happy)
@@ -84,7 +84,7 @@ want='ssh new true refused|ssh old add|ssh new true|ssh new swap|setsid|ssh new 
 [[ $out == *"PASS: sshkey: fresh new-key login; image-key login refused"* && $out == *"PASS: sshkey: image key in no"* ]] || die "happy path output: $out"
 keys "$r" | grep -qF -- "$oldb" && die "happy path: the image key is still authorized"
 keys "$r" | grep -qF -- "$newb" || die "happy path: the new key is not authorized"
-[[ $(stat -c %a "$r/root/.ssh/authorized_keys") == 600 ]] || die "happy path: authorized_keys mode changed"
+[[ $(stat -c %a "$r/etc/ssh/authorized_keys") == 600 ]] || die "happy path: authorized_keys mode changed"
 grep -q ' ro ' "$r/proc/mounts" || die "happy path left / rw"
 
 : >"$r/calls"
@@ -99,7 +99,13 @@ rc=0; out=$(run "$r") || rc=$?
 r=$(fresh oldstays)
 rc=0; out=$(run "$r" FAKE_KEEP="$oldb") || rc=$?
 [[ $rc == 1 && $out == *"image key still logs in"* ]] && ! grep -q confirm "$r/calls" || die "image key still accepted: rc=$rc out=[$out]"
-sleep 2 # the 1 s window passes; happy's confirmed timer must not fire either
-keys "$r" | grep -qF -- "$newb" && [[ $(keys "$r" | grep -cF -- "$oldb") == 2 ]] || die "no confirm: rollback did not restore image + new key: $(keys "$r")"
+r2=$(fresh stale) # a failed run's timer, then a re-run inside its window
+run "$r2" FAKE_KEEP="$oldb" >/dev/null && die "stale: the failing 1st run passed"
+out=$(run "$r2") || die "stale: re-run: $out"
+[[ $out == *"sshkey: already installed"* ]] || die "stale: re-run did not see the swap: $out"
+sleep 2 # the 1 s windows pass; happy's and stale's confirmed timers must not fire
+keys "$r2" | grep -qF -- "$oldb" && die "stale: the earlier run's timer restored the image key after the re-run passed"
+[[ $(stat -c %a "$r/etc/ssh/authorized_keys") == 600 ]] || die "no confirm: the restore changed authorized_keys' mode"
+keys "$r" | grep -qF -- "$newb" && [[ $(keys "$r" | grep -cF -- "$oldb") == 1 ]] || die "no confirm: rollback did not restore image + new key: $(keys "$r")"
 keys "$tmp/happy" | grep -qF -- "$oldb" && die "happy path: the confirmed rollback still fired"
 echo "sshkey host test OK"

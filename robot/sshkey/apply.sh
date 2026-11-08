@@ -7,7 +7,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 . "$here/../env.sh"
 
 [[ -f $key_old ]] || { echo "SETUP: sshkey: no image key $key_old (ROBOT_KEY_OLD)" >&2; exit 2; }
-blob() { if [[ -f $1.pub ]]; then awk '{ print $2; exit }' "$1.pub"; else ssh-keygen -y -f "$1" | awk '{ print $2; exit }'; fi; }
+blob() { if [[ -f $1.pub ]]; then awk '{ print $2; exit }' "$1.pub"; else ssh-keygen -y -P '' -f "$1" | awk '{ print $2; exit }'; fi; }
 new=$(blob "$key") && old=$(blob "$key_old") && [[ -n $new && -n $old ]] ||
   { echo "SETUP: sshkey: cannot read the public half of $key or $key_old" >&2; exit 2; }
 if [[ $new == "$old" ]]; then
@@ -55,10 +55,10 @@ swap)
     n=$((n + 1))
     mkdir -p "$bak"
     cp -p "$ETC_ROOT$f" "$bak/$n"
-    restore="$restore cat '$bak/$n' >'$ETC_ROOT$f';"
+    restore="$restore cp -p '$bak/$n' '$ETC_ROOT$f.new' && mv -f '$ETC_ROOT$f.new' '$ETC_ROOT$f';"
   done
   if [ "$n" -eq 0 ]; then echo "sshkey: already installed"; exit 0; fi
-  arm sshkey "$ROLLBACK_MIN" "mount -o remount,rw /;$restore mount -o remount,ro /"
+  arm sshkey "$ROLLBACK_MIN" "mount -o remount,rw /;$restore sync; mount -o remount,ro /"
   for f in $(files); do if has "$f" "$OLD"; then etc_put "$f" "$(grep -vF -- "$OLD" "$ETC_ROOT$f" || true)"; fi; done
   etc_ro
   etc_ro_check
@@ -66,7 +66,7 @@ swap)
   ;;
 confirm)
   confirm sshkey
-  echo "sshkey: rollback disarmed"
+  echo "sshkey: confirmed"
   ;;
 check)
   for f in $(files); do if has "$f" "$OLD"; then echo "FAIL: $f still holds the image key"; exit 1; fi; done
@@ -97,6 +97,7 @@ if [[ $out != *"already installed"* ]]; then
   if o=$(try "$key_old" 2>&1); then echo "FAIL: sshkey: the image key still logs in; the armed rollback restores image key + new key" >&2; exit 1; fi
   [[ $o == *"Permission denied"* ]] || { echo "FAIL: sshkey: image-key refusal not shown ($o); the armed rollback restores image key + new key" >&2; exit 1; }
   echo "PASS: sshkey: fresh new-key login; image-key login refused"
-  remote "$key" confirm
 fi
+# Also when already installed: it disarms a failed earlier run's timer (a new-key login just passed on these files).
+remote "$key" confirm || { echo "FAIL: sshkey: confirm failed; the armed rollback restores image key + new key" >&2; exit 1; }
 remote "$key" check
