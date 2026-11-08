@@ -7,7 +7,7 @@ Status: staged 2026-11-08 from the `2026-11-08-mic-stream.md` (docs/plans/) 1.2 
 | id | ruling | edit site |
 |---|---|---|
 | H1 | Observed 20:48:17: the stream's copy of "Hey Vector, kui palju kell on?" → listen `SPEAK` 1 ms before the wake-word turn's STT → clock intent lost, listen reply spoken instead. A stream utterance overlapping a wake-word turn must not SPEAK. | `listen.Hearer` decision vs `State.Turn` (`forkListen`) |
-| H2 | [USER DECISION] "mis mu nimi on?" hits built-in `intent_names_ask` (face recognition → "I don't know", PC voice); the LLM never runs, so the about-me name is unused. Options: drop it from `forkAllowedIntents` (LLM answers from about-me) · keep it (enroll the face). | `chipper/pkg/vars/fork_intents.go` |
+| H2 | [USER DECISION] "mis mu nimi on?" hits built-in `intent_names_ask` → robot `WhatsMyName` behavior → `sayname.dont_know`, spoken via patch 0010 PC voice (robot `/var/log/messages`); the LLM never runs, so the about-me name is unused. Options: drop it from `forkAllowedIntents` (LLM answers from about-me) · keep it (enroll the face). | `chipper/pkg/vars/fork_intents.go` |
 | H3 | Observed 20:48:59: listen `SPEAK` on a 1-word utterance (unprompted). Check whether a minimum word count belongs in the decider. | `listen.Hearer` / `followupprobe` |
 
 ## Stages
