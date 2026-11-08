@@ -171,7 +171,7 @@ func main() {
 
 type setRun struct {
 	set, lang, brain, think, prompt, judge string
-	budget, reps, n                int
+	budget, reps, n                        int
 }
 
 // armRun is one arm's calls and judge scores in one language.
@@ -179,6 +179,7 @@ type armRun struct {
 	arm    runArm
 	calls  []probekit.Call
 	scores []int
+	counts []counts // error calls left out
 }
 
 // runArm is one -set arm: a thinking level × a prompt arm; labelled "<think>/<prompt>" when -prompt is given.
@@ -292,6 +293,9 @@ func runSet(r setRun) {
 					c := probekit.Call{Reply: strings.TrimSpace(res.RawAnswer), Raw: res.RawAnswer, Reasoning: res.Reasoning,
 						Finish: res.Finish, Prompt: res.Usage.PromptTokens, Completion: res.Usage.CompletionTokens, Dur: res.Dur}
 					runs[i].calls = append(runs[i].calls, c)
+					if err == nil {
+						runs[i].counts = append(runs[i].counts, count(a, res.RawAnswer, res.Answer, pbase.tokens))
+					}
 					score := "-"
 					if key != "" && strings.TrimSpace(res.Answer) == "" { // a cut-off reply says nothing: 0, no judge call
 						runs[i].scores = append(runs[i].scores, 0)
@@ -340,7 +344,7 @@ func runSet(r setRun) {
 				}
 				dp = fmt.Sprintf("%+d ms", (s.P50 - baseSum.P50).Milliseconds())
 			}
-			fmt.Printf("%s  judge %s  Δjudge %s  Δp50 %s\n", s.Line(l+" "+ar.arm.Label(model)), mean, dj, dp)
+			fmt.Printf("%s  judge %s  Δjudge %s  Δp50 %s  %s\n", s.Line(l+" "+ar.arm.Label(model)), mean, dj, dp, countLine(ar.counts))
 		}
 	}
 }
