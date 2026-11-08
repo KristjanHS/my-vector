@@ -17,7 +17,7 @@ show_warns() { [[ -z $warns ]] || printf '\033[1;33m%s\033[0m\n' "$warns" >&2; }
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; show_warns; [[ -z ${SHIP_LOG:-} ]] || echo "log: $SHIP_LOG" >&2; exit 1; }
 case ${1:-} in '') deploy=1 ;; --no-deploy) deploy=0 ;; *) die "unknown arg: $1 (only --no-deploy)" ;; esac
 total=$((5 + deploy * 8)); i=0
-step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s\033[0m\n' "$i" "$total" "$*"; }
+step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s  (+%s s)\033[0m\n' "$i" "$total" "$*" "$SECONDS"; }
 [[ $(git -C "$repo" rev-parse --absolute-git-dir) == "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)" ]] ||
   die "run from the main checkout, not a worktree: make syncwt, then make -C ~/projects/my-vector ship"
 [[ $(git -C "$repo" branch --show-current) == main ]] || die "main checkout is not on main"
@@ -38,7 +38,8 @@ echo "log: $SHIP_LOG"
 
 dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
-trap 'rm -rf "$head"' EXIT
+cleanup() { rm -rf "$head"; rm -f "$src/myvector_sshkey"; if declare -F mux_close >/dev/null; then mux_close; fi; }
+trap cleanup EXIT
 # fork_smoke.go + myvector/voice too: check-static.sh S5 reads them repo-relative and fails if smoke.sh is there without them.
 # robot/env.sh: settings.sh + smoke.sh source it from $pd/.. (robot/lib: the installers' etc.sh); ls-tree drops what an older sha lacks.
 # shellcheck disable=SC2046 # unquoted on purpose: empty for an older sha
@@ -87,6 +88,8 @@ if ((deploy)); then
     if [[ -f $head/robot/$sk/apply.sh ]]; then out=$(bash "$head/robot/$sk/apply.sh" 2>&1) || die "robot keys: ${out//$'\n'/; }"; echo "$out"
     else echo "no robot/$sk at $sha; skipped"; fi
   done
+  # One SSH master for the rest of the ship (ROBOT_KEY now works): ~0.7 s handshake -> ~0.04 s per call; closed by cleanup.
+  if declare -F mux_open >/dev/null; then mux_open; fi
 
   step "compat: tree VICTOR_COMPAT_VERSION = robot /etc/victor-compat-version"
   cs=$pd/compat.sh; [[ -f $cs ]] || cs=$here/compat.sh # a pre-R7 sha has none
@@ -176,8 +179,7 @@ else
 fi
 
 step "deploy: ./build/deploy-v.sh to $ip"
-# Patch 0014: deploy-v.sh ssh-adds MYVECTOR_DEPLOY_KEY (gitignored in the clone) instead of the image's robot_sshkey.
-trap 'rm -rf "$head"; rm -f "$src/myvector_sshkey"' EXIT
+# Patch 0014: deploy-v.sh ssh-adds MYVECTOR_DEPLOY_KEY (gitignored in the clone) instead of the image's robot_sshkey; cleanup removes it.
 install -m 600 "$key" "$src/myvector_sshkey"
 (cd "$src" && MYVECTOR_DEPLOY_KEY=myvector_sshkey script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
 rm -f "$src/myvector_sshkey"

@@ -23,7 +23,11 @@ key_old=${ROBOT_KEY_OLD:-work/wire-os-victor/robot_sshkey}
 [[ -n $esn && -n $ip && -n $server && -f $key ]] ||
   { echo "SETUP: $env_file needs ROBOT_ESN, ROBOT_IP, ROBOT_SERVER and ROBOT_KEY (an existing file)" >&2; exit 2; }
 ssh_base=(-o BatchMode=yes -o ConnectTimeout=8 -o PubkeyAcceptedAlgorithms=+ssh-rsa -o HostKeyAlgorithms=+ssh-rsa)
+# ssh_opts reuse the master mux_open starts (make ship), else connect directly; ssh_base has no ControlPath (hostkey/sshkey pass ControlPath=none).
 # shellcheck disable=SC2034 # read by the sourcing scripts
-ssh_opts=(-i "$key" "${ssh_base[@]}")
+ssh_opts=(-i "$key" "${ssh_base[@]}" -o "ControlPath=${XDG_RUNTIME_DIR:-$robot_dir/work}/mv-ssh-%C")
+mux_open() { ssh "${ssh_opts[@]}" -O check "root@$ip" 2>/dev/null ||
+  ssh "${ssh_opts[@]}" -fN -o ControlMaster=yes -o ControlPersist=600 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 "root@$ip" </dev/null >/dev/null 2>&1 || true; }
+mux_close() { ssh "${ssh_opts[@]}" -O exit "root@$ip" 2>/dev/null || true; }
 # The clone's build/deploy-v.sh reads the robot IP from <clone>/robot_ip.txt.
 write_clone_ip() { [[ -d $1 ]] || { echo "SETUP: no victor clone at $1" >&2; exit 2; }; printf '%s\n' "$ip" >"$1/robot_ip.txt"; }

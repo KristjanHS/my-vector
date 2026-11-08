@@ -58,8 +58,8 @@ for try in 1 2 3; do
   ((try < 3)) || setup "no SSH to $ip"; sleep 3
 done
 
-step "units up and stable (up to 195 s)"
-# P1: units active within 180 s, PIDs unchanged 15 s later (and at the end).
+step "units up and stable (up to 183 s)"
+# P1: units active within 180 s, PIDs unchanged 3 s later (and at the end: same_pids "during the run").
 t0=$(ssh_ 'date +%s' 2>/dev/null) || t0=$(date +%s)
 end=$((SECONDS + 180))
 while :; do
@@ -71,9 +71,9 @@ while :; do
   fi
   sleep 5
 done
-sleep 15
-same_pids "within 15 s (crash loop?)"
-ok "units active, stable 15 s: $up"
+sleep 3
+same_pids "within 3 s (crash loop?)"
+ok "units active, stable 3 s: $up"
 
 step "wire-pod link"
 # P1: wire-pod reaches the robot within 20 s (else the setup, not the firmware, is broken).
