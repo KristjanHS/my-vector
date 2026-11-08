@@ -43,18 +43,22 @@ func TestForkFilterKeepsExactlyTheAllowlist(t *testing.T) {
 	}
 }
 
-func TestForkDroppedKeyphrasesExistInEnUS(t *testing.T) {
+func TestForkDroppedKeyphrasesExist(t *testing.T) {
 	src := map[string]map[string]bool{}
-	for _, it := range loadIntentFile(t, "../../intent-data/en-US.json") {
-		src[it.Name] = map[string]bool{}
-		for _, k := range it.Keyphrases {
-			src[it.Name][k] = true
+	for _, f := range []string{"en-US", "et-EE"} {
+		for _, it := range loadIntentFile(t, "../../intent-data/"+f+".json") {
+			if src[it.Name] == nil {
+				src[it.Name] = map[string]bool{}
+			}
+			for _, k := range it.Keyphrases {
+				src[it.Name][k] = true
+			}
 		}
 	}
 	for name, kps := range forkDroppedKeyphrases {
 		for _, k := range kps {
 			if !src[name][k] {
-				t.Errorf("%s: dropped keyphrase %q not in en-US.json", name, k)
+				t.Errorf("%s: dropped keyphrase %q in neither en-US.json nor et-EE.json", name, k)
 			}
 		}
 	}
@@ -126,7 +130,7 @@ func TestForkIntentsEstonian(t *testing.T) {
 		"Mis kell on?":                        "intent_clock_time",
 		"Paneme taimer viieks minutiks.":      "intent_clock_settimer_extend",
 		"Mis ilm on Tallinnas?":               "intent_weather_extend",
-		"Kes ma olen?":                        "intent_names_ask",
+		"Kes ma olen?":                        "",
 		"Mis on Eesti pealinn?":               "",
 		"Kui kaugel on kuu?":                  "",
 		"Räägi mulle üks nali.":               "",
@@ -135,8 +139,10 @@ func TestForkIntentsEstonian(t *testing.T) {
 		"Kes kirjutas Tõde ja õigus?":         "",
 		"Pane taimer viieks minutiks.":        "intent_clock_settimer_extend",
 		"Kui palju taimeril aega on?":         "intent_clock_checktimer",
-		"Mis mu nimi on?":                     "intent_names_ask",
+		"Mis mu nimi on?":                     "",
 		"Minu nimi on Kristjan.":              "intent_names_username_extend",
+		"Mu nimi on Kristjan.":                "intent_names_username_extend",
+		"Mis minu nimi on?":                   "",
 		"Ütle kellaaega.":                     "intent_clock_time",
 		"Tee minust pilti.":                   "intent_photo_take_extend",
 		"Mul on küsimus.":                     "intent_knowledge_promptquestion",
@@ -180,6 +186,8 @@ func TestForkContainsPhraseWholeWords(t *testing.T) {
 		{"check the timer?", "timer", true},
 		{"现在几点", "几点", true},
 		{"anything", "", false},
+		{"mu nimi on kristjan", "^mu nimi on", true},
+		{"mis mu nimi on", "^mu nimi on", false},
 		{"mitu päeva on", "eva", false},
 		{"räägi mulle", "räägi", true},
 		{"paneme taimerit", "taimer*", true},
