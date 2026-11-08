@@ -17,8 +17,10 @@ type armRig struct {
 	addr string
 	mu   sync.Mutex
 	sets []string // value= of each StreamPortVar set
+	at   []time.Time
 	off  []string
-	logs []string // Stream + Arm
+	logs []string      // Stream + Arm
+	hold chan struct{} // non-nil: each console request waits for a receive
 }
 
 // newArmRig: an Arm on a loopback Stream (127.0.0.1 = esn) and an httptest vic-anim console; waits are ms.
@@ -29,7 +31,14 @@ func newArmRig(t *testing.T) *armRig {
 			t.Errorf("console request %s", r.URL)
 		}
 		g.mu.Lock()
+		hold := g.hold
+		g.mu.Unlock()
+		if hold != nil {
+			<-hold
+		}
+		g.mu.Lock()
 		g.sets = append(g.sets, r.URL.Query().Get("value"))
+		g.at = append(g.at, time.Now())
 		g.mu.Unlock()
 	}))
 	t.Cleanup(srv.Close)
@@ -56,6 +65,7 @@ func newArmRig(t *testing.T) *armRig {
 		Log:  logf,
 		Wait: []time.Duration{20 * time.Millisecond, 20 * time.Millisecond, 20 * time.Millisecond},
 		Dial: 100 * time.Millisecond,
+		Hold: 30 * time.Millisecond,
 	}
 	s.Up, s.Down = g.a.Up, g.a.Down
 	go s.Serve(l)
@@ -67,6 +77,21 @@ func (g *armRig) got() (sets, off string) {
 	defer g.mu.Unlock()
 	return strings.Join(g.sets, ","), strings.Join(g.off, ",")
 }
+
+// settle waits until sets stop changing for 200 ms (> Dial + all Wait) and returns them.
+func (g *armRig) settle() string {
+	for last := "-"; ; {
+		time.Sleep(200 * time.Millisecond)
+		s, _ := g.got()
+		if s == last {
+			return s
+		}
+		last = s
+	}
+}
+
+// arms repeats one arm (port 0 then 8093, so the robot redials) n times.
+func arms(n int) string { return strings.TrimSuffix(strings.Repeat("0,8093,", n), ",") }
 
 // logged counts log lines starting with prefix.
 func (g *armRig) logged(prefix string) int {
@@ -114,11 +139,17 @@ func TestStreamArm(t *testing.T) {
 	t.Run("on sets the port; off sets 0 and closes the connection", func(t *testing.T) {
 		g := newArmRig(t)
 		g.a.Start(esn)
-		eventually(t, "port 8093", func() bool { s, _ := g.got(); return s == "8093" })
+		eventually(t, "port 0 then 8093", func() bool { s, _ := g.got(); return s == arms(1) })
+		g.mu.Lock()
+		held := g.at[1].Sub(g.at[0])
+		g.mu.Unlock()
+		if held < g.a.Hold {
+			t.Fatalf("port 0 held %v before 8093, want ≥ Hold %v (the robot can miss a shorter 0)", held, g.a.Hold)
+		}
 		c := g.dial(t)
 		eventually(t, "connection up", g.up)
 		g.a.Stop(esn)
-		eventually(t, "port 0", func() bool { s, _ := g.got(); return s == "8093,0" })
+		eventually(t, "port 0", func() bool { s, _ := g.got(); return s == arms(1)+",0" })
 		if !closedByServer(c) {
 			t.Fatal("off left the stream connection open")
 		}
@@ -133,21 +164,43 @@ func TestStreamArm(t *testing.T) {
 		eventually(t, "connection up", g.up)
 		c.Close()
 		eventually(t, "off capture", func() bool { _, o := g.got(); return o == esn+" capture" })
-		eventually(t, "port 0 last", func() bool { s, _ := g.got(); return s == "8093,8093,8093,8093,0" })
+		eventually(t, "port 0 last", func() bool { s, _ := g.got(); return s == arms(4)+",0" })
 	})
 	t.Run("a connection during the misses starts them over", func(t *testing.T) {
 		g := newArmRig(t)
 		g.a.Start(esn)
-		eventually(t, "first re-arm", func() bool { s, _ := g.got(); return s == "8093,8093" })
-		g.dial(t)
+		eventually(t, "first re-arm", func() bool { s, _ := g.got(); return s == arms(2) })
+		c := g.dial(t)
 		eventually(t, "connection up", g.up)
 		misses := g.logged("myvector listen: no stream")
 		time.Sleep(500 * time.Millisecond) // > Dial + all Wait: still up, no more re-arms
-		if s, o := g.got(); s != "8093,8093" || o != "" || g.logged("myvector listen: no stream") != misses {
+		if s, o := g.got(); s != arms(2) || o != "" || g.logged("myvector listen: no stream") != misses {
 			t.Fatalf("sets %q off %q, misses %d→%d while connected; want no re-arm, off or miss", s, o, misses, g.logged("myvector listen: no stream"))
 		}
-		g.a.Stop(esn)
-		eventually(t, "port 0", func() bool { s, _ := g.got(); return s == "8093,8093,0" })
+		c.Close()
+		eventually(t, "off capture", func() bool { _, o := g.got(); return o == esn+" capture" })
+		if s := g.settle(); s != arms(5)+",0" {
+			t.Fatalf("sets %q after the drop; want all %d re-arms again, then 0", s, len(g.a.Wait))
+		}
+	})
+	t.Run("refused connections share one queued port-0 set", func(t *testing.T) {
+		g := newArmRig(t)
+		hold := make(chan struct{})
+		g.mu.Lock()
+		g.hold = hold
+		g.mu.Unlock()
+		for i := 0; i < 5; i++ {
+			if !closedByServer(g.dial(t)) {
+				t.Fatal("an unarmed robot's connection stayed open")
+			}
+			for i == 0 && func() bool { g.a.mu.Lock(); defer g.a.mu.Unlock(); return g.a.pending[esn] }() {
+				time.Sleep(time.Millisecond) // the first apply reads the port, then hangs in Set; the rest queue behind
+			}
+		}
+		close(hold)
+		if s := g.settle(); s != "0,0" { // the first apply, then one for all refusals queued behind it
+			t.Fatalf("sets %q for 5 refused connections; want 0,0", s)
+		}
 	})
 	t.Run("unarmed robot is told port 0 and dropped", func(t *testing.T) {
 		g := newArmRig(t)
@@ -165,7 +218,7 @@ func TestStreamArm(t *testing.T) {
 		g.a.Poll = 20 * time.Millisecond
 		g.a.Active = func(string) bool { return false }
 		g.a.Start(esn)
-		eventually(t, "port 0", func() bool { s, _ := g.got(); return s == "8093,0" })
+		eventually(t, "port 0", func() bool { s, _ := g.got(); return s == arms(1)+",0" })
 		g.a.mu.Lock()
 		n := len(g.a.bots)
 		g.a.mu.Unlock()
@@ -173,4 +226,10 @@ func TestStreamArm(t *testing.T) {
 			t.Fatal("still armed after Active = false")
 		}
 	})
+}
+
+// TestArmNilLog: a failed Set with no Log is quiet, not a panic.
+func TestArmNilLog(t *testing.T) {
+	a := &Arm{Set: func(string, int) error { return errors.New("robot away") }}
+	a.apply(esn)
 }

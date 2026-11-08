@@ -16,9 +16,11 @@ const (
 
 // DialWait: armed with no connection this long = a miss (the robot connects within ~1 s of the var, redials 1 s after a drop).
 // PollActive spaces the idle/night check while armed: G1 sends nothing in silence, so no Heard runs it.
+// PortHold keeps a re-arm's 0 set this long: the robot only sees it if its 10 ms trigger block runs meanwhile.
 const (
 	DialWait   = 10 * time.Second
 	PollActive = time.Minute
+	PortHold   = 200 * time.Millisecond
 )
 
 // ConsoleURL is vic-anim's console on the robot (:8889, as sdkapp trigger_wake_word); tests point it at httptest.
@@ -46,14 +48,16 @@ type Arm struct {
 	Close  func(esn string)                 // Stream.Close
 	Off    func(esn, why string)            // listening off after the stream gave up ("capture")
 	Active func(esn string) bool            // State.Active; false ends arming via State.OnOff; nil = on
-	Log    func(string)
-	Wait   []time.Duration // nil = RestartWait
-	Dial   time.Duration   // 0 = DialWait
-	Poll   time.Duration   // 0 = PollActive
+	Log    func(string)                     // nil = none
+	Wait   []time.Duration                  // nil = RestartWait
+	Dial   time.Duration                    // 0 = DialWait
+	Poll   time.Duration                    // 0 = PollActive
+	Hold   time.Duration                    // 0 = PortHold
 
-	mu   sync.Mutex
-	bots map[string]*armed
-	set  sync.Mutex // one Set at a time, each sending the then-wanted port, so the last one wins
+	mu      sync.Mutex
+	bots    map[string]*armed
+	pending map[string]bool // an async apply is queued that has not read the wanted port yet
+	set     sync.Mutex      // one Set at a time, each sending the then-wanted port, so the last one wins
 }
 
 type armed struct {
@@ -66,9 +70,7 @@ type armed struct {
 func (a *Arm) Start(esn string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.bots == nil {
-		a.bots = map[string]*armed{}
-	}
+	a.init()
 	if _, ok := a.bots[esn]; ok {
 		return
 	}
@@ -95,25 +97,58 @@ func (a *Arm) stop(esn string, b *armed) {
 	}
 	delete(a.bots, esn)
 	close(b.stop)
+	a.later(esn)
 	a.mu.Unlock()
-	go a.apply(esn)
+}
+
+// StopAll disarms every robot (test cleanup).
+func (a *Arm) StopAll() {
+	a.mu.Lock()
+	bots := map[string]*armed{}
+	for esn, b := range a.bots {
+		bots[esn] = b
+	}
+	a.mu.Unlock()
+	for esn, b := range bots {
+		a.stop(esn, b)
+	}
+}
+
+func (a *Arm) init() {
+	if a.bots == nil {
+		a.bots, a.pending = map[string]*armed{}, map[string]bool{}
+	}
+}
+
+// later queues one async apply for esn (a.mu held); requests before it reads the wanted port share it.
+func (a *Arm) later(esn string) {
+	a.init()
+	if !a.pending[esn] {
+		a.pending[esn] = true
+		go a.apply(esn)
+	}
 }
 
 // Up is Stream.Up: an armed robot's connection resets its misses; an unarmed one is told port 0 and dropped.
 func (a *Arm) Up(esn string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if !a.mark(esn, true) {
-		go a.apply(esn)
+		a.later(esn)
 		return false
 	}
 	return true
 }
 
 // Down is Stream.Down: the miss clock starts.
-func (a *Arm) Down(esn string) { a.mark(esn, false) }
-
-func (a *Arm) mark(esn string, up bool) bool {
+func (a *Arm) Down(esn string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.mark(esn, false)
+}
+
+// mark runs under a.mu.
+func (a *Arm) mark(esn string, up bool) bool {
 	b, ok := a.bots[esn]
 	if ok {
 		b.up = up
@@ -131,22 +166,40 @@ func (a *Arm) isUp(esn string, b *armed) bool {
 	return a.bots[esn] == b && b.up
 }
 
-// apply sends esn's wanted port: StreamPort while armed, else 0 and its connection closed.
+// apply sends esn's wanted port: 0 then StreamPort while armed (a change makes the robot redial, so a fresh
+// connection always brings an Up), else 0 and its connection closed.
 func (a *Arm) apply(esn string) {
 	a.set.Lock()
 	defer a.set.Unlock()
 	a.mu.Lock()
 	_, on := a.bots[esn]
+	delete(a.pending, esn)
 	a.mu.Unlock()
-	port := 0
+	ports := []int{0}
 	if on {
-		port = StreamPort
+		ports = append(ports, StreamPort)
 	}
-	if err := a.Set(esn, port); err != nil {
-		a.Log(fmt.Sprintf("myvector listen: stream port %d: %s", port, err))
+	for i, port := range ports {
+		if i > 0 {
+			hold := a.Hold
+			if hold == 0 {
+				hold = PortHold
+			}
+			time.Sleep(hold)
+		}
+		if err := a.Set(esn, port); err != nil {
+			a.logf(fmt.Sprintf("myvector listen: stream port %d: %s", port, err))
+			break
+		}
 	}
 	if !on && a.Close != nil {
 		a.Close(esn)
+	}
+}
+
+func (a *Arm) logf(l string) {
+	if a.Log != nil {
+		a.Log(l)
 	}
 }
 
@@ -179,19 +232,19 @@ func (a *Arm) loop(esn string, b *armed) {
 			if a.isUp(esn, b) {
 				fails, miss = 0, nil
 			} else if miss == nil {
-				a.Log("myvector listen: stream lost")
+				a.logf("myvector listen: stream lost")
 				miss = time.After(dial)
 			}
 			continue
 		case <-miss:
 		}
 		if fails == len(wait) {
-			a.Log("myvector listen: stream gave up")
+			a.logf("myvector listen: stream gave up")
 			a.stop(esn, b)
 			a.Off(esn, "capture")
 			return
 		}
-		a.Log("myvector listen: no stream; re-arm in " + wait[fails].String())
+		a.logf("myvector listen: no stream; re-arm in " + wait[fails].String())
 		select {
 		case <-b.stop:
 			return

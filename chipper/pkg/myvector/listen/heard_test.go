@@ -257,3 +257,23 @@ func TestHearInOrder(t *testing.T) {
 		t.Fatalf("LLM user %q, want %q", r.user, want)
 	}
 }
+
+// TestHearEchoInSay: a cut of Vector's reply reaching Hear before Say returns (no window yet) is echo, not transcript.
+func TestHearEchoInSay(t *testing.T) {
+	r := newRig(t)
+	r.reply = "Ferns like damp soil."
+	r.h.Say = func(_, text string) error {
+		r.said = append(r.said, text)
+		r.now = r.now.Add(time.Second)
+		if f := r.h.Hear(Utterance{ESN: esn, Text: "ferns like", Start: r.now.Add(-time.Second), End: r.now}); f != nil {
+			t.Error("a fragment of the reply got an LLM call")
+		}
+		r.now = r.now.Add(2 * time.Second)
+		return nil
+	}
+	r.hear(time.Second, "is the fern dry?")
+	r.hear(Backoff[0]+EchoPad, "should I water it?")
+	if want := User([]string{"is the fern dry?"}, "should I water it?"); r.user != want {
+		t.Fatalf("LLM user %q, want %q (the reply's own fragment entered the transcript)", r.user, want)
+	}
+}
