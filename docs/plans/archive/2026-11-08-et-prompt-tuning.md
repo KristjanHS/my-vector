@@ -1,6 +1,6 @@
 # et-EE chat prompt tuning per model
 
-Status: 1.1–3.2 done, 4.1 ruled (2026-11-08); next the 4.1 D-alone holdout run.
+Status: CLOSED WITHOUT SHIPPING (2026-11-08) — 4.1 D alone failed K and H; no prod wiring, EstLLM-1125 stays a manual backup.
 
 **Ask**: fix the two et picks of 2026-11-08-et-llm-research.md (docs/plans/) §Stage 2 with model-specific prompt changes:
 `apertus-estllm:8b` answers long and list-shaped (`Samm 1:`, bullets); EstLLM-8B-1125 drops ‹nimi›/‹kodukoht›/family into unrelated replies.
@@ -102,6 +102,8 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 | Apertus | S+R (3.2) | 19/48 | 2 | 5 | 67 | 76.6 | 1.5/6.5 |
 | EstLLM-1125 | 0 (3.2) | 32/50 | 0 | 62 | 100 | 38.6 | 1.5/2.4 |
 | EstLLM-1125 | D+G2 (3.2) | 24/32 | 0 | 0 | 100 | 47.0 | 1.0/1.2 |
+| EstLLM-1125 | 0 (4.1) | 24/75 | 9 | 12 | 100 | 39.6 | 1.3/2.7 |
+| EstLLM-1125 | D (4.1) | 31/47 | 0 | 50 | 67 | 35.0 | 1.2/1.8 |
 
 ## Sources
 
