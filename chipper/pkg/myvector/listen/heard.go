@@ -109,35 +109,49 @@ func (h *Hearer) now() time.Time {
 
 // Heard runs A2/A3/A5/A6/A9 on u: phrases, echo gate, cooldown, one LLM call, then maybe one reply.
 func (h *Hearer) Heard(u Utterance) {
+	if reply := h.Hear(u); reply != nil {
+		reply()
+	}
+}
+
+// Hear is Heard's in-order part (phrases, echo gate, transcript, claim); the LLM call + reply it returns (nil = none)
+// may run apart, so a slow reply never holds the next utterance (the stream's STT worker calls Hear in arrival order).
+func (h *Hearer) Hear(u Utterance) func() {
 	s, now := h.State, h.now()
 	if !s.Active(u.ESN, now) {
-		return
+		return nil
 	}
 	if p, ok := quiet.Match(u.Text); ok {
 		s.Deactivate(u.ESN, "quiet")
 		if h.Quiet != nil {
 			h.Quiet(u.ESN, p)
 		}
-		return
+		return nil
 	}
 	if on, ok := Match(u.Text); ok {
-		if !on {
-			s.Deactivate(u.ESN, "phrase")
-			h.speak(u.ESN, Confirm(false, h.Estonian != nil && h.Estonian()))
+		if on {
+			return nil
 		}
-		return
+		s.Deactivate(u.ESN, "phrase")
+		return func() { h.speak(u.ESN, Confirm(false, h.Estonian != nil && h.Estonian())) }
 	}
 	if s.Echo(u.ESN, u.Start, u.End) {
 		s.Log("myvector listen: echo dropped")
-		return
+		return nil
 	}
 	s.Heard(u.ESN, now)
 	before := s.hear(u.ESN, now, u.Text)
 	words := len(strings.Fields(u.Text))
 	if why := s.claim(u.ESN, now, named.MatchString(u.Text)); why != "" {
 		s.Log(fmt.Sprintf("myvector listen: %d words → %s", words, why))
-		return
+		return nil
 	}
+	return func() { h.reply(u, now, before, words) }
+}
+
+// reply holds u's claimed LLM slot: one Ask, then maybe one reply while still on.
+func (h *Hearer) reply(u Utterance, now time.Time, before []string, words int) {
+	s := h.State
 	defer s.release(u.ESN)
 	c, model, ok := h.Client()
 	if !ok {

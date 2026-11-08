@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// M5 mic stream: the robot (patch 0015, T1) dials out raw TCP to StreamAddr and sends 16 kHz s16le mono PCM only
+// M5 mic stream: the robot (patch 0016, T1) dials out raw TCP to StreamAddr and sends 16 kHz s16le mono PCM only
 // around speech (G1 gate); no framing, no token — the PC firewall (wire-pod-guard.nft) is the auth.
 const (
 	StreamAddr = ":8093"
@@ -71,19 +71,21 @@ func (c *Cutter) Flush() {
 	}
 }
 
-// Stream receives the robot mic stream; one connection at a time, a new one closes the old.
+// Stream receives the robot mic stream; one connection per robot, a new one closes the old.
 // One worker runs Cuts through STT in arrival order and logs "heard N words"; nil STT = STT.
 type Stream struct {
 	ESN   func(ip string) string // robot by source IP; "" drops the connection
 	Lang  func() string
 	STT   func(lang string, pcm []byte) (string, error)
-	Heard func(Utterance) // nil = log only (Stage 2.1)
-	Log   func(string)    // nil = none
+	Heard func(Utterance)       // called in arrival order; nil = log only
+	Log   func(string)          // nil = none
+	Up    func(esn string) bool // a connection arrived; false drops it (robot not armed); nil = accept
+	Down  func(esn string)      // esn's current connection ended by itself (Close or a newer one = no Down)
 
-	mu   sync.Mutex
-	cur  net.Conn
-	once sync.Once
-	q    chan streamCut
+	mu    sync.Mutex
+	conns map[string]net.Conn
+	once  sync.Once
+	q     chan streamCut
 }
 
 // streamQueue Cuts may wait for STT; a full queue drops the new Cut.
@@ -133,14 +135,33 @@ func (s *Stream) Serve(l net.Listener) error {
 			c.Close()
 			continue
 		}
-		s.mu.Lock()
-		if s.cur != nil {
-			s.cur.Close()
+		if s.Up != nil && !s.Up(esn) {
+			s.logf("myvector listen: stream from " + esn + " while off")
+			c.Close()
+			continue
 		}
-		s.cur = c
+		s.mu.Lock()
+		if s.conns == nil {
+			s.conns = map[string]net.Conn{}
+		}
+		if old := s.conns[esn]; old != nil {
+			old.Close()
+		}
+		s.conns[esn] = c
 		s.mu.Unlock()
 		s.logf("myvector listen: stream from " + esn)
 		go s.read(esn, c)
+	}
+}
+
+// Close drops esn's current connection (listening off); no Down follows.
+func (s *Stream) Close(esn string) {
+	s.mu.Lock()
+	c := s.conns[esn]
+	delete(s.conns, esn)
+	s.mu.Unlock()
+	if c != nil {
+		c.Close()
 	}
 }
 
@@ -148,11 +169,15 @@ func (s *Stream) Serve(l net.Listener) error {
 func (s *Stream) read(esn string, c net.Conn) {
 	defer func() {
 		s.mu.Lock()
-		if s.cur == c {
-			s.cur = nil
+		lost := s.conns[esn] == c
+		if lost {
+			delete(s.conns, esn)
 		}
 		s.mu.Unlock()
 		c.Close()
+		if lost && s.Down != nil {
+			s.Down(esn)
+		}
 	}()
 	cut := &Cutter{Emit: func(u Cut) {
 		select {

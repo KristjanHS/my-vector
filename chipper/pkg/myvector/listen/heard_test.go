@@ -235,3 +235,25 @@ func TestAskRequest(t *testing.T) {
 		t.Errorf("max_completion_tokens = %v; want absent", v)
 	}
 }
+
+// TestHearInOrder: Hear keeps the transcript in call order and leaves the LLM call to the reply it returns.
+func TestHearInOrder(t *testing.T) {
+	r := newRig(t)
+	u := func(text string) Utterance {
+		r.now = r.now.Add(time.Second)
+		return Utterance{ESN: esn, Text: text, Start: r.now.Add(-time.Second), End: r.now}
+	}
+	first := r.h.Hear(u("is anyone hungry?"))
+	if first == nil || r.calls != 0 {
+		t.Fatalf("Hear: reply %v, %d LLM calls; want a reply not yet run", first != nil, r.calls)
+	}
+	first()
+	second := r.h.Hear(u("what should we eat?"))
+	if second == nil {
+		t.Fatal("second Hear: no reply after the first released its slot")
+	}
+	second()
+	if want := "Earlier:\nis anyone hungry?\nNewest line:\nwhat should we eat?"; r.user != want {
+		t.Fatalf("LLM user %q, want %q", r.user, want)
+	}
+}

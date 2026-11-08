@@ -2,6 +2,9 @@ package wirepod_ttr
 
 import (
 	"os"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,26 +28,41 @@ func (s *listenStream) Send(r *pb.IntentGraphResponse) error {
 	return nil
 }
 
-func freshListening(t *testing.T) {
-	old := forkListening
+// freshListening swaps in a State and an Arm whose stream-port sets got() lists ("8093,0").
+func freshListening(t *testing.T) (got func() string) {
+	old, oldArm := forkListening, forkArm
+	var mu sync.Mutex
+	var sets []string
+	forkArm = &listen.Arm{Log: func(string) {}, Off: func(string, string) {}, Set: func(_ string, port int) error {
+		mu.Lock()
+		defer mu.Unlock()
+		sets = append(sets, strconv.Itoa(port))
+		return nil
+	}}
 	forkListening = listen.NewState()
+	forkListening.OnOff = forkArm.Stop
 	forkHearer.State = forkListening
-	t.Cleanup(func() { forkListening, forkHearer.State = old, old })
+	t.Cleanup(func() { forkListening, forkHearer.State, forkArm = old, old, oldArm })
+	return func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return strings.Join(sets, ",")
+	}
 }
 
 func TestForkListenShortCircuits(t *testing.T) {
 	lang.UseForTest(t, lang.Estonian)
-	freshListening(t)
+	sets := freshListening(t)
 	req, _, _ := quietRig(t, "10.0.0.9")
 	utt := []string{"kuulamine", "shut"} // the plugin would claim both phrases
 	PluginUtterances = []*[]string{&utt}
 	esn := req.Device
 	for _, c := range []struct {
-		say, want string
-		on        bool
+		say, want, sets string
+		on              bool
 	}{
-		{"Hei Vektor, aktiveeri aktiivne kuulamine.", "say:Aktiivne kuulamine sees.", true},
-		{"deaktiveeri aktiivne kuulamine", "say:Aktiivne kuulamine väljas.", false},
+		{"Hei Vektor, aktiveeri aktiivne kuulamine.", "say:Aktiivne kuulamine sees.", "8093", true},
+		{"deaktiveeri aktiivne kuulamine", "say:Aktiivne kuulamine väljas.", "8093,0", false},
 	} {
 		s := &listenStream{}
 		req.Stream = s
@@ -56,6 +74,11 @@ func TestForkListenShortCircuits(t *testing.T) {
 		}
 		if got := forkListening.Any(forkNow()); got != c.on {
 			t.Errorf("%q: listening = %v, want %v", c.say, got, c.on)
+		}
+		for end := time.Now().Add(5 * time.Second); sets() != c.sets && time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		}
+		if got := sets(); got != c.sets {
+			t.Errorf("%q: stream port sets %q, want %q", c.say, got, c.sets)
 		}
 	}
 	forkListening.Activate(esn, forkNow())
@@ -99,5 +122,22 @@ func TestForkListenStampsTurn(t *testing.T) {
 	}
 	if !forkListening.Echo("on", now, now.Add(time.Second)) {
 		t.Fatal("a wake-word ask while on must open an echo window")
+	}
+}
+
+// TestForkStreamHeard: a stream utterance reaches forkHearer in line (a quiet phrase turns listening off before return).
+func TestForkStreamHeard(t *testing.T) {
+	freshListening(t)
+	_, _, naps := quietRig(t, "10.0.0.9")
+	forkListening.Activate("00e20100", forkNow())
+	now := time.Now()
+	forkMicStream.Heard(listen.Utterance{ESN: "00e20100", Text: "vector, shut up", Start: now, End: now})
+	if forkListening.Any(forkNow()) {
+		t.Fatal("a streamed quiet phrase left active listening on")
+	}
+	select {
+	case <-naps:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no nap: the streamed quiet phrase missed forkQuietLock")
 	}
 }
