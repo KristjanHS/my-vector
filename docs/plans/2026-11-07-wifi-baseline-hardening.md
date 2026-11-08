@@ -1,6 +1,6 @@
 # WiFi baseline hardening (Stage 0, before the on-robot Tailscale)
 
-Status: Stages 1, 2, 3.1, 3.2 committed; next Stage 3.3. `[USER]` owed: 1.2 `make server-pin` check, 2.1 live diskguard, 3.1 key copy. Executes Stage 0 (0.1–0.4) of `2026-11-07-public-wifi-security.md (docs/plans/)` plus T2,
+Status: Stages 1, 2, 3.1–3.3 committed; next Stage 3.5 (3.4 `[USER]` first or after). `[USER]` owed: 3.4 robot.env + live `sshkey/apply.sh`, 1.2 `make server-pin` check, 2.1 live diskguard, 3.1 key copy. Executes Stage 0 (0.1–0.4) of `2026-11-07-public-wifi-security.md (docs/plans/)` plus T2,
 the public server TLS key, and H1 (per-robot sshd host keys). The option D spike itself is not planned here. Every `[USER]` slice is a live run against the
 robot or server: Claude asks first and never runs it unasked. No step makes a robot sound.
 

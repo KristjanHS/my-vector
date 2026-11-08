@@ -45,10 +45,11 @@ timeout 30 "$tmp/t" "$here/tts-urls.txt" || rc=$?
 # voice-push.sh + settings.sh in a throwaway robot/ (GIT_DIR=/nonexistent: env.sh falls back to the copy's own robot.env).
 # Stub robot (ssh runs settings.sh's sed on robot_jdoc's file): clock 24h, Celsius, volume 1; the voice file lands in $vp/voice.json, curl calls in $vp/curl.log.
 vp=$tmp/vp
-mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/bin" "$vp/chipper/jdocs"
+mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/robot/sshkey" "$vp/bin" "$vp/chipper/jdocs"
 cp "$fw/../env.sh" "$vp/robot/"
 cp "$fw/voice-push.sh" "$fw/settings.sh" "$vp/robot/firmware/"
 printf '#!/bin/sh\necho diskguard stub\n' >"$vp/robot/diskguard/apply.sh"
+printf '#!/bin/sh\necho sshkey stub\n' >"$vp/robot/sshkey/apply.sh"
 : >"$vp/robot/key"
 cat >"$vp/bin/ssh" <<'STUB'
 #!/usr/bin/env bash
