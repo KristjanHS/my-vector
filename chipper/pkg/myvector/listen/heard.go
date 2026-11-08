@@ -21,6 +21,7 @@ const (
 	EchoPad      = 1 * time.Second
 	Window       = 2 * time.Minute // A5: rolling transcript
 	askWait      = 60 * time.Second
+	MinWords     = 2 // H3: shorter, unnamed → no LLM call (listenprobe -set oneword: "hello?" → SPEAK)
 )
 
 // Backoff is the A9 wait after the 1st, 2nd, 3rd, 4th+ listen reply in a row.
@@ -152,8 +153,12 @@ func (h *Hearer) Hear(u Utterance) func() {
 	}
 	s.Heard(u.ESN, now)
 	before := s.hear(u.ESN, now, u.Text)
-	words := len(strings.Fields(u.Text))
-	if why := s.claim(u.ESN, now, named.MatchString(u.Text)); why != "" {
+	words, isNamed := len(strings.Fields(u.Text)), named.MatchString(u.Text)
+	if words < MinWords && !isNamed {
+		s.Log(fmt.Sprintf("myvector listen: %d words → SHORT", words))
+		return nil
+	}
+	if why := s.claim(u.ESN, now, isNamed); why != "" {
 		s.Log(fmt.Sprintf("myvector listen: %d words → %s", words, why))
 		return nil
 	}

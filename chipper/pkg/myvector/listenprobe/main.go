@@ -122,7 +122,31 @@ var confirm = []snippet{
 	{lang.Estonian, "answered", []string{"mis kuupäev täna on?"}, "seitsmes november, vaatasin just telefonist.", false},
 }
 
-var sets = map[string][]snippet{"dev": dev, "holdout": holdout, "confirm": confirm}
+// oneword: 1-word utterances (2026-11-08-hey-vector-while-listening.md H3, docs/plans/); only the named ones speak.
+var oneword = []snippet{
+	{lang.English, "1 word", nil, "yes.", false},
+	{lang.English, "1 word", []string{"here's your tea."}, "thanks.", false},
+	{lang.English, "1 word", nil, "okay.", false},
+	{lang.English, "1 word", nil, "hello?", false},
+	{lang.English, "1 word", []string{"the bus is late again."}, "seriously?", false},
+	{lang.English, "1 word", []string{"i finished the puzzle."}, "nice.", false},
+	{lang.English, "1 word", nil, "coffee?", false},
+	{lang.English, "1 word", []string{"he said he'd call."}, "really?", false},
+	{lang.English, "1 word", nil, "what?", false},
+	{lang.English, "named", nil, "vector?", true},
+	{lang.Estonian, "1 word", nil, "jah.", false},
+	{lang.Estonian, "1 word", []string{"siin on su tee."}, "aitäh.", false},
+	{lang.Estonian, "1 word", nil, "okei.", false},
+	{lang.Estonian, "1 word", nil, "tere.", false},
+	{lang.Estonian, "1 word", []string{"buss jäi jälle hiljaks."}, "tõesti?", false},
+	{lang.Estonian, "1 word", []string{"sain pusle valmis."}, "äge.", false},
+	{lang.Estonian, "1 word", nil, "kohvi?", false},
+	{lang.Estonian, "1 word", nil, "ei.", false},
+	{lang.Estonian, "1 word", nil, "mis?", false},
+	{lang.Estonian, "named", nil, "vektor?", true},
+}
+
+var sets = map[string][]snippet{"dev": dev, "holdout": holdout, "confirm": confirm, "oneword": oneword}
 
 type target struct {
 	name  string
@@ -176,7 +200,7 @@ func die(msg string) {
 func main() {
 	cfgPath := flag.String("config", "../secrets/server/myvectorConfig.json", "myvectorConfig.json to read the LLM profiles from")
 	alt := flag.Bool("alt", true, "also report gemma4:e4b-it-qat (en+et) and llm.DefaultETModel (et)")
-	setF := flag.String("set", "dev", "snippet sets, comma-separated: dev, holdout, confirm")
+	setF := flag.String("set", "dev", "snippet sets, comma-separated: dev, holdout, confirm, oneword")
 	models := flag.String("models", "", "comma-separated Ollama models, each its own verdict, instead of the saved profiles (turns -alt off)")
 	only := flag.String("arm", "", `run only this arm ("prompt 2")`)
 	langF := flag.String("lang", "", "only this language: en-US or et-EE")

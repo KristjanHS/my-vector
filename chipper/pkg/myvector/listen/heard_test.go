@@ -94,7 +94,7 @@ func TestHeardBackoff(t *testing.T) {
 	want(1, 1, "inside the 1st wait")
 	r.hear(time.Second, "what did you say?")
 	want(2, 2, "after the 1st wait")
-	r.hear(Backoff[1]/2, "nothing")
+	r.hear(Backoff[1]/2, "nothing at all")
 	want(2, 2, "inside the 2nd wait")
 	r.hear(time.Second, "do you agree, vektor?")
 	want(3, 3, "named inside a wait")
@@ -175,6 +175,19 @@ func TestHeardWakeTurn(t *testing.T) {
 	r.hear(time.Minute, "mis kell on, vektor?")
 	if r.calls != 1 || len(r.said) != 1 {
 		t.Fatalf("named, no wake word: calls %d said %v", r.calls, r.said)
+	}
+}
+
+func TestHeardOneWord(t *testing.T) {
+	r := newRig(t)
+	r.reply = "Hello there!"
+	r.hear(time.Second, "hello?")
+	if r.calls != 0 || len(r.said) != 0 {
+		t.Fatalf("1 word: calls %d said %v", r.calls, r.said)
+	}
+	r.hear(time.Second, "vektor?")
+	if r.calls != 1 {
+		t.Fatalf("1 named word: calls %d", r.calls)
 	}
 }
 
