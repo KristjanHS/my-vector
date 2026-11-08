@@ -246,6 +246,7 @@ func main() {
 			a.langs = intersect(a.langs, langs)
 			if _, seen := byModel[a.name]; !seen && len(a.langs) > 0 {
 				a.t, a.group = ollama(a.name), -1
+				byModel[a.name] = len(ts)
 				ts = append(ts, a)
 			}
 		}
