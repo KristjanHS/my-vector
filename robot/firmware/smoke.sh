@@ -10,6 +10,7 @@ set -euo pipefail
 case ${1:-} in '') full=1 steps=9 ;; --server) full=0 steps=6 ;; *) echo "usage: smoke.sh [--server]" >&2; exit 2 ;; esac
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
+silent=1 # UD1: a ship never blocks on the sound lock; A2 skips its speech while locked
 . "$here/../env.sh"
 units=(vic-engine vic-anim vic-robot)
 fatal='Fatal|SIGSEGV|SIGABRT|terminate called|Backtrace'
@@ -199,9 +200,13 @@ if [[ $(curl -s -m 5 "$server/myvector/api/voice" | jq -r .lang 2>/dev/null) == 
   ((full)) || said="Tere, kõik töötab."
 else ((full)) || said="Hello, all good."
 fi
-r=$(sdk_m=35 sdk fork_say "text=$(jq -rn --arg s "$said" '$s|@uri')"); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
-[[ $r != 'FINISHED fallback'* ]] && ok "A2 said '$said' in ${r#FINISHED }" ||
-  echo "WARN: A2 said '$said' in the fallback voice, not the saved language's T1 (TTS service :8091 down? make tts-enable): ${r#FINISHED fallback: }"
+if quiet_locked; then
+  echo "WARN: sound lock until $(date -d "@$quiet_until" +%H:%M) ($quiet_source): A2 speech skipped"
+else
+  r=$(sdk_m=35 sdk fork_say "text=$(jq -rn --arg s "$said" '$s|@uri')"); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
+  [[ $r != 'FINISHED fallback'* ]] && ok "A2 said '$said' in ${r#FINISHED }" ||
+    echo "WARN: A2 said '$said' in the fallback voice, not the saved language's T1 (TTS service :8091 down? make tts-enable): ${r#FINISHED fallback: }"
+fi
 sdk release_behavior_control >/dev/null
 
 step "A3 log-level intent"

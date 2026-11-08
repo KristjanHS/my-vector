@@ -4,6 +4,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../env.sh"
 
 cat "$here/../lib/etc.sh" - <<'EOF' | ssh "${ssh_opts[@]}" "root@$ip" sh -s

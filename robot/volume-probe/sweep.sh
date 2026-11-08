@@ -13,5 +13,5 @@ play() { case $1 in
   voice) curl -s -m 20 "$A/say_text?serial=$serial&text=It+is+two+thirty+p.m." >/dev/null; sleep 0.5 ;; esac; }
 on_exit release; hold
 for c in $CONDS; do r=${c%:*} l=${c#*:}; reset_rtpcs; [[ $r == base ]] || rtpc "$r" "$l"
-  for s in $SOUNDS; do cap_on; play "$s"; cap_off "$OUT/${r}_${l}__$s.wav"; done; done
+  for s in $SOUNDS; do quiet_guard; cap_on; play "$s"; cap_off "$OUT/${r}_${l}__$s.wav"; done; done
 python3 -I "$here/db.py" "$OUT"/*.wav

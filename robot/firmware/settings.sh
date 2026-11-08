@@ -4,6 +4,7 @@
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../env.sh"
 settings=/data/data/com.anki.victor/persistent/jdocs/vic.RobotSettings.json
 tz=Europe/Tallinn # robot clock + time_zone jdoc (user ruling 2026-11-06; onboarding left America/Los_Angeles)

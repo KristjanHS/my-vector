@@ -5,6 +5,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../env.sh"
 
 ca=$epod_dir/ca.crt
