@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ship the patched firmware: tests, patches, robot keys (hostkey + sshkey apply.sh), robot compat + myvector-stt freshness checks, build (live progress), built-asset check, wire-pod restart
+# Ship the patched firmware: pod-trust interlock (T6), tests, patches, robot keys (hostkey + sshkey apply.sh), robot compat + myvector-stt freshness checks, build (live progress), built-asset check, wire-pod restart
 # (only if chipper/, the firewall or run-server.sh changed since the running server's sha), deploy, robot settings, robot smoke check, git push.
 # Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no server restart, no deploy, no push).
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
@@ -16,7 +16,7 @@ add_warns() { local w; w=$(grep '^WARN\|^SETUP' <<<"$1" || true); [[ -z $w ]] ||
 show_warns() { [[ -z $warns ]] || printf '\033[1;33m%s\033[0m\n' "$warns" >&2; }
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; show_warns; [[ -z ${SHIP_LOG:-} ]] || echo "log: $SHIP_LOG" >&2; exit 1; }
 case ${1:-} in '') deploy=1 ;; --no-deploy) deploy=0 ;; *) die "unknown arg: $1 (only --no-deploy)" ;; esac
-total=$((5 + deploy * 7)); i=0
+total=$((5 + deploy * 8)); i=0
 step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s\033[0m\n' "$i" "$total" "$*"; }
 [[ $(git -C "$repo" rev-parse --absolute-git-dir) == "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)" ]] ||
   die "run from the main checkout, not a worktree: make syncwt, then make -C ~/projects/my-vector ship"
@@ -59,6 +59,13 @@ tree_is_patches() {
   [[ $(git -C "$src" rev-parse HEAD) == "$tip" && $(git -C "$src" rev-list --count "$pin..$tip") == "$n" && -z $d ]] ||
     die "tree differs from pin + $n series patches (another session in flight?): $d"
 }
+
+if ((deploy)); then
+  # T6: a series with 0015 (vic-cloud drops the DDL root) ships only once wire-pod serves our CA's leaf; first, before any robot step.
+  step "pod-trust interlock: robot/epod/interlock.sh on $sha's series"
+  if [[ -f $head/robot/epod/interlock.sh ]]; then "$head/robot/epod/interlock.sh" "$pd/series" || die "pod-trust interlock (above)"
+  else echo "no robot/epod/interlock.sh at $sha; skipped"; fi
+fi
 
 step "check HEAD $sha ($dirty uncommitted files ignored): drift, shell syntax, Go tests"
 "$repo/scripts/check.sh" --head "$full" || die "make check (HEAD)"
