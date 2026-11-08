@@ -35,6 +35,8 @@ func Println(a ...any) {
 }
 
 func LogUI(a ...any) {
+	forkLogMu.Lock()
+	defer forkLogMu.Unlock()
 	LogArray = append(LogArray, time.Now().Format("2006.01.02 15:04:05")+": "+fmt.Sprint(a...)+"\n")
 	if len(LogArray) >= 50 {
 		LogArray = LogArray[1:]
@@ -46,6 +48,7 @@ func LogUI(a ...any) {
 }
 
 func LogTray(a ...any) {
+	forkLogMu.Lock()
 	LogTrayArray = append(LogTrayArray, time.Now().Format("2006.01.02 15:04:05")+": "+fmt.Sprint(a...)+"\n")
 	if len(LogTrayArray) >= 200 {
 		LogTrayArray = LogTrayArray[1:]
@@ -54,6 +57,7 @@ func LogTray(a ...any) {
 	for _, b := range LogTrayArray {
 		LogTrayList = LogTrayList + b
 	}
+	forkLogMu.Unlock()
 	select {
 	case LogTrayChan <- time.Now().Format("2006.01.02 15:04:05") + ": " + fmt.Sprint(a...) + "\n":
 	default:

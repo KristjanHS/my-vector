@@ -272,12 +272,12 @@ func handleGetConfig(w http.ResponseWriter) {
 
 func handleGetLogs(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/plain")
-	w.Write([]byte(logger.LogList))
+	w.Write([]byte(logger.ForkLogList()))
 }
 
 func handleGetDebugLogs(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/plain")
-	w.Write([]byte(logger.LogTrayList))
+	w.Write([]byte(logger.ForkLogTrayList()))
 }
 
 func handleIsRunning(w http.ResponseWriter) {
