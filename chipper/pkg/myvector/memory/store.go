@@ -66,10 +66,11 @@ type Entry struct {
 	RemovedAt *time.Time `json:"removed_at,omitempty"`
 }
 
-// Profile is an ESN's English summary of its active facts.
+// Profile is an ESN's English summary of its active facts; From are their ids (nil = stored before M26).
 type Profile struct {
 	Text string    `json:"text"`
 	At   time.Time `json:"at"`
+	From []string  `json:"from"`
 }
 
 // Store is myvectorMemory.json.

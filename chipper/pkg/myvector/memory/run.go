@@ -82,7 +82,14 @@ func runESN(ctx context.Context, t llm.Target, esn string, zone *time.Location) 
 		return err
 	}
 	changed := false
-	for _, b := range pre.Batches(esn) {
+	for _, c := range Categories {
+		if err := pre.DropRemoved(esn); err != nil {
+			return err
+		}
+		b := pre.Batch(esn, c)
+		if len(b.Cands) == 0 {
+			continue
+		}
 		ops, err := Merge(ctx, t, b)
 		if err != nil {
 			return err
@@ -92,6 +99,9 @@ func runESN(ctx context.Context, t llm.Target, esn string, zone *time.Location) 
 		}
 	}
 	guard := "-"
+	if err := pre.DropRemoved(esn); err != nil {
+		return err
+	}
 	if _, ok := pre.Profiles[esn]; changed || !ok && len(pre.ActiveFacts(esn)) > 0 { // no profile: a Remove dropped it
 		if guard, err = check(ctx, t, esn, pre, now); err != nil {
 			return err
@@ -126,14 +136,19 @@ func runESN(ctx context.Context, t llm.Target, esn string, zone *time.Location) 
 	return nil
 }
 
-// check rebuilds the profile and runs the guard against pre; a failed guard call reverts as if every answer was lost.
+// check rebuilds the profile and runs the guard against pre minus facts Removed meanwhile (M26); a failed guard call
+// reverts as if every answer was lost.
 func check(ctx context.Context, t llm.Target, esn string, pre *Store, now time.Time) (string, error) {
 	mid, err := Read()
 	if err != nil {
 		return "", err
 	}
-	text, perr := BuildProfile(ctx, t, mid.ActiveFacts(esn))
-	if err := Update(func(st *Store) error { st.SetProfile(esn, text, perr, now); mid = st; return nil }); err != nil {
+	from := mid.ActiveFacts(esn)
+	text, perr := BuildProfile(ctx, t, from)
+	if err := Update(func(st *Store) error { st.SetProfileOf(esn, text, from, perr, now); mid = st; return nil }); err != nil {
+		return "", err
+	}
+	if err := pre.DropRemoved(esn); err != nil {
 		return "", err
 	}
 	before, err := Answers(ctx, t, pre, esn)

@@ -92,8 +92,8 @@ func (st *Store) Snapshot(esn string) Snapshot {
 	return Snapshot{ESN: esn, Facts: b, Profile: p, HadProfile: ok}
 }
 
-// Guard records the guard's verdict in LastGuard; lost ≠ nil also puts back snap's facts and profile (candidates are
-// Unconfirmed again, retried next pass), keeping any Removed status a user set meanwhile.
+// Guard records the guard's verdict in LastGuard; lost ≠ nil also puts back snap's facts and profile, keeping any Removed
+// status a user set meanwhile: restored candidates are Unconfirmed with one more try (M14), a profile fed by a now-Removed fact is dropped (M26).
 func (st *Store) Guard(snap Snapshot, lost []string, now time.Time) {
 	st.LastGuard = snap.ESN + " " + now.Format(time.RFC3339) + " ok"
 	if len(lost) == 0 {
@@ -116,10 +116,13 @@ func (st *Store) Guard(snap Snapshot, lost []string, now time.Time) {
 		if at, ok := removed[f.ID]; ok {
 			f.Status, f.RemovedAt = Removed, at
 		}
+		if f.Status == Unconfirmed {
+			tried(&f, snap.ESN, "tries, the last a guard revert")
+		}
 		keep = append(keep, f)
 	}
 	st.Facts = keep
-	if snap.HadProfile {
+	if snap.HadProfile && !st.stale(snap.ESN, snap.Profile) {
 		st.Profiles[snap.ESN] = snap.Profile
 	} else {
 		delete(st.Profiles, snap.ESN)

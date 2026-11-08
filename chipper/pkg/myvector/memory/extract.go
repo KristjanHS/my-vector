@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
@@ -17,6 +18,9 @@ import (
 
 // ExtractReplyCap is the extraction reply's max_tokens.
 const ExtractReplyCap = 1024
+
+// EvidenceMinWords is the fewest words a candidate's evidence may have (M11).
+const EvidenceMinWords = 2
 
 // ErrParse is an extraction reply that is not the JSON array; the session is retried (ExtractRetries).
 var ErrParse = errors.New("memory extract: reply is not a JSON array")
@@ -106,13 +110,39 @@ func rejectCandidate(c candidate, s Session) string {
 		return "evidence length"
 	}
 	ev := fold(c.Evidence)
+	if len(strings.Fields(ev)) < EvidenceMinWords {
+		return "evidence under " + fmt.Sprint(EvidenceMinWords) + " words"
+	}
 	for _, e := range s.Turns {
-		if strings.Contains(fold(e.User), ev) {
+		if wordIn(fold(e.User), ev) {
 			return ""
 		}
 	}
 	return "evidence not in a user turn"
 }
+
+// wordIn reports whether ev occurs in u with no letter or digit glued to either end (M11).
+func wordIn(u, ev string) bool {
+	first, _ := utf8.DecodeRuneInString(ev)
+	last, _ := utf8.DecodeLastRuneInString(ev)
+	for i := 0; i <= len(u); {
+		j := strings.Index(u[i:], ev)
+		if j < 0 {
+			return false
+		}
+		j += i
+		before, _ := utf8.DecodeLastRuneInString(u[:j])
+		after, _ := utf8.DecodeRuneInString(u[j+len(ev):])
+		if !(isWord(before) && isWord(first)) && !(isWord(last) && isWord(after)) {
+			return true
+		}
+		_, n := utf8.DecodeRuneInString(u[j:])
+		i = j + n
+	}
+	return false
+}
+
+func isWord(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 
 // fold case-folds s and collapses its whitespace (the evidence check, M11).
 func fold(s string) string { return strings.Join(strings.Fields(strings.ToLower(s)), " ") }
