@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Host test of robot/epod/apply.sh's robot half (make check): a temp ETC_ROOT, the lib prepended, under sh -e; a fake systemctl logs calls.
+# Host test of robot/epod/apply.sh's robot half (make check): a temp ETC_ROOT, the lib prepended, under sh -e; a fake systemctl logs calls (is-active: fault-code idle).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 robot=$(cd "$here/../.." && pwd)
@@ -13,7 +13,7 @@ ours=$(pem OURS) old=$(pem OLD)
 CA=$(printf '%s\n' "$ours" | base64 -w0)
 fresh() { mkdir -p "$tmp/$1/data/data" "$tmp/$1/anki/etc"; echo "$tmp/$1"; }
 mkdir "$tmp/bin"
-printf '#!/bin/sh\necho "systemctl $*" >>"$ETC_ROOT/calls"\n' >"$tmp/bin/systemctl"
+printf '#!/bin/sh\n[ "$1" = is-active ] && exit 3 # fault-code idle\necho "systemctl $*" >>"$ETC_ROOT/calls"\n' >"$tmp/bin/systemctl"
 chmod +x "$tmp/bin/systemctl"
 run() { (cat "$robot/lib/etc.sh"; echo "$body") | CA=$CA ETC_ROOT=$1 PATH="$tmp/bin:$PATH" sh -e; }
 calls() { cat "$1/calls" 2>/dev/null || :; }
