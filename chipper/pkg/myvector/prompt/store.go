@@ -49,6 +49,14 @@ func SearchBudget(brain string) int {
 	return 800
 }
 
+// MemoryBudget is the token ceiling for brain's {facts} + {diary} blocks together (memory.Block fits it).
+func MemoryBudget(brain string) int {
+	if brain == Ollama {
+		return 300
+	}
+	return 3000
+}
+
 var logf = logger.Println
 
 // Invalid marks a rejected brain, template, about-me or version (the page's 400); any other store error is I/O.
