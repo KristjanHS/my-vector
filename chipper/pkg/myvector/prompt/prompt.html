@@ -137,6 +137,15 @@
         </div>
       </div>
     </section>
+    <section class="card">
+      <h2>Memory</h2>
+      <div class="body">
+        <div class="field">
+          <div class="head"><span class="hint" id="memHint">Loading…</span><button type="button" id="memRun">Run pass now</button></div>
+        </div>
+        <div id="mem"></div>
+      </div>
+    </section>
   </div>
   <script>
     const $ = (id) => document.getElementById(id);
@@ -234,6 +243,39 @@
     $("reset").onclick = () => confirm(`Use the built-in ${brain} template?`) &&
       post({ action: "reset", brain }, "Reset to built-in", { about: aboutDirty() });
     call("/myvector/api/prompt").then((r) => { cur = r; show(); }).catch((e) => status("Load failed: " + e.message, "err"));
+
+    // Memory card (M22): text only via textContent — facts and diary quote the user's speech.
+    const memApi = "/myvector/api/memory";
+    const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+    function memRow(text, sub, id, what) {
+      const del = el("button", { type: "button", textContent: "Delete" });
+      del.onclick = () => confirm(`Delete this ${what}? It is never shown or sent to a model again.`) && memPost({ action: "remove", id }, "Deleted");
+      return el("li", {}, el("span", { style: "flex:1;min-width:0" }, text, el("br"), el("span", { className: "hint", textContent: sub })), del);
+    }
+    function showMemory(m) {
+      const ran = m.last_run && !m.last_run.startsWith("0001");
+      $("memHint").textContent = `Model ${m.model} · ` + (ran ? "last pass " + new Date(m.last_run).toLocaleString() : "no pass yet") +
+        (m.last_guard ? " · guard: " + m.last_guard : "");
+      $("mem").replaceChildren(...(m.robots.length ? m.robots.map((r) => el("div", { className: "field" },
+        el("span", { className: "lab", textContent: "Robot " + r.esn }),
+        el("p", { className: "hint", textContent: r.profile ? "Profile: " + r.profile : "No profile yet." }),
+        el("ul", { className: "versions" }, ...r.facts.map((f) =>
+          memRow(f.text, `“${f.evidence}” · ${f.status} · ${f.category} · learned ${f.learned_at.slice(0, 10)}`, f.id, "fact"))),
+        el("span", { className: "lab", textContent: "Diary" }),
+        el("ul", { className: "versions" }, ...r.diary.map((d) => memRow(d.text, d.day, d.id, "diary entry"))))) :
+        [el("p", { className: "hint", textContent: "Nothing remembered yet." })]));
+    }
+    async function memPost(body, done) {
+      try { showMemory(await call(memApi, body)); status(done, "ok"); }
+      catch (e) { status(e.message, "err"); }
+    }
+    $("memRun").onclick = async () => {
+      $("memRun").disabled = true;
+      status("Memory pass running…");
+      await memPost({ action: "run" }, "Memory pass done");
+      $("memRun").disabled = false;
+    };
+    call(memApi).then(showMemory).catch((e) => { $("memHint").textContent = "Memory failed to load: " + e.message; });
   </script>
 </body>
 </html>

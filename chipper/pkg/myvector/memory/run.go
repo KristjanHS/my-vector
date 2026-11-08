@@ -92,7 +92,7 @@ func runESN(ctx context.Context, t llm.Target, esn string, zone *time.Location) 
 		}
 	}
 	guard := "-"
-	if changed {
+	if _, ok := pre.Profiles[esn]; changed || !ok && len(pre.ActiveFacts(esn)) > 0 { // no profile: a Remove dropped it
 		if guard, err = check(ctx, t, esn, pre, now); err != nil {
 			return err
 		}
