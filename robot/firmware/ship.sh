@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ship the patched firmware: tests, patches, robot compat + myvector-stt freshness checks, build (live progress), built-asset check, wire-pod restart
+# Ship the patched firmware: tests, patches, robot root key (sshkey/apply.sh), robot compat + myvector-stt freshness checks, build (live progress), built-asset check, wire-pod restart
 # (only if chipper/, the firewall or run-server.sh changed since the running server's sha), deploy, robot settings, robot smoke check, git push.
 # Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no server restart, no deploy, no push).
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
@@ -16,7 +16,7 @@ add_warns() { local w; w=$(grep '^WARN\|^SETUP' <<<"$1" || true); [[ -z $w ]] ||
 show_warns() { [[ -z $warns ]] || printf '\033[1;33m%s\033[0m\n' "$warns" >&2; }
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; show_warns; [[ -z ${SHIP_LOG:-} ]] || echo "log: $SHIP_LOG" >&2; exit 1; }
 case ${1:-} in '') deploy=1 ;; --no-deploy) deploy=0 ;; *) die "unknown arg: $1 (only --no-deploy)" ;; esac
-total=$((5 + deploy * 6)); i=0
+total=$((5 + deploy * 7)); i=0
 step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s\033[0m\n' "$i" "$total" "$*"; }
 [[ $(git -C "$repo" rev-parse --absolute-git-dir) == "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)" ]] ||
   die "run from the main checkout, not a worktree: make syncwt, then make -C ~/projects/my-vector ship"
@@ -40,10 +40,10 @@ dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
 trap 'rm -rf "$head"' EXIT
 # fork_smoke.go + myvector/voice too: check-static.sh S5 reads them repo-relative and fails if smoke.sh is there without them.
-# robot/env.sh: settings.sh + smoke.sh source it from $pd/.. (robot/lib: diskguard's apply.sh); ls-tree drops what an older sha lacks.
+# robot/env.sh: settings.sh + smoke.sh source it from $pd/.. (robot/lib: the installers' etc.sh); ls-tree drops what an older sha lacks.
 # shellcheck disable=SC2046 # unquoted on purpose: empty for an older sha
 git -C "$repo" archive "$full" robot/firmware chipper/pkg/wirepod/sdkapp/fork_smoke.go \
-  $(git -C "$repo" ls-tree --name-only "$full" robot/env.sh robot/lib robot/diskguard chipper/pkg/myvector/voice) |
+  $(git -C "$repo" ls-tree --name-only "$full" robot/env.sh robot/lib robot/diskguard robot/sshkey robot/epod robot/netguard chipper/pkg/myvector/voice) |
   tar -x -C "$head"
 pd=$head/robot/firmware
 if ((deploy)); then
@@ -73,6 +73,12 @@ want=$(git -C "$src" diff --name-only "$pin" "$tip")
 echo "tree = pin + $n patches ($(echo "$want" | wc -l) files)"
 
 if ((deploy)); then
+  # compat, deploy, settings and smoke all ssh with ROBOT_KEY, so the robot must accept it first (plan K6).
+  step "robot key: sshkey/apply.sh"
+  sk=$head/robot/sshkey/apply.sh
+  if [[ -f $sk ]]; then out=$(bash "$sk" 2>&1) || die "robot key: ${out//$'\n'/; }"; echo "$out"
+  else echo "no robot/sshkey at $sha; skipped"; fi
+
   step "compat: tree VICTOR_COMPAT_VERSION = robot /etc/victor-compat-version"
   cs=$pd/compat.sh; [[ -f $cs ]] || cs=$here/compat.sh # a pre-R7 sha has none
   out=$("$cs" "$src" "$tip" 2>&1) || die "${out#FAIL: }"
@@ -161,7 +167,11 @@ else
 fi
 
 step "deploy: ./build/deploy-v.sh to $ip"
-(cd "$src" && script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
+# Patch 0014: deploy-v.sh ssh-adds MYVECTOR_DEPLOY_KEY (gitignored in the clone) instead of the image's robot_sshkey.
+trap 'rm -rf "$head"; rm -f "$src/myvector_sshkey"' EXIT
+install -m 600 "$key" "$src/myvector_sshkey"
+(cd "$src" && MYVECTOR_DEPLOY_KEY=myvector_sshkey script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
+rm -f "$src/myvector_sshkey"
 
 # A settings failure warns, never stops the ship: the robot already runs $sha.
 step "robot settings: settings.sh (master_volume, no-auto-update, T2 voice, /data guard)"
