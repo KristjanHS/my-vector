@@ -224,24 +224,30 @@ func runSet(r setRun) {
 		}
 		use(arms[0])
 		w, err := callLLM(la[0].Text, esn) // warm-up, discarded
-		if err != nil {
+		if err != nil && w.Target == "" {
 			die(1, "llm: %v", err)
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "warm-up: %v\n", err)
 		}
 		fmt.Println("llm-target: " + w.Target)
 		f := strings.Fields(w.Target)
 		model := f[len(f)-1]
 		runs := make([]armRun, len(arms))
-		for _, a := range la {
+		for i := range arms {
+			runs[i].arm = arms[i]
+		}
+		for j, a := range la {
 			for rep := 0; rep < r.reps; rep++ {
-				for i, arm := range arms {
+				for _, i := range probekit.Order(len(arms), j*r.reps+rep) {
+					arm := arms[i]
 					use(arm)
 					res, err := callLLM(a.Text, esn)
-					if err != nil {
-						die(1, "llm: %v", err)
+					if err != nil { // counted as a cut: empty reply, finish "error"
+						fmt.Fprintf(os.Stderr, "%s %s llm: %v | %s\n", l, arm.Label(model), err, a.Text)
+						res.Answer, res.RawAnswer, res.Reasoning, res.Finish = "", "", "", "error"
 					}
-					runs[i].arm = arm
-					runs[i].calls = append(runs[i].calls, probekit.Call{Reply: strings.TrimSpace(res.Answer), Finish: res.Finish,
-						Prompt: res.Usage.PromptTokens, Completion: res.Usage.CompletionTokens, Dur: res.Dur})
+					runs[i].calls = append(runs[i].calls, probekit.Call{Reply: strings.TrimSpace(res.RawAnswer), Reasoning: res.Reasoning,
+						Finish: res.Finish, Prompt: res.Usage.PromptTokens, Completion: res.Usage.CompletionTokens, Dur: res.Dur})
 					score := "-"
 					if key != "" && strings.TrimSpace(res.Answer) == "" { // a cut-off reply says nothing: 0, no judge call
 						runs[i].scores = append(runs[i].scores, 0)

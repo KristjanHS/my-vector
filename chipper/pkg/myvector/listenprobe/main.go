@@ -255,12 +255,8 @@ func main() {
 			}
 		}
 	}
-	warm := make([]error, len(ts))
 	groupModel := make([]string, len(groups))
-	for i, tg := range ts {
-		if hasLang(snippets, tg.langs) {
-			warm[i] = probekit.Warm(tg.t.BaseURL, tg.t.Model)
-		}
+	for _, tg := range ts {
 		if tg.group >= 0 && groupModel[tg.group] == "" {
 			groupModel[tg.group] = tg.t.Model
 		}
@@ -286,12 +282,14 @@ func main() {
 			gms[g], gsc[g] = make([][]time.Duration, len(think)), make([]map[string]score, len(think))
 		}
 		failed := make([]bool, len(groups))
-		for i, tg := range ts {
+		for _, tg := range ts {
 			if !hasLang(snippets, tg.langs) {
 				continue
 			}
-			if warm[i] != nil {
-				fmt.Printf("  %-34s error: %v\n", tg.name, warm[i])
+			w := request(tg.t.Model, a.sys, "warm up", probekit.Arm{Level: llm.None}.Thinking(tg.t.Model, llm.PathListen))
+			w.MaxTokens = 8
+			if _, err := probekit.Chat(tg.t.BaseURL, w); err != nil {
+				fmt.Printf("  %-34s error: %v\n", tg.name, err)
 				if tg.group >= 0 {
 					failed[tg.group] = true
 				}
@@ -303,11 +301,13 @@ func main() {
 			for k := range think {
 				sc[k] = map[string]score{}
 			}
+			item := 0
 			for _, s := range snippets {
 				if !contains(tg.langs, s.l) {
 					continue
 				}
-				for k, th := range think {
+				for _, k := range probekit.Order(len(think), item) {
+					th := think[k]
 					start := time.Now()
 					c, err := probekit.Chat(tg.t.BaseURL, request(tg.t.Model, a.sys, listen.User(s.before, s.now), th.Thinking(tg.t.Model, llm.PathListen)))
 					ms[k] = append(ms[k], time.Since(start))
@@ -333,6 +333,7 @@ func main() {
 					}
 					sc[k][s.l] = x
 				}
+				item++
 			}
 			for k, th := range think {
 				if len(ms[k]) == 0 {

@@ -72,7 +72,7 @@ func Load() Config {
 		OllamaURL string             `json:"ollama_url"`
 		ClaudeKey string             `json:"claude_key"`
 		ETModel   any                `json:"et_model"`
-		Think     map[string]string  `json:"think"`
+		Think     any                `json:"think"` // any: a hand-edited non-object must not drop the profiles
 	}
 	b, err := os.ReadFile(lang.Path())
 	if err != nil || json.Unmarshal(b, &f) != nil {
@@ -82,8 +82,10 @@ func Load() Config {
 	if m, ok := f.ETModel.(string); ok {
 		c.LegacyETModel = m
 	}
-	for p, v := range f.Think {
-		if l, ok := ParseLevel(v); ok {
+	think, _ := f.Think.(map[string]any)
+	for p, v := range think {
+		s, _ := v.(string)
+		if l, ok := ParseLevel(s); ok {
 			if c.Think == nil {
 				c.Think = map[Path]Level{}
 			}

@@ -2,6 +2,7 @@ package llm
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/sashabaranov/go-openai"
@@ -77,5 +78,42 @@ func TestLoadThink(t *testing.T) {
 	}
 	if _, ok := c.Think[PathListen]; ok {
 		t.Errorf("bad level kept: %q", c.Think[PathListen])
+	}
+	key := strings.Repeat("k", 24)
+	for _, think := range []string{`{"chat":true}`, `"low"`} {
+		file := `{"llm":{"en-US":{"provider":"ollama","model":"qwen3.5:4b"}},"claude_key":"` + key + `","think":` + think + `}`
+		if err := os.WriteFile(tempPath(t), []byte(file), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		c := Load()
+		if c.Profiles["en-US"].Model != "qwen3.5:4b" || c.ClaudeKey != key || len(c.Think) != 0 {
+			t.Errorf("think %s: Load = %+v; want the profile and key kept, no levels", think, c)
+		}
+	}
+}
+
+// TestThinkingBudgetCeiling swaps in a row with distinct budgets and a medium ceiling (the shipped rows are all 0 / none).
+func TestThinkingBudgetCeiling(t *testing.T) {
+	saved := thinkRows
+	t.Cleanup(func() { thinkRows = saved })
+	thinkRows = []thinkRow{{family: "qwen3.5", on: Sampling{"qwen3.5", 1, 0.95, 1.5},
+		budget:  map[Path][3]int{PathListen: {100, 200, 300}},
+		ceiling: map[Path]Level{PathListen: Medium}}}
+	for _, c := range []struct {
+		level  Level
+		budget int
+	}{{Low, 100}, {High, 300}} {
+		if got := ThinkingFor(Ollama, "qwen3.5:4b", PathListen, c.level); got.Budget != c.budget {
+			t.Errorf("ThinkingFor %s: Budget %d, want %d", c.level, got.Budget, c.budget)
+		}
+	}
+	for _, c := range []struct {
+		saved, want Level
+		budget      int
+	}{{Low, Low, 100}, {Medium, Medium, 200}, {High, Medium, 200}} {
+		got := Config{Think: map[Path]Level{PathListen: c.saved}}.Thinking(Ollama, "qwen3.5:4b", PathListen)
+		if got.Effort != string(c.want) || got.Budget != c.budget {
+			t.Errorf("saved %s: %+v, want effort %s budget %d", c.saved, got, c.want, c.budget)
+		}
 	}
 }

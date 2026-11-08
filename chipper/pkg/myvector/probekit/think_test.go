@@ -78,6 +78,16 @@ func TestArms(t *testing.T) {
 	}
 }
 
+func TestOrder(t *testing.T) {
+	var got [][]int
+	for i := 0; i < 4; i++ {
+		got = append(got, Order(3, i))
+	}
+	if want := [][]int{{0, 1, 2}, {1, 2, 0}, {2, 0, 1}, {0, 1, 2}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Order(3, 0..3) = %v; want %v", got, want)
+	}
+}
+
 func TestChat(t *testing.T) {
 	var sent openai.ChatCompletionRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
