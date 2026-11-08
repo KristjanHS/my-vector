@@ -64,6 +64,29 @@ func TestStreamCut(t *testing.T) {
 			t.Fatalf("split times %v / %v, want 14.9 s / 15 s", got[0].End.Sub(t0), got[1].Start.Sub(t0))
 		}
 	})
+	t.Run("MaxUtter splits unaligned reads", func(t *testing.T) {
+		var got []Cut
+		c := &Cutter{Emit: func(u Cut) { got = append(got, u) }}
+		for i := 0; i < 70; i++ { // 70 × 7000 = 490000 bytes, 10 ms apart
+			c.Add(t0.Add(time.Duration(i)*10*time.Millisecond), make([]byte, 7000))
+		}
+		c.Flush()
+		max := int(MaxUtter/time.Second) * pcmRate
+		if len(got) != 2 || len(got[0].PCM) != max || len(got[1].PCM) != 490000-max || !got[1].Start.Equal(got[0].End) {
+			t.Fatalf("got %d cuts, want %d + %d bytes, the rest starting at the split", len(got), max, 490000-max)
+		}
+	})
+	t.Run("odd byte carries into the next utterance", func(t *testing.T) {
+		var got []Cut
+		c := &Cutter{Emit: func(u Cut) { got = append(got, u) }}
+		c.Add(t0, make([]byte, 3201))
+		c.Gap(t0.Add(GapCut))
+		c.Add(t0.Add(time.Second), make([]byte, 3199))
+		c.Flush()
+		if len(got) != 2 || len(got[0].PCM) != 3200 || len(got[1].PCM) != 3200 {
+			t.Fatalf("got %d cuts, want 3200 + 3200 bytes", len(got))
+		}
+	})
 	t.Run("disconnect flushes", func(t *testing.T) {
 		got := run(cutTimes(t0, 0, 100), func(c *Cutter) { c.Flush() })
 		if len(got) != 1 || len(got[0].PCM) != 2*len(send) {
@@ -88,6 +111,9 @@ func TestStreamServe(t *testing.T) {
 		ESN:  func(ip string) string { return map[string]string{"127.0.0.1": "00e20145"}[ip] },
 		Lang: func() string { return "en-US" },
 		STT: func(lang string, pcm []byte) (string, error) {
+			if len(pcm) == 3200 {
+				time.Sleep(2 * GapCut) // the second cut queues behind this one
+			}
 			return strings.Repeat("word ", len(pcm)/3200), nil
 		},
 		Heard: func(u Utterance) { heard <- u },
@@ -110,10 +136,11 @@ func TestStreamServe(t *testing.T) {
 		}
 	}
 	c.Write(make([]byte, 3200))
-	next(1, "silence after the bytes (read deadline)") // the cut lands while the connection stays open
+	time.Sleep(GapCut * 4 / 3) // the deadline cuts while the connection stays open
 	c.Write(make([]byte, 6400))
 	time.Sleep(GapCut / 3)
 	c.Close()
+	next(1, "silence after the bytes (read deadline), heard first though its STT is slower")
 	next(2, "disconnect flush")
 	var heardLog int
 	for len(logs) > 0 {
