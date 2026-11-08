@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ship the patched firmware: tests, patches, robot root key (sshkey/apply.sh), robot compat + myvector-stt freshness checks, build (live progress), built-asset check, wire-pod restart
+# Ship the patched firmware: tests, patches, robot keys (hostkey + sshkey apply.sh), robot compat + myvector-stt freshness checks, build (live progress), built-asset check, wire-pod restart
 # (only if chipper/, the firewall or run-server.sh changed since the running server's sha), deploy, robot settings, robot smoke check, git push.
 # Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no server restart, no deploy, no push).
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
@@ -43,7 +43,7 @@ trap 'rm -rf "$head"' EXIT
 # robot/env.sh: settings.sh + smoke.sh source it from $pd/.. (robot/lib: the installers' etc.sh); ls-tree drops what an older sha lacks.
 # shellcheck disable=SC2046 # unquoted on purpose: empty for an older sha
 git -C "$repo" archive "$full" robot/firmware chipper/pkg/wirepod/sdkapp/fork_smoke.go \
-  $(git -C "$repo" ls-tree --name-only "$full" robot/env.sh robot/lib robot/diskguard robot/sshkey robot/epod robot/netguard chipper/pkg/myvector/voice) |
+  $(git -C "$repo" ls-tree --name-only "$full" robot/env.sh robot/lib robot/diskguard robot/sshkey robot/hostkey robot/epod robot/netguard chipper/pkg/myvector/voice) |
   tar -x -C "$head"
 pd=$head/robot/firmware
 if ((deploy)); then
@@ -73,11 +73,12 @@ want=$(git -C "$src" diff --name-only "$pin" "$tip")
 echo "tree = pin + $n patches ($(echo "$want" | wc -l) files)"
 
 if ((deploy)); then
-  # compat, deploy, settings and smoke all ssh with ROBOT_KEY, so the robot must accept it first (plan K6).
-  step "robot key: sshkey/apply.sh"
-  sk=$head/robot/sshkey/apply.sh
-  if [[ -f $sk ]]; then out=$(bash "$sk" 2>&1) || die "robot key: ${out//$'\n'/; }"; echo "$out"
-  else echo "no robot/sshkey at $sha; skipped"; fi
+  # compat, deploy, settings and smoke all ssh with ROBOT_KEY, so the robot must accept it first (plan K6); hostkey first: after a reflash only it logs in (H1).
+  step "robot keys: hostkey + sshkey apply.sh"
+  for sk in hostkey sshkey; do
+    if [[ -f $head/robot/$sk/apply.sh ]]; then out=$(bash "$head/robot/$sk/apply.sh" 2>&1) || die "robot keys: ${out//$'\n'/; }"; echo "$out"
+    else echo "no robot/$sk at $sha; skipped"; fi
+  done
 
   step "compat: tree VICTOR_COMPAT_VERSION = robot /etc/victor-compat-version"
   cs=$pd/compat.sh; [[ -f $cs ]] || cs=$here/compat.sh # a pre-R7 sha has none
