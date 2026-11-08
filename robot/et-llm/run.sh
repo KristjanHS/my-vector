@@ -8,7 +8,7 @@ MODELS=("$@")
 if [[ ${#MODELS[@]} -eq 0 ]]; then
   case $LANG_ in
     et) MODELS=(gemma4:e4b-it-qat) ;;
-    en) MODELS=(qwen3.5:4b gemma4:e2b-it-qat gemma4:e4b-it-qat) ;;
+    en) MODELS=(qwen3.5:4b gemma4:e4b-it-qat) ;;
     *) echo "lang must be et or en" >&2; exit 2 ;;
   esac
 fi
