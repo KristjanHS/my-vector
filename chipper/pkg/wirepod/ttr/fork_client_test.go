@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/listen"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	"github.com/sashabaranov/go-openai"
@@ -134,7 +135,7 @@ func TestForkCameraETUnloadsAtProfileURL(t *testing.T) {
 	saveLLM(t, lang.Estonian, llm.Config{OllamaURL: f.URL, ClaudeKey: testClaudeKey, Profiles: map[string]llm.Profile{
 		lang.Estonian: {Provider: llm.Ollama, Model: "estllm:x"}, lang.English: {Provider: llm.Claude, Model: "claude-haiku-5-5"}}})
 	r := openai.ChatCompletionRequest{Model: openai.GPT4oMini, TopP: 1}
-	done := forkCameraReq(&r)
+	done := forkCameraReq(&r, new(*openai.Client))
 	if r.Model != llm.DefaultENModel || r.ReasoningEffort != "none" || strings.Join(f.unloads, ",") != "estllm:x" {
 		t.Errorf("before photo: model %q reasoning %q unloads %v", r.Model, r.ReasoningEffort, f.unloads)
 	}
@@ -151,7 +152,7 @@ func TestForkCameraClaudeDropsTopP(t *testing.T) {
 	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
 	saveLLM(t, lang.English, llm.Config{ClaudeKey: testClaudeKey, Profiles: map[string]llm.Profile{lang.English: {Provider: llm.Claude, Model: "claude-haiku-5-5"}}})
 	r := openai.ChatCompletionRequest{Model: "qwen3.5:4b", TopP: 1}
-	forkCameraReq(&r)()
+	forkCameraReq(&r, new(*openai.Client))()
 	if r.Model != "claude-haiku-5-5" || r.TopP != 0 || r.ReasoningEffort != "" {
 		t.Errorf("camera request %q top_p %v reasoning %q", r.Model, r.TopP, r.ReasoningEffort)
 	}
@@ -165,7 +166,7 @@ func TestForkClaudeAliasDropsTopP(t *testing.T) {
 		t.Errorf("KG top_p %v", r.TopP)
 	}
 	r := openai.ChatCompletionRequest{Model: "qwen3.5:4b", TopP: 1}
-	forkCameraReq(&r)()
+	forkCameraReq(&r, new(*openai.Client))()
 	if r.TopP != 0 {
 		t.Errorf("camera top_p %v", r.TopP)
 	}
@@ -175,7 +176,7 @@ func TestForkCameraLegacyOpenAIModel(t *testing.T) {
 	useKnowledge(t, "openai", "", "gpt-4.1")
 	lang.UseForTest(t, lang.English)
 	r := openai.ChatCompletionRequest{Model: openai.GPT4oMini}
-	forkCameraReq(&r)()
+	forkCameraReq(&r, new(*openai.Client))()
 	if r.Model != "gpt-4.1" {
 		t.Errorf("camera model %q", r.Model)
 	}
@@ -185,8 +186,52 @@ func TestForkCameraLegacyOllamaSampling(t *testing.T) {
 	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
 	lang.UseForTest(t, lang.English)
 	r := openai.ChatCompletionRequest{Model: "qwen3.5:4b", Temperature: 1, TopP: 1}
-	forkCameraReq(&r)()
+	forkCameraReq(&r, new(*openai.Client))()
 	if r.Temperature != 0.7 || r.TopP != 0.8 || r.PresencePenalty != 1.5 {
 		t.Errorf("legacy camera sampling %v %v %v", r.Temperature, r.TopP, r.PresencePenalty)
+	}
+}
+
+// The camera chat goes through the client forkCameraReq swaps in (listening: on Ollama, as forkResolve); false
+// (legacy) keeps the Knowledge client. A miss lands on the other fake, which also stands in for Claude.
+func TestForkCameraClient(t *testing.T) {
+	ollama, claude := llm.Profile{Provider: llm.Ollama, Model: "gemma4:e4b"}, llm.Profile{Provider: llm.Claude, Model: "claude-haiku-5-5"}
+	for _, w := range []struct {
+		name, l, model     string
+		en, et             *llm.Profile
+		listening, swapped bool
+	}{
+		{"et ollama", lang.Estonian, "gemma4:e4b", &ollama, &llm.Profile{Provider: llm.Ollama, Model: "estllm:x"}, false, true},
+		{"legacy en", lang.English, "gpt-4.1", nil, nil, false, false},
+		{"et claude listening", lang.Estonian, "gemma4:e4b", &ollama, &claude, true, true},
+		{"en claude listening", lang.English, listen.Model, &claude, &claude, true, true},
+	} {
+		vision, knowledge := newFakeLLM(t), newFakeLLM(t)
+		useAnthropic(t, knowledge.URL)
+		useKnowledge(t, "openai", "", "gpt-4.1")
+		lang.UseForTest(t, w.l)
+		if w.en != nil {
+			saveLLM(t, w.l, llm.Config{OllamaURL: vision.URL, ClaudeKey: testClaudeKey, Profiles: map[string]llm.Profile{lang.English: *w.en, lang.Estonian: *w.et}})
+		}
+		freshListening(t)
+		if w.listening {
+			forkListening.Activate("00e20100", forkNow())
+		}
+		cfg := openai.DefaultConfig("")
+		cfg.BaseURL = knowledge.URL + "/v1"
+		c := openai.NewClientWithConfig(cfg)
+		r := openai.ChatCompletionRequest{Model: openai.GPT4oMini, Messages: []openai.ChatCompletionMessage{{Role: "user", Content: "mida sa näed?"}}}
+		done := forkCameraReq(&r, &c)
+		if _, err := c.CreateChatCompletion(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+		done()
+		hit, miss := vision, knowledge
+		if !w.swapped {
+			hit, miss = knowledge, vision
+		}
+		if hit.path != "/v1/chat/completions" || !strings.Contains(hit.body, `"model":"`+w.model+`"`) || miss.path != "" {
+			t.Errorf("%s: hit %q %s, other fake path %q", w.name, hit.path, hit.body, miss.path)
+		}
 	}
 }

@@ -497,7 +497,7 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 	if stopImaging {
 		return
 	}
-	defer forkCameraReq(&aireq)()
+	defer forkCameraReq(&aireq, &c)()
 	stream, err := c.CreateChatCompletionStream(ctx, aireq)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") && vars.APIConfig.Knowledge.Provider == "openai" {
