@@ -24,6 +24,10 @@ var Fillers = []string{"hey", "hei", "vector", "victor", "vektor", "please", "pa
 const (
 	LockFor = 2 * time.Hour
 	NapFor  = 2 * time.Hour
+	// LockVolume is master_volume while locked (vectorpb Volume_LOW; ruled V1: low, not mute).
+	LockVolume = 1
+	// MaxVolume is vectorpb Volume_HIGH.
+	MaxVolume = 5
 )
 
 // Tokens lowercases text, splits on non-letters/digits and drops Fillers (listen matches on it too).
@@ -78,28 +82,58 @@ func Path() string {
 	return ""
 }
 
-// Until reads the lock; a missing file is the zero time.
-func Until() (time.Time, string, error) {
+// NoVolume is a lock file's "-" volume field: nothing saved to restore.
+const NoVolume = -1
+
+// Lock is the lock file `<until-epoch> <vol|-> <source>`; Vol is the master_volume to restore, or NoVolume.
+type Lock struct {
+	Until  time.Time
+	Vol    int
+	Source string
+}
+
+// Read reads the lock; a missing file is the zero Lock. The 2-field `<until> <source>` form reads as Vol NoVolume.
+func Read() (Lock, error) {
+	none := Lock{Vol: NoVolume}
 	p := Path()
 	if p == "" {
-		return time.Time{}, "", nil
+		return none, nil
 	}
 	b, err := os.ReadFile(p)
 	if os.IsNotExist(err) {
-		return time.Time{}, "", nil
+		return none, nil
 	} else if err != nil {
-		return time.Time{}, "", err
+		return none, err
 	}
-	f := strings.SplitN(strings.TrimSpace(string(b)), " ", 2)
-	sec, err := strconv.ParseInt(f[0], 10, 64)
+	head, rest, _ := strings.Cut(strings.TrimSpace(string(b)), " ")
+	sec, err := strconv.ParseInt(head, 10, 64)
 	if err != nil {
-		return time.Time{}, "", fmt.Errorf("quiet: bad lock file %s: %q", p, b)
+		return none, fmt.Errorf("quiet: bad lock file %s: %q", p, b)
 	}
-	src := ""
-	if len(f) == 2 {
-		src = f[1]
+	l := Lock{Until: time.Unix(sec, 0), Vol: NoVolume, Source: rest}
+	// Same split as guard.sh quiet_locked: `-` or an integer, then a space, is the volume field.
+	if tok, src, ok := strings.Cut(rest, " "); ok && (tok == "-" || isUint(tok)) {
+		l.Source = src
+		if v, _ := strconv.Atoi(tok); tok != "-" && v >= 0 && v <= MaxVolume {
+			l.Vol = v
+		}
 	}
-	return time.Unix(sec, 0), src, nil
+	return l, nil
+}
+
+func isUint(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
+}
+
+// Until reads the lock's end and source; a missing file is the zero time.
+func Until() (time.Time, string, error) {
+	l, err := Read()
+	return l.Until, l.Source, err
 }
 
 // Line is the QUIET refusal when the lock holds at now; an unreadable lock file reads as unlocked (fail-open, as Set treats it).
@@ -120,17 +154,50 @@ func Refuse(w http.ResponseWriter) bool {
 	return locked
 }
 
-// Set locks until max(current, until), written tmp+rename so the root server and user scripts never see half a file.
-func Set(until time.Time, source string) error {
+// Set locks until max(current, until) with no volume to save (SetVol NoVolume).
+func Set(until time.Time, source string) error { return SetVol(until, NoVolume, source) }
+
+// SetVol locks until max(current, until), written tmp+rename so the root server and user scripts never see half a file.
+// A volume already saved in the file wins over vol: an extend keeps the first.
+func SetVol(until time.Time, vol int, source string) error {
 	p := Path()
 	if p == "" {
 		return fmt.Errorf("quiet: no robot/work dir and no $MYVECTOR_QUIET_FILE")
 	}
-	if cur, _, err := Until(); err == nil && !cur.Before(until) {
+	if vol < NoVolume || vol > MaxVolume {
+		return fmt.Errorf("quiet: volume %d not in 0..%d", vol, MaxVolume)
+	}
+	if cur, err := Read(); err == nil && !cur.Until.IsZero() {
+		if cur.Vol != NoVolume {
+			vol = cur.Vol
+		}
+		if !cur.Until.Before(until) {
+			if cur.Vol == vol {
+				return nil
+			}
+			until, source = cur.Until, cur.Source
+		}
+	}
+	if source = strings.Join(strings.Fields(source), " "); source == "" {
+		source = "unknown"
+	}
+	v := "-"
+	if vol != NoVolume {
+		v = strconv.Itoa(vol)
+	}
+	return conf.WriteFile(p, ".quiet-until-*", []byte(fmt.Sprintf("%d %s %s\n", until.Unix(), v, source)), 0o666)
+}
+
+// Clear removes the lock file; a missing one is no error.
+func Clear() error {
+	p := Path()
+	if p == "" {
 		return nil
 	}
-	source = strings.Join(strings.Fields(source), " ")
-	return conf.WriteFile(p, ".quiet-until-*", []byte(fmt.Sprintf("%d %s\n", until.Unix(), source)), 0o666)
+	if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // NapURL is vic-engine's console on the robot; tests point it at httptest.
@@ -139,12 +206,15 @@ var NapURL = func(ip string) string { return "http://" + ip + ":8888" }
 // NapTimeout bounds the nap request; the voice reply never waits on it.
 var NapTimeout = 5 * time.Second
 
-// ErrNapOff: $MYVECTOR_NAP=off (routeprobe, tests) — nothing is sent.
+// ErrNapOff: $MYVECTOR_NAP=off (routeprobe, tests) — no nap and no volume change is sent.
 var ErrNapOff = errors.New("quiet: nap off ($MYVECTOR_NAP=off)")
+
+// RobotOff is $MYVECTOR_NAP=off: callers return ErrNapOff instead of touching the robot.
+func RobotOff() bool { return os.Getenv("MYVECTOR_NAP") == "off" }
 
 // Nap sets the firmware's SleepCycle_NapUntil_s to until (0 ends the nap); patch 0011 holds the night rules until then.
 func Nap(ip string, until time.Time) error {
-	if os.Getenv("MYVECTOR_NAP") == "off" {
+	if RobotOff() {
 		return ErrNapOff
 	}
 	sec := int64(0)

@@ -2,6 +2,7 @@ package quiet
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -177,5 +178,69 @@ func TestLine(t *testing.T) {
 	}
 	if _, ok := Line(until.Add(-time.Minute)); ok {
 		t.Error("garbage lock file reads locked, want fail-open")
+	}
+}
+
+func TestSetKeepsFirstVolume(t *testing.T) {
+	p := lockFile(t)
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	if err := SetVol(now.Add(time.Hour), 4, "voice:shut up"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != fmt.Sprintf("%d 4 voice:shut up\n", now.Add(time.Hour).Unix()) {
+		t.Fatalf("file %q, want `<until> 4 voice:shut up`", b)
+	}
+	if err := SetVol(now.Add(2*time.Hour), LockVolume, "voice:shut up"); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := Read(); !l.Until.Equal(now.Add(2*time.Hour)) || l.Vol != 4 {
+		t.Fatalf("extend: %+v, want until +2h, vol 4 (first saved)", l)
+	}
+	if err := SetVol(now.Add(time.Minute), 2, "cli:quiet.sh"); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := Read(); !l.Until.Equal(now.Add(2*time.Hour)) || l.Vol != 4 || l.Source != "voice:shut up" {
+		t.Fatalf("shorter: %+v, want unchanged", l)
+	}
+	if err := Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Set(now.Add(time.Hour), "cli:quiet.sh"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetVol(now.Add(time.Hour), 3, "cli:quiet.sh"); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := Read(); l.Vol != 3 || !l.Until.Equal(now.Add(time.Hour)) {
+		t.Fatalf("a `-` lock: %+v, want the first known volume 3 filled in", l)
+	}
+	if err := SetVol(now.Add(time.Hour), MaxVolume+1, "x"); err == nil {
+		t.Error("SetVol accepted a volume above MaxVolume")
+	}
+}
+
+// TestReadLockForms: the old 2-field file still parses; the split matches guard.sh quiet_locked.
+func TestReadLockForms(t *testing.T) {
+	p := lockFile(t)
+	for _, c := range []struct {
+		line string
+		vol  int
+		src  string
+	}{
+		{"1794000000 voice:shut up", NoVolume, "voice:shut up"},
+		{"1794000000 make quiet", NoVolume, "make quiet"},
+		{"1794000000 4 voice:shut up", 4, "voice:shut up"},
+		{"1794000000 - cli:quiet.sh", NoVolume, "cli:quiet.sh"},
+		{"1794000000 0 cli:quiet.sh", 0, "cli:quiet.sh"},
+		{"1794000000 4", NoVolume, "4"},
+		{"1794000000 9 voice:shut up", NoVolume, "voice:shut up"},
+	} {
+		if err := os.WriteFile(p, []byte(c.line+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		l, err := Read()
+		if err != nil || l.Until.Unix() != 1794000000 || l.Vol != c.vol || l.Source != c.src {
+			t.Errorf("%q: %+v %v, want vol %d source %q", c.line, l, err, c.vol, c.src)
+		}
 	}
 }
