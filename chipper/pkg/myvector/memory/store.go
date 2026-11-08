@@ -76,6 +76,7 @@ type Store struct {
 	Diary     []Entry            `json:"diary"`
 	Profiles  map[string]Profile `json:"profiles"`
 	Extracted []string           `json:"extracted"`
+	Retries   map[string]int     `json:"retries,omitempty"` // session id → unparsable extraction replies
 	LastRun   time.Time          `json:"last_run"`
 	LastGuard string             `json:"last_guard,omitempty"`
 }
@@ -102,6 +103,9 @@ func load() (*Store, error) {
 func (s *Store) init() *Store {
 	if s.Profiles == nil {
 		s.Profiles = map[string]Profile{}
+	}
+	if s.Retries == nil {
+		s.Retries = map[string]int{}
 	}
 	return s
 }
