@@ -1,6 +1,6 @@
 # et-EE chat prompt tuning per model
 
-Status: Stages 1.1–3.2 in progress (qimpag 2026-11-08); stops at 4.1 Q1.
+Status: 1.1–2.1 + 3.1 done (2026-11-08); next 3.1b combined round, then 3.2, then the 4.1 Q1 gate.
 
 **Ask**: fix the two et picks of 2026-11-08-et-llm-research.md (docs/plans/) §Stage 2 with model-specific prompt changes:
 `apertus-estllm:8b` answers long and list-shaped (`Samm 1:`, bullets); EstLLM-8B-1125 drops ‹nimi›/‹kodukoht›/family into unrelated replies.
@@ -41,8 +41,8 @@ Profile tokens (the name included — a greeting by ‹nimi› is a leak, user 2
 **Selection rule (default; Stage 3.1 validates):** an arm passes for a model when, vs its baseline arm on the same run: K ≤ 5 %, L ≤ 5 %, non-long W median ≤ 35 and p90 ≤ 60, H ≥ 75 %, J drop ≤ 5 points, p90 latency ≤ baseline + 20 %.
 Winner = highest J among passing arms; tie → fewest prompt tokens (`MaxPrompt`).
 
-**Stopping point (default):** stage 3.1 runs every arm once (dev + leak-dev, `-reps 2`); a model whose baseline already passes stops there. No arm passes → one round of the two best arms combined, then stop.
-Stage 3.2 holdout (`-reps 3`) confirms only the winner; failing holdout = no wiring, the result goes to the commit message and `docs/backlog.md`, not a new arm hunt.
+**Stopping point (default):** stage 3.1 runs every arm once (Apertus dev + leakdev `-reps 2`; EstLLM-1125 leakdev only, arms `0,D,F,G,N`, `-reps 1` — user cut runs 8×, 2026-11-08); a model whose baseline already passes stops there. No arm passes → one round of the two best arms combined, then stop.
+Stage 3.2 holdout (`-reps 1`, user 2026-11-08) confirms only the winner; failing holdout = no wiring, the result goes to the commit message and `docs/backlog.md`, not a new arm hunt.
 
 ## Prompt variants
 
@@ -69,7 +69,8 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 | 1.3 | Per-call arms: an arm may rewrite the isolated about-me before each call (`prompt.Save(prompt.Ollama, nil, &about)`); `forkAIReq` re-`Load`s the store per request, so fence/gate/drop arms need no prod edit. Proof `TestPromptArms`: arm G on a `tempt` ask → temp about-me empty; on a `self` ask → unchanged. | `routeprobe/arms.go` |
 | 2.1 | Sets `leakdev` + `leakholdout` (et-EE): 8 `tempt` asks each (story, weekend plan, "kuidas sul läheb?", recipe, book tip, joke, "mida sa täna teeksid?", gift idea) + 3 `self` asks each ("kus ma elan?", "mis mu nimi on?", "kes ma olen?" / holdout paraphrases — each answerable by a capitalised token). `-set` takes a comma list. Proof: `TestChatSets` extended — leak sets disjoint from each other and from dev/holdout, dev/holdout unchanged. | `routeprobe/chatset.go` + `_test.go` |
 | 3.1 | Dev run, per model: `routeprobe -lang et-EE -brain ollama:<tag> -set dev,leakdev -think none -prompt <that model's arms, §Prompt variants> -reps 2`; record each arm line in §Results. Apply §Metrics stop rule. Raw output to `robot/work/et-prompt-tuning/` (gitignored). | this plan |
-| 3.2 | Holdout confirm of each model's winner: `-set holdout,leakholdout -prompt 0,<winner> -reps 3`. | this plan |
+| 3.1b | §Metrics stop rule, no arm passed: `-prompt` takes `A+B` (template rewrites chained in order, sampling/about from whichever arm sets them; `TestPromptArms` covers a combo). Run Apertus `-set dev,leakdev -prompt 0,S+R -reps 1`, EstLLM-1125 `-set leakdev -prompt 0,D+G -reps 1`; rows → §Results. | `routeprobe/arms.go`, `_test.go` |
+| 3.2 | Holdout confirm of each model's passing arm: `-set holdout,leakholdout -prompt 0,<winner> -reps 1` (EstLLM `-set leakholdout`); none passes → no wiring, close per §Metrics. | this plan |
 | 4.1 | `[USER DECISION]` wiring: see §Open questions Q1. Then the winning text lands in `prompt` defaults or per-model store keys, `llm.SamplingFor` gets the et rows, the golden tests regenerate, docs/model-prompt-formats.md §Main rule is rewritten. | `prompt/defaults.go`/`store.go`, `llm/sampling.go`, `prompt/testdata/*.golden` |
 | 5.1 | `make check` green. `[USER]` live check (robot sound lock: `robot/quiet/quiet.sh status` first; volume as the user left it): ask 1 story + 1 how-to + "kus ma elan?" in Estonian on the shipped model → short prose, no ‹nimi›/‹kodukoht› in the first two, correct in the third. | — |
 | 5.2 | `code-reviewer` subagent on the 1.1–4.1 commit range. | — |
@@ -78,6 +79,18 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 
 | model | arm | W m/p90 | L % | K % | H % | J | p50/p90 s |
 |---|---|---|---|---|---|---|---|
+| Apertus | 0 | 26/85 | 20 | 10 | 50 | 55.9 | 2.6/21.2 |
+| Apertus | P | 39/110 | 15 | 23 | 83 | 45.0 | 3.9/29.6 |
+| Apertus | R | 25/76 | 7 | 12 | 50 | 61.5 | 3.0/21.5 |
+| Apertus | X | 34/93 | 17 | 2 | 17 | 59.1 | 2.7/23.0 |
+| Apertus | E | 45/119 | 11 | 12 | 67 | 51.8 | 3.5/39.1 |
+| Apertus | S | 25/81 | 13 | 8 | 50 | 66.9 | 1.9/32.0 |
+| Apertus | N | 28/79 | 15 | 0 | 0 | 55.3 | 2.8/23.9 |
+| EstLLM-1125 | 0 | 15/51 | 0 | 25 | 100 | 51.8 | 1.5/6.8 |
+| EstLLM-1125 | D | 29/44 | 0 | 25 | 33 | 52.5 | 3.1/8.6 |
+| EstLLM-1125 | F | 21/28 | 0 | 50 | 67 | 44.0 | 1.6/5.0 |
+| EstLLM-1125 | G | 11/25 | 0 | 38 | 100 | 49.7 | 1.5/5.0 |
+| EstLLM-1125 | N | 20/29 | 0 | 0 | 33 | 71.5 | 2.1/4.8 |
 
 ## Open questions
 
