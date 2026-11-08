@@ -33,3 +33,15 @@ func TestSamplingApply(t *testing.T) {
 		t.Errorf("applied %v %v %v", r.Temperature, r.TopP, r.PresencePenalty)
 	}
 }
+
+func TestProbeSampling(t *testing.T) {
+	defer func() { ProbeSampling = nil }()
+	arm := Sampling{Family: "probe", Temperature: 0.4, TopP: 0.9}
+	ProbeSampling = func(_, _ string) (Sampling, bool) { return arm, true }
+	if got := SamplingFor(Ollama, "qwen3.5:4b"); got != arm {
+		t.Errorf("Ollama under ProbeSampling = %+v, want %+v", got, arm)
+	}
+	if got := SamplingFor(Claude, "haiku-latest"); got.Family != "claude" {
+		t.Errorf("Claude under ProbeSampling = %+v, want the claude row", got)
+	}
+}

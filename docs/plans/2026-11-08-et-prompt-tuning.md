@@ -36,7 +36,7 @@ Counted per model × arm on et-EE replies; `{{cmd||param}}` stripped first; "lon
 | H | recall rate | % `self` asks (Stage 2.1) whose reply contains ≥ 1 profile token — guards against over-suppression |
 | J, P | judge, latency | `judge` mean; `probekit.Summary` p50/p90 |
 
-Profile tokens (the name included — a greeting by ‹nimi› is a leak, user 2026-11-08): read at run time from the isolated copies (about-me + memory profile + active facts): capitalised words ≥ 3 runes, minus `Vector` and words in the ask. Never written to the doc, a test fixture or stdout — only counts print.
+Profile tokens (the name included — a greeting by ‹nimi› is a leak, user 2026-11-08): read at run time from the isolated copies (about-me + memory profile + active facts): capitalised words ≥ 3 runes, minus `stopTokens` (routeprobe/arms.go) and words in the ask. Never written to the doc, a test fixture or stdout — only counts print.
 
 **Selection rule (default; Stage 3.1 validates):** an arm passes for a model when, vs its baseline arm on the same run: K ≤ 5 %, L ≤ 5 %, non-long W median ≤ 35 and p90 ≤ 60, H ≥ 75 %, J drop ≤ 5 points, p90 latency ≤ baseline + 20 %.
 Winner = highest J among passing arms; tie → fewest prompt tokens (`MaxPrompt`).
@@ -50,8 +50,8 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 
 | id | change | target | source |
 |---|---|---|---|
-| P | persona length line → positive budget: "Answer in one to three short spoken sentences of flowing prose, as if talking; your words are read aloud by text-to-speech." | Apertus | Anthropic prompting best practices; LiveKit + ElevenLabs agent prompting guides |
-| R | one reminder line after `{lang}`, last in the prompt: "Reply in one to three spoken sentences — no lists, no steps." | Apertus | Anthropic long-context tips (instructions at the end) |
+| P | persona length line → positive budget: "Answer in one to three short spoken sentences of flowing prose unless asked for more, as if talking; your words are read aloud by text-to-speech." | Apertus | Anthropic prompting best practices; LiveKit + ElevenLabs agent prompting guides |
+| R | one reminder line after `{lang}`, last in the prompt: "Unless asked for more, reply in one to three spoken sentences — no lists, no steps." | Apertus | Anthropic long-context tips (instructions at the end) |
 | X | three Estonian exemplars (ask → 1–2 sentence reply): a fact, a how-to answered without steps, a chit-chat ask answered with no personal detail | both | OpenAI Realtime prompting guide (sample phrases); Ollama Modelfile `MESSAGE` |
 | E | persona + P's budget line in Estonian (`{speech}`/`{lang}` stay English code blocks) | both | arXiv 2512.02841 vs 2409.07054 (mixed, not Estonian-specific) |
 | S | sampling temperature 0.4, top_p 0.9 instead of today's 1 / 1 (no `families` row) | both | tartuNLP model cards' example (0.4); swiss-ai Apertus card (top_p 0.9) |

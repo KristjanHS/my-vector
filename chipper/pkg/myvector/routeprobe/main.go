@@ -11,8 +11,9 @@
 // -audio speaks the text in the language's voice (TTS :8091) and routes the STT (:8092) transcript; STT serves only the SAVED lang.
 // Output lines: "stt: …", then "intent: <name> <params>" | "plugin: <reply>" | "llm: (not asked)" |
 // "llm-target: <provider> <model>" + "llm: <answer as spoken>" | "intent: intent_system_unmatched (LLM off: …)".
-// -set dev|holdout [-think none,low -think-budget N -reps R -n N -judge model|none] scores chatSets per arm, search off (T16):
-// a probekit Summary line + judge mean, Δ judge and Δ p50 vs the none arm per language; per-call lines on stderr.
+// -set dev|holdout|leakdev|leakholdout[,…] [-think none,low -think-budget N -prompt 0,P,… -reps R -n N -judge model|none]
+// scores chatSets per arm (think × prompt, promptArms), search off (T16): a probekit Summary line + judge mean, Δ judge and
+// Δ p50 vs the none/0 arm per language; per-call lines on stderr.
 package main
 
 import (
@@ -73,9 +74,10 @@ func main() {
 	custom := flag.Bool("custom", false, "load customIntents.json (a match RUNS its exec command / Lua script)")
 	tts := flag.String("tts", "http://127.0.0.1:8091", "TTS service")
 	stt := flag.String("stt", "http://127.0.0.1:8092", "STT service")
-	set := flag.String("set", "", "dev or holdout: score the chat set instead of one sentence")
+	set := flag.String("set", "", "dev, holdout, leakdev, leakholdout or a comma list: score the chat sets instead of one sentence")
 	think := flag.String("think", "", "-set: thinking arms, e.g. none,low (default none)")
 	budget := flag.Int("think-budget", 0, "-set: thinking budget for every arm but none (0 = the table's)")
+	promptArg := flag.String("prompt", "", "-set: prompt arms, e.g. 0,P,R (default the saved prompt alone)")
 	reps := flag.Int("reps", 1, "-set: calls per ask per arm")
 	limit := flag.Int("n", 0, "-set: asks per language (0 = all)")
 	judgeModel := flag.String("judge", "claude-haiku-5-5", "-set: Claude judge model; none skips judging")
@@ -87,7 +89,7 @@ func main() {
 		}
 		logger.Init()
 		defer cleanup()
-		runSet(setRun{set: *set, lang: *l, brain: *brain, think: *think, budget: *budget, reps: *reps, n: *limit, judge: *judgeModel})
+		runSet(setRun{set: *set, lang: *l, brain: *brain, think: *think, prompt: *promptArg, budget: *budget, reps: *reps, n: *limit, judge: *judgeModel})
 		return
 	}
 	if flag.NArg() != 1 {
@@ -168,31 +170,58 @@ func main() {
 }
 
 type setRun struct {
-	set, lang, brain, think, judge string
+	set, lang, brain, think, prompt, judge string
 	budget, reps, n                int
 }
 
 // armRun is one arm's calls and judge scores in one language.
 type armRun struct {
-	arm    probekit.Arm
+	arm    runArm
 	calls  []probekit.Call
 	scores []int
 }
 
-// runSet scores chatSets[r.set] per language × arm under isolate(), web search off; arms interleave per ask.
+// runArm is one -set arm: a thinking level × a prompt arm; labelled "<think>/<prompt>" when -prompt is given.
+type runArm struct {
+	think  probekit.Arm
+	prompt promptArm
+	tagged bool
+}
+
+func (a runArm) Label(model string) string {
+	if !a.tagged {
+		return a.think.Label(model)
+	}
+	return a.think.Label(model) + "/" + a.prompt.id
+}
+
+// runSet scores the chatSets in r.set per language × arm under isolate(), web search off; arms interleave per ask.
 func runSet(r setRun) {
-	asks, ok := chatSets[r.set]
-	if !ok {
-		die(2, "set: dev or holdout")
+	var asks []ask
+	for _, name := range strings.Split(r.set, ",") {
+		s, ok := chatSets[strings.TrimSpace(name)]
+		if !ok {
+			die(2, "set: dev, holdout, leakdev, leakholdout or a comma list")
+		}
+		asks = append(asks, s...)
 	}
 	levels, err := probekit.ParseThink(r.think)
+	if err != nil {
+		die(2, "%v", err)
+	}
+	pas, err := parsePrompt(r.prompt)
 	if err != nil {
 		die(2, "%v", err)
 	}
 	if r.reps < 1 || r.n < 0 {
 		die(2, "reps: at least 1; n: at least 0")
 	}
-	arms := probekit.Arms(levels, r.budget)
+	var arms []runArm
+	for _, t := range probekit.Arms(levels, r.budget) {
+		for _, p := range pas {
+			arms = append(arms, runArm{think: t, prompt: p, tagged: r.prompt != ""})
+		}
+	}
 	langs := []string{"en-US", "et-EE"}
 	if r.lang != "" {
 		if !lang.Valid(r.lang) {
@@ -208,6 +237,14 @@ func runSet(r setRun) {
 	}
 	vars.Init()
 	vars.CustomIntents, vars.CustomIntentsExist = nil, false
+	mem, err := memory.Read()
+	if err != nil {
+		die(2, "memory: %v", err)
+	}
+	pbase, err := readBase(profileTokens(prompt.Load().About, mem))
+	if err != nil {
+		die(2, "prompt: %v", err)
+	}
 	key := llm.Load().ClaudeKey
 	if r.judge == "none" {
 		key = ""
@@ -216,7 +253,7 @@ func runSet(r setRun) {
 	if len(vars.BotInfo.Robots) > 0 {
 		esn = vars.BotInfo.Robots[0].Esn
 	}
-	defer func() { llm.ProbeThinking = nil }()
+	defer func() { llm.ProbeThinking, llm.ProbeSampling = nil, nil }()
 	for _, l := range langs {
 		override(l, r.brain)
 		var la []ask
@@ -225,7 +262,7 @@ func runSet(r setRun) {
 				la = append(la, a)
 			}
 		}
-		use(arms[0])
+		use(pbase, arms[0], la[0])
 		w, err := callLLM(la[0].Text, esn) // warm-up, discarded
 		if err != nil && w.Target == "" {
 			die(1, "llm: %v", err)
@@ -244,7 +281,7 @@ func runSet(r setRun) {
 			for rep := 0; rep < r.reps; rep++ {
 				for _, i := range probekit.Order(len(arms), j*r.reps+rep) {
 					arm := arms[i]
-					use(arm)
+					use(pbase, arm, a)
 					res, err := callLLM(a.Text, esn)
 					if err != nil { // counted as a cut: empty reply, finish ErrorFinish, not counted
 						fmt.Fprintf(os.Stderr, "%s %s llm: %v | %s\n", l, arm.Label(model), err, a.Text)
@@ -281,8 +318,8 @@ func runSet(r setRun) {
 			}
 		}
 		base := -1
-		for i, arm := range arms {
-			if arm.Level == llm.None {
+		for i := len(arms) - 1; i >= 0; i-- { // the first none arm: none/<first prompt arm>, none/0 by default
+			if arms[i].think.Level == llm.None && arms[i].prompt.id == pas[0].id {
 				base = i
 			}
 		}
@@ -308,10 +345,15 @@ func runSet(r setRun) {
 	}
 }
 
-// use routes the chat path's Thinking to arm, past the saved level and ceiling (llm.ProbeThinking).
-func use(arm probekit.Arm) {
+// use routes the chat path's Thinking to arm, past the saved level and ceiling (llm.ProbeThinking), and applies its
+// prompt arm to the isolated store for ask a.
+func use(pbase promptBase, arm runArm, a ask) {
+	t := arm.think
 	llm.ProbeThinking = func(_, model string, p llm.Path) (llm.Thinking, bool) {
-		return arm.Thinking(model, p), p == llm.PathChat
+		return t.Thinking(model, p), p == llm.PathChat
+	}
+	if err := pbase.apply(arm.prompt, a); err != nil {
+		die(2, "%v", err)
 	}
 }
 
