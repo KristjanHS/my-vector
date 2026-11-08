@@ -28,7 +28,7 @@ func (s *listenStream) Send(r *pb.IntentGraphResponse) error {
 	return nil
 }
 
-// freshListening swaps in a State and an Arm whose stream-port sets got() lists ("8093,0").
+// freshListening swaps in a State and an Arm whose stream-port sets got() lists ("0,8093,0").
 func freshListening(t *testing.T) (got func() string) {
 	old, oldArm := forkListening, forkArm
 	var mu sync.Mutex
@@ -42,7 +42,8 @@ func freshListening(t *testing.T) (got func() string) {
 	forkListening = listen.NewState()
 	forkListening.OnOff = forkArm.Stop
 	forkHearer.State = forkListening
-	t.Cleanup(func() { forkListening, forkHearer.State, forkArm = old, old, oldArm })
+	arm := forkArm
+	t.Cleanup(func() { arm.StopAll(); forkListening, forkHearer.State, forkArm = old, old, oldArm })
 	return func() string {
 		mu.Lock()
 		defer mu.Unlock()
@@ -61,8 +62,8 @@ func TestForkListenShortCircuits(t *testing.T) {
 		say, want, sets string
 		on              bool
 	}{
-		{"Hei Vektor, aktiveeri aktiivne kuulamine.", "say:Aktiivne kuulamine sees.", "8093", true},
-		{"deaktiveeri aktiivne kuulamine", "say:Aktiivne kuulamine väljas.", "8093,0", false},
+		{"Hei Vektor, aktiveeri aktiivne kuulamine.", "say:Aktiivne kuulamine sees.", "0,8093", true},
+		{"deaktiveeri aktiivne kuulamine", "say:Aktiivne kuulamine väljas.", "0,8093,0", false},
 	} {
 		s := &listenStream{}
 		req.Stream = s

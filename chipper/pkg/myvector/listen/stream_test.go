@@ -3,6 +3,7 @@ package listen
 import (
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -154,4 +155,83 @@ func TestStreamServe(t *testing.T) {
 	if heardLog != 2 {
 		t.Fatalf("%d heard logs, want 2", heardLog)
 	}
+}
+
+// TestStreamUpDownOrder: Up + register and Down share the Stream lock, so A's Down never lands after newer B's Up.
+func TestStreamUpDownOrder(t *testing.T) {
+	type rig struct {
+		dial func() net.Conn
+		got  func() string
+	}
+	// up/down get the hook's call count (from 1) and note, which records an event.
+	newRig := func(up, down func(n int, note func(string))) *rig {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { l.Close() })
+		var mu sync.Mutex
+		var ev []string
+		g := &rig{}
+		note := func(e string) { mu.Lock(); defer mu.Unlock(); ev = append(ev, e) }
+		g.got = func() string { mu.Lock(); defer mu.Unlock(); return strings.Join(ev, ",") }
+		ups, downs := 0, 0
+		s := &Stream{
+			ESN:  func(string) string { return esn },
+			STT:  func(string, []byte) (string, error) { return "", nil },
+			Up:   func(string) bool { ups++; up(ups, note); return true },
+			Down: func(string) { downs++; down(downs, note) },
+		}
+		go s.Serve(l)
+		g.dial = func() net.Conn {
+			c, err := net.Dial("tcp", l.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { c.Close() })
+			return c
+		}
+		return g
+	}
+	t.Run("A's Down waits for B's slow Up", func(t *testing.T) {
+		release := make(chan struct{})
+		g := newRig(func(n int, note func(string)) {
+			note("up")
+			if n == 2 {
+				<-release
+			}
+		}, func(_ int, note func(string)) { note("down") })
+		a := g.dial()
+		eventually(t, "A up", func() bool { return g.got() == "up" })
+		g.dial()
+		eventually(t, "B's Up entered", func() bool { return g.got() == "up,up" })
+		a.Close()                          // A's read ends while B's Up runs
+		time.Sleep(200 * time.Millisecond) // room for A's cleanup to Down
+		close(release)
+		time.Sleep(200 * time.Millisecond)
+		if e := g.got(); e != "up,up" {
+			t.Fatalf("hooks %q; want up,up (a Down after B's Up leaves a connected robot marked down)", e)
+		}
+	})
+	t.Run("B's Up waits for A's slow Down", func(t *testing.T) {
+		entered, release := make(chan struct{}), make(chan struct{})
+		g := newRig(func(_ int, note func(string)) { note("up") }, func(n int, note func(string)) {
+			if n == 1 {
+				close(entered)
+				<-release
+			}
+			note("down")
+		})
+		a := g.dial()
+		eventually(t, "A up", func() bool { return g.got() == "up" })
+		a.Close()
+		<-entered
+		g.dial()
+		time.Sleep(200 * time.Millisecond) // room for B's Up
+		close(release)
+		eventually(t, "three hooks", func() bool { return len(strings.Split(g.got(), ",")) >= 3 })
+		if e := g.got(); e != "up,down,up" {
+			t.Fatalf("hooks %q; want up,down,up", e)
+		}
+	})
 }
