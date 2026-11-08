@@ -21,6 +21,9 @@ var families = []Sampling{
 	{"gemma4", 1, 0.95, 0},
 }
 
+// ProbeSampling is nil in production; a probe sets it so its arm's sampling replaces a non-Claude model's.
+var ProbeSampling func(provider, model string) (Sampling, bool)
+
 // SamplingFor is model's Sampling, matched on the name after any "namespace/" prefix.
 // A Claude provider or claude* model gets temperature 1 and no top_p (Anthropic rejects top_p);
 // any other model keeps upstream wire-pod's temperature 1, top_p 1.
@@ -29,6 +32,11 @@ func SamplingFor(provider, model string) Sampling {
 	m = m[strings.LastIndex(m, "/")+1:]
 	if provider == Claude || strings.HasPrefix(m, "claude") {
 		return Sampling{Family: "claude", Temperature: 1}
+	}
+	if ProbeSampling != nil {
+		if s, ok := ProbeSampling(provider, model); ok {
+			return s
+		}
 	}
 	for _, f := range families {
 		if strings.HasPrefix(m, f.Family) {
