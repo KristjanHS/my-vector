@@ -142,8 +142,9 @@ func TestPromptAPISaveBoth(t *testing.T) {
 	if s := Load(); s.About != long || s.Templates[Ollama] != "Be brief.\n\n{user}" {
 		t.Errorf("a rejected pair wrote: about %q, template %q", s.About, s.Templates[Ollama])
 	}
-	if w := post(t, APIHandler, `{"action":"save","brain":"claude","about":""}`); w.Code != http.StatusOK || Load().About != "" || Load().Templates[Claude] != "" {
-		t.Errorf("about-me alone: %d, cleared %q, claude template pinned %q", w.Code, Load().About, Load().Templates[Claude])
+	w = post(t, APIHandler, `{"action":"save","brain":"claude","about":""}`)
+	if _, pinned := Load().Templates[Claude]; w.Code != http.StatusOK || Load().About != "" || pinned {
+		t.Errorf("about-me alone: %d, cleared %q, claude template pinned %v", w.Code, Load().About, pinned)
 	}
 }
 
