@@ -20,11 +20,12 @@ import (
 var ErrForkLLMOff = errors.New("LLM off")
 
 // ForkProbeLLMResult is one ForkProbeLLMFull call: Finish and Usage from the non-streamed reply, Dur of the request.
-// RawAnswer is the content before cleaning; Reasoning is Ollama's "reasoning" (go-openai drops it).
+// RawAnswer is the content before cleaning; Reasoning is Ollama's "reasoning" (go-openai drops it); BaseURL is the
+// llm.Resolve target's ("" for wire-pod knowledge).
 type ForkProbeLLMResult struct {
-	Target, Answer, RawAnswer, Reasoning, Finish string
-	Usage                                        openai.Usage
-	Dur                                          time.Duration
+	Target, BaseURL, Answer, RawAnswer, Reasoning, Finish string
+	Usage                                                 openai.Usage
+	Dur                                                   time.Duration
 }
 
 // forkProbeBody is the probe client's transport: it keeps the last response body for ForkProbeLLMFull to decode.
@@ -82,6 +83,9 @@ func ForkProbeLLMFull(ctx context.Context, transcribedText, esn string) (ForkPro
 	}
 	if t, ok := forkResolve(llm.Load(), lang.Current(), forkKG()); ok {
 		res.Target = t.Provider + " " + t.Model
+		if t.Ollama() {
+			res.BaseURL = t.BaseURL
+		}
 		c = client(t.Key, t.BaseURL) // forkClient's llm.NewClient(t)
 	} else if c == nil {
 		return res, fmt.Errorf("no client for Knowledge provider %q and no fork profile for %s", k.Provider, lang.Current())
