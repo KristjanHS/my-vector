@@ -175,12 +175,18 @@ func ResolveOllama(c Config, l string, kg KG, model string) (Target, bool) {
 	return Target{Ollama, u + "/v1", "ollama", model}, true
 }
 
-// VisionModel is the Ollama model an et-EE photo question uses (E26): the en-US one when that is Ollama.
-func VisionModel(c Config, kg KG) string {
-	if p, _ := Effective(c, kg); p[lang.English].Provider == Ollama && p[lang.English].Model != "" {
-		return p[lang.English].Model
+// ResolveVision is language l's camera Target: Resolve's, but et-EE on Ollama asks (same base) the en-US Ollama
+// model, else DefaultENModel (E26); false leaves the photo question on wire-pod's Knowledge.
+func ResolveVision(c Config, l string, kg KG) (Target, bool) {
+	t, ok := Resolve(c, l, kg)
+	if !ok || !t.Ollama() || l != lang.Estonian {
+		return t, ok
 	}
-	return DefaultENModel
+	t.Model = DefaultENModel
+	if p, _ := Effective(c, kg); p[lang.English].Provider == Ollama && p[lang.English].Model != "" {
+		t.Model = p[lang.English].Model
+	}
+	return t, true
 }
 
 // OllamaBase is t's Ollama root, for its native /api routes.
