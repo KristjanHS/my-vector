@@ -6,14 +6,17 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/miccap"
 	sr "github.com/kercre123/wire-pod/chipper/pkg/wirepod/speechrequest"
+	ttr "github.com/kercre123/wire-pod/chipper/pkg/wirepod/ttr"
 )
 
-// forkMicCapture wraps the STT handler so each request's audio lands in miccap.Dir() while that dir exists.
+// forkMicCapture wraps the STT handler: it stamps the wake-word turn at its audio start (H1), and each request's
+// audio lands in miccap.Dir() while that dir exists.
 func forkMicCapture(h func(sr.SpeechRequest) (string, error)) func(sr.SpeechRequest) (string, error) {
 	if h == nil {
 		return nil
 	}
 	return func(req sr.SpeechRequest) (string, error) {
+		ttr.ForkTurnStart(req.Device)
 		dir := miccap.Dir()
 		if dir == "" {
 			return h(req)

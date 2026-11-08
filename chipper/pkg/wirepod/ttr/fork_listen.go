@@ -74,6 +74,9 @@ func forkListenSay(esn, text string) error {
 	return err
 }
 
+// ForkTurnStart stamps a wake-word turn as its audio starts (preqs forkMicCapture), so a listen reply to the same words drops (H1).
+func ForkTurnStart(esn string) { forkListening.Turn(esn, time.Now()) }
+
 // forkListen runs right after forkQuiet (ProcessTextAll): it stamps a wake-word turn (A6), and an on/off phrase
 // flips active listening and says so.
 func forkListen(req interface{}, voiceText, botSerial string) bool {
