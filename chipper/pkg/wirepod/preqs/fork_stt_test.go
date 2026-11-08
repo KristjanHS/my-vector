@@ -97,3 +97,52 @@ func TestForkSTTRouterUnreachableNeverFallsBack(t *testing.T) {
 		}
 	}
 }
+
+// forkEndAt feeds frames (true = speech) one 10 ms frame per chunk through forkEndOfSpeech and returns the index of
+// the frame that ended the request, or -1.
+func forkEndAt(t *testing.T, frames []bool) int {
+	t.Helper()
+	old := forkVADActive
+	forkVADActive = func(_ *sr.SpeechRequest, f []byte) (bool, error) { return f[0] == 1, nil }
+	t.Cleanup(func() { forkVADActive = old })
+	var req sr.SpeechRequest
+	for i, speech := range frames {
+		f := make([]byte, 320)
+		if speech {
+			f[0] = 1
+		}
+		req.LastAudioChunk = f
+		if forkEndOfSpeech(&req) {
+			return i
+		}
+	}
+	return -1
+}
+
+func forkFrames(parts ...any) []bool { // pairs: bool speech, int ms
+	var out []bool
+	for i := 0; i < len(parts); i += 2 {
+		for n := 0; n < parts[i+1].(int)/10; n++ {
+			out = append(out, parts[i].(bool))
+		}
+	}
+	return out
+}
+
+// A 400 ms comma pause no longer ends the request; 700 ms of trailing silence does, on its 70th frame.
+func TestForkEndOfSpeechKeepsCommaPause(t *testing.T) {
+	frames := forkFrames(true, 300, false, 400, true, 300, false, 1000)
+	if got, want := forkEndAt(t, frames), 300/10+400/10+300/10+700/10-1; got != want {
+		t.Fatalf("end at frame %d, want %d (700 ms after the last speech)", got, want)
+	}
+}
+
+// Under 190 ms of speech never ends, however long the silence (upstream's ActiveFrames > 18).
+func TestForkEndOfSpeechNeedsSpeech(t *testing.T) {
+	if got := forkEndAt(t, forkFrames(false, 500, true, 180, false, 2000)); got != -1 {
+		t.Fatalf("ended at frame %d after 180 ms of speech, want no end", got)
+	}
+	if got := forkEndAt(t, forkFrames(true, 190, false, 700)); got != 19+70-1 {
+		t.Fatalf("190 ms of speech: end at frame %d, want %d", got, 19+70-1)
+	}
+}
