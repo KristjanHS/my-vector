@@ -162,8 +162,8 @@ func StartChipper() {
 			certPriv, _ = os.ReadFile("./epod/ep.key")
 		} else {
 			var err error
-			certPub, _ = os.ReadFile("../certs/cert.crt")
-			certPriv, err = os.ReadFile("../certs/cert.key")
+			certPub, _ = os.ReadFile(vars.CertPath)
+			certPriv, err = os.ReadFile(vars.KeyPath)
 			if err != nil {
 				logger.Println("wire-pod is not setup.")
 				return

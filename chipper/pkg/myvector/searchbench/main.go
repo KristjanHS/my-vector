@@ -1,6 +1,6 @@
 // Command searchbench scores each search provider on fixed Estonian queries (web-search plan W11, Stage 3.1).
 //
-//	go run ./pkg/myvector/searchbench [-config myvectorConfig.json] [-providers tavily,ollama,searxng] [-judge claude-haiku-5-5]   # from chipper/
+//	go run ./pkg/myvector/searchbench [-config ../secrets/server/myvectorConfig.json] [-providers tavily,ollama,searxng] [-judge claude-haiku-5-5]   # from chipper/
 //
 // Every call spends quota via search.State.Take; without claude_key the judge columns print "-".
 package main
@@ -184,7 +184,7 @@ func bench(p search.Provider, st *search.State, key, model string) row {
 }
 
 func main() {
-	config := flag.String("config", "myvectorConfig.json", "myvectorConfig.json with the search keys (myvectorSearch.json beside it holds the quota)")
+	config := flag.String("config", "../secrets/server/myvectorConfig.json", "myvectorConfig.json with the search keys (myvectorSearch.json beside it holds the quota)")
 	names := flag.String("providers", strings.Join(search.DefaultOrder, ","), "comma-separated providers")
 	model := flag.String("judge", "claude-haiku-5-5", "Claude judge model")
 	flag.Parse()

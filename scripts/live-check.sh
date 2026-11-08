@@ -29,12 +29,12 @@ need_lang() { # need_lang <lang>: STT serves only the saved language
   got=$(curl -fsS --max-time 5 "$api/myvector/api/voice" | jq -r '.lang // empty') || setup "wire-pod not up at $api"
   [[ $got == "$1" ]] || setup "saved lang is ${got:-unset}, this check needs $1 (switch it in the web UI)"
 }
-# routeprobe must write nothing under chipper/ (vars.ReadConfig rewrites apiConfig.json): mtimes before/after
-mtimes() { (cd "$repo/chipper" && stat -c '%n %.9Y' apiConfig.json myvectorConfig.json jdocs/*.json 2>/dev/null) || true; }
+# routeprobe must write nothing under secrets/server/ (vars.ReadConfig rewrites apiConfig.json): mtimes before/after
+mtimes() { (cd "$repo/secrets/server" && stat -c '%n %.9Y' apiConfig.json myvectorConfig.json jdocs/*.json 2>/dev/null) || true; }
 same_mtimes() { # same_mtimes <before>
   local now; now=$(mtimes)
-  [[ $now == "$1" ]] && pass "chipper/ config + jdocs untouched" ||
-    fail "chipper/ files changed during the check: $(diff <(echo "$1") <(echo "$now") | grep '^>' | tr '\n' ' ')"
+  [[ $now == "$1" ]] && pass "secrets/server/ config + jdocs untouched" ||
+    fail "secrets/server/ files changed during the check: $(diff <(echo "$1") <(echo "$now") | grep '^>' | tr '\n' ' ')"
 }
 probe() { # probe <args…>: runs routeprobe in chipper/; out = its stdout+stderr; returns its status
   local rc=0
@@ -72,12 +72,12 @@ check_picker() {
     else fail "test $l $p $m: $r"; fi
   done < <({ jq -r '(.llm, .defaults) | to_entries[] | "\(.key) \(.value.provider) \(.value.model)"' <<<"$v"; printf '%s claude claude-haiku-5-5\n' en-US et-EE; } | sort -u)
   # key hygiene: no full key outside the gitignored fork config
-  [[ $(grep -c sk-ant "$repo/chipper/apiConfig.json" 2>/dev/null || true) == 0 ]] && pass "apiConfig.json holds no Claude key" || fail "apiConfig.json holds a Claude key"
+  [[ $(grep -c sk-ant "$repo/secrets/server/apiConfig.json" 2>/dev/null || true) == 0 ]] && pass "apiConfig.json holds no Claude key" || fail "apiConfig.json holds a Claude key"
   for r in /api/get_kg_api /myvector/api/voice; do
     body=$(curl -fsS --max-time 5 "$api$r") || { fail "fetch $r"; continue; }
     grep -qE 'sk-ant-[A-Za-z0-9_-]{20,}' <<<"$body" && fail "full key served by $r" || pass "no full key in $r"
   done
-  git -C "$repo" check-ignore -q chipper/myvectorConfig.json && pass "myvectorConfig.json gitignored" || fail "myvectorConfig.json not gitignored"
+  git -C "$repo" check-ignore -q secrets/server/myvectorConfig.json && pass "myvectorConfig.json gitignored" || fail "myvectorConfig.json not gitignored"
 }
 
 check_route_build() { (cd "$repo/chipper" && go build -o "$work/routeprobe" ./pkg/myvector/routeprobe) || setup "routeprobe does not build"; }
@@ -133,8 +133,8 @@ check_clock() {
 
 check_ttsdown() {
   local api=${WIREPOD_URL:-http://127.0.0.1:8080} esn lang t1 r one="Test one." two="Test two."
-  esn=$(jq -r '.robots[0].esn // empty' "$repo/chipper/jdocs/botSdkInfo.json" 2>/dev/null) || true
-  [[ -n $esn ]] || setup "no robot in chipper/jdocs/botSdkInfo.json"
+  esn=$(jq -r '.robots[0].esn // empty' "$repo/secrets/server/jdocs/botSdkInfo.json" 2>/dev/null) || true
+  [[ -n $esn ]] || setup "no robot in secrets/server/jdocs/botSdkInfo.json"
   read -r lang t1 < <(curl -fsS --max-time 5 "$api/myvector/api/voice" | jq -r '"\(.lang) \(if .lang == "et-EE" then .t1_et else .t1 end)"') &&
     [[ -n ${t1:-} ]] || setup "wire-pod not up"
   [[ $t1 != stock ]] || setup "T1 is stock for the saved lang: nothing to fall back from"

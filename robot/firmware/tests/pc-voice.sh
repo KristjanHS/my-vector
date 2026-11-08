@@ -45,7 +45,7 @@ timeout 30 "$tmp/t" "$here/tts-urls.txt" || rc=$?
 # voice-push.sh + settings.sh in a throwaway robot/ (GIT_DIR=/nonexistent: env.sh falls back to the copy's own robot.env).
 # Stub robot (ssh runs settings.sh's sed on robot_jdoc's file): clock 24h, Celsius, volume 1; the voice file lands in $vp/voice.json, curl calls in $vp/curl.log.
 vp=$tmp/vp
-mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/robot/sshkey" "$vp/bin" "$vp/chipper/jdocs"
+mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/robot/sshkey" "$vp/bin" "$vp/secrets/server/jdocs"
 cp "$fw/../env.sh" "$vp/robot/"
 cp "$fw/voice-push.sh" "$fw/settings.sh" "$vp/robot/firmware/"
 printf '#!/bin/sh\necho diskguard stub\n' >"$vp/robot/diskguard/apply.sh"
@@ -98,8 +98,8 @@ rc=0; out=$(vp_run voice-push.sh af_bella 1.0 fi-FI) || rc=$?
 # settings.sh: <wire-pod jdoc clock_24_hour> <temp_is_fahrenheit> <myvectorConfig.json>; sets out, rc.
 settings_run() {
   jq -n --arg d "{\"clock_24_hour\" : $1, \"temp_is_fahrenheit\" : $2}" \
-    '[{thing: "vic:0", name: "vic.RobotSettings", jdoc: {json_doc: $d}}]' >"$vp/chipper/jdocs/jdocs.json"
-  printf '%s\n' "$3" >"$vp/chipper/myvectorConfig.json"
+    '[{thing: "vic:0", name: "vic.RobotSettings", jdoc: {json_doc: $d}}]' >"$vp/secrets/server/jdocs/jdocs.json"
+  printf '%s\n' "$3" >"$vp/secrets/server/myvectorConfig.json"
   : >"$vp/curl.log" && : >"$vp/voice.json"
   rc=0; out=$(vp_run settings.sh) || rc=$?
 }

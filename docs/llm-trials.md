@@ -9,7 +9,7 @@ running server's web API (no restart), and `ping` sends a request built like wir
 endpoint, key and model), so you see the answer and its latency without talking to the robot.
 
 ⚠ Once the **Language, brain & voice** page (`/myvector/voice`) is saved, its per-language LLM (Ollama or
-Claude) wins: `scripts/llm.sh use` no longer changes the brain. Delete `"llm"` from `chipper/myvectorConfig.json` to go back.
+Claude) wins: `scripts/llm.sh use` no longer changes the brain. Delete `"llm"` from `secrets/server/myvectorConfig.json` to go back.
 
 | # | option | cost | what it adds |
 |---|--------|------|--------------|

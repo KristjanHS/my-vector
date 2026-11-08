@@ -12,7 +12,7 @@ OUT=$main/robot/work/voice-samples/onset; mkdir -p "$OUT"; rm -f "$OUT"/*.wav
 F=/data/data/myvector-voice.json
 arms=("$@"); ((${#arms[@]})) || arms=(stock cori af_bella mari refused blackhole)
 # Unpinned Kokoro cold-loads per request and misses the 1.5 s cut: ask the server's own kokoro_selected (tts/server.py).
-if [[ " ${arms[*]} " == *" af_bella "* ]] && ! "$main/robot/work/tts/venv/bin/python" -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import server; sys.exit(not server.kokoro_selected(sys.argv[2])[0])' "$main/tts" "${TTS_VOICE_CONFIG:-$main/chipper/myvectorConfig.json}"; then
+if [[ " ${arms[*]} " == *" af_bella "* ]] && ! "$main/robot/work/tts/venv/bin/python" -I -c 'import sys; sys.path.insert(0, sys.argv[1]); import server; sys.exit(not server.kokoro_selected(sys.argv[2])[0])' "$main/tts" "${TTS_VOICE_CONFIG:-$main/secrets/server/myvectorConfig.json}"; then
   echo "FAIL: af_bella arm needs Kokoro pinned — web UI: language English, af_bella as a voice" >&2; exit 2
 fi
 # shellcheck disable=SC2029 # expanding on the client is the point
