@@ -3,6 +3,7 @@ package processreqs
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,10 +23,15 @@ var forkSTTURL = "http://127.0.0.1:8092/stt"
 // 60 s covers a request that waits for the model load (plan E21).
 var forkSTTClient = &http.Client{Timeout: 60 * time.Second}
 
-// forkSTTCollect reads the request's decoded PCM up to end of speech, as stt/whisper does.
+// forkSTTCollect reads the request's decoded PCM up to end of speech, as stt/whisper does. The robot stops recording
+// at 6 s (kStreamingTimeout_ms) and half-closes the stream: io.EOF after enough speech still goes to STT, so a long
+// sentence that outlasts the cap is cut, never lost.
 var forkSTTCollect = func(req sr.SpeechRequest) ([]byte, error) {
 	for {
-		if _, err := req.GetNextStreamChunk(); err != nil {
+		if _, err := forkNextChunk(&req); err != nil {
+			if errors.Is(err, io.EOF) && req.ActiveFrames >= forkMinSpeechFrames {
+				return req.DecodedMicData, nil
+			}
 			return nil, err
 		}
 		if forkEndOfSpeech(&req) {
@@ -33,6 +39,9 @@ var forkSTTCollect = func(req sr.SpeechRequest) ([]byte, error) {
 		}
 	}
 }
+
+// forkNextChunk reads the next stream chunk into req (a seam for tests).
+var forkNextChunk = func(req *sr.SpeechRequest) ([]byte, error) { return req.GetNextStreamChunk() }
 
 // forkEndSilence ends a "Hey Vector" request after this much VAD silence (user ruling 2026-11-08: 700 ms, the
 // active-listening pause cut P1). Upstream DetectEndOfSpeech stops at 230 ms and cut sentences at a comma.
