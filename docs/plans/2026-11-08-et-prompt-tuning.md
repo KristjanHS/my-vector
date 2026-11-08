@@ -92,9 +92,16 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 | EstLLM-1125 | F | 21/28 | 0 | 50 | 67 | 44.0 | 1.6/5.0 |
 | EstLLM-1125 | G | 11/25 | 0 | 38 | 100 | 49.7 | 1.5/5.0 |
 | EstLLM-1125 | N | 20/29 | 0 | 0 | 33 | 71.5 | 2.1/4.8 |
+| Apertus | 0 (3.1b) | 24/85 | 13 | 12 | 50 | 55.4 | 1.5/13.8 |
+| Apertus | S+R | 21/44 | 6 | 4 | 83 | 77.8 | 1.3/4.6 |
+| EstLLM-1125 | 0 (3.1b) | 18/26 | 0 | 44 | 67 | 45.1 | 1.0/1.6 |
+| EstLLM-1125 | D+G | 16/35 | 0 | 12 | 83 | 57.7 | 1.0/1.9 |
+| EstLLM-1125 | D+G2 | 22/39 | 0 | 0 | 100 | 52.8 | 1.2/2.6 |
 
 ## Open questions
 
+- `[USER DECISION]` Q4 (3.1b, no strict pass): Apertus S+R fails only L (6 % vs ≤ 5 %), EstLLM-1125 D+G2 only p90 latency (2.6 s vs ≤ 1.86 s);
+  waive that one bar → Stage 3.2 holdout of that arm, or close the plan per §Metrics (no wiring).
 - `[USER DECISION]` Q1 (Stage 4.1) wiring: one shared `ollama` template change if a single arm wins both models; else per-model text (store key `ollama:<model>` vs a style line beside `llm.SamplingFor` `families`) — which model ships stays the `docs/backlog.md` §OWED[USER] et-model line.
 - `[USER DECISION]` Q3 (Stage 4.1, only if G wins): gating `{user}` in prod drops the about-me from most asks, and the same gate on `{facts}` needs a 2026-11-08-memory-m2.md (docs/plans/) M18 ruling.
 
