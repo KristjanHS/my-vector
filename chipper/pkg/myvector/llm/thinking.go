@@ -75,7 +75,7 @@ var thinkRows = []thinkRow{
 }
 
 func rowFor(model string) (thinkRow, bool) {
-	s := SamplingFor(Ollama, model)
+	s := familySampling(Ollama, model) // never ProbeSampling's family: a probe arm keeps its thinking row
 	for _, r := range thinkRows {
 		if r.family == s.Family {
 			return r, true
