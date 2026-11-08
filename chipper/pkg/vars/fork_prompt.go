@@ -3,6 +3,7 @@ package vars
 import (
 	"path/filepath"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
 )
 
@@ -10,4 +11,5 @@ import (
 func init() {
 	prompt.Path = func() string { return filepath.Join(filepath.Dir(ApiConfigPath), "myvectorPrompt.json") }
 	prompt.UpstreamPrompt = func() string { return APIConfig.Knowledge.OpenAIPrompt }
+	memory.Path = func() string { return filepath.Join(filepath.Dir(ApiConfigPath), "myvectorMemory.json") }
 }
