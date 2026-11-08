@@ -1,7 +1,7 @@
 // Command memoryprobe runs one memory pass step on a JSONL episode fixture with the configured memory model,
 // printing the model reply and the parsed result. From chipper/:
 //
-//	go run ./pkg/myvector/memoryprobe -fixture pkg/myvector/memory/testdata/session_et.jsonl -step extract|merge|profile
+//	go run ./pkg/myvector/memoryprobe -fixture pkg/myvector/memory/testdata/session_et.jsonl -step extract|merge|profile|guard
 package main
 
 import (
@@ -21,7 +21,7 @@ import (
 func main() {
 	cfgPath := flag.String("config", "../secrets/server/myvectorConfig.json", "myvectorConfig.json to read memory_model, the Ollama URL and the Claude key from")
 	fixture := flag.String("fixture", "", "episodes JSONL (memory.Episode lines)")
-	step := flag.String("step", "extract", "extract, merge (extract → merge) or profile (extract → merge → profile); diary, guard land with their stages")
+	step := flag.String("step", "extract", "extract, merge (extract → merge), profile (→ profile) or guard (baseline → merge → profile → check); diary lands with its stage")
 	esn := flag.String("esn", "probe", "ESN the fixture's sessions belong to")
 	flag.Parse()
 	lang.Path = func() string { return *cfgPath }
@@ -37,18 +37,35 @@ func main() {
 		fail(1, err.Error())
 	}
 	fmt.Printf("memory model %s %s at %s\n", t.Provider, t.Model, t.BaseURL)
-	steps := map[string]int{"extract": 1, "merge": 2, "profile": 3}[*step]
+	steps := map[string]int{"extract": 1, "merge": 2, "profile": 3, "guard": 4}[*step]
 	if steps == 0 {
 		fail(2, "-step "+*step+": not built yet")
 	}
 	st := &memory.Store{Profiles: map[string]memory.Profile{}}
 	st.Facts = extract(t, memory.Sessions(*esn, eps, time.Now()))
+	var before map[string]bool
+	if steps >= 4 {
+		before = guard(t, st, *esn, "baseline")
+	}
 	if steps >= 2 {
 		merge(t, st, *esn)
 	}
 	if steps >= 3 {
 		profile(t, st, *esn)
 	}
+	if steps >= 4 {
+		fmt.Println("-- lost:", memory.Lost(before, guard(t, st, *esn, "check")))
+	}
+}
+
+func guard(t llm.Target, st *memory.Store, esn, phase string) map[string]bool {
+	start := time.Now()
+	known, err := memory.Answers(context.Background(), t, st, esn)
+	if err != nil {
+		fail(1, "guard "+phase+": "+err.Error())
+	}
+	fmt.Printf("\n== guard %s (%s) known: %v\n", phase, time.Since(start).Round(time.Millisecond), known)
+	return known
 }
 
 func merge(t llm.Target, st *memory.Store, esn string) {
