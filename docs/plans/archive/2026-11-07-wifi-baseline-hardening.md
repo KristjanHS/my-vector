@@ -1,6 +1,6 @@
 # WiFi baseline hardening (Stage 0, before the on-robot Tailscale)
 
-Status: Stages 1–3, 4.1–4.3, 4.5, 5.1–5.3 code committed (4.4 is `[USER]`); next Stage 6.1. `[USER]` owed: 5.1/5.3 live `robot/netguard/apply.sh --selftest`. `[USER]` owed: 4.1 real `mkcert.sh` + `ca.key` off; 4.3 sequence (its row); 4.4; `make ship` (3.4/3.6 verify), 1.2 `make server-pin` check, 2.1 live diskguard. Executes Stage 0 (0.1–0.4) of `2026-11-07-public-wifi-security.md (docs/plans/)` plus T2,
+Status: ✅ SHIPPED (code) 2026-11-08 — every stage committed; the live `[USER]` runs (4.1 `ca.key` off, 4.3/4.4 order, 1.2, 2.1, 5.1/5.3 `--selftest`, 6.1 e2e) are in `docs/backlog.md` §OWED[USER]. Executes Stage 0 (0.1–0.4) of `2026-11-07-public-wifi-security.md (docs/plans/)` plus T2,
 the public server TLS key, and H1 (per-robot sshd host keys). The option D spike itself is not planned here. Every `[USER]` slice is a live run against the
 robot or server: Claude asks first and never runs it unasked. No step makes a robot sound.
 
