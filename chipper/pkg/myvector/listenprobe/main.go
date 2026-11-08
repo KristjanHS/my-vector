@@ -308,8 +308,9 @@ func main() {
 				}
 				for _, k := range probekit.Order(len(think), item) {
 					th := think[k]
+					r := request(tg.t.Model, a.sys, listen.User(s.before, s.now), th.Thinking(tg.t.Model, llm.PathListen))
 					start := time.Now()
-					c, err := probekit.Chat(tg.t.BaseURL, request(tg.t.Model, a.sys, listen.User(s.before, s.now), th.Thinking(tg.t.Model, llm.PathListen)))
+					c, err := probekit.Chat(tg.t.BaseURL, r)
 					ms[k] = append(ms[k], time.Since(start))
 					if err == nil {
 						calls[k] = append(calls[k], c)
@@ -334,6 +335,11 @@ func main() {
 					sc[k][s.l] = x
 				}
 				item++
+			}
+			for k := range think { // after every timed call: counting must not reach latency or the prompt cache
+				if _, err := probekit.CountAll(tg.t.BaseURL, tg.t.Model, calls[k]); err != nil {
+					fmt.Printf("  %-34s count: %v\n", tg.name, err)
+				}
 			}
 			for k, th := range think {
 				if len(ms[k]) == 0 {
