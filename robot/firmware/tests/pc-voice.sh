@@ -45,13 +45,14 @@ timeout 30 "$tmp/t" "$here/tts-urls.txt" || rc=$?
 # voice-push.sh + settings.sh in a throwaway robot/ (GIT_DIR=/nonexistent: env.sh falls back to the copy's own robot.env).
 # Stub robot (ssh runs settings.sh's sed on robot_jdoc's file): clock 24h, Celsius; the voice file lands in $vp/voice.json, curl calls in $vp/curl.log.
 vp=$tmp/vp
-mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/robot/sshkey" "$vp/robot/hostkey" "$vp/robot/epod" "$vp/bin" "$vp/secrets/server/jdocs"
+mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/robot/sshkey" "$vp/robot/hostkey" "$vp/robot/epod" "$vp/robot/netguard" "$vp/bin" "$vp/secrets/server/jdocs"
 cp "$fw/../env.sh" "$vp/robot/"
 cp "$fw/voice-push.sh" "$fw/settings.sh" "$vp/robot/firmware/"
 printf '#!/bin/sh\necho diskguard stub\n' >"$vp/robot/diskguard/apply.sh"
 printf '#!/bin/sh\necho sshkey stub\n' >"$vp/robot/sshkey/apply.sh"
 printf '#!/bin/sh\necho hostkey stub\n' >"$vp/robot/hostkey/apply.sh"
 printf '#!/bin/sh\necho epod stub\n' >"$vp/robot/epod/apply.sh"
+printf '#!/bin/sh\necho netguard stub\n' >"$vp/robot/netguard/apply.sh"
 : >"$vp/robot/key"
 cat >"$vp/bin/ssh" <<'STUB'
 #!/usr/bin/env bash
