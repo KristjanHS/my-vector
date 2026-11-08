@@ -35,4 +35,17 @@ if out=$(run "$r" FAKE_CURL=up -- --selftest); then die "selftest with a decoy t
 r=$(fresh away); echo "$pc" >"$r/ok"
 if out=$(run "$r" FAKE_SRC=10.9.9.9); then die "ssh from a non-pc_ip source passed: $out"; fi
 [[ $out == *"lock-out guard"* && ! -e $r/iptables.hooked ]] && ! grep -q setsid "$r/calls" || die "foreign source: out=[$out] calls=[$(seq_of "$r")]"
+# a pending arm (no confirm file) with the decoy live is not "in place": re-applied and confirmed
+r=$(fresh pending); out=$(run "$r" -- --selftest) || die "pending: selftest: $out"
+rm "$r/run/myvector/netguard.confirm"; echo 192.0.2.1 >"$r/iptables.live"
+out=$(run "$r") || die "pending: run: $out"
+[[ $out != *"in place"* && $(cat "$r/iptables.live") == "$pc" && -e $r/run/myvector/netguard.confirm ]] || die "pending arm taken as in place: out=[$out]"
+
+r=$(fresh swapfail); echo "$pc" >"$r/ok"
+if out=$(run "$r" FAKE_E_FAIL=1); then die "a failed swap passed: $out"; fi
+[[ ! -e $r/iptables.newhooked && $(seq_of "$r") == "ssh hosts|ssh fw|setsid|ssh undo" ]] || die "failed swap: _NEW left hooked or no undo: calls=[$(seq_of "$r")]"
+
+r=$(fresh repin)
+if out=$(run "$r" FAKE_SSH_FAIL=hosts:2 -- --selftest); then die "selftest with a failed pc_ip re-pin passed: $out"; fi
+[[ $(awk '/escapepod/ { print $1; exit }' "$r/etc/hosts") == "$pc" ]] || die "selftest died with the decoy pinned: [$(cat "$r/etc/hosts")]"
 echo "netguard apply host test PASS"

@@ -8,7 +8,7 @@ tmp=$(mktemp -d "$main/robot/work/netguard-rules-test.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 die() { echo "FAIL: netguard rules test: $*" >&2; exit 1; }
 mkdir "$tmp/bin"
-# -D/-C/-X/-F on an absent chain or rule fail, as the real ones do; FAKE_NO_CONNTRACK=1 refuses -m conntrack
+# -D/-C fail (no such rule), -N/-F/-X/-E always succeed; FAKE_NO_CONNTRACK=1 refuses -m conntrack
 cat >"$tmp/bin/iptables" <<'EOF'
 #!/bin/sh
 echo "$(basename "$0") $*" >>"$LOG"

@@ -11,7 +11,7 @@ for a; do case $a in --selftest) selftest=1 ;; *) echo "SETUP: netguard: unknown
 pc_ip=${tts_url#*://} pc_ip=${pc_ip%%[:/]*}
 [[ $pc_ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] ||
   { echo "SETUP: netguard: ROBOT_TTS_URL host '$pc_ip' is not an IPv4 address (pc_ip, plan N1)" >&2; exit 2; }
-decoy=192.0.2.1 ok_file=${NETGUARD_OK:-${robot_dir%/robot}/secrets/netguard-selftest.ok} force=
+in_place=0 decoy=192.0.2.1 ok_file=${NETGUARD_OK:-${robot_dir%/robot}/secrets/netguard-selftest.ok} force=
 ((selftest)) && force=FORCE=1
 die() { echo "FAIL: netguard: $*" >&2; exit 1; }
 
@@ -22,7 +22,7 @@ remote() {
   cat "$here/../lib/etc.sh" - <<'EOF' | ssh "${ssh_opts[@]}" "root@$ip" "PHASE=$phase PC_IP=$pc_ip $* sh -s"
 set -e
 hosts=/etc/hosts bin=/etc/myvector/netguard.sh unit=/etc/systemd/system/myvector-netguard.service run=/run/myvector/netguard.sh
-restore='for t in iptables ip6tables; do while $t -D INPUT -i wlan0 -j MYVECTOR_IN 2>/dev/null; do :; done; done
+restore='for t in iptables ip6tables; do for c in MYVECTOR_IN MYVECTOR_IN_NEW; do while $t -D INPUT -i wlan0 -j $c 2>/dev/null; do :; done; done; done
 if systemctl is-enabled -q myvector-netguard 2>/dev/null; then mount -o remount,rw / && systemctl disable myvector-netguard 2>/dev/null; mount -o remount,ro /; fi'
 hooked() { iptables -C INPUT -i wlan0 -j MYVECTOR_IN 2>/dev/null && ip6tables -C INPUT -i wlan0 -j MYVECTOR_IN 2>/dev/null; }
 case $PHASE in
@@ -36,7 +36,8 @@ hosts) # PIN=<ip> [REACH=1]
 fw) # SCRIPT=<base64 rules.sh output> [FORCE=1]
   [ "${SSH_CLIENT%% *}" = "$PC_IP" ] || { echo "FAIL: ssh comes from ${SSH_CLIENT%% *}, not pc_ip $PC_IP: refusing (lock-out guard)"; exit 1; }
   new=$(echo "$SCRIPT" | base64 -d)
-  if [ -z "${FORCE:-}" ] && [ "$(cat "$ETC_ROOT$bin" 2>/dev/null)" = "$new" ] && [ -f "$ETC_ROOT$unit" ] && hooked; then
+  if [ -z "${FORCE:-}" ] && [ "$(cat "$ETC_ROOT$bin" 2>/dev/null)" = "$new" ] && [ -f "$ETC_ROOT$unit" ] && hooked &&
+    [ -e "$ETC_ROOT/run/myvector/netguard.confirm" ]; then # confirmed since boot, no arm pending: the live chain is $bin
     echo "netguard: firewall in place"; exit 0
   fi
   arm netguard "$ROLLBACK_MIN" "$restore"
@@ -78,9 +79,9 @@ ssh_new() { ssh -i "$key" "${ssh_base[@]}" -o ControlPath=none "root@$ip" true; 
 fw() {
   local want=${*: -1} script out
   script=$(bash "$here/rules.sh" "${@:1:$#-1}" | base64 -w0)
-  out=$(remote fw "SCRIPT=$script" $force) || die "${out:-fw phase failed}"
+  out=$(remote fw "SCRIPT=$script" $force) || { remote undo >/dev/null 2>&1 || :; die "${out:-fw phase failed}; unhooked"; }
   echo "$out"
-  [[ $out == *"in place"* ]] && return 0
+  [[ $out == *"in place"* ]] && { in_place=1; return 0; }
   local code; code=$(reach "$ip")
   if ! ssh_new 2>/dev/null || [[ $code != "$want" ]]; then
     remote undo >/dev/null 2>&1 || :
@@ -89,9 +90,11 @@ fw() {
 }
 
 if ((selftest)); then
+  trap 'remote hosts "PIN=$pc_ip" >/dev/null 2>&1 || :' EXIT # a failure below must not leave the decoy pinned
   out=$(remote hosts "PIN=$decoy REACH=1") || die "$out"
-  [[ $out == *reach=200* ]] && { remote hosts "PIN=$pc_ip" >/dev/null || :; die "decoy pin $decoy: escapepod.local/ok still 200 (the pin did not bite)"; }
+  [[ $out == *reach=200* ]] && die "decoy pin $decoy: escapepod.local/ok still 200 (the pin did not bite)"
   out=$(remote hosts "PIN=$pc_ip REACH=1") || die "$out"
+  trap - EXIT
   [[ $out == *reach=200* ]] || die "pin $pc_ip: escapepod.local/ok = ${out##*reach=} (want 200)"
   echo "${out%%$'\n'reach=*} (selftest: decoy bit, pc_ip 200)"
 else
@@ -105,5 +108,5 @@ if ((!selftest)) && [[ $(cat "$ok_file" 2>/dev/null) != "$pc_ip" ]]; then
 fi
 if ((selftest)); then fw "$decoy" 000; fi
 fw "$pc_ip" 200
-remote confirm "SCRIPT=$(bash "$here/rules.sh" "$pc_ip" | base64 -w0)" || die "confirm phase failed"
+((in_place)) || remote confirm "SCRIPT=$(bash "$here/rules.sh" "$pc_ip" | base64 -w0)" || die "confirm phase failed"
 if ((selftest)); then printf '%s\n' "$pc_ip" >"$ok_file"; echo "PASS: netguard selftest ($pc_ip): wrote $ok_file"; fi
