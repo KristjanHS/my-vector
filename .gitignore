@@ -51,4 +51,7 @@
 /chipper/myvectorSearch.json*
 /chipper/.myvectorSearch-*
 /chipper/myvectorPrompt.json
+/chipper/myvectorMemory.json*
+/chipper/.myvectorMemory-*
+/chipper/myvectorMemory/
 /chipper/.myvectorConfig-*
