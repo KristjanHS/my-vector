@@ -9,10 +9,10 @@ cd "$(git rev-parse --show-toplevel)"
 allowed_edits=(
   chipper/pkg/wirepod/sdkapp/bcassume.go # busy-spin fix while behavior control is held
   .gitignore                             # fork block: *.key, chipper/*.bak, session-certs
-  chipper/pkg/wirepod/ttr/kgsim.go       # CreateAIReq returns forkAIReq(...) (fork_prompt.go); c = forkClient(c) after the provider switch (fork_client.go); removeSpecialCharacters strips with forkMarkFilter() (fork_marks.go); stream sentence split = forkSplitSentence + EOF forkDropCut (cap-cut sentence, from FinishReason) + forkFlushHeld (fork_split.go)
+  chipper/pkg/wirepod/ttr/kgsim.go       # CreateAIReq returns forkAIReq(...) (fork_prompt.go); c = forkClient(c) after the provider switch (fork_client.go); removeSpecialCharacters strips with forkMarkFilter() (fork_marks.go); stream sentence split = forkSplitSentence + EOF forkDropCut (cap-cut sentence, from FinishReason) + forkFlushHeld (fork_split.go); Remember starts with forkCaptureChat (fork_memory.go)
   chipper/pkg/wirepod/ttr/kgsim_cmds.go  # same incl. forkClient and the stream split, on the LLM-commands/camera path; GetActionsFromString pads cmdPlusParam with "" ({{cmd}} panicked); DoSayText -> forkSayText (fork_say.go); DoGetImage defers forkCameraReq(...) (fork_prompt.go)
   chipper/pkg/vars/vars.go               # LoadIntents returns forkFilterIntents(...) (fork_intents.go); reads intent-data/<ForkLanguage()> (fork_lang.go)
-  chipper/pkg/wirepod/ttr/matchIntentSend.go # ProcessTextAll partial pass: vars.ForkContainsPhrase (whole words); !locale = vars.ForkLanguage(); voiceText via vars.ForkNormalizeText; forkQuiet then forkListen first
+  chipper/pkg/wirepod/ttr/matchIntentSend.go # ProcessTextAll partial pass: vars.ForkContainsPhrase (whole words); !locale = vars.ForkLanguage(); voiceText via vars.ForkNormalizeText; forkQuiet then forkListen first; IntentPass calls forkCaptureIntent once esn is set (fork_memory.go)
   chipper/pkg/wirepod/localization/localization.go # GetText asks forkGetText first (fork_lang.go)
   chipper/pkg/wirepod/ttr/words2num.go   # words2num input = forkTimerText(...) — et-EE timer forms (fork_timer.go)
   chipper/pkg/wirepod/ttr/weather.go     # weatherParser apiLocation = forkWeatherLocation(...) — et-EE city word; getWeather returns forkGetWeather(...) first — weatherapi forecast + Open-Meteo race (fork_weather.go)

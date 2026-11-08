@@ -10,6 +10,7 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
@@ -66,6 +67,8 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 	if len(r.Messages) > 0 && r.Messages[0].Role == openai.ChatMessageRoleSystem {
 		s := prompt.Load()
 		last := r.Messages[len(r.Messages)-1].Content
+		memory.MarkLLM(esn, last)
+		memory.Touch()
 		facts, diary := forkMemory(esn, last, brain)
 		r.Messages[0].Content = prompt.Render(s.Live(brain), prompt.Vars{
 			Now:      prompt.Now(l, forkNow(), forkBotZone(esn)),

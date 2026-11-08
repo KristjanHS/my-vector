@@ -8,16 +8,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 )
 
 // TestMain stubs forkSearch to "" and points the weather endpoints at a closed port so no ttr test reaches the
-// network, the search state at a temp file, and listen.sh at `true` (exit 0 = 410: no robot, no restart).
+// network, the search state and memory store at temp files, and listen.sh at `true` (exit 0 = 410: no robot, no restart).
 func TestMain(m *testing.M) {
 	forkSearch = func(sentence, l, brain string, zone *time.Location) string { return "" }
 	search.GeocodeURL, search.ForecastURL, forkWeatherAPIForecastURL = "http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1"
 	dir, _ := os.MkdirTemp("", "ttr-search-state")
 	search.StatePath = func() string { return dir + "/myvectorSearch.json" }
+	memory.Path = func() string { return dir + "/myvectorMemory.json" }
 	forkCapture.Script = func() (string, error) { return exec.LookPath("true") }
 	code := m.Run()
 	os.RemoveAll(dir)
