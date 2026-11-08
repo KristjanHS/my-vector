@@ -134,7 +134,6 @@
         <div class="field">
           <div class="head"><label for="about">Shared by both brains as {user}</label><span class="hint" id="count"></span></div>
           <textarea id="about" rows="3"></textarea>
-          <div class="inline"><button type="button" id="saveAbout">Save about me</button></div>
         </div>
       </div>
     </section>
@@ -193,7 +192,7 @@
       $("count").className = "hint" + (n > cur.about_cap ? " err" : "");
     }
 
-    function marks() { $("save").classList.toggle("dirty", tmplDirty()); $("saveAbout").classList.toggle("dirty", aboutDirty()); }
+    function marks() { $("save").classList.toggle("dirty", tmplDirty() || aboutDirty()); }
     function edited() { marks(); clearTimeout(timer); timer = setTimeout(preview, 250); }
 
     async function preview() {
@@ -223,10 +222,17 @@
     $("tmpl").oninput = edited;
     $("about").oninput = () => { count(); edited(); };
     $("plang").onchange = preview;
-    $("save").onclick = () => post({ action: "save", brain, template: $("tmpl").value }, "Saved", { about: aboutDirty() });
+    // The one Save sends whichever of the template and about-me changed; the server checks and writes them together.
+    $("save").onclick = () => {
+      const body = { action: "save", brain };
+      if (tmplDirty()) body.template = $("tmpl").value;
+      if (aboutDirty()) body.about = $("about").value;
+      if (!("template" in body || "about" in body)) return status("No changes to save");
+      post(body, "Saved");
+    };
+    addEventListener("beforeunload", (e) => { if (tmplDirty() || aboutDirty()) e.preventDefault(); });
     $("reset").onclick = () => confirm(`Use the built-in ${brain} template?`) &&
       post({ action: "reset", brain }, "Reset to built-in", { about: aboutDirty() });
-    $("saveAbout").onclick = () => post({ action: "about", about: $("about").value }, "About me saved", { tmpl: tmplDirty() });
     call("/myvector/api/prompt").then((r) => { cur = r; show(); }).catch((e) => status("Load failed: " + e.message, "err"));
   </script>
 </body>

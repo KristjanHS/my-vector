@@ -66,25 +66,25 @@ func current() reply {
 }
 
 type apiRequest struct {
-	Action   string `json:"action"` // save, reset, about, restore
-	Brain    string `json:"brain"`
-	Template string `json:"template"`
-	About    string `json:"about"`
-	Version  int    `json:"version"`
+	Action   string  `json:"action"` // save, reset, restore
+	Brain    string  `json:"brain"`
+	Template *string `json:"template"` // save: absent leaves it as is
+	About    *string `json:"about"`    // save: absent leaves it as is
+	Version  int     `json:"version"`
 }
 
 func (q *apiRequest) valid() error {
-	if !slices.Contains([]string{"save", "reset", "about", "restore"}, q.Action) {
-		return errors.New("action: save, reset, about or restore")
+	if !slices.Contains([]string{"save", "reset", "restore"}, q.Action) {
+		return errors.New("action: save, reset or restore")
 	}
-	if q.Action != "about" && q.Brain != Claude && q.Brain != Ollama {
+	if q.Brain != Claude && q.Brain != Ollama {
 		return fmt.Errorf("brain: %s or %s", Claude, Ollama)
 	}
 	return nil
 }
 
-// APIHandler serves API: GET reads; POST application/json {action, brain, template | about | version} saves, resets,
-// saves the about-me or restores a version, then replies as GET. A rejected template, about-me or version is a 400.
+// APIHandler serves API: GET reads; POST application/json {action, brain, template and/or about | version} saves the
+// template and/or about-me, resets or restores a version, then replies as GET. A rejected template, about-me or version is a 400.
 func APIHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -96,11 +96,9 @@ func APIHandler(w http.ResponseWriter, r *http.Request) {
 		var err error
 		switch q.Action {
 		case "save":
-			err = Save(q.Brain, q.Template)
+			err = Save(q.Brain, q.Template, q.About)
 		case "reset":
 			err = Reset(q.Brain)
-		case "about":
-			err = SaveAbout(q.About)
 		case "restore":
 			err = Restore(q.Brain, q.Version)
 		}

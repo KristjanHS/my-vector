@@ -29,7 +29,7 @@ func TestPromptAPIRejectsUnknownTag(t *testing.T) {
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "{weather}") {
 		t.Errorf("unknown tag: %d %q", w.Code, w.Body.String())
 	}
-	if w := post(t, APIHandler, `{"action":"about","about":"`+strings.Repeat("a", AboutCap+1)+`"}`); w.Code != http.StatusBadRequest {
+	if w := post(t, APIHandler, `{"action":"save","brain":"claude","about":"`+strings.Repeat("a", AboutCap+1)+`"}`); w.Code != http.StatusBadRequest {
 		t.Errorf("over-cap about: %d", w.Code)
 	}
 	if w := post(t, APIHandler, `{"action":"restore","brain":"claude","version":0}`); w.Code != http.StatusBadRequest {
@@ -45,7 +45,7 @@ func TestPromptAPIRejectsUnknownTag(t *testing.T) {
 
 func TestPromptAPIRejectsNonJSON(t *testing.T) {
 	path, _ := useStore(t)
-	req := httptest.NewRequest(http.MethodPost, API, strings.NewReader(`{"action":"about","about":"Mari"}`))
+	req := httptest.NewRequest(http.MethodPost, API, strings.NewReader(`{"action":"save","brain":"claude","about":"Mari"}`))
 	req.Header.Set("Content-Type", "text/plain")
 	w := httptest.NewRecorder()
 	APIHandler(w, req)
@@ -58,7 +58,7 @@ func TestPromptAPIWriteFailureIs500(t *testing.T) {
 	_, _ = useStore(t)
 	dir := filepath.Join(t.TempDir(), "missing")
 	Path = func() string { return filepath.Join(dir, "myvectorPrompt.json") }
-	if w := post(t, APIHandler, `{"action":"about","about":"Mari"}`); w.Code != http.StatusInternalServerError {
+	if w := post(t, APIHandler, `{"action":"save","brain":"claude","about":"Mari"}`); w.Code != http.StatusInternalServerError {
 		t.Errorf("unwritable store: %d %q, want 500", w.Code, w.Body.String())
 	}
 }
@@ -83,7 +83,7 @@ func TestPromptAPISaveRoundTrip(t *testing.T) {
 	old := UpstreamPrompt
 	UpstreamPrompt = func() string { return "You are a pirate." }
 	t.Cleanup(func() { UpstreamPrompt = old })
-	post(t, APIHandler, `{"action":"about","about":"Mari"}`)
+	post(t, APIHandler, `{"action":"save","brain":"claude","about":"Mari"}`)
 	w := post(t, APIHandler, `{"action":"save","brain":"claude","template":"Be brief.\n\n{user}"}`)
 	var r reply
 	if err := json.Unmarshal(w.Body.Bytes(), &r); err != nil || w.Code != http.StatusOK {
@@ -105,6 +105,45 @@ func TestPromptAPISaveRoundTrip(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &r)
 	if r.Brains[Claude].Saved || r.Brains[Claude].Template != Default(Claude) {
 		t.Errorf("after reset: %+v", r.Brains[Claude])
+	}
+}
+
+// One Save saves the template and the about-me together, validated as a pair: this about-me only fits beside the
+// new, shorter template, so saving it first (or alone) would be rejected. A rejected pair writes neither.
+func TestPromptAPISaveBoth(t *testing.T) {
+	_, _ = useStore(t)
+	long := strings.Repeat("a", AboutCap)
+	full := Default(Ollama) + "\n"
+	for Validate(Ollama, full+"x", "") == nil { // pad to the budget's edge
+		full += "x"
+	}
+	if err := Validate(Ollama, full, ""); err != nil {
+		t.Fatalf("setup: padded template rejected alone: %v", err)
+	}
+	if Validate(Ollama, full, long) == nil {
+		t.Fatal("setup: padded template still fits the long about-me")
+	}
+	if err := Save(Ollama, &full, nil); err != nil {
+		t.Fatal(err)
+	}
+	if w := post(t, APIHandler, `{"action":"save","brain":"ollama","about":"`+long+`"}`); w.Code != http.StatusBadRequest {
+		t.Errorf("about-me alone over the saved template's budget: %d", w.Code)
+	}
+	body, _ := json.Marshal(map[string]string{"action": "save", "brain": Ollama, "template": "Be brief.\n\n{user}", "about": long})
+	w := post(t, APIHandler, string(body))
+	var r reply
+	if json.Unmarshal(w.Body.Bytes(), &r); w.Code != http.StatusOK || r.About != long || r.Brains[Ollama].Template != "Be brief.\n\n{user}" {
+		t.Fatalf("save both: %d about %d runes, template %q", w.Code, len(r.About), r.Brains[Ollama].Template)
+	}
+	body, _ = json.Marshal(map[string]string{"action": "save", "brain": Ollama, "template": "Hi {weather}", "about": "Mari"})
+	if w := post(t, APIHandler, string(body)); w.Code != http.StatusBadRequest {
+		t.Errorf("bad template with a good about-me: %d", w.Code)
+	}
+	if s := Load(); s.About != long || s.Templates[Ollama] != "Be brief.\n\n{user}" {
+		t.Errorf("a rejected pair wrote: about %q, template %q", s.About, s.Templates[Ollama])
+	}
+	if w := post(t, APIHandler, `{"action":"save","brain":"claude","about":""}`); w.Code != http.StatusOK || Load().About != "" || Load().Templates[Claude] != "" {
+		t.Errorf("about-me alone: %d, cleared %q, claude template pinned %q", w.Code, Load().About, Load().Templates[Claude])
 	}
 }
 
@@ -139,6 +178,9 @@ func TestPromptPageServed(t *testing.T) {
 		if !strings.Contains(b, want) {
 			t.Errorf("page lacks %s", want)
 		}
+	}
+	if n := strings.Count(b, ">Save</button>"); n != 1 || strings.Contains(b, "saveAbout") || !strings.Contains(b, "body.about = ") {
+		t.Errorf("want one Save button that also sends the about-me: %d Save buttons", n)
 	}
 	if strings.Contains(b, `$("warn").innerHTML`) {
 		t.Error("notices built with innerHTML: server text must go in via textContent")
