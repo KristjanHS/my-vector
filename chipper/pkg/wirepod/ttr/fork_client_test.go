@@ -138,6 +138,9 @@ func TestForkCameraETUnloadsAtProfileURL(t *testing.T) {
 	if r.Model != llm.DefaultENModel || r.ReasoningEffort != "none" || strings.Join(f.unloads, ",") != "estllm:x" {
 		t.Errorf("before photo: model %q reasoning %q unloads %v", r.Model, r.ReasoningEffort, f.unloads)
 	}
+	if r.TopP != 0.8 || r.PresencePenalty != 1.5 { // the vision model's sampling, not estllm's
+		t.Errorf("before photo: top_p %v presence %v", r.TopP, r.PresencePenalty)
+	}
 	done()
 	if strings.Join(f.unloads, ",") != "estllm:x,"+llm.DefaultENModel {
 		t.Errorf("after photo: unloads %v", f.unloads)
@@ -175,5 +178,15 @@ func TestForkCameraLegacyOpenAIModel(t *testing.T) {
 	forkCameraReq(&r)()
 	if r.Model != "gpt-4.1" {
 		t.Errorf("camera model %q", r.Model)
+	}
+}
+
+func TestForkCameraLegacyOllamaSampling(t *testing.T) {
+	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
+	lang.UseForTest(t, lang.English)
+	r := openai.ChatCompletionRequest{Model: "qwen3.5:4b", Temperature: 1, TopP: 1}
+	forkCameraReq(&r)()
+	if r.Temperature != 0.7 || r.TopP != 0.8 || r.PresencePenalty != 1.5 {
+		t.Errorf("legacy camera sampling %v %v %v", r.Temperature, r.TopP, r.PresencePenalty)
 	}
 }
