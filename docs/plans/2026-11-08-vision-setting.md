@@ -1,6 +1,6 @@
 # Vision setting + local vision bench
 
-Status: V1–V14 ruled 2026-11-08; D1 pending Stage 1.4; no stage shipped. Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 5, row V.
+Status: V1–V14 ruled 2026-11-08; 1.1, 1.3, 2.1 committed on worktree-sec (unshipped); next 1.2 USER, then 1.4 → D1 gates 3.1. Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 5, row V.
 
 ## Rulings
 
