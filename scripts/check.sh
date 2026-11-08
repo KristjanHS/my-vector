@@ -59,6 +59,7 @@ if [[ -f $dir/robot/epod/tests/interlock.sh ]]; then "$dir"/robot/epod/tests/int
 if [[ -f $dir/scripts/tests/secrets.sh ]]; then "$dir"/scripts/tests/secrets.sh "$repo" "${head[@]}" ${head[0]:+"$dir"}; fi
 if [[ -f $dir/robot/openmic/tests/listen.sh ]]; then "$dir"/robot/openmic/tests/listen.sh; fi
 if [[ -f $dir/robot/quiet/tests/guard.sh ]]; then "$dir"/robot/quiet/tests/guard.sh; fi
+if [[ -f $dir/robot/quiet/tests/scan.sh ]]; then "$dir"/robot/quiet/tests/scan.sh; fi
 (cd "$dir/chipper" && go vet ./pkg/wirepod/sdkapp/ && go test -run Fork ./pkg/wirepod/sdkapp/)
 echo "go vet + Fork tests sdkapp OK"
 if [[ -d $dir/chipper/pkg/myvector ]]; then (cd "$dir/chipper" && go test ./pkg/myvector/...); fi

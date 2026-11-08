@@ -7,3 +7,9 @@ Self-hosted server for the Anki Vector robot. Own repo, not a GitHub fork; chang
 - **`origin` is PUBLIC**: never commit keys or bot state. Fork and wire-pod keys, tokens, certs and private state live in gitignored `secrets/` (wire-pod's in `secrets/server/`, paths in `chipper/pkg/vars/fork_paths.go`; README lists them; `scripts/tests/secrets.sh` guards it) — put new secret files there, and `git check-ignore -v <path>` before adding anything config-like.
 - **Layout**: Go server in `chipper/` (module `github.com/kercre123/wire-pod/chipper`, entrypoints `chipper/cmd/{vosk,coqui,leopard,experimental}`, code in `chipper/pkg/`, web UI in `chipper/webroot/`); `vector-cloud/` is a separate DDL Go module. Software that runs on the unlocked robot goes in `robot/<name>/`, one folder each (`robot/unlock/` first). Downloads, robot backups and scratch/clones (e.g. `wire-os-victor`) go in the gitignored `robot/ota/`, `robot/backup/`, `robot/work/` — never `/tmp` or the session scratchpad. Setup/run: `sudo ./setup.sh`; `make daemon-enable` runs wire-pod as you (only `CAP_NET_BIND_SERVICE`), foreground `sudo ./chipper/start.sh` as root — re-run `make daemon-enable` after any root run to chown its files back.
 - **License**: MIT — keep `LICENSE` and the original copyright notice.
+
+## Robot sound lock
+
+- While `robot/quiet/quiet.sh status` exits 3, run no robot command that makes sound — scripts, ad-hoc curl to `:8080/api-sdk`, `:8888`/`:8889`, ssh playback. Check before EVERY such command, not once per session.
+- Ask before any robot sound test. After each one run `robot/quiet/scan.sh '<start time>'`; exit 1 → stop all sound tests, `make quiet`, tell the user.
+- `make unquiet` only on the user's ask.
