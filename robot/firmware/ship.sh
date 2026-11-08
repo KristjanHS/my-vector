@@ -183,7 +183,7 @@ install -m 600 "$key" "$src/myvector_sshkey"
 rm -f "$src/myvector_sshkey"
 
 # A settings failure warns, never stops the ship: the robot already runs $sha. Except T5 with pod-trust: the robot must trust ours only.
-step "robot settings: settings.sh (master_volume, no-auto-update, T2 voice, /data guard, server CA trust)"
+step "robot settings: settings.sh (no-auto-update, T2 voice, /data guard, server CA trust)"
 out=$("$pd/settings.sh" 2>&1) || true
 echo "$out"
 add_warns "$out"

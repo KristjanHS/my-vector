@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): sshd host keys, root SSH key, volume, 24h clock + Celsius + Tallinn time zone, no-auto-update, T2 voice file, /data fill guard, server CA trust.
+# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): sshd host keys, root SSH key, 24h clock + Celsius + Tallinn time zone, no-auto-update, T2 voice file, /data fill guard, server CA trust.
 # Usage: settings.sh   idempotent: reads first, sets only what differs. Exit 0 = all in place; 1 = a WARN line printed; 2 = SETUP (robot/env.sh).  (env: ESN, SERVER)
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
 . "$here/../env.sh"
 settings=/data/data/com.anki.victor/persistent/jdocs/vic.RobotSettings.json
-volume=1 # master_volume: MUTE 0 … HIGH 5 (user ruling 2026-11-06: 1, the voice disturbs the next room)
 tz=Europe/Tallinn # robot clock + time_zone jdoc (user ruling 2026-11-06; onboarding left America/Los_Angeles)
 flag=/data/data/user-do-not-auto-update
 conf=$robot_dir/../secrets/server/myvectorConfig.json # voice.SettingsPath: beside apiConfig.json (vars/fork_paths.go)
@@ -56,7 +55,6 @@ ensure() {
   wp=$(wirepod_setting "$field")
   [[ $wp == "$want" ]] || warn "$label: wire-pod's copy ($jdocs) still has ${wp:-unknown}, want $want; $follows follow it"
 }
-ensure volume master_volume "$volume" "volume?serial=$esn&volume=$volume"
 # E32: 24h clock + Celsius in every language (the ET clock/weather lines assume them).
 ensure clock_24_hour clock_24_hour true "time_format_24?serial=$esn" "the clock"
 ensure temp_is_fahrenheit temp_is_fahrenheit false "temp_c?serial=$esn" "weather units"
