@@ -244,3 +244,24 @@ func TestReadLockForms(t *testing.T) {
 		}
 	}
 }
+
+// TestHoldWritesAsIs: Hold shortens (no max) and keeps the volume; the expired file reads unlocked.
+func TestHoldWritesAsIs(t *testing.T) {
+	lockFile(t)
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	if err := SetVol(now.Add(time.Hour), 4, "voice:shut up"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Hold(Lock{Until: now, Vol: 4, Source: "voice:shut up"}); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := Read(); !l.Until.Equal(now) || l.Vol != 4 || l.Source != "voice:shut up" {
+		t.Fatalf("after Hold: %+v, want until now, vol 4", l)
+	}
+	if _, locked := Line(now); locked {
+		t.Error("held expired file reads locked")
+	}
+	if err := Hold(Lock{Until: now, Vol: MaxVolume + 1}); err == nil {
+		t.Error("Hold accepted a volume above MaxVolume")
+	}
+}

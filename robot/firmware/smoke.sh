@@ -203,9 +203,13 @@ fi
 if quiet_locked; then
   echo "WARN: sound lock until $(date -d "@$quiet_until" +%H:%M) ($quiet_source): A2 speech skipped"
 else
-  r=$(sdk_m=35 sdk fork_say "text=$(jq -rn --arg s "$said" '$s|@uri')"); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
-  [[ $r != 'FINISHED fallback'* ]] && ok "A2 said '$said' in ${r#FINISHED }" ||
-    echo "WARN: A2 said '$said' in the fallback voice, not the saved language's T1 (TTS service :8091 down? make tts-enable): ${r#FINISHED fallback: }"
+  r=$(sdk_m=35 sdk fork_say "text=$(jq -rn --arg s "$said" '$s|@uri')")
+  if [[ $r == QUIET:* ]]; then echo "WARN: A2 speech skipped, a lock landed after the check: $r" # UD1
+  else
+    [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
+    [[ $r != 'FINISHED fallback'* ]] && ok "A2 said '$said' in ${r#FINISHED }" ||
+      echo "WARN: A2 said '$said' in the fallback voice, not the saved language's T1 (TTS service :8091 down? make tts-enable): ${r#FINISHED fallback: }"
+  fi
 fi
 sdk release_behavior_control >/dev/null
 

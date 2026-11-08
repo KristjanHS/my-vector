@@ -9,10 +9,9 @@ main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-d
 bin=$main/robot/work/bin/quietmatch
 mkdir -p "$(dirname "$bin")"
 (cd "$repo/chipper" && go build -o "$bin" ./pkg/myvector/quiet/quietmatch) || { echo "SETUP: quietmatch build failed" >&2; exit 2; }
-if [[ -n ${SCAN_JOURNAL:-} ]]; then cat "$SCAN_JOURNAL"; else journalctl -u wire-pod --since "$1" --no-pager -o cat; fi |
-  sed -n 's/.*Transcribed text[^:]*: //p' >"$main/robot/work/.scan-$$"
-rc=0; out=$("$bin" <"$main/robot/work/.scan-$$") || rc=$?
-rm -f "$main/robot/work/.scan-$$"
+j=$(if [[ -n ${SCAN_JOURNAL:-} ]]; then cat "$SCAN_JOURNAL"; else journalctl -u wire-pod --since "$1" --no-pager -o cat; fi) ||
+  { echo "SETUP: journal read failed (a bad <since>?)" >&2; exit 2; }
+rc=0; out=$(sed -n 's/.*Transcribed text[^:]*: //p' <<<"$j" | "$bin") || rc=$?
 case $rc in
   0) echo "scan: no stop phrase since $1" ;;
   1) printf 'HIT: %s\n' "$out"; echo "stop every sound test, run make quiet, tell the user" >&2; exit 1 ;;

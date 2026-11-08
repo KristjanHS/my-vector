@@ -31,7 +31,7 @@ sound test Claude starts + volume 1 + the night-window deep sleep for 2 h. Stage
 
 | symbol | value | validated by |
 |---|---|---|
-| `quiet.LockFor` / `quiet.NapFor` | 2 h / 2 h | `TestSetExtendsNeverShortens` |
+| `quiet.LockFor` (the nap runs to the lock's actual end; `NapFor` dropped) | 2 h | `TestSetExtendsNeverShortens`, `TestQuietNapRunsToLockEnd` |
 | `NapMax` (patch) | 4 h | `tests/nap.sh` |
 | `quiet.NapTimeout` | 5 s | `TestNapTimeout` |
 | guard exit code | 3 (2 stays SETUP) | `robot/quiet/tests/guard.sh` |
