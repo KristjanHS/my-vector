@@ -65,22 +65,59 @@ func TestPromptArms(t *testing.T) {
 				t.Errorf("arm %s: probe sampling %v", pa.id, sampled)
 			}
 			wantAbout := testAbout
-			if pa.id == "G" || pa.id == "N" {
+			if pa.about != nil {
 				wantAbout = ""
 			}
 			if s.About != wantAbout {
 				t.Errorf("arm %s on a tempt ask: about-me %q, want %q", pa.id, s.About, wantAbout)
 			}
 		}
-		for _, pa := range promptArms {
-			if pa.id != "G" && pa.id != "N" {
-				continue
+		// about-me kept per arm on: a self ask, a "to me" tempt ask
+		for _, c := range []struct {
+			id         string
+			self, toMe bool
+		}{{"G", true, true}, {"G2", true, false}, {"N", false, false}} {
+			pa := promptArms[slices.IndexFunc(promptArms, func(a promptArm) bool { return a.id == c.id })]
+			for _, k := range []struct {
+				a    ask
+				keep bool
+			}{{self, c.self}, {ask{"et-EE", "tempt", "Räägi mulle üks lugu."}, c.toMe}} {
+				if err := base.apply(pa, k.a); err != nil {
+					t.Fatal(err)
+				}
+				if got := prompt.Load().About; (got == testAbout) != k.keep {
+					t.Errorf("arm %s on %q: about-me %q, keep %v", c.id, k.a.Text, got, k.keep)
+				}
 			}
-			if err := base.apply(pa, self); err != nil {
-				t.Fatal(err)
+		}
+		combos, err := parsePrompt("S+R,D+G2,P+R")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, pa := range combos {
+			if err := base.apply(pa, tempt); err != nil {
+				t.Fatalf("%s: %v", pa.id, err)
 			}
-			if got, want := prompt.Load().About, map[string]string{"G": testAbout, "N": ""}[pa.id]; got != want {
-				t.Errorf("arm %s on a self ask: about-me %q, want %q", pa.id, got, want)
+			s := prompt.Load()
+			if err := prompt.Validate(prompt.Ollama, s.Templates[prompt.Ollama], s.About); err != nil {
+				t.Errorf("arm %s: %v", pa.id, err)
+			}
+			live, sampled := s.Live(prompt.Ollama), llm.SamplingFor(llm.Ollama, "qwen3.5:4b").Family == "probe-S"
+			switch pa.id {
+			case "S+R":
+				if !sampled || !strings.HasSuffix(strings.TrimSpace(live), lineR) || s.About != testAbout {
+					t.Errorf("S+R: sampled %v, R last %v, about-me %q", sampled, strings.HasSuffix(strings.TrimSpace(live), lineR), s.About)
+				}
+			case "D+G2":
+				if sampled || !strings.HasPrefix(live, headerD) || s.About != "" {
+					t.Errorf("D+G2: sampled %v, D header %v, about-me %q", sampled, strings.HasPrefix(live, headerD), s.About)
+				}
+			case "P+R":
+				if !strings.Contains(live, lineP) || !strings.Contains(live, lineR) {
+					t.Errorf("P+R: P line %v, R line %v", strings.Contains(live, lineP), strings.Contains(live, lineR))
+				}
+			default:
+				t.Errorf("combo id %q", pa.id)
 			}
 		}
 	}
@@ -111,7 +148,10 @@ func TestParsePrompt(t *testing.T) {
 	if a, err := parsePrompt("0, P,G"); err != nil || len(a) != 3 || a[2].id != "G" {
 		t.Errorf("0,P,G = %v, %v", a, err)
 	}
-	for _, bad := range []string{"Q", "0,0"} {
+	if a, err := parsePrompt("0,S+R,D+G"); err != nil || len(a) != 3 || a[1].id != "S+R" || a[2].id != "D+G" {
+		t.Errorf("0,S+R,D+G = %v, %v", a, err)
+	}
+	for _, bad := range []string{"Q", "0,0", "S+R,S+R", "S+Q", "0+R", "G+N", "S+S"} {
 		if _, err := parsePrompt(bad); err == nil {
 			t.Errorf("%q: no error", bad)
 		}
