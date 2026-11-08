@@ -124,8 +124,13 @@ rewrite_kh() {
   echo "hostkey: $kh: $ip lines = the new host keys (old file: $kh.hostkey-bak)"
 }
 
-via=$kh
-if ! out=$(remote "$kh" make 2>"$tmp/err"); then
+[[ ! -e $kh.hostkey-new ]] ||
+  { echo "FAIL: hostkey: an earlier rewrite of $kh did not finish; restore it from $kh.hostkey-bak, then rm $kh.hostkey-new" >&2; exit 1; }
+via=$kh rc=0
+out=$(remote "$kh" make 2>"$tmp/err") || rc=$?
+if ((rc)); then
+  # only an ssh failure (255: host key refused, unreachable) earns the fallback; a robot-side FAIL is shown as is
+  ((rc == 255)) || { echo "$out"; cat "$tmp/err" >&2; echo "FAIL: hostkey: the robot half failed (exit $rc)" >&2; exit 1; }
   fb=; for f in "$image" "$pending"; do [[ ! -s $f ]] || fb+="${fb:+ }$f"; done
   [[ -n $fb ]] && out=$(remote "$fb" make 2>>"$tmp/err") ||
     { cat "$tmp/err" >&2; echo "FAIL: hostkey: no login trusting $kh, the saved image keys ($image) or the pending keys ($pending)" >&2; exit 1; }
