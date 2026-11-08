@@ -44,6 +44,27 @@ func TestUpdateFailLeavesNoTemp(t *testing.T) {
 	}
 }
 
+func TestWriteFileAtomic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := WriteFile(path, ".state-*", []byte("old"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Stat(path); fi.Mode().Perm() != 0600 {
+		t.Fatalf("perm = %v, want 0600", fi.Mode().Perm())
+	}
+	rename = func(string, string) error { return os.ErrPermission }
+	defer func() { rename = os.Rename }()
+	if err := WriteFile(path, ".state-*", []byte("new"), 0600); err == nil {
+		t.Fatal("WriteFile with a failing rename succeeded")
+	}
+	if b, _ := os.ReadFile(path); string(b) != "old" {
+		t.Fatalf("file = %q, want old", b)
+	}
+	if m, _ := filepath.Glob(filepath.Join(filepath.Dir(path), ".state-*")); len(m) != 0 {
+		t.Fatalf("temp files left: %v", m)
+	}
+}
+
 // Falsifier for N2: an unreadable (not missing) file must not be replaced by {} plus kv.
 func TestUpdateUnreadableKeepsFile(t *testing.T) {
 	if os.Geteuid() == 0 {

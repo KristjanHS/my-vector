@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 )
 
 // Phrases stop the robot when a request is exactly one of them after filler removal (every saved language).
@@ -127,24 +129,8 @@ func Set(until time.Time, source string) error {
 	if cur, _, err := Until(); err == nil && !cur.Before(until) {
 		return nil
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(p), ".quiet-until-*")
-	if err != nil {
-		return err
-	}
 	source = strings.Join(strings.Fields(source), " ")
-	if _, err = fmt.Fprintf(tmp, "%d %s\n", until.Unix(), source); err == nil {
-		err = tmp.Chmod(0o666)
-	}
-	if cerr := tmp.Close(); err == nil {
-		err = cerr
-	}
-	if err == nil {
-		err = os.Rename(tmp.Name(), p)
-	}
-	if err != nil {
-		os.Remove(tmp.Name())
-	}
-	return err
+	return conf.WriteFile(p, ".quiet-until-*", []byte(fmt.Sprintf("%d %s\n", until.Unix(), source)), 0o666)
 }
 
 // NapURL is vic-engine's console on the robot; tests point it at httptest.
