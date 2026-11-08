@@ -20,6 +20,8 @@ allowed_edits=(
   chipper/webroot/index.html             # nav links to the fork pages /myvector/voice (myvector/voice), /myvector/prompt (myvector/prompt) and /myvector/wifi (myvector/wifi)
   chipper/pkg/initwirepod/startserver.go # non-android TLS pair = vars.CertPath/KeyPath (fork_paths.go: secrets/server/certs), was ../certs; EPConfig pair = forkEpodCert() (fork_epod.go)
   .dockerignore                          # + secrets, certs (never bake keys into an image)
+  chipper/pkg/logger/logger.go           # LogUI/LogTray update the log globals under forkLogMu (fork_logger.go) — goroutines logged concurrently (race)
+  chipper/pkg/wirepod/config-ws/webserver.go # get_logs/get_debug_logs read via logger.ForkLogList/ForkLogTrayList (fork_logger.go)
   setup.sh                               # certs dir ./certs -> ./secrets/server/certs (fork_paths.go)
 )
 
