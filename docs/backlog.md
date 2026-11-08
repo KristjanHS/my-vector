@@ -5,7 +5,7 @@
 - WiFi baseline live (`2026-11-07-wifi-baseline-hardening.md` (docs/plans/) 4.4 row, 6.1): restart vic-cloud → `make server-pin` → `mv secrets/epod-new secrets/epod && make start` → `make syncwt` → `make ship` → `robot/netguard/apply.sh --selftest` → the 6.1 ranked e2e.
 - WiFi baseline keys + leftovers (same plan, 4.1/1.2/2.1): `ca.key` + `secrets/myvector_ed25519` to the password manager, then `rm` `ca.key`; `make server-pin` nft 8084 check; live `robot/diskguard/apply.sh`.
 - Thinking levels 2.1 gate (`2026-11-08-local-thinking-levels.md` (docs/plans/) R9): gemma4 × chat et exact 15/16 < 95% (n 16 needs 16/16), err +0/+1 — loosen to `err` within ±1, or debug first.
-- et chat on `gemma4:e4b-it-qat` (EstLLM deleted 2026-11-08): by-ear Estonian quality — keep, or re-pull `hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M`.
+- et chat model: switch from `gemma4:e4b-it-qat` to EstLLM-8B-1125 (pick) or `apertus-estllm:8b` (runner-up), per `2026-11-08-et-llm-research.md (docs/plans/)` §Recommendation; models already pulled.
 - et active listening: no Ollama model reached the `listenprobe` bar (`2026-11-07-et-listen-model.md` (docs/plans/) W1) — next lever owed.
 - LLM picker page by eye (`2026-11-06-llm-picker-page.md` (docs/plans/) Stage 5 §2 items 3+5): Ollama-down warning, cleared key → Claude disabled + 400, upstream Knowledge save keeps the fork profile.
 - PC voice loudness (V1): T1 `af_bella`/`cori` quieter than stock beyond 3 dB — rule.
