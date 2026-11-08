@@ -180,7 +180,7 @@ func CreateAIReq(transcribedText, esn string, gpt3tryagain, isKG bool) openai.Ch
 		Model:               model,
 		MaxCompletionTokens: 2048,
 		Temperature:         1,
-		TopP:                forkTopP(model),
+		TopP:                1,
 		FrequencyPenalty:    0,
 		PresencePenalty:     0,
 		Messages:            nChat,

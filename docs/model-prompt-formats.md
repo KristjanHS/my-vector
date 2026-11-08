@@ -26,10 +26,12 @@ row applies.
 | `presence_penalty` | `llm.SamplingFor` | 1.5 | not sent | not sent | not sent |
 | `top_k` | Ollama Modelfile (`/v1` can't send it) | 20 ✓ | 64 ✓ | — | Modelfile |
 | thinking off | `reasoning_effort: "none"` on every Ollama request | needed | harmless | not sent | — |
-| reply cap | `max_tokens` (Ollama) / `max_completion_tokens` (Claude), `prompt.ReplyCap` | 300 / 1000 | 300 / 1000 | 1024 / 2048 | — |
+| reply cap (normal / long ask) | by brain, not model: `prompt.ReplyCap` / `prompt.LongReplyCap`; `max_tokens` on Ollama, else `max_completion_tokens` | 300 / 1000 | 300 / 1000 | 1024 / 2048 | Ollama 300 / 1000, other 1024 / 2048 |
 
-Before 2026-11-08, every request sent upstream wire-pod's `temperature 1, top_p 1` to every model. That is
-neither model's recommendation, and it overrode the Modelfile's `top_p 0.95`.
+Upstream's request builders still set `temperature 1, top_p 1`; `forkAIReq` and `forkCameraReq` overwrite both from the
+table. The web page's model-test ping (`llm/http.go`) sends no sampling fields. Before 2026-11-08, every non-Claude
+model got that `1 / 1`. That is neither model's recommendation, and it overrode the Modelfile's `top_p 0.95`.
+A Qwen3.5 model on a non-Ollama endpoint gets the thinking-off values without `reasoning_effort: none`.
 
 To add a model family: add a row to `families` in `sampling.go` with its model card's thinking-off values, and a
 case to `TestSamplingFor`. Families match the model name prefix after any `namespace/`, case-insensitive, so

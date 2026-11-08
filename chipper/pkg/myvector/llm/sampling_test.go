@@ -18,6 +18,7 @@ func TestSamplingFor(t *testing.T) {
 		{Ollama, "cas/mistral-7b-instruct-v0.3:latest", Sampling{"", 1, 1, 0}},
 		{Claude, "haiku-latest", Sampling{"claude", 1, 0, 0}},
 		{"", "claude-haiku-5-5", Sampling{"claude", 1, 0, 0}},
+		{"", "anthropic/claude-haiku-5-5", Sampling{"claude", 1, 0, 0}},
 	} {
 		if got := SamplingFor(c.provider, c.model); got != c.want {
 			t.Errorf("SamplingFor(%q, %q) = %+v, want %+v", c.provider, c.model, got, c.want)
