@@ -41,26 +41,27 @@ func forkBotZone(esn string) *time.Location {
 
 // forkAIReq: the llm.Resolve target sets the model (E25), then llm.SamplingFor sets that model's sampling;
 // then the brain's rendered template replaces the system prompt and its ReplyCap (LongReplyCap for isKG or a ForkLongAsk) caps the reply.
-// Ollama gets reasoning_effort none (qwen3.5 thinks by default, and spends the whole cap on it).
+// Ollama gets llm.Config.Thinking for PathChat: reasoning_effort, the reply cap + its budget, its sampling (none by default).
 func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.ChatCompletionRequest {
 	l := lang.Current()
 	kg := forkKG()
 	ollama := llm.IsOllama(kg)
 	provider := ""
-	if t, ok := forkResolve(llm.Load(), l, kg); ok {
+	cfg := llm.Load()
+	if t, ok := forkResolve(cfg, l, kg); ok {
 		r.Model, provider = t.Model, t.Provider
 		ollama = t.Ollama()
 	}
 	llm.SamplingFor(provider, r.Model).Apply(&r)
-	if ollama {
-		r.ReasoningEffort = "none"
-	}
 	brain := forkBrain(ollama)
 	long := isKG
 	if n := len(r.Messages); n > 0 && !long {
 		long = vars.ForkLongAsk(r.Messages[n-1].Content)
 	}
 	forkReplyCap(&r, ollama, long)
+	if ollama {
+		cfg.Thinking(llm.Ollama, r.Model, llm.PathChat).Apply(&r, r.MaxTokens)
+	}
 	if long {
 		logger.Println("myvector: reply cap", prompt.LongReplyCap(brain), "(long ask)")
 	}
