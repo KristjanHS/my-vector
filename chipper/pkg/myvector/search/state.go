@@ -9,6 +9,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 )
 
@@ -174,20 +175,7 @@ func (s *State) save() {
 	if err != nil {
 		return
 	}
-	f, err := os.CreateTemp(filepath.Dir(s.path), ".myvectorSearch-*")
-	if err == nil {
-		_, err = f.Write(b)
-		if err2 := f.Close(); err == nil {
-			err = err2
-		}
-		if err == nil {
-			err = os.Rename(f.Name(), s.path)
-		}
-		if err != nil {
-			os.Remove(f.Name())
-		}
-	}
-	if err != nil {
+	if err := conf.WriteFile(s.path, ".myvectorSearch-*", b, 0600); err != nil {
 		logf("myvector: search state write:", err)
 	}
 }

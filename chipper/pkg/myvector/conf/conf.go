@@ -38,19 +38,26 @@ func Update(path string, kv map[string]any) error {
 		obj[k] = b
 	}
 	b, _ = json.MarshalIndent(obj, "", "  ")
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".myvectorConfig-*")
+	return WriteFile(path, ".myvectorConfig-*", append(b, '\n'), 0644)
+}
+
+var rename = os.Rename // tests make it fail
+
+// WriteFile replaces path with b via a tmpPattern temp file in path's dir + rename; a failure leaves the old file and no temp.
+func WriteFile(path, tmpPattern string, b []byte, perm fs.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), tmpPattern)
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmp.Name()) // no-op after the rename
-	if _, err = tmp.Write(append(b, '\n')); err == nil {
-		err = tmp.Chmod(0644)
+	if _, err = tmp.Write(b); err == nil {
+		err = tmp.Chmod(perm)
 	}
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
 	if err == nil {
-		err = os.Rename(tmp.Name(), path)
+		err = rename(tmp.Name(), path)
 	}
 	return err
 }
