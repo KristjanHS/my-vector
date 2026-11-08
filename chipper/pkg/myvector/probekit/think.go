@@ -77,23 +77,48 @@ func (a Arm) Label(model string) string {
 	return s
 }
 
-// Call is one /v1/chat/completions result, reasoning included (go-openai drops it); ReplyTok is CountReply's.
+// Call is one /v1/chat/completions result, reasoning included (go-openai drops it); Raw is the untrimmed content.
+// ReplyTok is CountReply's, valid only when Counted (CountAll); Finish ErrorFinish marks a failed call.
 type Call struct {
-	Reply, Reasoning, Finish     string
-	Prompt, Completion, ReplyTok int
-	Dur                          time.Duration
+	Reply, Raw, Reasoning, Finish string
+	Prompt, Completion, ReplyTok  int
+	Counted                       bool
+	Dur                           time.Duration
 }
+
+// ErrorFinish is a failed call's Finish: Summarize counts it as a cut, CountAll skips it.
+const ErrorFinish = "error"
 
 var chatClient = &http.Client{Timeout: 120 * time.Second}
 
-// Chat posts r to baseURL+"/chat/completions" (Ollama /v1), parses the raw body and counts the reply (CountReply).
+// Chat posts r to baseURL+"/chat/completions" (Ollama /v1) and parses the raw body; it does not count (CountAll, after the timed calls).
 func Chat(baseURL string, r openai.ChatCompletionRequest) (Call, error) {
-	c, content, err := post(baseURL, r)
-	if err != nil {
-		return c, err
+	return post(baseURL, r)
+}
+
+// CountAll sets ReplyTok and Counted on each of calls (in place) via CountReply; a failed count leaves that call uncounted.
+// err is the first failure, with how many failed; ErrorFinish calls are skipped.
+func CountAll(baseURL, model string, calls []Call) ([]Call, error) {
+	var first error
+	failed := 0
+	for i := range calls {
+		c := &calls[i]
+		if c.Finish == ErrorFinish {
+			continue
+		}
+		n, err := CountReply(baseURL, model, c.Raw, c.Finish)
+		if err != nil {
+			if failed++; first == nil {
+				first = err
+			}
+			continue
+		}
+		c.ReplyTok, c.Counted = n, true
 	}
-	c.ReplyTok, err = CountReply(baseURL, r.Model, content, c.Finish)
-	return c, err
+	if first != nil {
+		return calls, fmt.Errorf("%d of %d counts failed: %w", failed, len(calls), first)
+	}
+	return calls, nil
 }
 
 var (
@@ -131,7 +156,7 @@ func CountReply(baseURL, model, content, finish string) (int, error) {
 }
 
 func promptTokens(baseURL, model, content string) (int, error) {
-	c, _, err := post(baseURL, map[string]any{"model": model, "reasoning_effort": "none", "max_tokens": 1, // a map: go-openai omits "" content, Ollama 400s
+	c, err := post(baseURL, map[string]any{"model": model, "reasoning_effort": "none", "max_tokens": 1, // a map: go-openai omits "" content, Ollama 400s
 		"messages": []map[string]string{{"role": openai.ChatMessageRoleUser, "content": content}}})
 	if err != nil {
 		return 0, fmt.Errorf("count: %w", err)
@@ -139,24 +164,24 @@ func promptTokens(baseURL, model, content string) (int, error) {
 	return c.Prompt, nil
 }
 
-// post sends r (a request body) and returns the Call (Reply trimmed) and the untrimmed content.
-func post(baseURL string, r any) (Call, string, error) {
+// post sends r (a request body) and returns the Call, Reply trimmed and Raw untrimmed.
+func post(baseURL string, r any) (Call, error) {
 	body, err := json.Marshal(r)
 	if err != nil {
-		return Call{}, "", err
+		return Call{}, err
 	}
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
 	req.Header.Set("content-type", "application/json")
 	start := time.Now()
 	res, err := chatClient.Do(req)
 	if err != nil {
-		return Call{}, "", err
+		return Call{}, err
 	}
 	defer res.Body.Close()
 	raw, _ := io.ReadAll(res.Body)
 	dur := time.Since(start)
 	if res.StatusCode != http.StatusOK {
-		return Call{}, "", fmt.Errorf("chat HTTP %d: %.200s", res.StatusCode, raw)
+		return Call{}, fmt.Errorf("chat HTTP %d: %.200s", res.StatusCode, raw)
 	}
 	var out struct {
 		Choices []struct {
@@ -172,14 +197,14 @@ func post(baseURL string, r any) (Call, string, error) {
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return Call{}, "", fmt.Errorf("chat reply: %v", err)
+		return Call{}, fmt.Errorf("chat reply: %v", err)
 	}
 	if len(out.Choices) == 0 {
-		return Call{}, "", errors.New("chat reply has no choices")
+		return Call{}, errors.New("chat reply has no choices")
 	}
 	ch := out.Choices[0]
-	return Call{Reply: strings.TrimSpace(ch.Message.Content), Reasoning: ch.Message.Reasoning, Finish: ch.FinishReason,
-		Prompt: out.Usage.PromptTokens, Completion: out.Usage.CompletionTokens, Dur: dur}, ch.Message.Content, nil
+	return Call{Reply: strings.TrimSpace(ch.Message.Content), Raw: ch.Message.Content, Reasoning: ch.Message.Reasoning,
+		Finish: ch.FinishReason, Prompt: out.Usage.PromptTokens, Completion: out.Usage.CompletionTokens, Dur: dur}, nil
 }
 
 // Order is arm indices 0..n-1 starting at item mod n: item i runs arm i mod n first (no fixed arm order per prompt).
@@ -191,12 +216,14 @@ func Order(n, item int) []int {
 	return out
 }
 
-// Summary is one arm's calls: latency, cut-off (T6), thinking share and tokens (T13), count exactness (2.1), peak sizes.
+// Summary is one arm's calls: latency, cut-off (T6), thinking share and tokens (T13), peak sizes; over the Counted calls
+// only: thinking tokens T, exact % and count error Completion − ReplyTok (ErrMin/ErrMax).
 type Summary struct {
-	N                          int
+	N, Counted                 int
 	P50, P90                   time.Duration
 	CutPct, ThinkPct, ExactPct float64
 	T25, T50, T90              int
+	ErrMin, ErrMax             int
 	MaxPrompt, MaxCtx          int
 }
 
@@ -207,7 +234,7 @@ func Summarize(calls []Call) Summary {
 		return s
 	}
 	ds := make([]time.Duration, s.N)
-	ts := make([]int, s.N)
+	var ts []int
 	cut, think, exact := 0, 0, 0
 	for i, c := range calls {
 		ds[i] = c.Dur
@@ -217,25 +244,39 @@ func Summarize(calls []Call) Summary {
 		if c.Reasoning != "" {
 			think++
 		}
-		if c.Completion == c.ReplyTok {
-			exact++
-		}
-		if ts[i] = c.Completion - c.ReplyTok; ts[i] < 0 {
-			ts[i] = 0
-		}
 		if c.Prompt > s.MaxPrompt {
 			s.MaxPrompt = c.Prompt
 		}
 		if ctx := c.Prompt + c.Completion; ctx > s.MaxCtx {
 			s.MaxCtx = ctx
 		}
+		if !c.Counted {
+			continue
+		}
+		d := c.Completion - c.ReplyTok
+		if len(ts) == 0 || d < s.ErrMin {
+			s.ErrMin = d
+		}
+		if len(ts) == 0 || d > s.ErrMax {
+			s.ErrMax = d
+		}
+		if d == 0 {
+			exact++
+		}
+		if d < 0 {
+			d = 0
+		}
+		ts = append(ts, d)
 	}
 	sort.Slice(ds, func(i, j int) bool { return ds[i] < ds[j] })
-	sort.Ints(ts)
 	s.P50, s.P90 = ds[rank(50, s.N)], ds[rank(90, s.N)]
-	s.T25, s.T50, s.T90 = ts[rank(25, s.N)], ts[rank(50, s.N)], ts[rank(90, s.N)]
-	pct := func(k int) float64 { return 100 * float64(k) / float64(s.N) }
-	s.CutPct, s.ThinkPct, s.ExactPct = pct(cut), pct(think), pct(exact)
+	pct := func(k, n int) float64 { return 100 * float64(k) / float64(n) }
+	s.CutPct, s.ThinkPct = pct(cut, s.N), pct(think, s.N)
+	if s.Counted = len(ts); s.Counted > 0 {
+		sort.Ints(ts)
+		s.T25, s.T50, s.T90 = ts[rank(25, s.Counted)], ts[rank(50, s.Counted)], ts[rank(90, s.Counted)]
+		s.ExactPct = pct(exact, s.Counted)
+	}
 	return s
 }
 
@@ -247,9 +288,15 @@ func rank(p, n int) int {
 	return 0
 }
 
-// Line is s as one per-arm line.
+// Line is s as one per-arm line; T, exact and err read "-" when nothing was counted.
 func (s Summary) Line(label string) string {
-	return fmt.Sprintf("%-18s n %d  p50/p90 %d/%d ms  cut %.0f%%  think %.0f%%  T %d/%d/%d  exact %.0f%%  max prompt %d  max ctx %d",
-		label, s.N, s.P50.Milliseconds(), s.P90.Milliseconds(), s.CutPct, s.ThinkPct, s.T25, s.T50, s.T90, s.ExactPct,
+	t, exact, cerr := "-", "-", "-"
+	if s.Counted > 0 {
+		t = fmt.Sprintf("%d/%d/%d", s.T25, s.T50, s.T90)
+		exact = fmt.Sprintf("%.0f%%", s.ExactPct)
+		cerr = fmt.Sprintf("%+d/%+d", s.ErrMin, s.ErrMax)
+	}
+	return fmt.Sprintf("%-18s n %d  p50/p90 %d/%d ms  cut %.0f%%  think %.0f%%  T %s  exact %s (n %d)  err %s  max prompt %d  max ctx %d",
+		label, s.N, s.P50.Milliseconds(), s.P90.Milliseconds(), s.CutPct, s.ThinkPct, t, exact, s.Counted, cerr,
 		s.MaxPrompt, s.MaxCtx)
 }

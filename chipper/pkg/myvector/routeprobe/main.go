@@ -239,23 +239,21 @@ func runSet(r setRun) {
 		for i := range arms {
 			runs[i].arm = arms[i]
 		}
+		baseURL := "" // Ollama's, from a successful call; "" leaves every call uncounted
 		for j, a := range la {
 			for rep := 0; rep < r.reps; rep++ {
 				for _, i := range probekit.Order(len(arms), j*r.reps+rep) {
 					arm := arms[i]
 					use(arm)
 					res, err := callLLM(a.Text, esn)
-					if err != nil { // counted as a cut: empty reply, finish "error"
+					if err != nil { // counted as a cut: empty reply, finish ErrorFinish, not counted
 						fmt.Fprintf(os.Stderr, "%s %s llm: %v | %s\n", l, arm.Label(model), err, a.Text)
-						res.Answer, res.RawAnswer, res.Reasoning, res.Finish = "", "", "", "error"
+						res.Answer, res.RawAnswer, res.Reasoning, res.Finish = "", "", "", probekit.ErrorFinish
+					} else if res.BaseURL != "" {
+						baseURL = res.BaseURL
 					}
-					c := probekit.Call{Reply: strings.TrimSpace(res.RawAnswer), Reasoning: res.Reasoning,
+					c := probekit.Call{Reply: strings.TrimSpace(res.RawAnswer), Raw: res.RawAnswer, Reasoning: res.Reasoning,
 						Finish: res.Finish, Prompt: res.Usage.PromptTokens, Completion: res.Usage.CompletionTokens, Dur: res.Dur}
-					if err == nil && res.BaseURL != "" {
-						if c.ReplyTok, err = probekit.CountReply(res.BaseURL, model, res.RawAnswer, res.Finish); err != nil {
-							fmt.Fprintf(os.Stderr, "count: %v\n", err)
-						}
-					}
 					runs[i].calls = append(runs[i].calls, c)
 					score := "-"
 					if key != "" && strings.TrimSpace(res.Answer) == "" { // a cut-off reply says nothing: 0, no judge call
@@ -272,6 +270,14 @@ func runSet(r setRun) {
 					fmt.Fprintf(os.Stderr, "%s %s %s %s | %s → %s\n", l, arm.Label(model), res.Finish, score, a.Text,
 						strings.Join(strings.Fields(res.Answer), " "))
 				}
+			}
+		}
+		for i := range runs { // after every timed call: counting must not reach latency or the prompt cache
+			if baseURL == "" {
+				break
+			}
+			if _, cerr := probekit.CountAll(baseURL, model, runs[i].calls); cerr != nil {
+				fmt.Fprintf(os.Stderr, "%s %s count: %v\n", l, runs[i].arm.Label(model), cerr)
 			}
 		}
 		base := -1

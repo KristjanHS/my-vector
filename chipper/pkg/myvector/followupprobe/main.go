@@ -116,7 +116,7 @@ func call(c *openai.Client, t llm.Target, r openai.ChatCompletionRequest) (probe
 	}
 	ch := res.Choices[0]
 	return probekit.Call{Reply: strings.TrimSpace(ch.Message.Content), Finish: string(ch.FinishReason),
-		Prompt: res.Usage.PromptTokens, Completion: res.Usage.CompletionTokens, ReplyTok: res.Usage.CompletionTokens, Dur: d}, nil // Claude: no thinking
+		Prompt: res.Usage.PromptTokens, Completion: res.Usage.CompletionTokens, Dur: d}, nil // Claude: not counted
 }
 
 func yes(s string) bool { return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(s)), "YES") }
@@ -215,8 +215,9 @@ func main() {
 			for j, p := range pairs {
 				for _, k := range probekit.Order(len(tas), j) {
 					a := tas[k]
+					r := request(tg.t, sys, "Person: "+p.ask+"\nRobot: "+p.reply, a.Thinking(tg.t.Model, llm.PathFollowUp))
 					start := time.Now()
-					got, err := call(cls[i], tg.t, request(tg.t, sys, "Person: "+p.ask+"\nRobot: "+p.reply, a.Thinking(tg.t.Model, llm.PathFollowUp)))
+					got, err := call(cls[i], tg.t, r)
 					ms[k] = append(ms[k], time.Since(start))
 					if err == nil {
 						calls[k] = append(calls[k], got)
@@ -229,6 +230,14 @@ func main() {
 						fmt.Printf("    %smiss %s %q → %q %v\n", pre(a), p.l, p.reply, got.Reply, err)
 					}
 					score[k][p.l] = s
+				}
+			}
+			for k := range tas { // after every timed call: counting must not reach latency or the prompt cache
+				if !tg.t.Ollama() {
+					break
+				}
+				if _, err := probekit.CountAll(tg.t.BaseURL, tg.t.Model, calls[k]); err != nil {
+					fmt.Printf("  %-34s count: %v\n", tg.name, err)
 				}
 			}
 			for k, a := range tas {
