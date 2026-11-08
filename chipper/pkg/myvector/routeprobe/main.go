@@ -11,7 +11,7 @@
 // -audio speaks the text in the language's voice (TTS :8091) and routes the STT (:8092) transcript; STT serves only the SAVED lang.
 // Output lines: "stt: …", then "intent: <name> <params>" | "plugin: <reply>" | "llm: (not asked)" |
 // "llm-target: <provider> <model>" + "llm: <answer as spoken>" | "intent: intent_system_unmatched (LLM off: …)".
-// -set dev|holdout [-think none,low -think-budget N -reps R -n N -judge model] scores chatSets per arm, search off (T16):
+// -set dev|holdout [-think none,low -think-budget N -reps R -n N -judge model|none] scores chatSets per arm, search off (T16):
 // a probekit Summary line + judge mean, Δ judge and Δ p50 vs the none arm per language; per-call lines on stderr.
 package main
 
@@ -78,7 +78,7 @@ func main() {
 	budget := flag.Int("think-budget", 0, "-set: thinking budget for every arm but none (0 = the table's)")
 	reps := flag.Int("reps", 1, "-set: calls per ask per arm")
 	limit := flag.Int("n", 0, "-set: asks per language (0 = all)")
-	judgeModel := flag.String("judge", "claude-haiku-5-5", "-set: Claude judge model")
+	judgeModel := flag.String("judge", "claude-haiku-5-5", "-set: Claude judge model; none skips judging")
 	flag.Parse()
 	if *set != "" {
 		if flag.NArg() != 0 {
@@ -209,6 +209,9 @@ func runSet(r setRun) {
 	vars.Init()
 	vars.CustomIntents, vars.CustomIntentsExist = nil, false
 	key := llm.Load().ClaudeKey
+	if r.judge == "none" {
+		key = ""
+	}
 	esn := ""
 	if len(vars.BotInfo.Robots) > 0 {
 		esn = vars.BotInfo.Robots[0].Esn
@@ -246,8 +249,14 @@ func runSet(r setRun) {
 						fmt.Fprintf(os.Stderr, "%s %s llm: %v | %s\n", l, arm.Label(model), err, a.Text)
 						res.Answer, res.RawAnswer, res.Reasoning, res.Finish = "", "", "", "error"
 					}
-					runs[i].calls = append(runs[i].calls, probekit.Call{Reply: strings.TrimSpace(res.RawAnswer), Reasoning: res.Reasoning,
-						Finish: res.Finish, Prompt: res.Usage.PromptTokens, Completion: res.Usage.CompletionTokens, Dur: res.Dur})
+					c := probekit.Call{Reply: strings.TrimSpace(res.RawAnswer), Reasoning: res.Reasoning,
+						Finish: res.Finish, Prompt: res.Usage.PromptTokens, Completion: res.Usage.CompletionTokens, Dur: res.Dur}
+					if err == nil && res.BaseURL != "" {
+						if c.ReplyTok, err = probekit.CountReply(res.BaseURL, model, res.RawAnswer, res.Finish); err != nil {
+							fmt.Fprintf(os.Stderr, "count: %v\n", err)
+						}
+					}
+					runs[i].calls = append(runs[i].calls, c)
 					score := "-"
 					if key != "" && strings.TrimSpace(res.Answer) == "" { // a cut-off reply says nothing: 0, no judge call
 						runs[i].scores = append(runs[i].scores, 0)
@@ -273,10 +282,10 @@ func runSet(r setRun) {
 		}
 		var baseSum probekit.Summary
 		if base >= 0 {
-			baseSum = probekit.Summarize(runs[base].calls, probekit.RunesPerToken)
+			baseSum = probekit.Summarize(runs[base].calls)
 		}
 		for _, ar := range runs {
-			s := probekit.Summarize(ar.calls, probekit.RunesPerToken)
+			s := probekit.Summarize(ar.calls)
 			mean, dj, dp := "-", "-", "-"
 			m, ok := meanOf(ar.scores)
 			if ok {
