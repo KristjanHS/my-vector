@@ -1,6 +1,6 @@
 # Local-model thinking levels: measure, then decide
 
-Status: T1–T16 ruled 2026-11-08 (user questions round + 3 amendments); recon R1–R6 measured 2026-11-08; no stage started.
+Status: T1–T16 ruled 2026-11-08; Stage 0 done (both switches on over /v1); next Stage 1.1.
 
 Goal: let qwen3.5:4b and gemma4:e4b-it-qat think on the chat, listen and follow-up paths, with each model's own thinking controls, and a cap that has room for both the thinking and the reply. Turn it on only where the probes show it helps.
 
@@ -35,9 +35,9 @@ Rows are pre-filled from recon; Stage 0 re-verifies every cell.
 | gemma4:e4b-it-qat | `reasoning_effort` ≠ "none" → Ollama writes `<\|think\|>` at the start of the system turn (prompt_tokens +2 vs none, R2) | **no**: `thinking.values [false,true]` (R1). **emulated** as above | one set for all uses: T1.0 top_p 0.95 top_k 64 (T, top_p sendable; top_k from Modelfile = 64); no change when thinking is on | same as qwen | pending 2.2 |
 
 Sources:
-- qwen: https://huggingface.co/Qwen/Qwen3.5-4B (sampling, on by default, no graded levels).
-- gemma4: https://ai.google.dev/gemma/docs/core/prompt-formatting-gemma4 (`<|think|>` in the system turn, thoughts stripped from history). Sampling values come from the `docs/model-prompt-formats.md` gemma4 row and the Modelfile. Stage 0.1 confirms the HF card URL (https://huggingface.co/google/gemma-4-E4B-it).
-- Ollama: https://docs.ollama.com/capabilities/thinking (`think` bool or a named level from `/api/show` `thinking.values`) and https://docs.ollama.com/api/openai-compatibility ("Boolean-only thinking models map recognized efforts to `true` and "none" to `false`").
+- qwen: https://huggingface.co/Qwen/Qwen3.5-4B (on by default, no graded levels; on/off values are the card's "general tasks" sets).
+- gemma4: https://huggingface.co/google/gemma-4-E4B-it (one sampling set, on/off boolean) and https://ai.google.dev/gemma/docs/core/prompt-formatting-gemma4 (`<|think|>` in the system turn, thoughts stripped from history).
+- Ollama: https://docs.ollama.com/capabilities/thinking (`think` bool or a `thinking.values` level), https://docs.ollama.com/api/openai-compatibility (efforts → `true`, "none" → `false`; only `max_tokens`), https://github.com/ollama/ollama/blob/main/openai/openai.go (`reasoning` field).
 
 ## Recon (2026-11-08, n=1 each, local Ollama 0.40.14)
 
@@ -48,7 +48,7 @@ Sources:
 | R3 | qwen high: 630 completion tokens, 1593 reasoning chars; low: 318 / 753; none: 17. gemma4 high: 138 / 328; low: 13 / 0 (switch on, but it chose not to think); none: 13 | same |
 | R4 | Response message keys `role, content, reasoning`; usage has no `completion_tokens_details` | same |
 | R5 | Runtime `context_length` 4096 for both (and for gemma4:e2b); three models resident at once | `curl -s localhost:11434/api/ps` |
-| R6 | Decode tok/s per model: pending, recorded in Stage 0.3 | — |
+| R6 | Decode tok/s (thinking calls, model alone): qwen p50 74 (n=9), gemma4 p50 69 (n=5); prompt eval ~0.1–0.2 s | `robot/work/think/zz_switch_test.go` (Stage 0.2/0.3) |
 
 ## Budget table
 
