@@ -72,8 +72,12 @@ func Target(c llm.Config, l string, kg llm.KG) (llm.Target, bool) {
 	return llm.Target{}, false
 }
 
-// Ask is one thinking-off, temperature-0 call to t only — an error never retries on the other provider (M2).
+// Ask is one thinking-off, temperature-0 call to t only — an error never retries on the other provider; refused with no
+// call once Model() no longer names t (M2).
 func Ask(ctx context.Context, t llm.Target, system, user string, replyCap int) (string, error) {
+	if m := Model(); !names(m, t) {
+		return "", fmt.Errorf("memory model is now %q, not %s:%s — call refused", m, t.Provider, t.Model)
+	}
 	r := openai.ChatCompletionRequest{Model: t.Model, Messages: []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: system}, {Role: openai.ChatMessageRoleUser, Content: user}}}
 	llm.ThinkingFor(t.Provider, t.Model, llm.PathChat, llm.None).Apply(&r, replyCap)
@@ -84,4 +88,13 @@ func Ask(ctx context.Context, t llm.Target, system, user string, replyCap int) (
 		return "", fmt.Errorf("memory model %s: no answer: %v", t.Model, err)
 	}
 	return strings.TrimSpace(res.Choices[0].Message.Content), nil
+}
+
+// names reports whether memory model m selects t's provider and model.
+func names(m string, t llm.Target) bool {
+	p, model, _ := strings.Cut(m, ":")
+	if p == llm.Ollama && model == "" {
+		model = llm.DefaultETModel
+	}
+	return m != "off" && p == t.Provider && model == t.Model
 }

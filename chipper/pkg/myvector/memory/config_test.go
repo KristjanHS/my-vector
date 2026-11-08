@@ -95,6 +95,7 @@ func TestTargetOllamaFailureNoClaude(t *testing.T) {
 }
 
 func TestAskRequest(t *testing.T) {
+	useModel(t, `{}`)
 	u, hits, body := fakeChat(t, http.StatusOK)
 	got, err := Ask(context.Background(), llm.Target{Provider: llm.Ollama, BaseURL: u + "/v1", Key: "ollama", Model: llm.DefaultETModel}, "sys", "user", 50)
 	if err != nil || got != "ok" || *hits != 1 {
@@ -106,5 +107,20 @@ func TestAskRequest(t *testing.T) {
 	}
 	if b["reasoning_effort"] != "none" || b["max_tokens"] != float64(50) {
 		t.Fatalf("reasoning_effort %v, max_tokens %v; want none, 50", b["reasoning_effort"], b["max_tokens"])
+	}
+}
+
+func TestAskRefusesSwitchedModel(t *testing.T) {
+	u, hits, _ := fakeChat(t, http.StatusOK)
+	tg := llm.Target{Provider: llm.Ollama, BaseURL: u + "/v1", Key: "ollama", Model: llm.DefaultETModel}
+	for _, cfg := range []string{`{"memory_model":"off"}`, `{"memory_model":"claude:` + llm.DefaultETModel + `"}`, `{"memory_model":"ollama:other"}`} {
+		useModel(t, cfg)
+		if _, err := Ask(context.Background(), tg, "sys", "user", 50); err == nil || *hits != 0 {
+			t.Fatalf("%s: Ask err %v, %d calls; want refused, none", cfg, err, *hits)
+		}
+	}
+	useModel(t, `{"memory_model":"ollama:"}`)
+	if _, err := Ask(context.Background(), tg, "sys", "user", 50); err != nil || *hits != 1 {
+		t.Fatalf("ollama: names the default model: err %v, %d calls", err, *hits)
 	}
 }

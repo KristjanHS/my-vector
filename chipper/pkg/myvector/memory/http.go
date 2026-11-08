@@ -63,12 +63,12 @@ func view(s *Store) apiReply {
 	return out
 }
 
-// Remove flags fact or diary entry id Removed (M23); removing an active fact drops its ESN's profile, rebuilt next pass.
-// false = no such id.
+// Remove flags fact or diary entry id Removed (M23); removing a fact the ESN's profile was built from drops the profile,
+// rebuilt next pass, whatever the fact's status (M26). false = no such id.
 func (st *Store) Remove(id string, now time.Time) bool {
 	for i := range st.Facts {
 		if f := &st.Facts[i]; f.ID == id {
-			if f.Status == Active {
+			if p, ok := st.Profiles[f.ESN]; ok && p.fed(f.ID) {
 				delete(st.Profiles, f.ESN)
 			}
 			if f.Status != Removed {
