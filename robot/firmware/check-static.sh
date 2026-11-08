@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Static firmware checks (make check): series <-> *.patch <-> markers.tsv, smoke never drives the wheels,
-# patches re-export byte-identical, each src marker is patch-specific, se_lib calls libm only via its bridge (S6). --built adds bin markers in _build.
+# patches re-export byte-identical, each src marker is patch-specific, se_lib calls libm only via its bridge (S6), no DDL root in cloud/ with pod-trust (S7). --built adds bin markers in _build.
 # Usage: check-static.sh [--built]   (env: VICTOR_SRC; default <main checkout>/robot/work/wire-os-victor)
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -110,6 +110,13 @@ for r in "${rows[@]}"; do
   n=$((n + 1))
 done
 echo "src markers OK ($n)"
+
+# S7 (T6): with a *pod-trust.patch in series, vic-cloud must not embed the DDL root anywhere under cloud/ at tip.
+if grep -q 'pod-trust\.patch$' "$here/series"; then
+  rc=0; git -C "$src" grep -q escapepodRootPEM "$tip" -- cloud/ || rc=$?
+  ((rc == 1)) || die "S7: $( ((rc == 0)) && echo "escapepodRootPEM still under cloud/ at tip" || echo "git grep exit $rc at tip")"
+  echo "pod-trust: no escapepodRootPEM under cloud/ at tip"
+fi
 
 # S6: the soft-float se_lib archive calls hard-float libm only through math_abi_bridge.o's pcs("aapcs") wrappers
 # (a direct call passes floats in core registers; libm reads VFP ones: the vic-anim nrgainv.c:191 SeAssert).
