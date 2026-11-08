@@ -30,6 +30,7 @@ set -uo pipefail
 export LC_ALL=C # byte lengths and [[:print:]] in ASCII
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../env.sh"
 die() { echo "wifi: $*" >&2; exit 1; }
 # Root (a foreground `sudo chipper/start.sh` wire-pod) checks the robot's host key against the repo owner's known_hosts.

@@ -4,6 +4,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../env.sh"
 (($# == 2)) || { echo "usage: compat.sh <victor-src> <rev>" >&2; exit 2; }
 want=$(git -C "$1" show "$2:VICTOR_COMPAT_VERSION" 2>&1) || { echo "FAIL: no VICTOR_COMPAT_VERSION at $2 in $1: $want" >&2; exit 1; }

@@ -2,6 +2,7 @@ package sdkapp
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
 )
@@ -19,9 +20,13 @@ func init() {
 	}
 }
 
+// forkQuietSilentIntent is the cloud_intent prefix that makes no sound (patch 0007 log level; smoke.sh A3 runs it while locked, UD1).
+const forkQuietSilentIntent = "my_vector_log_"
+
 // forkQuietGate refuses with 423 + the QUIET line while the lock holds, else runs the upstream handler.
 func forkQuietGate(w http.ResponseWriter, r *http.Request) {
-	if quiet.Refuse(w) {
+	silent := r.URL.Path == "/api-sdk/cloud_intent" && strings.HasPrefix(r.FormValue("intent"), forkQuietSilentIntent)
+	if !silent && quiet.Refuse(w) {
 		return
 	}
 	forkQuietNext(w, r)

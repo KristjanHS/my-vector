@@ -10,6 +10,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=robot/env.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../env.sh"
 # shellcheck source=robot/crash-review/lib.sh
 . "$here/../crash-review/lib.sh"

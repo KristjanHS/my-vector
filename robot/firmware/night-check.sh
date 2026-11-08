@@ -13,6 +13,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 [[ -n ${NIGHT_LOG_DIR:-} ]] || . "$here/../env.sh"
 from=${NIGHT_FROM:-21:00} to=${NIGHT_TO:-09:00}
 day=${1:-$(if [[ $(date +%H:%M) < $from ]]; then date -d yesterday +%F; else date +%F; fi)}

@@ -47,6 +47,7 @@ while ((EPOCHSECONDS < end)); do
     ((quiet)) || { quiet=1; echo "$(date +%T) no ping reply since $(date -d "@$last" +%T)"; }
   else quiet=0; fi
   if ((EPOCHSECONDS - last < 5 && EPOCHSECONDS >= next_load)); then
+    quiet_guard
     n=$((n + 1)); next_load=$((EPOCHSECONDS + 60))
     # Head only: a lift pressing on a blocker can pry him off the contacts, and he has no battery to survive that.
     sdk move_head speed=5 >/dev/null; sleep 1; sdk move_head speed=-5 >/dev/null
