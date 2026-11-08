@@ -15,14 +15,13 @@ var forkAllowedIntents = []string{
 	"intent_weather_extend",
 	"intent_photo_take_extend",
 	"intent_names_username_extend",
-	"intent_names_ask",
 	"intent_knowledge_promptquestion",
 }
 
 // Keyphrases that hijack ordinary questions via substring match ("how deep is the water" → weather).
 var forkDroppedKeyphrases = map[string][]string{
 	"intent_weather_extend":           {"whether", "the other", "the water", "no other"},
-	"intent_names_username_extend":    {"names"},
+	"intent_names_username_extend":    {"names", "mu nimi on", "minu nimi on"}, // "mis mu nimi on" → the LLM (H2)
 	"intent_photo_take_extend":        {"capture", "photo", "foto", "picture", "selby"},
 	"intent_knowledge_promptquestion": {"conversation", "question", "weston"},
 	"intent_clock_settimer_extend":    {"time for", "time or", "time of", "time of for"},
@@ -33,6 +32,7 @@ var forkDroppedKeyphrases = map[string][]string{
 var forkAddedKeyphrases = map[string][]string{
 	"intent_photo_take_extend": {"take a photo", "take a picture", "take a selfie", "take my picture", "take a pic"},
 	"intent_clock_time":        {"what's the time", "whats the time", "tell me the time"},
+	"intent_names_username_extend": {"^mu nimi on", "^minu nimi on"},
 }
 
 // forkIsWord: ASCII alnum and '; in et-EE also Latin letters U+00C0–U+024F (ä õ ö ü š ž). CJK etc. stay separators so zh-CN still matches.
@@ -41,18 +41,19 @@ func forkIsWord(r rune, latin bool) bool {
 		latin && r >= 0xC0 && r <= 0x24F && r != 0xD7 && r != 0xF7
 }
 
-// ForkContainsPhrase is ProcessTextAll's partial match on whole words; a trailing "*" (E22) matches any word ending.
-// Outside et-EE bytes >= 0x80 stay separators (upstream rule: tr-TR "zamanı" still matches "zaman").
+// ForkContainsPhrase is ProcessTextAll's partial match on whole words; a trailing "*" (E22) matches any word ending,
+// a leading "^" only at the text's start. Outside et-EE bytes >= 0x80 stay separators (upstream rule: tr-TR "zamanı" still matches "zaman").
 func ForkContainsPhrase(text, phrase string) bool {
 	stem := strings.HasSuffix(phrase, "*")
-	phrase = strings.TrimSuffix(phrase, "*")
+	lead := strings.HasPrefix(phrase, "^")
+	phrase = strings.TrimPrefix(strings.TrimSuffix(phrase, "*"), "^")
 	if phrase == "" {
 		return false
 	}
 	latin := ForkLanguage() == lang.Estonian
 	for i := 0; i < len(text); {
 		j := strings.Index(text[i:], phrase)
-		if j < 0 {
+		if j < 0 || lead && i+j > 0 {
 			return false
 		}
 		j += i
