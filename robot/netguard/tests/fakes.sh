@@ -5,7 +5,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 robot=$(cd "$here/../.." && pwd)
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$robot/../.git")")
 tmp=$(mktemp -d "$main/robot/work/netguard-test.XXXXXX")
-trap 'rm -rf "$tmp"' EXIT
+trap 'pkill -f -- "$tmp/" || :; rm -rf "$tmp"' EXIT # arm timers carry $tmp in argv
 pc=192.0.2.249
 mkdir -p "$tmp/bin"
 cat >"$tmp/bin/ssh" <<'EOF'
@@ -13,6 +13,7 @@ cat >"$tmp/bin/ssh" <<'EOF'
 while (($#)); do case $1 in -i | -o | -O) shift 2 ;; root@*) shift; break ;; *) shift ;; esac; done
 cmd=$*
 ph=$(sed -n 's/^PHASE=\([a-z]*\) .*/\1/p' <<<"$cmd"); echo "ssh ${ph:-$cmd}" >>"$ETC_ROOT/calls"
+n=$(grep -c "^ssh $ph$" "$ETC_ROOT/calls"); [[ -n $ph && $ph:$n == "${FAKE_SSH_FAIL:-}" ]] && exit 255 # FAKE_SSH_FAIL=<phase>:<nth call>
 [[ -n $cmd ]] || exit 0
 SSH_CLIENT="${FAKE_SRC:-192.0.2.249} 50000 22" exec sh -c "$cmd"
 EOF
@@ -40,7 +41,9 @@ s=$ETC_ROOT/$(basename "$0")
 case " $* " in
 *" -N MYVECTOR_IN_NEW "* | *" -F MYVECTOR_IN_NEW "*) : >"$s.new" ;;
 *" -A MYVECTOR_IN_NEW -s "*) echo "$4" >>"$s.new" ;;
-*" -E MYVECTOR_IN_NEW MYVECTOR_IN "*) mv "$s.new" "$s.live"; : >"$s.hooked" ;;
+*" -I INPUT -i wlan0 -j MYVECTOR_IN_NEW "*) : >"$s.newhooked" ;;
+*" -D INPUT -i wlan0 -j MYVECTOR_IN_NEW "*) [ -e "$s.newhooked" ] && rm "$s.newhooked" ;;
+*" -E MYVECTOR_IN_NEW MYVECTOR_IN "*) [ -z "$FAKE_E_FAIL" ] || exit 1; mv "$s.new" "$s.live"; rm -f "$s.newhooked"; : >"$s.hooked" ;;
 *" -C INPUT -i wlan0 -j MYVECTOR_IN "*) [ -e "$s.hooked" ] ;;
 *" -D INPUT -i wlan0 -j MYVECTOR_IN "*) [ -e "$s.hooked" ] && rm "$s.hooked" ;;
 *" -D "*) exit 1 ;;
