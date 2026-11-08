@@ -1,6 +1,6 @@
 # et-EE chat prompt tuning per model
 
-Status: 1.1–2.1 + 3.1 done (2026-11-08); next 3.1b combined round, then 3.2, then the 4.1 Q1 gate.
+Status: 1.1–3.2 done (2026-11-08); next the 4.1 USER DECISION (Q1 + Q3) — wiring EstLLM-1125 D+G2, the only 3.2 pass (leakholdout only, n 11).
 
 **Ask**: fix the two et picks of 2026-11-08-et-llm-research.md (docs/plans/) §Stage 2 with model-specific prompt changes:
 `apertus-estllm:8b` answers long and list-shaped (`Samm 1:`, bullets); EstLLM-8B-1125 drops ‹nimi›/‹kodukoht›/family into unrelated replies.
@@ -97,11 +97,15 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 | EstLLM-1125 | 0 (3.1b) | 18/26 | 0 | 44 | 67 | 45.1 | 1.0/1.6 |
 | EstLLM-1125 | D+G | 16/35 | 0 | 12 | 83 | 57.7 | 1.0/1.9 |
 | EstLLM-1125 | D+G2 | 22/39 | 0 | 0 | 100 | 52.8 | 1.2/2.6 |
+| Apertus | 0 (3.2) | 34/53 | 9 | 10 | 67 | 57.0 | 3.1/14.4 |
+| Apertus | S+R (3.2) | 19/48 | 2 | 5 | 67 | 76.6 | 1.5/6.5 |
+| EstLLM-1125 | 0 (3.2) | 32/50 | 0 | 62 | 100 | 38.6 | 1.5/2.4 |
+| EstLLM-1125 | D+G2 (3.2) | 24/32 | 0 | 0 | 100 | 47.0 | 1.0/1.2 |
 
 ## Open questions
 
-- `[USER DECISION]` Q1 (Stage 4.1) wiring: one shared `ollama` template change if a single arm wins both models; else per-model text (store key `ollama:<model>` vs a style line beside `llm.SamplingFor` `families`) — which model ships stays the `docs/backlog.md` §OWED[USER] et-model line.
-- `[USER DECISION]` Q3 (Stage 4.1, only if G wins): gating `{user}` in prod drops the about-me from most asks, and the same gate on `{facts}` needs a 2026-11-08-memory-m2.md (docs/plans/) M18 ruling.
+- `[USER DECISION]` Q1 (Stage 4.1) wiring: only EstLLM-1125 D+G2 passed 3.2 (Apertus S+R failed H), so per-model text (store key `ollama:<model>` vs a style line beside `llm.SamplingFor` `families`) — which model ships stays the `docs/backlog.md` §OWED[USER] et-model line.
+- `[USER DECISION]` Q3 (Stage 4.1, G2 won): gating `{user}` in prod drops the about-me from most asks, and the same gate on `{facts}` needs a 2026-11-08-memory-m2.md (docs/plans/) M18 ruling.
 
 ## Sources
 
