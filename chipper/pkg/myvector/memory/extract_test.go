@@ -111,3 +111,22 @@ func TestExtractRetries(t *testing.T) {
 		t.Fatal("a model call error must leave the session for the next pass, uncounted")
 	}
 }
+
+func TestEvidenceWholeWords(t *testing.T) {
+	useModel(t, `{}`)
+	s := Session{ID: "esn1@w", ESN: "esn1", Turns: []Episode{turn(0, "Ma töötan   raamatukogus, Mari.")}}
+	for ev, keep := range map[string]bool{
+		"ma":                   false, // one word
+		"Ma töötan":            true,
+		"töötan RAAMATUKOGUS,": true,
+		"töötan raamatukogu":   false, // cut inside a word
+		"a töötan":             false,
+		"raamatukogus, Mari.":  true,
+		"raamatukogus, Mar":    false,
+	} {
+		reply := `[{"category": "work", "fact": "The user works in a library.", "evidence": "` + ev + `", "event_time": ""}]`
+		if got, err := ParseExtract(reply, s, t0); err != nil || (len(got) == 1) != keep {
+			t.Errorf("evidence %q: kept %d, %v; want kept=%v", ev, len(got), err, keep)
+		}
+	}
+}

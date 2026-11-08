@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -50,8 +51,19 @@ func BuildProfile(ctx context.Context, t llm.Target, fs []Fact) (string, error) 
 	return reply, err
 }
 
-// SetProfile stores text as esn's profile; err or text over ProfileCap keeps the old one (logged). Reports whether it changed.
+// SetProfile is SetProfileOf with esn's active facts in st as the inputs.
 func (st *Store) SetProfile(esn, text string, err error, now time.Time) bool {
+	return st.SetProfileOf(esn, text, st.ActiveFacts(esn), err, now)
+}
+
+// SetProfileOf stores text, built from facts from, as esn's profile; err or text over ProfileCap keeps the old one,
+// an input now Removed drops text (M26), both logged. Reports whether it changed.
+func (st *Store) SetProfileOf(esn, text string, from []Fact, err error, now time.Time) bool {
+	ids := make([]string, 0, len(from))
+	for _, f := range from {
+		ids = append(ids, f.ID)
+	}
+	p := Profile{Text: text, At: now, From: ids}
 	switch n := prompt.Estimate(text); {
 	case err != nil:
 		logf("myvector: memory profile "+esn+" kept:", err)
@@ -59,7 +71,49 @@ func (st *Store) SetProfile(esn, text string, err error, now time.Time) bool {
 	case n > ProfileCap:
 		logf("myvector: memory profile "+esn+" kept: reply", n, "tokens over", ProfileCap)
 		return false
+	case st.stale(esn, p):
+		logf("myvector: memory profile " + esn + " dropped: an input fact was removed meanwhile")
+		return false
 	}
-	st.Profiles[esn] = Profile{Text: text, At: now}
+	st.Profiles[esn] = p
 	return true
+}
+
+// fed reports whether fact id is one of p's inputs; a profile with no From (pre-M26) counts as fed by every fact.
+func (p Profile) fed(id string) bool { return p.From == nil || slices.Contains(p.From, id) }
+
+// stale reports whether one of p's input facts is Removed in st (M26).
+func (st *Store) stale(esn string, p Profile) bool {
+	for _, f := range st.Facts {
+		if f.ESN == esn && f.Status == Removed && p.fed(f.ID) {
+			return true
+		}
+	}
+	return false
+}
+
+// DropRemoved marks st's esn facts Removed where the stored copy has them Removed, and drops a profile they fed, so a
+// Remove made mid-pass reaches no later model call (M26).
+func (st *Store) DropRemoved(esn string) error {
+	cur, err := Read()
+	if err != nil {
+		return err
+	}
+	removed := map[string]*time.Time{}
+	for _, f := range cur.Facts {
+		if f.ESN == esn && f.Status == Removed {
+			removed[f.ID] = f.RemovedAt
+		}
+	}
+	for i := range st.Facts {
+		if f := &st.Facts[i]; f.ESN == esn && f.Status != Removed {
+			if at, ok := removed[f.ID]; ok {
+				f.Status, f.RemovedAt = Removed, at
+			}
+		}
+	}
+	if p, ok := st.Profiles[esn]; ok && st.stale(esn, p) {
+		delete(st.Profiles, esn)
+	}
+	return nil
 }

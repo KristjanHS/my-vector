@@ -40,21 +40,26 @@ type Batch struct {
 func (st *Store) Batches(esn string) []Batch {
 	var out []Batch
 	for _, c := range Categories {
-		b := Batch{ESN: esn, Category: c}
-		for _, f := range st.Facts {
-			switch {
-			case f.ESN != esn || f.Category != c:
-			case f.Status == Active:
-				b.Active = append(b.Active, f)
-			case f.Status == Unconfirmed:
-				b.Cands = append(b.Cands, f)
-			}
-		}
-		if len(b.Cands) > 0 {
+		if b := st.Batch(esn, c); len(b.Cands) > 0 {
 			out = append(out, b)
 		}
 	}
 	return out
+}
+
+// Batch is esn's category c merge input.
+func (st *Store) Batch(esn, c string) Batch {
+	b := Batch{ESN: esn, Category: c}
+	for _, f := range st.Facts {
+		switch {
+		case f.ESN != esn || f.Category != c:
+		case f.Status == Active:
+			b.Active = append(b.Active, f)
+		case f.Status == Unconfirmed:
+			b.Cands = append(b.Cands, f)
+		}
+	}
+	return b
 }
 
 // MergeUser is the merge user message: b's facts under their aliases.
@@ -156,11 +161,16 @@ func (st *Store) ApplyMerge(b Batch, ops []Op) (changed bool) {
 	}
 	for _, f := range b.Cands {
 		if c := idx[f.ID]; c != nil && c.Status == Unconfirmed { // no op applied to it
-			if c.Tries++; c.Tries > MergeRetries {
-				c.Status = Rejected
-				logf("myvector: memory merge "+b.ESN+" "+b.Category+" rejected after", c.Tries, "passes unnamed:", c.Text)
-			}
+			tried(c, b.ESN, "passes unnamed")
 		}
 	}
 	return changed
+}
+
+// tried counts one merge try on candidate c, Rejected past MergeRetries (M12, M14).
+func tried(c *Fact, esn, why string) {
+	if c.Tries++; c.Tries > MergeRetries {
+		c.Status = Rejected
+		logf("myvector: memory merge "+esn+" "+c.Category+" rejected after", c.Tries, why+":", c.Text)
+	}
 }

@@ -107,9 +107,15 @@ func cut(s string, n int) string {
 	return strings.TrimRight(out, " ,;") + "…"
 }
 
-// Prune deletes esn's episode files older than RetainEpisodes before today and forgets their extracted session ids.
+// Prune deletes esn's episode files older than RetainEpisodes before today (in its zone) and forgets extracted session ids
+// that start before the cutoff day − (24h + SessionGap), so a kept file's session is never re-extracted (M27).
 func (st *Store) Prune(esn string, days []string, today time.Time) (gone int, err error) {
 	cutoff := today.Add(-RetainEpisodes).Format("2006-01-02")
+	day, err := time.ParseInLocation("2006-01-02", cutoff, today.Location())
+	if err != nil {
+		return 0, err
+	}
+	limit := day.Add(-(24*time.Hour + SessionGap))
 	for _, d := range days {
 		if d < cutoff {
 			if err := os.Remove(EpisodePath(esn, d)); err != nil {
@@ -120,7 +126,8 @@ func (st *Store) Prune(esn string, days []string, today time.Time) (gone int, er
 	}
 	keep := st.Extracted[:0:0]
 	for _, id := range st.Extracted {
-		if at := strings.TrimPrefix(id, esn+"@"); at == id || len(at) < 10 || at[:10] >= cutoff {
+		at, err := time.Parse(time.RFC3339Nano, strings.TrimPrefix(id, esn+"@"))
+		if !strings.HasPrefix(id, esn+"@") || err != nil || !at.Before(limit) {
 			keep = append(keep, id)
 		}
 	}
