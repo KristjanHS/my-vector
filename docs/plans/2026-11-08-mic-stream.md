@@ -27,7 +27,7 @@ Status: all rulings made 2026-11-08 (T1 a, G1 on, P1 700 ms); building 1.1 + 2.1
 | id | step | proof |
 |---|---|---|
 | 1.1 | Patch 0015: M4 tap, G1 gate, C3 ring, C4/C5 sender, port console var (T1). | `robot/firmware/check-static.sh`; USER `make ship NO_DEPLOY=1` |
-| 1.2 | USER `make ship`; host listener writes `robot/work/mic-stream/*.pcm`; 30 s through myvector-stt. Gate: docked idle, robot `top -b -d 5`, 5 min off then 5 min on → vic-anim CPU delta ≤ 2 % of one core, 0 ring drops, "Hey Vector" answers 3/3 mid-stream. Fail → stop, revisit C4/G1. | numbers into this row |
+| 1.2 | USER `make ship`; wire-pod owns :8093, so arm by hand (`:8889/consolevarset?key=MyVector_MicStreamPort&value=8093`), talk 30 s → `journalctl -u wire-pod \| grep 'myvector listen: heard'`. Gate: docked idle, robot `top -b -d 5`, 5 min off then 5 min on → vic-anim CPU delta ≤ 2 % of one core, 0 ring drops, "Hey Vector" answers 3/3 mid-stream. Fail → stop, revisit C4/G1. | numbers into this row |
 | 2.1 | M5 receiver on `:8093`, utterances logged only (`myvector listen: heard N words`); guard port. | `TestStreamCut` (gap → one utterance, `MaxUtter` → split, disconnect → flush); `scripts/tests/guard.sh`; `make check` |
 | 2.2 | M6 arm/re-arm, feed `Hearer.Heard`. | `TestStreamArm` (on → target set; off → cleared + closed; lost → re-arm → off); `make check` |
 | 3.1 | USER live (volume 1, ask first): 5 min talk, one "Hey Vector" ask mid-talk, off by voice. | `journalctl -u wire-pod \| grep 'myvector listen'` |

@@ -28,7 +28,7 @@ type Cut struct {
 // Cutter splits a byte stream into Cuts on explicit arrival times, so tests need no clock; Emit runs synchronously.
 type Cutter struct {
 	Emit       func(Cut)
-	buf        []byte
+	buf, odd   []byte // odd: a half sample cut off by Flush, carried into the next utterance
 	start, end time.Time
 }
 
@@ -40,6 +40,7 @@ func (c *Cutter) Add(now time.Time, p []byte) {
 	}
 	if len(c.buf) == 0 {
 		c.start = now
+		c.buf, c.odd = append(c.buf, c.odd...), nil
 	}
 	c.buf = append(c.buf, p...)
 	c.end = now
@@ -62,16 +63,16 @@ func (c *Cutter) Gap(now time.Time) {
 
 // Flush closes the open utterance, if any (disconnect).
 func (c *Cutter) Flush() {
-	if len(c.buf) == 0 {
-		return
+	n := len(c.buf) &^ 1
+	cut := Cut{PCM: c.buf[:n], Start: c.start, End: c.end}
+	c.odd, c.buf = append([]byte{}, c.buf[n:]...), nil
+	if n > 0 {
+		c.Emit(cut)
 	}
-	cut := Cut{PCM: c.buf, Start: c.start, End: c.end}
-	c.buf = nil
-	c.Emit(cut)
 }
 
 // Stream receives the robot mic stream; one connection at a time, a new one closes the old.
-// Each Cut goes through STT in its own goroutine and logs "heard N words"; nil STT = STT.
+// One worker runs Cuts through STT in arrival order and logs "heard N words"; nil STT = STT.
 type Stream struct {
 	ESN   func(ip string) string // robot by source IP; "" drops the connection
 	Lang  func() string
@@ -79,8 +80,18 @@ type Stream struct {
 	Heard func(Utterance) // nil = log only (Stage 2.1)
 	Log   func(string)    // nil = none
 
-	mu  sync.Mutex
-	cur net.Conn
+	mu   sync.Mutex
+	cur  net.Conn
+	once sync.Once
+	q    chan streamCut
+}
+
+// streamQueue Cuts may wait for STT; a full queue drops the new Cut.
+const streamQueue = 4
+
+type streamCut struct {
+	esn string
+	cut Cut
 }
 
 // ListenAndServe serves StreamAddr until the listener fails.
@@ -94,10 +105,23 @@ func (s *Stream) ListenAndServe() error {
 
 // Serve accepts connections on l until it closes.
 func (s *Stream) Serve(l net.Listener) error {
+	s.once.Do(func() {
+		s.q = make(chan streamCut, streamQueue)
+		go func() {
+			for j := range s.q {
+				s.utter(j.esn, j.cut)
+			}
+		}()
+	})
 	for {
 		c, err := l.Accept()
-		if err != nil {
+		if errors.Is(err, net.ErrClosed) {
 			return err
+		}
+		if err != nil {
+			s.logf("myvector listen: stream accept: " + err.Error())
+			time.Sleep(time.Second)
+			continue
 		}
 		ip, _, _ := net.SplitHostPort(c.RemoteAddr().String())
 		esn := ""
@@ -130,7 +154,13 @@ func (s *Stream) read(esn string, c net.Conn) {
 		s.mu.Unlock()
 		c.Close()
 	}()
-	cut := &Cutter{Emit: func(u Cut) { go s.utter(esn, u) }}
+	cut := &Cutter{Emit: func(u Cut) {
+		select {
+		case s.q <- streamCut{esn, u}:
+		default:
+			s.logf(fmt.Sprintf("myvector listen: stream queue full, dropped %d ms", len(u.PCM)*1000/pcmRate))
+		}
+	}}
 	defer cut.Flush()
 	buf := make([]byte, 32<<10)
 	for {
