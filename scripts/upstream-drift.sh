@@ -19,6 +19,7 @@ allowed_edits=(
   chipper/pkg/wirepod/preqs/server.go    # sttHandler = forkMicCapture(forkSTTRouter(...)) — mic capture (fork_miccap.go) + et-EE STT router (fork_stt.go)
   chipper/webroot/index.html             # nav links to the fork pages /myvector/voice (myvector/voice), /myvector/prompt (myvector/prompt) and /myvector/wifi (myvector/wifi)
   chipper/pkg/initwirepod/startserver.go # non-android TLS pair = vars.CertPath/KeyPath (fork_paths.go: secrets/server/certs), was ../certs
+  .dockerignore                          # + secrets, certs (never bake keys into an image)
   setup.sh                               # certs dir ./certs -> ./secrets/server/certs (fork_paths.go)
 )
 

@@ -11,6 +11,8 @@ Everything in this folder is secret. Git tracks only this README and `.gitignore
 
 Not secret, so not here: `chipper/source.sh` (two flags), `robot/robot.env` and `robot/backup/robot-id-*.txt` (ESN, IP), the image's public `victor-dev` key at `robot/work/wire-os-victor/robot_sshkey`, and upstream's public `chipper/epod/ep.key`.
 
+Rolling wire-pod back past cac09ab (`make server-pin <older sha>`) means moving `server/`'s files back to `chipper/` and `certs/` first: older builds look only there.
+
 ## Backup
 
 Keep an offline copy of this whole folder somewhere other than this PC. Losing `myvector_ed25519` after the robot has been switched to it means getting back in through the image key, which only works after a reflash.

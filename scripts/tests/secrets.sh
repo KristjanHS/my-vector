@@ -8,7 +8,7 @@ if [[ ${2:-} == --head ]]; then
   rev=$3 g+=(--work-tree="$4")
   tracked=$("${g[@]}" ls-tree -r --name-only "$rev" -- secrets/)
   base=$("${g[@]}" rev-parse -q --verify origin/main) && range=("$base..$rev") || range=("$rev")
-  tracked+=$'\n'$("${g[@]}" log --format= --name-only "${range[@]}" -- secrets/) # a key added then removed before ship still reaches origin
+  tracked+=$'\n'$("${g[@]}" log -m --format= --name-only "${range[@]}" -- secrets/) # a key added then removed before ship still reaches origin
 else
   tracked=$("${g[@]}" ls-files -- secrets/)
   tracked+=$'\n'$("${g[@]}" ls-files --others --exclude-standard -- secrets/) # present now and not ignored = the next git add -A
