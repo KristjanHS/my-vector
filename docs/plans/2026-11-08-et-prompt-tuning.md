@@ -1,6 +1,6 @@
 # et-EE chat prompt tuning per model
 
-Status: 1.1–3.2 done (2026-11-08); next the 4.1 USER DECISION (Q1 + Q3) — wiring EstLLM-1125 D+G2, the only 3.2 pass (leakholdout only, n 11).
+Status: 1.1–3.2 done, 4.1 ruled (2026-11-08); next the 4.1 D-alone holdout run.
 
 **Ask**: fix the two et picks of 2026-11-08-et-llm-research.md (docs/plans/) §Stage 2 with model-specific prompt changes:
 `apertus-estllm:8b` answers long and list-shaped (`Samm 1:`, bullets); EstLLM-8B-1125 drops ‹nimi›/‹kodukoht›/family into unrelated replies.
@@ -72,9 +72,10 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 | 3.1 | Dev run, per model: `routeprobe -lang et-EE -brain ollama:<tag> -set dev,leakdev -think none -prompt <that model's arms, §Prompt variants> -reps 2`; record each arm line in §Results. Apply §Metrics stop rule. Raw output to `robot/work/et-prompt-tuning/` (gitignored). | this plan |
 | 3.1b | §Metrics stop rule, no arm passed: `-prompt` takes `A+B` (template rewrites chained in order; at most one part sets sampling, one the about-me; `TestPromptArms` covers S+R, D+G2, P+R). Run Apertus `-set dev,leakdev -prompt 0,S+R -reps 2` (108 calls), EstLLM-1125 `-set leakdev -prompt 0,D+G,D+G2 -reps 2` (66 calls; user 2026-11-08); rows → §Results. | `routeprobe/arms.go`, `_test.go` |
 | 3.2 | Q4 ruled (user 2026-11-08): holdout of the 3.1b near-misses under the full §Metrics rule, waived bar included — Apertus `-set holdout,leakholdout -prompt 0,S+R -reps 2` (92 calls), EstLLM-1125 `-set leakholdout -prompt 0,D+G2 -reps 1` (22 calls); rows → §Results; a fail = no wiring for that model, close per §Metrics. | this plan |
-| 4.1 | `[USER DECISION]` wiring: see §Open questions Q1. Then the winning text lands in `prompt` defaults or per-model store keys, `llm.SamplingFor` gets the et rows, the golden tests regenerate, docs/model-prompt-formats.md §Main rule is rewritten. | `prompt/defaults.go`/`store.go`, `llm/sampling.go`, `prompt/testdata/*.golden` |
+| 4.1 | Ruled (user 2026-11-08): no `{user}` gate on any model; EstLLM-1125 = manual backup, config unchanged. Run EstLLM-1125 `-set leakholdout -think none -prompt 0,D -reps 1` (22 calls); D passes vs arm 0 when K lower, H ≥ 75 %, J drop ≤ 5, W m ≤ 35 / p90 ≤ 60, p90 latency ≤ +20 %. | this plan |
+| 4.2 | D passed → per-model header table in `prompt` keyed by model-name prefix, prepended to `s.Live(brain)` in `forkAIReq`; goldens regenerate; docs/model-prompt-formats.md §Main rule gains the header exception. D failed → close per §Metrics, no code. | `prompt/`, `ttr/fork_prompt.go`, `prompt/testdata/*.golden` |
 | 5.1 | `make check` green. `[USER]` live check (robot sound lock: `robot/quiet/quiet.sh status` first; volume as the user left it): ask 1 story + 1 how-to + "kus ma elan?" in Estonian on the shipped model → short prose, no ‹nimi›/‹kodukoht› in the first two, correct in the third. | — |
-| 5.2 | `code-reviewer` subagent on the 1.1–4.1 commit range. | — |
+| 5.2 | `code-reviewer` subagent on the 1.1–4.2 commit range. | — |
 
 ## Results
 
@@ -101,11 +102,6 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 | Apertus | S+R (3.2) | 19/48 | 2 | 5 | 67 | 76.6 | 1.5/6.5 |
 | EstLLM-1125 | 0 (3.2) | 32/50 | 0 | 62 | 100 | 38.6 | 1.5/2.4 |
 | EstLLM-1125 | D+G2 (3.2) | 24/32 | 0 | 0 | 100 | 47.0 | 1.0/1.2 |
-
-## Open questions
-
-- `[USER DECISION]` Q1 (Stage 4.1) wiring: only EstLLM-1125 D+G2 passed 3.2 (Apertus S+R failed H), so per-model text (store key `ollama:<model>` vs a style line beside `llm.SamplingFor` `families`) — which model ships stays the `docs/backlog.md` §OWED[USER] et-model line.
-- `[USER DECISION]` Q3 (Stage 4.1, G2 won): gating `{user}` in prod drops the about-me from most asks, and the same gate on `{facts}` needs a 2026-11-08-memory-m2.md (docs/plans/) M18 ruling.
 
 ## Sources
 
