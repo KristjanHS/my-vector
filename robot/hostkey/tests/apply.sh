@@ -28,6 +28,12 @@ fi
 echo "ssh $ph" >>"$ETC_ROOT/calls"
 exec sh -c "$cmd"
 EOF
+# ssh-keygen: the real one, but -R fails under FAKE_KEYGEN_R_FAIL
+cat >"$tmp/bin/ssh-keygen" <<EOF
+#!/bin/sh
+case " \$* " in *" -R "*) [ -z "\${FAKE_KEYGEN_R_FAIL:-}" ] || exit 1 ;; esac
+exec $(command -v ssh-keygen) "\$@"
+EOF
 cat >"$tmp/bin/sshd" <<'EOF'
 #!/bin/sh
 case $1 in
@@ -48,17 +54,26 @@ exec "$@"
 EOF
 chmod +x "$tmp/bin/"*
 printf '%s\n' ROBOT_ESN=0 "ROBOT_IP=$ip" ROBOT_SERVER=x "ROBOT_KEY=$k/new" "ROBOT_KEY_OLD=$k/old" >"$tmp/robot.env"
-# fresh <name>: a fake robot as probed (/ ro, image host keys 600 with no .pub) + an owner known_hosts holding the image pubs; prints its path
+others() { ssh-keygen -F other.example -f "$1" | grep -v '^#' || true; }
+ipn() { ssh-keygen -F $ip -f "$1" | grep -vc '^#' || true; }
+# snap <root>: records its known_hosts' other.example line and mode + inode
+snap() { chmod 640 "$1/kh"; others "$1/kh" >"$1/other"; stat -c '%a %i' "$1/kh" >"$1/khstat"; }
+# kept <root>: the other.example line, mode and inode survived
+kept() { [[ $(others "$1/kh") == "$(cat "$1/other")" && $(stat -c '%a %i' "$1/kh") == "$(cat "$1/khstat")" ]]; }
+# fresh <name>: a fake robot as probed (/ ro, image host keys 600 with no .pub) + an owner known_hosts (640) holding another host and the image pubs; prints its path
 fresh() {
   local r=$tmp/$1 h
   mkdir -p "$r/proc" "$r/etc/ssh" "$r/data"
   echo "/dev/root / ext4 ro 0 0" >"$r/proc/mounts"
   cp -p "$tmp/image/"* "$r/etc/ssh/"
-  for h in "$r"/etc/ssh/ssh_host_*_key; do echo "$ip $(ssh-keygen -y -f "$h" | awk '{ print $1, $2 }')"; done >"$r/kh"
+  { echo "other.example $(awk '{ print $1, $2 }' "$k/old.pub")"
+    for h in "$r"/etc/ssh/ssh_host_*_key; do echo "$ip $(ssh-keygen -y -f "$h" | awk '{ print $1, $2 }')"; done; } >"$r/kh"
+  snap "$r"
   echo "$r"
 }
-run() { local r=$1; shift; env ETC_ROOT="$r" ETC_ARM_SCALE=1 ROLLBACK_MIN=1 PATH="$tmp/bin:$PATH" ROBOT_ENV="$tmp/robot.env" \
-  HOSTKEY_KNOWN_HOSTS="$r/kh" HOSTKEY_IMAGE="$r/image.known" "$@" "$robot/hostkey/apply.sh" 2>&1; }
+run() { local r=$1; shift; env ETC_ROOT="$r" ETC_ARM_SCALE=3 ROLLBACK_MIN=1 PATH="$tmp/bin:$PATH" ROBOT_ENV="$tmp/robot.env" \
+  HOSTKEY_KNOWN_HOSTS="$r/kh" HOSTKEY_IMAGE="$r/image.known" HOSTKEY_PENDING="$r/pending.known" "$@" "$robot/hostkey/apply.sh" 2>&1; }
+store_pubs() { local t; for t in ecdsa rsa; do echo "$ip $(awk '{ print $1, $2 }' "$1/data/myvector/ssh/ssh_host_${t}_key.pub")"; done; }
 is_image() { local t; for t in ecdsa rsa; do cmp -s "$1/etc/ssh/ssh_host_${t}_key" "$tmp/image/ssh_host_${t}_key" || return 1; done; }
 is_store() { local t; for t in ecdsa rsa; do cmp -s "$1/etc/ssh/ssh_host_${t}_key" "$1/data/myvector/ssh/ssh_host_${t}_key" || return 1; done; }
 pubs_in() { ssh-keygen -F $ip -f "$2" | awk '!/^#/ { print $3 }' | grep -qxF -- "$(awk '{ print $2 }' "$1/data/myvector/ssh/ssh_host_ecdsa_key.pub")"; }
@@ -70,7 +85,9 @@ is_store "$r" || die "happy path: the robot does not serve the stored keys"
 [[ $(stat -c %a "$r/etc/ssh/ssh_host_ecdsa_key") == 600 && $(stat -c %a "$r/etc/ssh/ssh_host_rsa_key") == 600 ]] || die "happy path: host key mode not 600"
 [[ -s $r/etc/ssh/ssh_host_ecdsa_key.pub ]] || die "happy path: no .pub installed"
 pubs_in "$r" "$r/kh" || die "happy path: known_hosts lacks the new keys"
-[[ $(wc -l <"$r/kh") == 2 ]] || die "happy path: known_hosts still holds the image keys: $(cat "$r/kh")"
+kept "$r" || die "happy path: other.example line, mode or inode changed: $(cat "$r/kh")"
+[[ $(ipn "$r/kh") == 2 ]] || die "happy path: known_hosts still holds the image keys: $(cat "$r/kh")"
+[[ ! -e $r/pending.known && ! -e $r/kh.hostkey-new ]] || die "happy path: pending or .hostkey-new left behind"
 cmp -s <(cut -d' ' -f2- "$r/image.known") <(for t in ecdsa rsa; do ssh-keygen -y -f "$tmp/image/ssh_host_${t}_key" | awk '{ print $1, $2 }'; done) ||
   die "happy path: image.known is not the image pubs"
 grep -q setsid "$r/calls" || die "happy path: no rollback armed"
@@ -97,6 +114,33 @@ is_image "$r3" || die "new-pub login fails: image keys not restored at once"
 grep -q '^ssh restore$' "$r3/calls" && ! grep -q '^ssh confirm' "$r3/calls" || die "new-pub login fails: calls=[$(cat "$r3/calls")]"
 cmp -s "$r3/kh" "$tmp/kh.before" || die "new-pub login fails: known_hosts changed"
 
+r6=$(fresh crash)
+cp "$r6/kh" "$tmp/kh.pre"
+out=$(run "$r6") || die "crash: 1st run: $out"
+cp "$tmp/kh.pre" "$r6/kh" && store_pubs "$r6" >"$r6/pending.known" # died after install: robot serves the new keys, kh the image keys
+rc=0; out=$(run "$r6") || rc=$?
+[[ $rc == 0 && $out == *"already installed"* ]] || die "crash after install: rc=$rc out=[$out]"
+pubs_in "$r6" "$r6/kh" && [[ $(ipn "$r6/kh") == 2 && ! -e $r6/pending.known ]] || die "crash after install: kh=[$(cat "$r6/kh")] pending=$(ls "$r6")"
+
+r5=$(fresh krfail)
+cp "$r5/kh" "$tmp/kh5.before"
+rc=0; out=$(run "$r5" FAKE_KEYGEN_R_FAIL=1) || rc=$?
+[[ $rc == 1 && $out == *"ssh-keygen -R"* ]] || die "kh rewrite fails: rc=$rc out=[$out]"
+! grep -q '^ssh confirm' "$r5/calls" || die "kh rewrite fails: confirmed anyway: calls=[$(cat "$r5/calls")]"
+cmp -s "$r5/kh" "$tmp/kh5.before" && cmp -s "$r5/pending.known" <(store_pubs "$r5") || die "kh rewrite fails: kh changed or no pending keys"
+
+r4=$(fresh hashed)
+ssh-keygen -q -H -f "$r4/kh" >/dev/null 2>&1 && snap "$r4"
+out=$(run "$r4") || die "hashed known_hosts: $out"
+pubs_in "$r4" "$r4/kh" && ! grep -q "^$ip " "$r4/kh" || die "hashed known_hosts: new lines missing or unhashed: $(cat "$r4/kh")"
+kept "$r4" && [[ $(ipn "$r4/kh") == 2 ]] || die "hashed known_hosts: other.example, mode/inode or entry count wrong: $(cat "$r4/kh")"
+
+sleep 4 # the 3 s windows pass: the confirmed timers must not fire, the unconfirmed one must
+is_store "$r4" && is_store "$r" || die "the confirmed rollback still fired"
+is_image "$r5" || die "kh rewrite fails: the rollback did not restore the image keys"
+rc=0; out=$(run "$r5") || rc=$?
+[[ $rc == 0 ]] && is_store "$r5" && pubs_in "$r5" "$r5/kh" && [[ ! -e $r5/pending.known ]] || die "kh rewrite fails, re-run: rc=$rc out=[$out]"
+
 cp -p "$tmp/image/"* "$r/etc/ssh/" && rm "$r/etc/ssh/"*.pub # reflash: image keys back, known_hosts = the new keys
 cp "$r/kh" "$tmp/kh.before"
 out=$(run "$r") || die "reflash: $out"
@@ -105,12 +149,8 @@ cmp -s "$r/kh" "$tmp/kh.before" || die "reflash: known_hosts changed"
 cp -p "$tmp/image/"* "$r/etc/ssh/" && mv "$r/image.known" "$r/image.gone"
 rc=0; out=$(run "$r") || rc=$?
 [[ $rc == 1 && $out == *"no login trusting"* ]] && is_image "$r" || die "reflash, no image.known: rc=$rc out=[$out]"
-
-r4=$(fresh hashed)
-ssh-keygen -q -H -f "$r4/kh" >/dev/null 2>&1
-out=$(run "$r4") || die "hashed known_hosts: $out"
-pubs_in "$r4" "$r4/kh" && ! grep -q "^$ip " "$r4/kh" || die "hashed known_hosts: new lines missing or unhashed: $(cat "$r4/kh")"
-
-sleep 2 # the 1 s window passes; the confirmed timer must not fire
-is_store "$r4" || die "the confirmed rollback still fired"
+mv "$r/image.gone" "$r/image.known" && rm -rf "$r/data/myvector/ssh" # reflash that also wiped the store
+rc=0; out=$(run "$r") || rc=$?
+[[ $rc == 1 && $out == *"not ones this laptop approved"* ]] || die "reflash, store wiped: rc=$rc out=[$out]"
+cmp -s "$r/kh" "$tmp/kh.before" && is_image "$r" && [[ ! -e $r/pending.known ]] || die "reflash, store wiped: kh, robot or pending changed"
 echo "hostkey host test OK"
