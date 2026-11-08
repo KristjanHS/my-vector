@@ -183,20 +183,15 @@ func main() {
 		}
 	}
 	cls := make([]*openai.Client, len(ts))
-	warm := make([]error, len(ts))
 	for i, tg := range ts {
 		cls[i] = client(tg.t)
-		if tg.t.Ollama() {
-			warm[i] = probekit.Warm(tg.t.BaseURL, tg.t.Model)
-		} else {
-			_, warm[i] = call(cls[i], tg.t, request(tg.t, prompts[0], "warm up", llm.Thinking{}))
-		}
 	}
 	for pi, sys := range prompts {
 		fmt.Printf("prompt %d\n", pi+1)
 		for i, tg := range ts {
-			if warm[i] != nil {
-				fmt.Printf("  %-34s error: %v\n", tg.name, warm[i])
+			none := probekit.Arm{Level: llm.None}.Thinking(tg.t.Model, llm.PathFollowUp)
+			if _, err := call(cls[i], tg.t, request(tg.t, sys, "warm up", none)); err != nil {
+				fmt.Printf("  %-34s error: %v\n", tg.name, err)
 				continue
 			}
 			var tas []probekit.Arm // Claude has no thinking arms: it runs the none arm only
@@ -217,8 +212,9 @@ func main() {
 			for k := range tas {
 				score[k] = map[string][2]int{}
 			}
-			for _, p := range pairs {
-				for k, a := range tas {
+			for j, p := range pairs {
+				for _, k := range probekit.Order(len(tas), j) {
+					a := tas[k]
 					start := time.Now()
 					got, err := call(cls[i], tg.t, request(tg.t, sys, "Person: "+p.ask+"\nRobot: "+p.reply, a.Thinking(tg.t.Model, llm.PathFollowUp)))
 					ms[k] = append(ms[k], time.Since(start))
