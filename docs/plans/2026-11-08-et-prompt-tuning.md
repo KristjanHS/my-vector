@@ -71,7 +71,7 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 | 2.1 | Sets `leakdev` + `leakholdout` (et-EE): 8 `tempt` asks each (story, weekend plan, "kuidas sul läheb?", recipe, book tip, joke, "mida sa täna teeksid?", gift idea) + 3 `self` asks each ("kus ma elan?", "mis mu nimi on?", "kes ma olen?" / holdout paraphrases — each answerable by a capitalised token). `-set` takes a comma list. Proof: `TestChatSets` extended — leak sets disjoint from each other and from dev/holdout, dev/holdout unchanged. | `routeprobe/chatset.go` + `_test.go` |
 | 3.1 | Dev run, per model: `routeprobe -lang et-EE -brain ollama:<tag> -set dev,leakdev -think none -prompt <that model's arms, §Prompt variants> -reps 2`; record each arm line in §Results. Apply §Metrics stop rule. Raw output to `robot/work/et-prompt-tuning/` (gitignored). | this plan |
 | 3.1b | §Metrics stop rule, no arm passed: `-prompt` takes `A+B` (template rewrites chained in order; at most one part sets sampling, one the about-me; `TestPromptArms` covers S+R, D+G2, P+R). Run Apertus `-set dev,leakdev -prompt 0,S+R -reps 2` (108 calls), EstLLM-1125 `-set leakdev -prompt 0,D+G,D+G2 -reps 2` (66 calls; user 2026-11-08); rows → §Results. | `routeprobe/arms.go`, `_test.go` |
-| 3.2 | Holdout confirm of each model's passing arm: `-set holdout,leakholdout -prompt 0,<winner> -reps 1` (EstLLM `-set leakholdout`); none passes → no wiring, close per §Metrics. | this plan |
+| 3.2 | Q4 ruled (user 2026-11-08): holdout of the 3.1b near-misses under the full §Metrics rule, waived bar included — Apertus `-set holdout,leakholdout -prompt 0,S+R -reps 2` (92 calls), EstLLM-1125 `-set leakholdout -prompt 0,D+G2 -reps 1` (22 calls); rows → §Results; a fail = no wiring for that model, close per §Metrics. | this plan |
 | 4.1 | `[USER DECISION]` wiring: see §Open questions Q1. Then the winning text lands in `prompt` defaults or per-model store keys, `llm.SamplingFor` gets the et rows, the golden tests regenerate, docs/model-prompt-formats.md §Main rule is rewritten. | `prompt/defaults.go`/`store.go`, `llm/sampling.go`, `prompt/testdata/*.golden` |
 | 5.1 | `make check` green. `[USER]` live check (robot sound lock: `robot/quiet/quiet.sh status` first; volume as the user left it): ask 1 story + 1 how-to + "kus ma elan?" in Estonian on the shipped model → short prose, no ‹nimi›/‹kodukoht› in the first two, correct in the third. | — |
 | 5.2 | `code-reviewer` subagent on the 1.1–4.1 commit range. | — |
@@ -100,8 +100,6 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 
 ## Open questions
 
-- `[USER DECISION]` Q4 (3.1b, no strict pass): Apertus S+R fails only L (6 % vs ≤ 5 %), EstLLM-1125 D+G2 only p90 latency (2.6 s vs ≤ 1.86 s);
-  waive that one bar → Stage 3.2 holdout of that arm, or close the plan per §Metrics (no wiring).
 - `[USER DECISION]` Q1 (Stage 4.1) wiring: one shared `ollama` template change if a single arm wins both models; else per-model text (store key `ollama:<model>` vs a style line beside `llm.SamplingFor` `families`) — which model ships stays the `docs/backlog.md` §OWED[USER] et-model line.
 - `[USER DECISION]` Q3 (Stage 4.1, only if G wins): gating `{user}` in prod drops the about-me from most asks, and the same gate on `{facts}` needs a 2026-11-08-memory-m2.md (docs/plans/) M18 ruling.
 
