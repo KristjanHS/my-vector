@@ -39,6 +39,8 @@ else
   sync
   # whole stack, as the deploy does: a vic-cloud-only restart leaves switchboard's gateway socket tied to the dead
   # client (EPERM forever, no :443, wire-pod unlinked)
+  # a fault-code restart in flight (deploy start hit a unit fault) would race ours, as in crash-review/restarts.sh
+  for _ in $(seq 30); do systemctl is-active -q fault-code.service || break; sleep 2; done
   systemctl restart anki-robot.target
   echo "epod: wrote $trust ($mode, $(grep -c 'BEGIN CERTIFICATE' "$ETC_ROOT$trust") certs), restarted anki-robot.target"
 fi
