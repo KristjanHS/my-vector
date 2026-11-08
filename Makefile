@@ -1,4 +1,4 @@
-.PHONY: help start server-pin daemon-enable daemon-disable tts-setup tts-enable tts-disable stt-setup stt-enable stt-disable check robot-test ship
+.PHONY: help start server-pin daemon-enable daemon-disable tts-setup tts-enable tts-disable stt-setup stt-enable stt-disable check robot-test ship quiet unquiet quiet-status
 # Run from anywhere: make -C ~/projects/my-vector <target>
 # robot/work of the main checkout (venvs + models live there, also when make runs in a worktree)
 WORK := $(shell dirname "$$(git -C $(CURDIR) rev-parse --path-format=absolute --git-common-dir)")/robot/work
@@ -71,6 +71,15 @@ stt-disable: ## Stop + remove myvector-stt.service
 
 check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector + vars fork Go tests
 	$(CURDIR)/scripts/check.sh
+
+quiet: ## Robot sound lock on for MIN minutes (default 120): blocks robot sound scripts, naps Vector, volume 1 (robot/quiet/quiet.sh)
+	$(CURDIR)/robot/quiet/quiet.sh on $(MIN)
+
+unquiet: ## Lift the robot sound lock (restores volume, ends the nap) — Claude runs it only on the user's ask
+	$(CURDIR)/robot/quiet/quiet.sh off
+
+quiet-status: ## Robot sound lock state; exit 3 while locked
+	$(CURDIR)/robot/quiet/quiet.sh status
 
 robot-test: ## On-robot smoke test (~45 s, needs wire-pod + the docked robot); exit 0 PASS, 1 FAIL, 2 setup
 	$(CURDIR)/robot/firmware/smoke.sh

@@ -4,6 +4,7 @@
 set -Eeuo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=robot/openmic/lib.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/lib.sh"
 (($# == 1)) || { echo "usage: listen.sh <esn>" >&2; exit 2; }
 [[ $1 == "$esn" ]] || { echo "SETUP: listen.sh $1: robot.env's robot is $esn" >&2; exit 2; }

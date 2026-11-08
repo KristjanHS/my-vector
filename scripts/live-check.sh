@@ -132,6 +132,8 @@ check_clock() {
 }
 
 check_ttsdown() {
+  # shellcheck source=robot/quiet/guard.sh
+  . "$repo/robot/quiet/guard.sh" && quiet_guard # Vector speaks: obeys the sound lock (G4)
   local api=${WIREPOD_URL:-http://127.0.0.1:8080} esn lang t1 r one="Test one." two="Test two."
   esn=$(jq -r '.robots[0].esn // empty' "$repo/secrets/server/jdocs/botSdkInfo.json" 2>/dev/null) || true
   [[ -n $esn ]] || setup "no robot in secrets/server/jdocs/botSdkInfo.json"

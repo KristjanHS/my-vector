@@ -4,6 +4,9 @@
 set -euo pipefail
 shopt -s nullglob
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=robot/quiet/guard.sh
+. "$here/../quiet/guard.sh" # sources no env.sh: guards itself, per sample too (G3)
+quiet_guard
 repo=$(git -C "$here" rev-parse --show-toplevel)
 W=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")/robot/work/voice-samples
 vol=60
@@ -21,6 +24,7 @@ probe=$W/bin/voiceprobe
 (cd "$repo/chipper" && go build -o "$probe" ./pkg/myvector/voiceprobe)
 letters=({A..Z})
 for i in "${!names[@]}"; do
+  quiet_guard
   l=${letters[$i]}
   echo "$l ${names[$i]}"
   "$probe" say -dur 1.0 "$l." >/dev/null

@@ -32,7 +32,11 @@ func muxed(t *testing.T, path string) (*httptest.ResponseRecorder, string) {
 	forkQuietNext = func(w http.ResponseWriter, r *http.Request) { hit = "next" }
 	t.Cleanup(func() { forkQuietNext = old })
 	w := httptest.NewRecorder()
-	http.DefaultServeMux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path+"?text=x", nil))
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	http.DefaultServeMux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path+sep+"text=x", nil))
 	return w, hit
 }
 
@@ -76,6 +80,16 @@ func TestForkQuietLeavesSilent(t *testing.T) {
 			t.Errorf("%s locked: %d, reached %q, want the catch-all", p, w.Code, hit)
 		}
 	}
+}
+
+// TestForkQuietLogIntentPasses: smoke.sh A3's log-level intents run while locked (UD1); any other cloud_intent stays refused.
+func TestForkQuietLogIntentPasses(t *testing.T) {
+	lock(t, true)
+	if w, hit := muxed(t, "/api-sdk/cloud_intent?intent=my_vector_log_debug"); hit != "next" || w.Code != http.StatusOK {
+		t.Errorf("log intent locked: %d, reached %q, want the SdkapiHandler stub", w.Code, hit)
+	}
+	w, _ := muxed(t, "/api-sdk/cloud_intent?intent=intent_greeting_hello")
+	wantQuiet(t, "cloud_intent greeting", w)
 }
 
 func TestForkSayQuiet(t *testing.T) {

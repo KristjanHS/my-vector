@@ -46,7 +46,7 @@ timeout 30 "$tmp/t" "$here/tts-urls.txt" || rc=$?
 # Stub robot (ssh runs settings.sh's sed on robot_jdoc's file): clock 24h, Celsius; the voice file lands in $vp/voice.json, curl calls in $vp/curl.log.
 vp=$tmp/vp
 mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/robot/sshkey" "$vp/robot/hostkey" "$vp/robot/epod" "$vp/robot/netguard" "$vp/bin" "$vp/secrets/server/jdocs"
-cp "$fw/../env.sh" "$vp/robot/"
+mkdir -p "$vp/robot/quiet" && cp "$fw/../env.sh" "$vp/robot/" && cp "$fw/../quiet/guard.sh" "$vp/robot/quiet/"
 cp "$fw/voice-push.sh" "$fw/settings.sh" "$vp/robot/firmware/"
 printf '#!/bin/sh\necho diskguard stub\n' >"$vp/robot/diskguard/apply.sh"
 printf '#!/bin/sh\necho sshkey stub\n' >"$vp/robot/sshkey/apply.sh"

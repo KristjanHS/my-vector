@@ -10,7 +10,7 @@ die() { echo "FAIL: listen.sh host test: $*" >&2; exit 1; }
 
 tree=$tmp/tree/robot
 mkdir -p "$tree/openmic" "$tree/work" "$tmp/bin"
-cp "$robot/env.sh" "$tree/"
+mkdir -p "$tree/quiet" && cp "$robot/env.sh" "$tree/" && cp "$robot/quiet/guard.sh" "$tree/quiet/"
 cp "$robot/openmic/lib.sh" "$robot/openmic/listen.sh" "$tree/openmic/"
 : >"$tree/key"
 printf '%s\n' ROBOT_ESN=00e20100 ROBOT_IP=10.9.9.9 ROBOT_SERVER=10.9.9.1 ROBOT_KEY=key >"$tree/robot.env"

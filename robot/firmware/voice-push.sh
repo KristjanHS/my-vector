@@ -5,6 +5,7 @@
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../env.sh"
 file=/data/data/myvector-voice.json
 (($# == 2 || $# == 3)) || { echo "usage: voice-push.sh <voice> <slow> [lang]" >&2; exit 1; }

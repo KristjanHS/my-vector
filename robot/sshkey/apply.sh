@@ -4,6 +4,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../env.sh"
 
 [[ -f $key_old ]] || { echo "SETUP: sshkey: no image key $key_old (ROBOT_KEY_OLD)" >&2; exit 2; }

@@ -9,6 +9,7 @@ series=${1:?usage: interlock.sh <series>}
 [[ -f $series ]] || die "no series file: $series"
 grep -q 'pod-trust\.patch$' "$series" || { echo "pod-trust interlock: no *pod-trust.patch in series, no check"; exit 0; }
 # shellcheck source=robot/env.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../env.sh"
 ca=$epod_dir/ca.crt
 [[ -f $ca ]] || die "no $ca (pod-trust drops the DDL root the robot trusts today) — do Stage 4.4 first"
