@@ -3,7 +3,7 @@
 # "on" points the robot at a PC byte sink on PORT (default 8094; not wire-pod, so no Hearer and no robot sound); each
 # window prints vic-anim % of one core (/proc utime+stime) and the bytes the sink got (0 in silence: G1 gate).
 # Usage: [SECS=300] [PORT=8094] gate.sh [window …]   windows: off | on (default: off on off — the offs bracket the drift).
-# Talk during an "on" for the speech row, e.g. gate.sh off on on off. Exit 0 PASS (worst on − mean off ≤ LIMIT=2 % and
+# Talk during an "on" for the speech row, e.g. gate.sh off on on off. Exit 0 PASS (worst on − lowest off ≤ LIMIT=2 % and
 # 0 ring drops), 1 FAIL, 2 SETUP (robot unreachable, port changed under the run, stream dropped), 3 INCOMPLETE (no off or no on).
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -68,12 +68,12 @@ for w in "${wins[@]}"; do
   elif [[ -z $worst ]] || awk "BEGIN { exit !($pct > $worst) }"; then worst=$pct; fi
 done
 ((${#offs[@]})) && [[ -n $worst ]] || { echo "INCOMPLETE: need an off and an on window"; exit 3; }
-off=$(printf '%s\n' "${offs[@]}" | awk '{ s += $1 } END { printf "%.2f", s / NR }')
+off=$(printf '%s\n' "${offs[@]}" | awk 'NR == 1 || $1 < m { m = $1 } END { printf "%.2f", m }') # lowest off: a hot off window must not hide an on cost
 # shellcheck disable=SC2029 # n0 expands here on purpose
 drops=$(robot "tail -n +$((n0 + 1)) /var/log/messages") || { echo "SETUP: robot log unreadable"; exit 2; }
 drops=$(grep 'my-vector.MicStream: .*ring dropped' <<<"$drops" | tail -1)
 echo "ring drops: ${drops:-none}"; [[ -z $drops ]] || rc=1
-d=$(awk "BEGIN { printf \"%.2f\", $worst - $off }"); echo "delta (worst on − mean off): $d % (limit $LIMIT)"
+d=$(awk "BEGIN { printf \"%.2f\", $worst - $off }"); echo "delta (worst on − lowest off): $d % (limit $LIMIT)"
 awk "BEGIN { exit !($d > $LIMIT) }" && rc=1
 ((rc == 0)) && echo PASS || echo FAIL
 exit "$rc"

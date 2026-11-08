@@ -1,6 +1,6 @@
 # Continuous mic stream for active listening
 
-Status: 1.1 + 2.1 + 2.2 shipped 2026-11-08; 1.2 gate next (`:8094` firewall rule owed by USER). Replaces C2/C3 (clip capture) of `2026-11-07-active-listening.md`; Hearer, State, echo gate, backoff, phrases stay.
+Status: 1.1 + 2.1 + 2.2 shipped 2026-11-08; 1.2 silent gate PASS; USER voice half next. Replaces C2/C3 (clip capture) of `2026-11-07-active-listening.md`; Hearer, State, echo gate, backoff, phrases stay.
 
 ## Rulings
 
@@ -27,7 +27,7 @@ Status: 1.1 + 2.1 + 2.2 shipped 2026-11-08; 1.2 gate next (`:8094` firewall rule
 | id | step | proof |
 |---|---|---|
 | 1.1 | Patch 0016: M4 tap, G1 gate, C3 ring, C4/C5 sender, port console var (T1). | `robot/firmware/check-static.sh`; USER `make ship NO_DEPLOY=1` |
-| 1.2 | Shipped. USER opens :8094 (Windows + Hyper-V inbound, mirrored WSL); Claude runs `robot/mic-stream/gate.sh` (off on off, silent room, byte sink, no robot sound); USER: `gate.sh off on on off` talking through the 2nd on, then listening on, talk 30 s → `myvector listen: heard`, "Hey Vector" 3/3. Gate: worst on − mean off ≤ 2 % of one core, 0 ring drops; fail → stop, revisit C4/G1. | `gate.sh` exit 0; numbers into this row |
+| 1.2 | Silent run 2026-11-08 PASS: off 45.20 / on 22.13 / off 21.94 % (first off hot), +0.19 %, sink 0 bytes, 0 drops. Next USER: `robot/mic-stream/gate.sh off on on off` talking through the 2nd on, then listening on, talk 30 s → `myvector listen: heard`, "Hey Vector" 3/3. Gate: worst on − lowest off ≤ 2 % of one core, 0 ring drops; fail → stop, revisit C4/G1. | `gate.sh` exit 0; numbers into this row |
 | 2.1 | M5 receiver on `:8093`, utterances logged only (`myvector listen: heard N words`); guard port. | `TestStreamCut` (gap → one utterance, `MaxUtter` → split, disconnect → flush); `scripts/tests/guard.sh`; `make check` |
 | 2.2 | M6 arm/re-arm, feed `Hearer.Heard`. | `TestStreamArm` (on → target set; off → cleared + closed; lost → re-arm → off); `make check` |
 | 3.1 | USER live (volume 1, ask first): 5 min talk, one "Hey Vector" ask mid-talk, off by voice. | `journalctl -u wire-pod \| grep 'myvector listen'` |
