@@ -26,13 +26,17 @@ dir=$repo head=()
 if [[ ${1:-} == --head ]]; then
   head=(--head "$(git -C "$repo" rev-parse --verify "${2:-HEAD}^{commit}")")
   tree=$(git -C "$repo" rev-parse "${head[1]}^{tree}") key=$(stamp_key "$tree")
-  if [[ -f $stamps/$key ]]; then echo "check skipped: tree ${tree:0:12} passed already ($(<"$stamps/$key"))"; exit 0; fi
   dir=$(mktemp -d "$repo/robot/work/check-head.XXXXXX")
   trap 'rm -rf "$dir"' EXIT
   git -C "$repo" archive "${head[1]}" | tar -x -C "$dir"
 else tree=$(wt_tree) key=$(stamp_key "$tree")
 fi
 (cd "$repo" && scripts/upstream-drift.sh "${head[@]}")
+# A stamp hit still runs the commit-range checks (drift above, secrets in every unpushed commit): the key holds only the tree.
+if [[ -n ${head[*]} && -f $stamps/$key ]]; then
+  if [[ -f $dir/scripts/tests/secrets.sh ]]; then "$dir"/scripts/tests/secrets.sh "$repo" "${head[@]}" "$dir"; fi
+  echo "check skipped: tree ${tree:0:12} passed already ($(<"$stamps/$key")); drift + secrets ran"; exit 0
+fi
 shopt -s nullglob # a pre-R6 commit has no robot/*.sh
 for f in "$dir"/robot/*.sh "$dir"/robot/*/*.sh "$dir"/robot/*/tests/*.sh "$dir"/scripts/*.sh "$dir"/scripts/tests/*.sh "$dir"/tts/*.sh "$dir"/et-stt/*.sh; do bash -n "$f" || { echo "syntax: ${f#"$dir"/}" >&2; exit 1; }; done
 echo "shell syntax OK"

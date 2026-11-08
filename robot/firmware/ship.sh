@@ -101,12 +101,15 @@ if ((deploy)); then
   echo "$out"
   add_warns "$out"
 
-  step "firmware lane: tip tree vs robot $marker"
+  # Marker = "<tree> <fp>", fp = the deployed /anki/{bin,lib} files' name+size+mtime: a hand deploy (catch.sh -d, restarts.sh -d) or a reflash changes fp.
+  step "firmware lane: tip tree + /anki fingerprint vs robot $marker"
+  fp_cmd='find /anki/bin /anki/lib -type f -exec stat -c "%n %s %Y" {} + | sort | md5sum | cut -c1-32'
   fw_tree=$(git -C "$src" rev-parse "$tip^{tree}")
-  robot_tree=$(ssh "${ssh_opts[@]}" "root@$ip" "cat $marker 2>/dev/null" || true)
+  # shellcheck disable=SC2029 # $marker and $fp_cmd expand here on purpose
+  robot_fw=$(ssh "${ssh_opts[@]}" "root@$ip" "m=\$(cat $marker 2>/dev/null); echo \"\$m|\$($fp_cmd)\"" || true)
   if ((force_fw)); then echo "--firmware: build + deploy + full smoke"
-  elif [[ $robot_tree == "$fw_tree" ]]; then fw=0; echo "robot runs tree ${fw_tree:0:12} already: no build, no deploy; smoke.sh --server"
-  else echo "robot ${robot_tree:+runs tree ${robot_tree:0:12}}${robot_tree:-has no marker}, tip tree ${fw_tree:0:12}: build + deploy + full smoke"; fi
+  elif [[ ${robot_fw%|*} == "$fw_tree ${robot_fw#*|}" ]]; then fw=0; echo "robot runs tree ${fw_tree:0:12}, files unchanged since: no build, no deploy; smoke.sh --server"
+  else echo "robot marker '${robot_fw%|*}' != tip tree ${fw_tree:0:12} + current /anki fingerprint: build + deploy + full smoke"; fi
 
   # Server inputs: the Go tree, the firewall and the launchers that build + run the pinned commit on each (re)start.
   srv=(chipper scripts/wire-pod-guard.nft scripts/run-server.sh scripts/load-guard.sh)
@@ -168,6 +171,7 @@ if ((fw)); then
   VICTOR_SRC=$src "$pd/check-static.sh" --built || die "built firmware lacks a patch (check-static.sh --built)"
   tree_is_patches
   echo "built firmware matches the tree"
+  if declare -F mux_open >/dev/null; then mux_open; fi # a build past ControlPersist ends the master
 fi
 
 ((deploy)) || { echo; echo "built, not deployed (--no-deploy) at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z"). log: $SHIP_LOG"; exit 0; }
@@ -213,7 +217,8 @@ fi
 if ((fw)); then
   step "robot smoke test: smoke.sh (units up + stable, log, head, face, speech, base still)"
   "$pd/smoke.sh" || die "robot smoke test failed — the robot is ALREADY running $sha, NOT pushed; fix and ship again, or ship the previous sha"
-  ssh "${ssh_opts[@]}" "root@$ip" "echo $fw_tree >$marker" ||
+  # shellcheck disable=SC2029
+  ssh "${ssh_opts[@]}" "root@$ip" "echo \"$fw_tree \$($fp_cmd)\" >$marker" ||
     add_warns "WARN could not write $marker on the robot: the next ship builds + deploys again"
 else
   step "robot smoke test: smoke.sh --server (firmware unchanged: link, log, face, short phrase, log-level intent)"
