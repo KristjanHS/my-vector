@@ -60,6 +60,11 @@ func Extract(ctx context.Context, t llm.Target, s Session, now time.Time) ([]Fac
 	if err != nil {
 		return nil, err
 	}
+	return ParseExtract(reply, s, now)
+}
+
+// ParseExtract is Extract's check of one model reply for s.
+func ParseExtract(reply string, s Session, now time.Time) ([]Fact, error) {
 	cands, err := parseCandidates(reply)
 	if err != nil {
 		return nil, err

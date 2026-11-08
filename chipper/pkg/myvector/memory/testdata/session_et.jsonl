@@ -1,0 +1,6 @@
+{"at":"2026-11-07T17:02:00Z","kind":"chat","intent":"","user":"Tere, mina olen Kalle ja see on minu uus robot.","reply":"Tere, Kalle! Väga meeldiv tutvuda.","lang":"et-EE"}
+{"at":"2026-11-07T17:03:10Z","kind":"chat","intent":"","user":"Mu koer Muki on kolmeaastane taks ja ta kardab äikest.","reply":"Vaene Muki! Äike on tõesti hirmus.","lang":"et-EE"}
+{"at":"2026-11-07T17:04:30Z","kind":"intent","intent":"intent_clock_time","user":"mis kell on","reply":"","lang":"et-EE"}
+{"at":"2026-11-07T17:06:00Z","kind":"chat","intent":"","user":"Homme sõidan õega Tartusse, ta elab seal.","reply":"Head reisi Tartusse!","lang":"et-EE"}
+{"at":"2026-11-07T17:07:20Z","kind":"chat","intent":"","user":"Kas sa tead, mis ilm Tartus homme on?","reply":"Ma ei tea kahjuks homset ilma.","lang":"et-EE"}
+{"at":"2026-11-07T17:08:40Z","kind":"chat","intent":"","user":"Ma ei joo üldse kohvi, ainult piparmünditeed.","reply":"Piparmündi tee on hea valik.","lang":"et-EE"}
