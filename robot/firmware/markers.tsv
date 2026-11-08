@@ -46,3 +46,9 @@
 0015-pod-trust.patch	src	cloud/internal/jdocs/client.go	no DDL escapepod root; the shared pool
 0015-pod-trust.patch	src	platform/config/etc/vic-cloud.env	my-vector.PodTrust
 0015-pod-trust.patch	bin	etc/vic-cloud.env	my-vector.PodTrust
+0016-mic-stream.patch	src	animProcess/src/cozmoAnim/micData/micDataProcessor.cpp	my-vector.MicStream
+0016-mic-stream.patch	src	animProcess/src/cozmoAnim/micData/micDataProcessor.cpp	sMyVectorMicTap.Block(MyVectorMicStreamPort(), processedAudio.data(), readyDataSpot->myVectorVad != 0)
+0016-mic-stream.patch	src	animProcess/src/cozmoAnim/micData/micDataProcessor.cpp	sMyVectorRawVad = activityFlag;
+0016-mic-stream.patch	src	animProcess/src/cozmoAnim/micData/micDataProcessor.h	int myVectorVad = 0;
+0016-mic-stream.patch	bin	bin/vic-anim	my-vector.MicStream
+0016-mic-stream.patch	bin	bin/vic-anim	kMyVector_MicStreamPort

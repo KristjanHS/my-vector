@@ -1,0 +1,361 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Sun, 8 Nov 2026 12:00:00 +0200
+Subject: [PATCH] mic-stream
+
+vic-anim streams the wake word's processed mic audio to the PC (plan 2026-11-08-mic-stream M4, T1, G1, P1,
+C1-C5). ProcessTriggerLoop taps each 10 ms processedAudio block beside job->CollectProcessedAudio (no
+MicDataInfo job: HasStreamingJob stays false, "Hey Vector" keeps working). Console var
+MyVector_MicStreamPort (MicData, default 0): 0 = one atomic load per block, nothing else; non-zero = the
+robot dials raw TCP to the IPv4 host of /data/data/myvector-voice.json's url (patch 0010) on that port.
+G1: blocks pass only while the raw DoSVad flag is on (before the robot-noise force and the 1 s
+QuietTimeCooldown, so the 700 ms hangover is the pause cut, P1), with 300 ms pre-roll and 700 ms hangover.
+C3: a 2 s ring the trigger loop never blocks on, drained by thread MyVectorMicTx; a stall drops the oldest,
+logged at most once a minute. C4: raw s16 16 kHz mono, one send() per 100 ms, redial after a 1-30 s
+backoff (a PC close is seen while idle). C5: MyVectorMicTx runs nice 10 on cores 0+3 (MicProcRaw pins 2,
+MicProcTrigger 1). Logs my-vector.MicStream. Host test: robot/firmware/tests/mic-stream.sh.
+---
+ .../cozmoAnim/micData/micDataProcessor.cpp    | 284 ++++++++++++++++++
+ .../src/cozmoAnim/micData/micDataProcessor.h  |   1 +
+ 2 files changed, 285 insertions(+)
+
+diff --git a/animProcess/src/cozmoAnim/micData/micDataProcessor.cpp b/animProcess/src/cozmoAnim/micData/micDataProcessor.cpp
+index c67b1b9a..8a2dece8 100644
+--- a/animProcess/src/cozmoAnim/micData/micDataProcessor.cpp
++++ b/animProcess/src/cozmoAnim/micData/micDataProcessor.cpp
+@@ -41,11 +41,287 @@
+ #include <list>
+ #include <sched.h>
+ 
++#include "json/json.h"
++#include <arpa/inet.h>
++#include <netinet/in.h>
++#include <poll.h>
++#include <sys/resource.h>
++#include <sys/socket.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++#include <algorithm>
++#include <atomic>
++#include <cerrno>
++#include <cstdint>
++#include <cstring>
++#include <fstream>
++#include <string>
++#include <vector>
++
+ 
+ namespace Anki {
+ namespace Vector {
+ namespace MicData {
+ 
++namespace { // my-vector mic-stream
++// Pure part (no sockets, no threads; tests/mic-stream.sh cuts this block out and builds 0016-mic-stream_test.cpp on it).
++constexpr uint32_t kMyVectorMicBlock = 160;      // samples per 10 ms block: 16 kHz mono s16 (kSamplesPerBlockPerChannel)
++constexpr uint32_t kMyVectorMicRingBlocks = 200; // C3: 2 s = 64000 bytes
++constexpr uint32_t kMyVectorMicPreRoll = 30;     // G1: 300 ms before the first VAD block
++constexpr uint32_t kMyVectorMicHangover = 70;    // G1/P1: 700 ms after the last VAD block
++
++// C3: one writer (trigger loop), one reader (sender thread). Push never blocks or waits: when the reader stalls it
++// overwrites the oldest block; Read skips what was overwritten (seqlock-style recheck) and counts it in Drops().
++class MyVectorMicRing {
++public:
++  void Push(const int16_t* block)
++  {
++    const uint64_t w = _done.load(std::memory_order_relaxed);
++    _started.store(w + 1, std::memory_order_relaxed);
++    std::atomic_thread_fence(std::memory_order_release);
++    std::memcpy(_blocks[w % kMyVectorMicRingBlocks], block, sizeof(_blocks[0]));
++    _done.store(w + 1, std::memory_order_release);
++  }
++  // Reader: copies up to maxBlocks of the oldest unread blocks into out; returns how many.
++  uint32_t Read(int16_t* out, uint32_t maxBlocks)
++  {
++    const uint64_t done = _done.load(std::memory_order_acquire);
++    if (done - _read > kMyVectorMicRingBlocks) {
++      _drops += done - _read - kMyVectorMicRingBlocks;
++      _read = done - kMyVectorMicRingBlocks;
++    }
++    const uint32_t n = static_cast<uint32_t>(std::min<uint64_t>(done - _read, maxBlocks));
++    for (uint32_t i = 0; i < n; ++i) {
++      std::memcpy(out + i * kMyVectorMicBlock, _blocks[(_read + i) % kMyVectorMicRingBlocks], sizeof(_blocks[0]));
++    }
++    std::atomic_thread_fence(std::memory_order_acquire);
++    // Block b's slot is rewritten once block b + ring size has started: those copies may be torn.
++    const uint64_t started = _started.load(std::memory_order_relaxed);
++    uint32_t torn = 0;
++    if (started > kMyVectorMicRingBlocks && started - kMyVectorMicRingBlocks > _read) {
++      torn = static_cast<uint32_t>(std::min<uint64_t>(n, started - kMyVectorMicRingBlocks - _read));
++    }
++    if (torn > 0) {
++      std::memmove(out, out + torn * kMyVectorMicBlock, (n - torn) * sizeof(_blocks[0]));
++      _drops += torn;
++    }
++    _read += n;
++    return n - torn;
++  }
++  void Skip() { _read = _done.load(std::memory_order_acquire); } // reader: drop all unread blocks (stream off)
++  uint64_t Drops() const { return _drops; }                      // reader
++private:
++  int16_t _blocks[kMyVectorMicRingBlocks][kMyVectorMicBlock];
++  std::atomic<uint64_t> _started{0}, _done{0};
++  uint64_t _read = 0, _drops = 0; // reader only
++};
++
++// G1: closed = blocks go to a 30-block pre-roll only; a VAD block opens it (pre-roll first, oldest first) and every
++// VAD block re-arms the 70-block hangover. Writer side only. Silence outside pre-roll + speech + hangover sends nothing.
++class MyVectorMicGate {
++public:
++  void Push(const int16_t* block, bool vad, MyVectorMicRing& ring)
++  {
++    if (vad) {
++      if (_hang == 0) {
++        for (uint32_t i = 0; i < _preN; ++i) {
++          ring.Push(_pre[(_preHead + kMyVectorMicPreRoll - _preN + i) % kMyVectorMicPreRoll]);
++        }
++        _preN = 0;
++      }
++      _hang = kMyVectorMicHangover;
++      ring.Push(block);
++    } else if (_hang > 0) {
++      --_hang;
++      ring.Push(block);
++    } else {
++      std::memcpy(_pre[_preHead], block, sizeof(_pre[0]));
++      _preHead = (_preHead + 1) % kMyVectorMicPreRoll;
++      _preN = std::min(_preN + 1, kMyVectorMicPreRoll);
++    }
++  }
++  void Reset() { _hang = 0; _preN = 0; }
++private:
++  int16_t _pre[kMyVectorMicPreRoll][kMyVectorMicBlock];
++  uint32_t _preHead = 0, _preN = 0, _hang = 0;
++};
++
++// M4/C2: the trigger loop's per-block hook. port 0 = nothing but this check (the gate resets once when it goes 0).
++// Returns true on the block that turns the stream on (the caller starts the sender once).
++struct MyVectorMicTap {
++  MyVectorMicRing ring;
++  MyVectorMicGate gate;
++  bool on = false;
++  bool Block(int port, const int16_t* block, bool vad)
++  {
++    if (port == 0) {
++      if (on) { on = false; gate.Reset(); }
++      return false;
++    }
++    const bool turnedOn = !on;
++    on = true;
++    gate.Push(block, vad, ring);
++    return turnedOn;
++  }
++};
++
++// T1: the PC = the numeric IPv4 host of patch 0010's voice url, http://<IPv4>[:port][/path].
++bool MyVectorMicStreamHost(const std::string& url, std::string& host)
++{
++  if (url.compare(0, 7, "http://") != 0) { return false; }
++  const size_t end = url.find_first_of(":/", 7);
++  host = url.substr(7, end == std::string::npos ? std::string::npos : end - 7);
++  in_addr a;
++  return inet_pton(AF_INET, host.c_str(), &a) == 1;
++}
++} // namespace (my-vector mic-stream)
++
++namespace { // my-vector mic-stream sender
++// T1: wire-pod sets MyVector_MicStreamPort (8093) over :8889 while active listening is on; 0 = off (C2).
++CONSOLE_VAR_RANGED(int, kMyVector_MicStreamPort, "MicData", 0, 0, 65535);
++constexpr const char* kMyVectorMicVoiceFile = "/data/data/myvector-voice.json"; // patch 0010's file: its url names the PC
++constexpr uint32_t kMyVectorMicSendBlocks = 10;                                   // C4: one send() per 100 ms (3.2 KB)
++static_assert(kMyVectorMicBlock == kSamplesPerBlockPerChannel, "mic-stream block = one processed 10 ms block");
++static_assert(sizeof(AudioUtil::AudioSample) == sizeof(int16_t), "mic-stream sends s16");
++
++int sMyVectorRawVad = 0; // ProcessRawLoop only: DoSVad of the block in flight, copied into its TimedMicData
++MyVectorMicTap sMyVectorMicTap; // writer side: ProcessTriggerLoop; reader side (ring.Read/Skip/Drops): the sender
++std::thread* sMyVectorMicSender = nullptr; // started once by the trigger loop; a pointer: no std::terminate at static exit
++std::atomic<bool> sMyVectorMicStop{false};
++std::mutex sMyVectorMicStopMutex;
++std::condition_variable sMyVectorMicStopCv;
++
++int MyVectorMicStreamPort() { return __atomic_load_n(&kMyVector_MicStreamPort, __ATOMIC_RELAXED); }
++
++bool MyVectorMicReadHost(std::string& host, std::string& why)
++{
++  std::ifstream f(kMyVectorMicVoiceFile);
++  Json::Value v;
++  Json::Reader reader;
++  if (!f || !reader.parse(f, v) || !v.isObject() || !v["url"].isString()) {
++    why = std::string("no url in ") + kMyVectorMicVoiceFile;
++    return false;
++  }
++  if (!MyVectorMicStreamHost(v["url"].asString(), host)) { why = "url host not IPv4: " + v["url"].asString(); return false; }
++  return true;
++}
++
++// Non-blocking connect, 1 s at most (sender thread only); -1 + why on failure.
++int MyVectorMicConnect(const std::string& host, int port, std::string& why)
++{
++  sockaddr_in sa{};
++  sa.sin_family = AF_INET;
++  sa.sin_port = htons(static_cast<uint16_t>(port));
++  inet_pton(AF_INET, host.c_str(), &sa.sin_addr);
++  const int fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
++  if (fd < 0) { why = std::string("socket: ") + strerror(errno); return -1; }
++  if (connect(fd, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) != 0) {
++    int err = errno;
++    if (err == EINPROGRESS) {
++      pollfd p{fd, POLLOUT, 0};
++      socklen_t len = sizeof(err);
++      err = poll(&p, 1, 1000) != 1 ? ETIMEDOUT : (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) != 0 ? errno : err);
++    }
++    if (err != 0) { why = std::string("connect: ") + strerror(err); close(fd); return -1; }
++  }
++  return fd;
++}
++
++// C3/C4/C5: drains the ring every 100 ms into one send() of raw PCM (more than 3.2 KB only after a stall);
++// reconnects on error after a 1 s..30 s backoff; logs ring drops at most once a minute.
++void MyVectorMicSenderLoop()
++{
++  Anki::Util::SetThreadName(pthread_self(), "MyVectorMicTx");
++  setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 10); // C5: nice 10
++#if defined(ANKI_PLATFORM_VICOS)
++  // C5: off the mic cores (ProcessRawLoop pins core 2, ProcessTriggerLoop core 1)
++  cpu_set_t cpu_set;
++  CPU_ZERO(&cpu_set);
++  CPU_SET(0, &cpu_set);
++  CPU_SET(3, &cpu_set);
++  const int affinityError = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpu_set);
++  if (affinityError != 0) {
++    PRINT_NAMED_WARNING("my-vector.MicStream", "SetAffinityMaskError %d", affinityError);
++  }
++#endif
++  using Clock = std::chrono::steady_clock;
++  MyVectorMicRing& ring = sMyVectorMicTap.ring;
++  std::vector<int16_t> pcm(kMyVectorMicRingBlocks * kMyVectorMicBlock);
++  size_t sent = 0, pending = 0; // bytes of pcm
++  int fd = -1, fdPort = 0, backoff_ms = 1000;
++  auto nextTry = Clock::now();
++  auto dropLogAt = Clock::now();
++  uint64_t dropsLogged = 0;
++  const auto closeFd = [&](const char* why) {
++    if (fd >= 0) { close(fd); fd = -1; PRINT_NAMED_WARNING("my-vector.MicStream", "closed: %s", why); }
++    sent = pending = 0;
++  };
++  while (!sMyVectorMicStop.load()) {
++    const int port = MyVectorMicStreamPort();
++    {
++      std::unique_lock<std::mutex> lock(sMyVectorMicStopMutex);
++      sMyVectorMicStopCv.wait_for(lock, std::chrono::milliseconds(port != 0 ? kMyVectorMicSendBlocks * 10 : 1000),
++                                  [] { return sMyVectorMicStop.load(); });
++    }
++    if (port != fdPort) { closeFd(port == 0 ? "port 0" : "port changed"); fdPort = port; backoff_ms = 1000; nextTry = Clock::now(); }
++    if (port == 0) { ring.Skip(); continue; }
++    const auto now = Clock::now();
++    if (fd >= 0 && pending == 0) { // the PC never sends: 0 = it closed, so reconnect before the next utterance
++      char c;
++      const ssize_t r = recv(fd, &c, 1, MSG_DONTWAIT);
++      if (r == 0 || (r < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
++        closeFd(r == 0 ? "peer closed" : strerror(errno));
++        nextTry = now + std::chrono::milliseconds(backoff_ms);
++      }
++    }
++    if (fd < 0 && now >= nextTry) {
++      std::string host, why;
++      if (MyVectorMicReadHost(host, why) && (fd = MyVectorMicConnect(host, port, why)) >= 0) {
++        backoff_ms = 1000;
++        PRINT_NAMED_WARNING("my-vector.MicStream", "connected %s:%d", host.c_str(), port);
++      } else {
++        PRINT_NAMED_WARNING("my-vector.MicStream", "no stream (retry in %d ms): %s", backoff_ms, why.c_str());
++        nextTry = now + std::chrono::milliseconds(backoff_ms);
++        backoff_ms = std::min(backoff_ms * 2, 30000);
++      }
++    }
++    if (fd < 0) {
++      ring.Skip(); // not connected: audio is stale by the time a connect lands; Drops() counts live-socket stalls only
++    } else {
++      if (pending == 0) {
++        sent = 0;
++        pending = ring.Read(pcm.data(), kMyVectorMicRingBlocks) * kMyVectorMicBlock * sizeof(int16_t);
++      }
++      if (pending > 0) {
++        const ssize_t n = send(fd, reinterpret_cast<const char*>(pcm.data()) + sent, pending, MSG_NOSIGNAL | MSG_DONTWAIT);
++        if (n > 0) {
++          sent += static_cast<size_t>(n);
++          pending -= static_cast<size_t>(n);
++        } else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
++          closeFd(strerror(errno));
++          nextTry = now + std::chrono::milliseconds(backoff_ms);
++          backoff_ms = std::min(backoff_ms * 2, 30000);
++        }
++      }
++    }
++    if (ring.Drops() != dropsLogged && now >= dropLogAt) {
++      PRINT_NAMED_WARNING("my-vector.MicStream", "ring dropped %llu blocks (10 ms each) since start",
++                          static_cast<unsigned long long>(ring.Drops()));
++      dropsLogged = ring.Drops();
++      dropLogAt = now + std::chrono::minutes(1);
++    }
++  }
++  closeFd("stop");
++}
++
++void MyVectorMicStreamStop()
++{
++  sMyVectorMicStop.store(true);
++  sMyVectorMicStopCv.notify_all();
++  if (sMyVectorMicSender != nullptr) { sMyVectorMicSender->join(); delete sMyVectorMicSender; sMyVectorMicSender = nullptr; }
++}
++} // namespace (my-vector mic-stream sender)
++
+ namespace {
+   
+ #define LOG_CHANNEL "Microphones"
+@@ -380,6 +656,7 @@ MicDataProcessor::~MicDataProcessor()
+   _dataReadyCondition.notify_all();
+   _processThread.join();
+   _processTriggerThread.join();
++  MyVectorMicStreamStop(); // after the trigger loop: it is the only one that starts the sender
+ 
+   MMIfDestroy();
+ }
+@@ -421,6 +698,7 @@ void MicDataProcessor::ProcessRawAudio(RobotTimeStamp_t timestamp,
+     nextSample.audioBlock.data(),
+     robotStatus,
+     robotAngle);
++  nextSample.myVectorVad = sMyVectorRawVad; // published to the trigger loop with the slot (++_procAudioXferCount)
+ 
+ #ifdef STANDALONE_SIM
+   // assume in front of robot if sim
+@@ -534,6 +812,7 @@ MicDirectionData MicDataProcessor::ProcessMicrophonesSE(const AudioUtil::AudioSa
+     activityFlag = DoSVad(_sVadObject.get(),           // object
+                           vadConfidence,               // confidence it is okay to measure noise floor, i.e. no known activity like gear noise
+                           (int16_t*)audioChunk);       // pointer to input data
++    sMyVectorRawVad = activityFlag; // my-vector G1/P1: before the robot-noise force and the 1 s QuietTimeCooldown
+     latestPowerValue = _sVadObject->AvePowerInBlock;
+     latestNoiseFloor = _sVadObject->NoiseFloor;
+   
+@@ -809,6 +1088,11 @@ void MicDataProcessor::ProcessTriggerLoop()
+     {
+       job->CollectProcessedAudio(processedAudio.data(), processedAudio.size());
+     }
++    // my-vector M4/C2: port 0 = one atomic load + bool check; on = gate + ring memcpy, never blocks
++    if (sMyVectorMicTap.Block(MyVectorMicStreamPort(), processedAudio.data(), readyDataSpot->myVectorVad != 0) &&
++        sMyVectorMicSender == nullptr) {
++      sMyVectorMicSender = new std::thread(MyVectorMicSenderLoop);
++    }
+     
+     // Run the trigger detection, which will use the callback defined above
+     {
+diff --git a/animProcess/src/cozmoAnim/micData/micDataProcessor.h b/animProcess/src/cozmoAnim/micData/micDataProcessor.h
+index b2746b14..0008ebde 100644
+--- a/animProcess/src/cozmoAnim/micData/micDataProcessor.h
++++ b/animProcess/src/cozmoAnim/micData/micDataProcessor.h
+@@ -147,6 +147,7 @@ private:
+   struct TimedMicData {
+     std::array<AudioUtil::AudioSample, kSamplesPerBlockPerChannel> audioBlock;
+     RobotTimeStamp_t timestamp;
++    int myVectorVad = 0; // my-vector mic-stream G1: this block's raw DoSVad flag (no QuietTimeCooldown, no robot-noise force)
+   };
+   Util::FixedCircularBuffer<TimedMicData, kImmediateBufferSize> _immediateAudioBuffer;
+ 
