@@ -155,6 +155,7 @@ func parsePrompt(s string) ([]promptArm, error) {
 }
 
 // combine chains the arms' template rewrites in order; at most one may set the sampling, one the about-me.
+// D's header becomes the first paragraph, so no template rewrite may follow D (it would rewrite the header as the persona).
 func combine(parts []promptArm) (promptArm, error) {
 	if len(parts) == 1 {
 		return parts[0], nil
@@ -165,6 +166,12 @@ func combine(parts []promptArm) (promptArm, error) {
 	for _, p := range parts {
 		if p.id == "0" {
 			return c, errors.New("prompt: arm 0 is no part of a combo")
+		}
+		if slices.Contains(ids, p.id) {
+			return c, fmt.Errorf("prompt: %s twice in one combo", p.id)
+		}
+		if p.tmpl != nil && slices.Contains(ids, "D") {
+			return c, fmt.Errorf("prompt: %s after D; put D last", p.id)
 		}
 		if (p.sampling != nil && c.sampling != nil) || (p.about != nil && c.about != nil) {
 			return c, fmt.Errorf("prompt: %s and another combo part both set the sampling or the about-me", p.id)
