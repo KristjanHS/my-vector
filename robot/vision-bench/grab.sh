@@ -11,10 +11,12 @@ n=${1:-1}
 out=$robot_dir/work/vision-bench; mkdir -p "$out"
 last=0
 for f in "$out"/[0-9][0-9].jpg; do [[ -f $f ]] || continue; k=$((10#$(basename "$f" .jpg))); ((k > last)) && last=$k; done
+((last + n <= 99)) || { echo "SETUP: $out would pass 99.jpg (last $last); move old photos away"; exit 2; }
+tmp=$out/.grab.tmp
+trap 'rm -f "$tmp"' EXIT
 for ((i = 1; i <= n; i++)); do
   name=$(printf '%02d.jpg' $((last + i)))
-  read -rp "set scene $i of $n, Enter to grab $name... " _ </dev/tty
-  tmp=$out/.grab.tmp
+  read -rp "set scene $i of $n, Enter to grab $name... " _ </dev/tty || { echo "SETUP: needs a terminal for Enter"; exit 2; }
   curl -fsS -m 25 -o "$tmp" "$server/api-sdk/fork_capture?serial=$esn" || { echo "FAIL: curl to $server"; rm -f "$tmp"; exit 1; }
   if [[ $(head -c 2 "$tmp" | od -An -tx1 | tr -d ' ') != ffd8 ]]; then
     echo "FAIL: not a JPEG: $(head -c 200 "$tmp")"; rm -f "$tmp"; exit 1

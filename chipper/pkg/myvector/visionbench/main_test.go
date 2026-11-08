@@ -42,6 +42,8 @@ func TestLoadChecklist(t *testing.T) {
 		"missing photo": {ok, "01.jpg"},
 		"empty et":      {`[{"photo":"01.jpg","et":[],"en":["cup"]}]`, "non-empty"},
 		"no en":         {`[{"photo":"01.jpg","et":["tass"]}]`, "non-empty"},
+		"two words":     {`[{"photo":"01.jpg","et":["tass"],"en":["coffee cup"]}]`, "one word"},
+		"empty word":    {`[{"photo":"01.jpg","et":[""],"en":["cup"]}]`, "one word"},
 	} {
 		photos := []string{"01.jpg"}
 		if name == "missing photo" {
