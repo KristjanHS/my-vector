@@ -37,7 +37,7 @@ EOF
 cat >"$tmp/bin/sshd" <<'EOF'
 #!/bin/sh
 case $1 in
--T) printf '%s\n' "hostkey /etc/ssh/ssh_host_ecdsa_key" "hostkey /etc/ssh/ssh_host_rsa_key" ;;
+-T) [ -n "${FAKE_NO_HOSTKEY:-}" ] || printf '%s\n' "hostkey /etc/ssh/ssh_host_ecdsa_key" "hostkey /etc/ssh/ssh_host_rsa_key" ;;
 -t) exit "${FAKE_SSHD_T:-0}" ;;
 esac
 EOF
@@ -105,6 +105,12 @@ rc=0; out=$(run "$r2" FAKE_SSHD_T=1) || rc=$?
 [[ $rc == 1 && $out == *"sshd -t rejects"* ]] || die "sshd -t fails: rc=$rc out=[$out]"
 is_image "$r2" && [[ ! -e $r2/etc/ssh/ssh_host_ecdsa_key.pub ]] || die "sshd -t fails: image keys not restored"
 cmp -s "$r2/kh" "$tmp/kh.before" || die "sshd -t fails: known_hosts changed"
+rc=0; out=$(run "$r2" FAKE_NO_HOSTKEY=1) || rc=$?
+[[ $rc == 1 && $out == *"sshd -T shows no hostkey"* && $out != *"refused; logged in"* ]] || die "robot half fails: rc=$rc out=[$out]"
+: >"$r2/kh.hostkey-new" # an earlier rewrite that did not finish
+rc=0; out=$(run "$r2") || rc=$?
+[[ $rc == 1 && $out == *"did not finish"* ]] && is_image "$r2" && cmp -s "$r2/kh" "$tmp/kh.before" || die "unfinished rewrite: rc=$rc out=[$out]"
+rm "$r2/kh.hostkey-new"
 
 r3=$(fresh newfail)
 cp "$r3/kh" "$tmp/kh.before"
