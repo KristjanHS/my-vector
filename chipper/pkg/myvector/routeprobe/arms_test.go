@@ -151,7 +151,7 @@ func TestParsePrompt(t *testing.T) {
 	if a, err := parsePrompt("0,S+R,D+G"); err != nil || len(a) != 3 || a[1].id != "S+R" || a[2].id != "D+G" {
 		t.Errorf("0,S+R,D+G = %v, %v", a, err)
 	}
-	for _, bad := range []string{"Q", "0,0", "S+R,S+R", "S+Q", "0+R", "G+N", "S+S"} {
+	for _, bad := range []string{"Q", "0,0", "S+R,S+R", "S+Q", "0+R", "G+N", "S+S", "R+R", "D+X", "D+P"} {
 		if _, err := parsePrompt(bad); err == nil {
 			t.Errorf("%q: no error", bad)
 		}
