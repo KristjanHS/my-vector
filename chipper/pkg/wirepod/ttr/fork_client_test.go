@@ -193,32 +193,42 @@ func TestForkCameraLegacyOllamaSampling(t *testing.T) {
 }
 
 // The camera chat goes through the client forkCameraReq swaps in (listening: on Ollama, as forkResolve); false
-// (legacy) keeps the Knowledge client. A miss lands on the other fake, which also stands in for Claude.
+// (legacy) keeps the Knowledge client. Claude has its own fake, so a Claude swap is told apart from no swap.
 func TestForkCameraClient(t *testing.T) {
 	ollama, claude := llm.Profile{Provider: llm.Ollama, Model: "gemma4:e4b"}, llm.Profile{Provider: llm.Claude, Model: "claude-haiku-5-5"}
+	const vision, knowledge, claudeHit = "vision", "knowledge", "claude"
 	for _, w := range []struct {
-		name, l, model     string
-		en, et             *llm.Profile
-		listening, swapped bool
+		name, l, model, hit string // hit: the fake that must get the chat
+		en, et              *llm.Profile
+		listening, ollamaKG bool // ollamaKG: Knowledge is "custom" at the vision fake's Ollama endpoint, model "llama:k"
 	}{
-		{"et ollama", lang.Estonian, "gemma4:e4b", &ollama, &llm.Profile{Provider: llm.Ollama, Model: "estllm:x"}, false, true},
-		{"legacy en", lang.English, "gpt-4.1", nil, nil, false, false},
-		{"et claude listening", lang.Estonian, "gemma4:e4b", &ollama, &claude, true, true},
-		{"en claude listening", lang.English, listen.Model, &claude, &claude, true, true},
+		{"et ollama", lang.Estonian, "gemma4:e4b", vision, &ollama, &llm.Profile{Provider: llm.Ollama, Model: "estllm:x"}, false, false},
+		{"legacy en", lang.English, "gpt-4.1", knowledge, nil, nil, false, false},
+		{"et claude listening", lang.Estonian, "gemma4:e4b", vision, &ollama, &claude, true, false},
+		{"en claude listening", lang.English, listen.Model, vision, &claude, &claude, true, false},
+		{"legacy et listening", lang.Estonian, "llama:k", vision, nil, nil, true, true},
+		{"legacy en listening", lang.English, listen.Model, vision, nil, nil, true, true},
+		{"en claude", lang.English, "claude-haiku-5-5", claudeHit, &claude, &ollama, false, false},
 	} {
-		vision, knowledge := newFakeLLM(t), newFakeLLM(t)
-		useAnthropic(t, knowledge.URL)
+		fakes := map[string]*fakeLLM{vision: newFakeLLM(t), knowledge: newFakeLLM(t), claudeHit: newFakeLLM(t)}
+		useAnthropic(t, fakes[claudeHit].URL)
 		useKnowledge(t, "openai", "", "gpt-4.1")
+		if w.ollamaKG {
+			old := llm.OllamaPort
+			llm.OllamaPort = fakes[vision].URL[strings.LastIndex(fakes[vision].URL, ":")+1:]
+			t.Cleanup(func() { llm.OllamaPort = old })
+			useKnowledge(t, "custom", fakes[vision].URL+"/v1", "llama:k")
+		}
 		lang.UseForTest(t, w.l)
 		if w.en != nil {
-			saveLLM(t, w.l, llm.Config{OllamaURL: vision.URL, ClaudeKey: testClaudeKey, Profiles: map[string]llm.Profile{lang.English: *w.en, lang.Estonian: *w.et}})
+			saveLLM(t, w.l, llm.Config{OllamaURL: fakes[vision].URL, ClaudeKey: testClaudeKey, Profiles: map[string]llm.Profile{lang.English: *w.en, lang.Estonian: *w.et}})
 		}
 		freshListening(t)
 		if w.listening {
 			forkListening.Activate("00e20100", forkNow())
 		}
 		cfg := openai.DefaultConfig("")
-		cfg.BaseURL = knowledge.URL + "/v1"
+		cfg.BaseURL = fakes[knowledge].URL + "/v1"
 		c := openai.NewClientWithConfig(cfg)
 		r := openai.ChatCompletionRequest{Model: openai.GPT4oMini, Messages: []openai.ChatCompletionMessage{{Role: "user", Content: "mida sa näed?"}}}
 		done := forkCameraReq(&r, &c)
@@ -226,12 +236,13 @@ func TestForkCameraClient(t *testing.T) {
 			t.Fatal(err)
 		}
 		done()
-		hit, miss := vision, knowledge
-		if !w.swapped {
-			hit, miss = knowledge, vision
-		}
-		if hit.path != "/v1/chat/completions" || !strings.Contains(hit.body, `"model":"`+w.model+`"`) || miss.path != "" {
-			t.Errorf("%s: hit %q %s, other fake path %q", w.name, hit.path, hit.body, miss.path)
+		for k, f := range fakes {
+			if k == w.hit && (f.path != "/v1/chat/completions" || !strings.Contains(f.body, `"model":"`+w.model+`"`)) {
+				t.Errorf("%s: %s fake got %q %s", w.name, k, f.path, f.body)
+			}
+			if k != w.hit && f.path != "" {
+				t.Errorf("%s: %s fake got the chat, want %s", w.name, k, w.hit)
+			}
 		}
 	}
 }
