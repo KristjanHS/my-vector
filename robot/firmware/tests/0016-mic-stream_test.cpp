@@ -28,6 +28,7 @@
 
 #define ANKI_PLATFORM_VICOS 1 // compiles the affinity block too (a failed pin only logs)
 #define CONSOLE_VAR_RANGED(type, name, path, def, lo, hi) type name = def
+#define MYVECTOR_MIC_HEALTHY_S 1 // a healthy connection in 1 s, not 10
 static std::mutex mvLogMu;
 static std::vector<std::string> mvLog;
 __attribute__((format(printf, 2, 3))) static void MvLog(const char* ev, const char* fmt, ...)
@@ -306,12 +307,12 @@ static void testSender()
   CHECK(sMyVectorMicSenderRunning);
   int c = acceptIn(ls, 2000);
   CHECK(c >= 0);
-  const int sfd = senderFd(c); // half-open: keepalive 5 s idle + 3 probes 2 s apart, unacked data 3 s
+  bool eof;
+  const std::string got = readFor(c, 1u << 20, 600, eof);
+  const int sfd = senderFd(c); // read after the data: the sender set its options right after connect
   CHECK(sockOpt(sfd, SOL_SOCKET, SO_KEEPALIVE) == 1 && sockOpt(sfd, IPPROTO_TCP, TCP_KEEPIDLE) == 5 &&
         sockOpt(sfd, IPPROTO_TCP, TCP_KEEPINTVL) == 2 && sockOpt(sfd, IPPROTO_TCP, TCP_KEEPCNT) == 3 &&
         sockOpt(sfd, IPPROTO_TCP, TCP_USER_TIMEOUT) == 3000);
-  bool eof;
-  const std::string got = readFor(c, 1u << 20, 600, eof);
   std::vector<long> seqs;
   for (size_t o = 0; o + sizeof(Blk) <= got.size(); o += sizeof(Blk)) { seqs.push_back(seqOf(reinterpret_cast<const int16_t*>(got.data() + o))); }
   CHECK(got.size() % sizeof(Blk) == 0);
@@ -329,7 +330,14 @@ static void testSender()
   c = acceptIn(ls, 5000);
   const long redial2 = msSince(t0);
   CHECK(c >= 0 && redial2 >= 1900);
-  printf("sender: %zu bytes, redials after %ld then %ld ms\n", got.size(), redial, redial2);
+  // A connection that lived kMyVectorMicHealthyS resets the backoff (4 s by now) to the 1 s redial.
+  std::this_thread::sleep_for(std::chrono::milliseconds(1300));
+  close(c);
+  t0 = std::chrono::steady_clock::now();
+  c = acceptIn(ls, 6000);
+  const long redial3 = msSince(t0);
+  CHECK(c >= 0 && redial3 < 1500);
+  printf("sender: %zu bytes, redials after %ld, %ld, then healthy %ld ms\n", got.size(), redial, redial2, redial3);
 
   // A short port 0 (inside one 100 ms wait) still forces a fresh connection, at once (backoff reset).
   __atomic_store_n(&kMyVector_MicStreamPort, 0, __ATOMIC_RELAXED);
