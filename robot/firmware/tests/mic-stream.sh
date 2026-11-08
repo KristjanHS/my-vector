@@ -11,6 +11,7 @@ src=${VICTOR_SRC:-$main/robot/work/wire-os-victor}
 json=$src/lib/util/source/3rd/jsoncpp
 command -v g++ >/dev/null || { echo "SKIP: mic-stream host test: no g++"; exit 0; }
 [[ -f $json/jsoncpp.cpp ]] || { echo "SKIP: mic-stream host test: no jsoncpp in a victor clone at $src"; exit 0; }
+mkdir -p "$main/robot/work" # gitignored scratch; absent with VICTOR_SRC elsewhere
 tmp=$(mktemp -d "$main/robot/work/mic-stream-test.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
@@ -38,4 +39,4 @@ rc=0
 timeout 60 "$tmp/t" || rc=$?
 ((rc != 124)) || die "timed out (sender never stops or a read never ends)"
 ((rc == 0)) || die "0016-mic-stream_test.cpp exit $rc"
-echo "mic-stream host test OK (${touch[0]##*/}; gate, ring race/overflow, port 0, URL host, loopback sender)"
+echo "mic-stream host test OK (${touch[0]##*/}; gate, ring race/overflow, port 0, URL host, loopback sender: backoff, keepalive, toggle, stall, no-thread)"
