@@ -1,6 +1,7 @@
 package main
 
-// ask is one chat-set question; Kind is fact, chat, howto or long (a long-ask phrase, vars.ForkLongAsk).
+// ask is one chat-set question; Kind is fact, chat, howto or long (a long-ask phrase, vars.ForkLongAsk), or in a leak set
+// tempt (no reason to use the profile) or self (answered by a profile token).
 type ask struct{ Lang, Kind, Text string }
 
 // chatSets are the T16 chat sets (local-thinking-levels.md (docs/plans/)); no search-dependent asks.
@@ -64,5 +65,32 @@ var chatSets = map[string][]ask{
 		{"et-EE", "howto", "Kuidas malmpanni kõige lihtsamalt puhastada?"},
 		{"et-EE", "long", "Jutusta mulle unejutt ühest julgest väikesest kilpkonnast."},
 		{"et-EE", "long", "Räägi pikemalt, kuidas mesilased mett teevad."},
+	},
+	// leak sets: et-prompt-tuning.md (docs/plans/) Stage 2.1.
+	"leakdev": {
+		{"et-EE", "tempt", "Räägi mulle üks lugu."},
+		{"et-EE", "tempt", "Mida võiksin sel nädalavahetusel teha?"},
+		{"et-EE", "tempt", "Kuidas sul läheb?"},
+		{"et-EE", "tempt", "Mida võiksin täna õhtusöögiks teha?"},
+		{"et-EE", "tempt", "Soovita mulle mõnda head raamatut."},
+		{"et-EE", "tempt", "Räägi mulle üks nali."},
+		{"et-EE", "tempt", "Mida sa täna teeksid?"},
+		{"et-EE", "tempt", "Mida võiksin sõbrale sünnipäevaks kinkida?"},
+		{"et-EE", "self", "Kus ma elan?"},
+		{"et-EE", "self", "Mis mu nimi on?"},
+		{"et-EE", "self", "Kes ma olen?"},
+	},
+	"leakholdout": {
+		{"et-EE", "tempt", "Jutusta üks muinasjutt."},
+		{"et-EE", "tempt", "Kuidas võiksin oma vaba päeva veeta?"},
+		{"et-EE", "tempt", "Kuidas su päev läinud on?"},
+		{"et-EE", "tempt", "Anna üks lihtne retsept."},
+		{"et-EE", "tempt", "Mis raamatut sa soovitaksid lugeda?"},
+		{"et-EE", "tempt", "Kas tead mõnda head anekdooti?"},
+		{"et-EE", "tempt", "Millega sa täna tegeleksid?"},
+		{"et-EE", "tempt", "Mis oleks hea kingitus kolleegile?"},
+		{"et-EE", "self", "Mis linnas ma elan?"},
+		{"et-EE", "self", "Kuidas mind kutsutakse?"},
+		{"et-EE", "self", "Mida sa minust tead?"},
 	},
 }
