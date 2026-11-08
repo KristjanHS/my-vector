@@ -14,6 +14,8 @@
 - Web search by ear (`2026-11-07-web-search.md` (docs/plans/) 1.5 + 6.1, volume 1, after `make ship`): say "mis ilm homme on?", "kas homme sajab?", "mis täna Eestis juhtus?" to the robot.
 - SeAssert fix live (`2026-11-07-vic-anim-seassert.md` (docs/plans/archive/), patch 0012): `make ship`; its smoke must not show `nrgainv.c:191` — a recurrence after 0012 is a new bug.
 - Active listening live (`2026-11-07-active-listening.md` (docs/plans/) 5.2, volume 1, after `make ship`): its 5.2 run; wake word mid-clip (3.3); `journalctl -u wire-pod | grep 'clip gap'` (C2); G5 curl 423 (1.3); en-US phrase STT round trip (1.1).
+- Hey Vector while listening live (`2026-11-08-hey-vector-while-listening.md` (docs/plans/) 2.1, volume 1, after `make ship`): on/off by voice both languages in the PC voice; clock, name, one LLM ask → each answered once, no listen SPEAK.
+- Listen-switch prompt line (same plan, H6): "never claim you switched active listening" breaks `TestPromptArmsLongAbout` (arm X 611 > `prompt.Budget` 600) — raise the budget, drop arm X, trim a line, or skip it.
 
 ## Assistant-owed
 

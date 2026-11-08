@@ -1,6 +1,6 @@
 # "Hey Vector" asks while active listening is on
 
-Status: 1.1–1.5 committed 2026-11-08 except the H4 prompt line (H6 USER DECISION); 2.1 USER live owed.
+Status: ✅ SHIPPED 2026-11-08 (code on main); 2.1 live + H6 decision → `docs/backlog.md` §OWED[USER].
 
 ## Rulings
 
