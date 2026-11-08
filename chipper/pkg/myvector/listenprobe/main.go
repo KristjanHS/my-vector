@@ -1,12 +1,11 @@
 // Command listenprobe scores candidate active-listening prompts and models (2026-11-07-active-listening.md, 2026-11-07-et-listen-model.md (docs/plans/)).
 //
-//	go run ./pkg/myvector/listenprobe [-config ../../../my-vector/secrets/server/myvectorConfig.json] [-set dev,holdout -lang et-EE -models a,b -arm "prompt 2" -show]   # from chipper/
+//	go run ./pkg/myvector/listenprobe [-config ../../../my-vector/secrets/server/myvectorConfig.json] [-set dev,holdout -lang et-EE -models a,b -arm "prompt 2" -think none,low -think-budget N -show]   # from chipper/
 //
-// Verdict: each language's saved Ollama profile, or each -models entry on its own; -alt models are reported only.
+// Verdict: each language's saved Ollama profile, or each -models entry on its own, per -think arm; -alt models are reported only.
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/listen"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/probekit"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -131,17 +131,12 @@ type target struct {
 	group int // index into the verdict groups; -1 = alternate, reported only
 }
 
-func ask(c *openai.Client, model, sys, msg string, max int) (string, error) {
-	r := openai.ChatCompletionRequest{Model: model, ReasoningEffort: "none", MaxTokens: max, Messages: []openai.ChatCompletionMessage{
+// request is one snippet call; t.Apply with listen.ReplyCap, as listen.Ask.
+func request(model, sys, msg string, t llm.Thinking) openai.ChatCompletionRequest {
+	r := openai.ChatCompletionRequest{Model: model, Messages: []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: sys}, {Role: openai.ChatMessageRoleUser, Content: msg}}}
-	llm.SamplingFor(llm.Ollama, model).Apply(&r) // same sampling as listen.Ask
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	res, err := c.CreateChatCompletion(ctx, r)
-	if err != nil || len(res.Choices) == 0 {
-		return "", fmt.Errorf("no answer: %v", err)
-	}
-	return strings.TrimSpace(res.Choices[0].Message.Content), nil
+	t.Apply(&r, listen.ReplyCap)
+	return r
 }
 
 type score struct{ ok, n, falseSpeak int }
@@ -186,7 +181,15 @@ func main() {
 	only := flag.String("arm", "", `run only this arm ("prompt 2")`)
 	langF := flag.String("lang", "", "only this language: en-US or et-EE")
 	show := flag.Bool("show", false, "print every reply, not only the misses")
+	thinkF := flag.String("think", "none", "thinking arms, comma-separated: none, low, medium, high")
+	budget := flag.Int("think-budget", 0, "thinking budget in tokens for every arm but none (0 = llm table)")
 	flag.Parse()
+	levels, err := probekit.ParseThink(*thinkF)
+	if err != nil {
+		die(err.Error())
+	}
+	think := probekit.Arms(levels, *budget)
+	multi := len(think) > 1
 	langs := []string{lang.English, lang.Estonian}
 	if *langF != "" {
 		if !contains(langs, *langF) {
@@ -252,6 +255,23 @@ func main() {
 			}
 		}
 	}
+	warm := make([]error, len(ts))
+	groupModel := make([]string, len(groups))
+	for i, tg := range ts {
+		if hasLang(snippets, tg.langs) {
+			warm[i] = probekit.Warm(tg.t.BaseURL, tg.t.Model)
+		}
+		if tg.group >= 0 && groupModel[tg.group] == "" {
+			groupModel[tg.group] = tg.t.Model
+		}
+	}
+	// pre is the think-arm label prefix, set only when more than one think arm runs.
+	pre := func(th probekit.Arm, model string) string {
+		if !multi {
+			return ""
+		}
+		return th.Label(model) + " "
+	}
 	var best *verdict
 	ran := false
 	for _, a := range arms {
@@ -260,100 +280,119 @@ func main() {
 		}
 		ran = true
 		fmt.Println(a.name)
-		gms := make([][]time.Duration, len(groups))
-		gsc := make([]map[string]score, len(groups))
+		gms := make([][][]time.Duration, len(groups)) // [group][think arm]
+		gsc := make([][]map[string]score, len(groups))
+		for g := range groups {
+			gms[g], gsc[g] = make([][]time.Duration, len(think)), make([]map[string]score, len(think))
+		}
 		failed := make([]bool, len(groups))
-		for _, tg := range ts {
+		for i, tg := range ts {
 			if !hasLang(snippets, tg.langs) {
 				continue
 			}
-			cfg := openai.DefaultConfig(tg.t.Key)
-			cfg.BaseURL = tg.t.BaseURL
-			cl := openai.NewClientWithConfig(cfg)
-			if _, err := ask(cl, tg.t.Model, a.sys, "warm up", 8); err != nil {
-				fmt.Printf("  %-34s error: %v\n", tg.name, err)
+			if warm[i] != nil {
+				fmt.Printf("  %-34s error: %v\n", tg.name, warm[i])
 				if tg.group >= 0 {
 					failed[tg.group] = true
 				}
 				continue
 			}
-			var ms []time.Duration
-			sc := map[string]score{}
+			ms := make([][]time.Duration, len(think))
+			calls := make([][]probekit.Call, len(think))
+			sc := make([]map[string]score, len(think))
+			for k := range think {
+				sc[k] = map[string]score{}
+			}
 			for _, s := range snippets {
 				if !contains(tg.langs, s.l) {
 					continue
 				}
-				start := time.Now()
-				got, err := ask(cl, tg.t.Model, a.sys, listen.User(s.before, s.now), 80)
-				ms = append(ms, time.Since(start))
-				sp := err == nil && listen.Parse(got)
-				x := sc[s.l]
-				x.n++
-				hit := err == nil && sp == s.speak
-				if hit {
-					x.ok++
-				} else if sp && !s.speak {
-					x.falseSpeak++
-				}
-				if !hit || *show {
-					tag := "miss"
-					if hit {
-						tag = "  ok"
+				for k, th := range think {
+					start := time.Now()
+					c, err := probekit.Chat(tg.t.BaseURL, request(tg.t.Model, a.sys, listen.User(s.before, s.now), th.Thinking(tg.t.Model, llm.PathListen)))
+					ms[k] = append(ms[k], time.Since(start))
+					if err == nil {
+						calls[k] = append(calls[k], c)
 					}
-					fmt.Printf("    %s %s %-10s want speak=%v → %q %v\n", tag, s.l, s.kind, s.speak, got, err)
+					got := c.Reply
+					sp := err == nil && listen.Parse(got)
+					x := sc[k][s.l]
+					x.n++
+					hit := err == nil && sp == s.speak
+					if hit {
+						x.ok++
+					} else if sp && !s.speak {
+						x.falseSpeak++
+					}
+					if !hit || *show {
+						tag := "miss"
+						if hit {
+							tag = "  ok"
+						}
+						fmt.Printf("    %s%s %s %-10s want speak=%v → %q %v\n", pre(th, tg.t.Model), tag, s.l, s.kind, s.speak, got, err)
+					}
+					sc[k][s.l] = x
 				}
-				sc[s.l] = x
 			}
-			if len(ms) == 0 {
-				continue
-			}
-			sortD(ms)
-			fmt.Printf("  %-34s", tg.name)
-			for _, l := range tg.langs {
-				if sc[l].n == 0 {
+			for k, th := range think {
+				if len(ms[k]) == 0 {
 					continue
 				}
-				fmt.Printf("  %s %d/%d fs %d", l, sc[l].ok, sc[l].n, sc[l].falseSpeak)
-			}
-			fmt.Printf("  median %5d ms  max %5d ms", ms[len(ms)/2].Milliseconds(), ms[len(ms)-1].Milliseconds())
-			if tg.group < 0 {
-				fmt.Print("  (alternate)")
-			}
-			fmt.Println()
-			if tg.group >= 0 {
-				gms[tg.group] = append(gms[tg.group], ms...)
-				if gsc[tg.group] == nil {
-					gsc[tg.group] = map[string]score{}
+				sortD(ms[k])
+				fmt.Printf("  %s%-34s", pre(th, tg.t.Model), tg.name)
+				for _, l := range tg.langs {
+					if sc[k][l].n == 0 {
+						continue
+					}
+					fmt.Printf("  %s %d/%d fs %d", l, sc[k][l].ok, sc[k][l].n, sc[k][l].falseSpeak)
 				}
-				for l, x := range sc {
-					gsc[tg.group][l] = x
+				fmt.Printf("  median %5d ms  max %5d ms", ms[k][len(ms[k])/2].Milliseconds(), ms[k][len(ms[k])-1].Milliseconds())
+				if tg.group < 0 {
+					fmt.Print("  (alternate)")
+				}
+				fmt.Println()
+				fmt.Println("    " + probekit.Summarize(calls[k], probekit.RunesPerToken).Line(th.Label(tg.t.Model)))
+				if tg.group >= 0 {
+					gms[tg.group][k] = append(gms[tg.group][k], ms[k]...)
+					if gsc[tg.group][k] == nil {
+						gsc[tg.group][k] = map[string]score{}
+					}
+					for l, x := range sc[k] {
+						gsc[tg.group][k][l] = x
+					}
 				}
 			}
 		}
 		for g, name := range groups {
-			if failed[g] || len(gms[g]) == 0 {
-				fmt.Printf("  verdict %-26s incomplete\n", name)
-				continue
-			}
-			sortD(gms[g])
-			v := verdict{arm: a.name, name: name, fs: map[string]int{}, med: gms[g][len(gms[g])/2]}
-			v.pass = v.med <= maxMedian
-			for l, x := range gsc[g] {
-				v.ok += x.ok
-				v.n += x.n
-				v.fs[l] = x.falseSpeak
-				v.pass = v.pass && x.falseSpeak <= maxFalseSpeak
-			}
-			v.pass = v.pass && v.ok*20 >= passCorrect*v.n
-			fmt.Printf("  verdict %-26s %d/%d  fs", name, v.ok, v.n)
-			for _, l := range langs {
-				if x, ok := v.fs[l]; ok {
-					fmt.Printf(" %s %d", l, x)
+			for k, th := range think {
+				p := pre(th, groupModel[g])
+				if failed[g] || len(gms[g][k]) == 0 {
+					fmt.Printf("  verdict %s%-26s incomplete\n", p, name)
+					continue
 				}
-			}
-			fmt.Printf("  median %d ms  pass=%v\n", v.med.Milliseconds(), v.pass)
-			if v.pass && a.sys == listen.Prompt && (best == nil || better(v, *best)) { // only the shipped prompt wins (E7)
-				best = &v
+				sortD(gms[g][k])
+				v := verdict{arm: a.name, name: name, fs: map[string]int{}, med: gms[g][k][len(gms[g][k])/2]}
+				if multi {
+					v.arm += " think " + th.Label(groupModel[g])
+				}
+				v.pass = v.med <= maxMedian
+				for l, x := range gsc[g][k] {
+					v.ok += x.ok
+					v.n += x.n
+					v.fs[l] = x.falseSpeak
+					v.pass = v.pass && x.falseSpeak <= maxFalseSpeak
+				}
+				v.pass = v.pass && v.ok*20 >= passCorrect*v.n
+				fmt.Printf("  verdict %s%-26s %d/%d  fs", p, name, v.ok, v.n)
+				for _, l := range langs {
+					if x, ok := v.fs[l]; ok {
+						fmt.Printf(" %s %d", l, x)
+					}
+				}
+				fmt.Printf("  median %d ms  pass=%v\n", v.med.Milliseconds(), v.pass)
+				if v.pass && a.sys == listen.Prompt && (best == nil || better(v, *best)) { // only the shipped prompt wins (E7)
+					best = &v
+				}
 			}
 		}
 	}
