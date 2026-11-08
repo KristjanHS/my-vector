@@ -1,8 +1,11 @@
 package listen
 
 import (
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
 )
 
 func TestMatchTable(t *testing.T) {
@@ -14,7 +17,7 @@ func TestMatchTable(t *testing.T) {
 		"hey vector, turn off active listening", "deactivate the active listening", "turn active listening off"}
 	misses := []string{"activate the lights", "listening to music", "ära aktiveeri aktiivne kuulamine",
 		"the active listening off switch", "ei aktiveeri aktiivne kuulamine", "can you activate active listening for me",
-		"active listening", "", "shut up", "don't turn on active listening", "turn on the lights"}
+		"active listening", "", "shut up", "don't turn on active listening", "turn on the lights", "turn off the lights"}
 	for _, s := range on {
 		if isOn, ok := Match(s); !ok || !isOn {
 			t.Errorf("Match(%q) = %v %v, want on", s, isOn, ok)
@@ -92,5 +95,14 @@ func TestActivateTwiceKeepsState(t *testing.T) {
 	if !b.busy || b.streak != 1 || !s.Echo("a", at(7, 12, 1), at(7, 12, 2)) || !b.since.Equal(at(7, 12, 3)) {
 		t.Fatalf("second Activate: busy=%v streak=%d since=%v echo=%v, want busy, 1, 12:03, echo kept",
 			b.busy, b.streak, b.since, s.Echo("a", at(7, 12, 1), at(7, 12, 2)))
+	}
+}
+
+// quiet.Match runs first, so an exact overlap would make quiet silently win.
+func TestNoQuietOverlap(t *testing.T) {
+	for _, p := range append(slices.Clone(On), Off...) {
+		if slices.Contains(quiet.Phrases, p) {
+			t.Errorf("%q is also a quiet phrase", p)
+		}
 	}
 }
