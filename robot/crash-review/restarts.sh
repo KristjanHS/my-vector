@@ -35,7 +35,7 @@ for ((i = 1; i <= max; i++)); do
   for _ in $(seq 30); do ssh_ 'systemctl is-active -q fault-code.service' 2>/dev/null || break; sleep 2; done
   t0=$(ssh_ "touch $mark; date +%s") || { log "round $i: ssh failed"; sleep 10; continue; }
   if ((deploy)); then
-    # Same order as robot/firmware/ship.sh: deploy-v.sh (stop, rsync, start), then settings.sh (warn-only, as in ship).
+    # Same order as robot/firmware/ship.sh: deploy-v.sh (stop, rsync, start), then settings.sh (warn-only here).
     (cd "$src" && script -qec ./build/deploy-v.sh /dev/null) >"$out/deploy-$i.log" 2>&1 </dev/null ||
       { log "round $i: deploy failed, see $out/deploy-$i.log"; exit 2; }
     "$here/../firmware/settings.sh" >>"$out/deploy-$i.log" 2>&1 </dev/null || log "round $i: settings.sh exit $? (warn only)"

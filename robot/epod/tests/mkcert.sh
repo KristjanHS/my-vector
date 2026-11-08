@@ -19,6 +19,7 @@ for c in ca ep; do
   nb=$(date -u -d "$(openssl x509 -in "$o/$c.crt" -noout -startdate | cut -d= -f2)" +%s)
   ((nb <= $(date +%s) - 23 * 3600)) || die "$c.crt notBefore is not backdated a day"
 done
+[[ $(cd "$o" && echo * .mk*) == 'ca.crt ca.key ep.crt ep.key .mk*' ]] || die "$o holds [$(ls -A "$o")], want the 4 files only (work dir removed)"
 [[ $(stat -c %a "$o/ca.key") == 600 && $(stat -c %a "$o/ep.key") == 600 ]] || die "key files not mode 600"
 
 # Name constraint: a leaf for another name, signed by this CA, must not verify.
@@ -28,12 +29,12 @@ printf 'subjectAltName=DNS:other.local\n' >"$tmp/x.ext"
 openssl x509 -req -in "$tmp/x.csr" -CA "$o/ca.crt" -CAkey "$o/ca.key" -set_serial 7 -days 1 -extfile "$tmp/x.ext" -out "$tmp/x.crt" 2>/dev/null
 ! openssl verify -CAfile "$o/ca.crt" "$tmp/x.crt" >/dev/null 2>&1 || die "CA signs other.local (no name constraint)"
 
-ddl=$main/robot/work/wire-os-victor/cloud/internal/jdocs/escapepod_root_cert.go
-if [[ -f $ddl ]]; then
-  sed -n '/BEGIN CERTIFICATE/,/END CERTIFICATE/{s/`//g;p}' "$ddl" >"$tmp/ddl.pem"
+clone=$main/robot/work/wire-os-victor pin=$(sed -n 's/^pin=//p' "$robot/firmware/apply.sh")
+if ddl=$(git -C "$clone" show "$pin:cloud/internal/jdocs/escapepod_root_cert.go" 2>/dev/null); then # at pin: 0015 deletes it
+  sed -n '/BEGIN CERTIFICATE/,/END CERTIFICATE/{s/`//g;p}' <<<"$ddl" >"$tmp/ddl.pem"
   openssl verify -CAfile "$tmp/ddl.pem" "$robot/../chipper/epod/ep.crt" >/dev/null 2>&1 || die "DDL root extract does not verify upstream ep.crt"
   ! openssl verify -CAfile "$tmp/ddl.pem" "$o/ep.crt" >/dev/null 2>&1 || die "our leaf verifies against the DDL root"
-else echo "epod mkcert: DDL-root check skipped (no wire-os-victor clone)"; fi
+else echo "epod mkcert: DDL-root check skipped (no wire-os-victor clone at $clone)"; fi
 
 sum=$(sha256sum "$o/ca.crt")
 rm "$o/ca.key" # the post-copy state: one file left must still refuse

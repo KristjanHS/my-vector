@@ -10,7 +10,7 @@ for f in ca.crt ca.key ep.crt ep.key; do
 done
 umask 077
 mkdir -p "$out"
-w=$(mktemp -d)
+w=$(mktemp -d "$out/.mk.XXXXXX") # in $out: ca.key never sits in /tmp
 trap 'rm -rf "$w"' EXIT
 cat >"$w/cnf" <<EOF
 [req]
@@ -54,6 +54,6 @@ sign "$w/ca.csr" "$w/ca.crt" 7305 ca_ext -selfsign -keyfile "$w/ca.key"
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$w/ep.key"
 openssl req -new -config "$w/cnf" -key "$w/ep.key" -subj "/CN=escapepod.local" -out "$w/ep.csr"
 sign "$w/ep.csr" "$w/ep.crt" 3653 leaf_ext -cert "$w/ca.crt" -keyfile "$w/ca.key"
+openssl verify -CAfile "$w/ca.crt" "$w/ep.crt"
 cp "$w/ca.key" "$w/ca.crt" "$w/ep.key" "$w/ep.crt" "$out/"
-openssl verify -CAfile "$out/ca.crt" "$out/ep.crt"
 echo "next: copy $out/ca.key to the password manager, then rm it (nothing on the laptop reads it)"

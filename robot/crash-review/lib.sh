@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Sourced by restarts.sh -d and catch.sh -d, after robot/env.sh: refuse to deploy a clone that is off the series tip,
-# has uncommitted edits, or holds a source file newer than its last build; then point deploy-v.sh at the robot.
+# has uncommitted edits, holds a source file newer than its last build, or fails the T6 pod-trust interlock; then point deploy-v.sh at the robot.
 clone_ready() {
   local src=$1 fw=$2 tip stale
   tip=$("$fw/apply.sh" --check | tail -1) || { echo "SETUP: robot/firmware/apply.sh --check failed (above)" >&2; exit 2; }
@@ -10,5 +10,6 @@ clone_ready() {
   stale=$(find "$src" \( -path "$src/_build" -o -name .git \) -prune -o -type f -newer "$src/_build/vicos/Release/.ninja_log" \
     ! -name .clangd ! -name compile_commands.json ! -name robot_ip.txt -print -quit)
   [[ -z $stale ]] || { echo "SETUP: ${stale#"$src"/} is newer than the last build (run ./build/build-v.sh in $src)" >&2; exit 2; }
+  "$fw/../epod/interlock.sh" "$fw/series" || { echo "SETUP: pod-trust interlock (above)" >&2; exit 2; }
   write_clone_ip "$src"
 }
