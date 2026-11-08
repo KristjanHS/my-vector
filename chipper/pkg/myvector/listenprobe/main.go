@@ -352,7 +352,7 @@ func main() {
 					fmt.Print("  (alternate)")
 				}
 				fmt.Println()
-				fmt.Println("    " + probekit.Summarize(calls[k], probekit.RunesPerToken).Line(th.Label(tg.t.Model)))
+				fmt.Println("    " + probekit.Summarize(calls[k]).Line(th.Label(tg.t.Model)))
 				if tg.group >= 0 {
 					gms[tg.group][k] = append(gms[tg.group][k], ms[k]...)
 					if gsc[tg.group][k] == nil {

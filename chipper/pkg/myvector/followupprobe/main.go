@@ -116,7 +116,7 @@ func call(c *openai.Client, t llm.Target, r openai.ChatCompletionRequest) (probe
 	}
 	ch := res.Choices[0]
 	return probekit.Call{Reply: strings.TrimSpace(ch.Message.Content), Finish: string(ch.FinishReason),
-		Prompt: res.Usage.PromptTokens, Completion: res.Usage.CompletionTokens, Dur: d}, nil
+		Prompt: res.Usage.PromptTokens, Completion: res.Usage.CompletionTokens, ReplyTok: res.Usage.CompletionTokens, Dur: d}, nil // Claude: no thinking
 }
 
 func yes(s string) bool { return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(s)), "YES") }
@@ -237,7 +237,7 @@ func main() {
 				fmt.Printf("  %s%-34s en %d/%d  et %d/%d  median %4d ms  max %4d ms  counts for %v\n", pre(a), tg.name,
 					sc[lang.English][0], sc[lang.English][1], sc[lang.Estonian][0], sc[lang.Estonian][1],
 					ms[k][len(ms[k])/2].Milliseconds(), ms[k][len(ms[k])-1].Milliseconds(), tg.langs)
-				fmt.Println("    " + probekit.Summarize(calls[k], probekit.RunesPerToken).Line(a.Label(tg.t.Model)))
+				fmt.Println("    " + probekit.Summarize(calls[k]).Line(a.Label(tg.t.Model)))
 			}
 		}
 	}
