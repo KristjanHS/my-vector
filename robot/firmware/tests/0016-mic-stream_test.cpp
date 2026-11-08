@@ -3,6 +3,7 @@
 #include "json/json.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <pthread.h>
 #include <sys/resource.h>
@@ -40,6 +41,19 @@ __attribute__((format(printf, 2, 3))) static void MvLog(const char* ev, const ch
   mvLog.push_back(std::string(ev) + " " + b);
 }
 #define PRINT_NAMED_WARNING MvLog
+static int mvLogged(const char* needle)
+{
+  std::lock_guard<std::mutex> l(mvLogMu);
+  return static_cast<int>(std::count_if(mvLog.begin(), mvLog.end(), [&](const std::string& s) { return s.find(needle) != std::string::npos; }));
+}
+// The blocks' pthread_create, failing on demand (EAGAIN = the thread limit).
+static int mvCreateFail = 0, mvCreates = 0;
+static int mvPthreadCreate(pthread_t* t, const pthread_attr_t* a, void* (*f)(void*), void* arg)
+{
+  ++mvCreates;
+  return mvCreateFail != 0 ? mvCreateFail : pthread_create(t, a, f, arg);
+}
+#define pthread_create mvPthreadCreate
 namespace Anki {
 namespace Util { inline void SetThreadName(pthread_t, const char*) {} }
 namespace AudioUtil { using AudioSample = int16_t; }
@@ -102,18 +116,18 @@ static void testGate()
   auto* t = new MyVectorMicTap;
   feed(*t, 8093, 0, 500, false); // gate closed: silence sends nothing
   CHECK(drain(t->ring).empty());
-  // 500 silent, 50 speech, 200 silent: pre-roll 470..499, speech 500..549, hangover 550..619.
+  // 500 silent, 50 speech, 200 silent: pre-roll 470..499, speech 500..549, hangover 550..589.
   feed(*t, 8093, 500, 550, true);
   feed(*t, 8093, 550, 750, false);
-  CHECK(drain(t->ring) == range(470, 620));
-  // 130 silent, 20 speech, 40 silent (< hangover: re-armed), 5 speech, 100 silent: one run from pre-roll 730.
+  CHECK(drain(t->ring) == range(470, 590));
+  // 170 silent, 20 speech, 30 silent (< hangover: re-armed), 5 speech, 100 silent: one run from pre-roll 730.
   feed(*t, 8093, 750, 760, false);
   CHECK(drain(t->ring).empty());
   feed(*t, 8093, 760, 780, true);
-  feed(*t, 8093, 780, 820, false);
-  feed(*t, 8093, 820, 825, true);
-  feed(*t, 8093, 825, 925, false);
-  CHECK(drain(t->ring) == range(730, 895));
+  feed(*t, 8093, 780, 810, false);
+  feed(*t, 8093, 810, 815, true);
+  feed(*t, 8093, 815, 915, false);
+  CHECK(drain(t->ring) == range(730, 855));
   delete t;
 }
 
@@ -227,9 +241,51 @@ static void hook(uint32_t seq, bool vad)
 #include "mic-stream-hook.inc"
 }
 
+// The sender's fd behind accepted connection c (same process): the socket whose local address is c's peer.
+static int senderFd(int c)
+{
+  sockaddr_in peer{}, me{};
+  socklen_t l = sizeof(peer);
+  if (getpeername(c, reinterpret_cast<sockaddr*>(&peer), &l) != 0) { return -1; }
+  for (int fd = 0; fd < 1024; ++fd) {
+    l = sizeof(me);
+    if (fd != c && getsockname(fd, reinterpret_cast<sockaddr*>(&me), &l) == 0 && l == sizeof(me) &&
+        me.sin_port == peer.sin_port && me.sin_addr.s_addr == peer.sin_addr.s_addr) { return fd; }
+  }
+  return -1;
+}
+static int sockOpt(int fd, int level, int name)
+{
+  int v = -1;
+  socklen_t l = sizeof(v);
+  return getsockopt(fd, level, name, &v, &l) == 0 ? v : -1;
+}
+
+// No sender thread (pthread_create fails): one log line, no retry on a later off -> on, the stream stays off.
+static void testSenderStartFails()
+{
+  mvCreateFail = EAGAIN;
+  __atomic_store_n(&kMyVector_MicStreamPort, 1, __ATOMIC_RELAXED);
+  for (uint32_t i = 0; i < 50; ++i) { hook(i, true); }
+  __atomic_store_n(&kMyVector_MicStreamPort, 0, __ATOMIC_RELAXED);
+  hook(50, false);
+  __atomic_store_n(&kMyVector_MicStreamPort, 1, __ATOMIC_RELAXED);
+  hook(51, true);
+  CHECK(mvCreates == 1 && !sMyVectorMicSenderRunning);
+  CHECK(mvLogged("no sender thread") == 1);
+  __atomic_store_n(&kMyVector_MicStreamPort, 0, __ATOMIC_RELAXED);
+  hook(52, false);
+  sMyVectorMicTap.ring.Skip(); // no reader ran: drop these blocks before testSender's sender starts
+  mvCreateFail = 0;
+  mvCreates = 0;
+  sMyVectorMicSenderTried = false;
+}
+
 static void testSender()
 {
   const int ls = socket(AF_INET, SOCK_STREAM, 0);
+  const int rcvbuf = 4096; // accepted sockets inherit it: a peer that never reads fills up fast (stall)
+  setsockopt(ls, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
   sockaddr_in sa{};
   sa.sin_family = AF_INET;
   sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -240,22 +296,26 @@ static void testSender()
   std::ofstream(MV_TEST_VOICE_FILE) << "{\"url\":\"http://127.0.0.1:8091\",\"voice\":\"af_bella\"}";
 
   for (uint32_t i = 0; i < 100; ++i) { hook(i, true); } // port 0: no thread, no socket
-  CHECK(sMyVectorMicSender == nullptr);
+  CHECK(!sMyVectorMicSenderRunning && mvCreates == 0);
   CHECK(acceptIn(ls, 300) < 0);
 
   __atomic_store_n(&kMyVector_MicStreamPort, port, __ATOMIC_RELAXED);
   for (uint32_t i = 100; i < 130; ++i) { hook(i, false); }
   for (uint32_t i = 130; i < 150; ++i) { hook(i, true); }
   for (uint32_t i = 150; i < 300; ++i) { hook(i, false); }
-  CHECK(sMyVectorMicSender != nullptr);
+  CHECK(sMyVectorMicSenderRunning);
   int c = acceptIn(ls, 2000);
   CHECK(c >= 0);
+  const int sfd = senderFd(c); // half-open: keepalive 5 s idle + 3 probes 2 s apart, unacked data 3 s
+  CHECK(sockOpt(sfd, SOL_SOCKET, SO_KEEPALIVE) == 1 && sockOpt(sfd, IPPROTO_TCP, TCP_KEEPIDLE) == 5 &&
+        sockOpt(sfd, IPPROTO_TCP, TCP_KEEPINTVL) == 2 && sockOpt(sfd, IPPROTO_TCP, TCP_KEEPCNT) == 3 &&
+        sockOpt(sfd, IPPROTO_TCP, TCP_USER_TIMEOUT) == 3000);
   bool eof;
   const std::string got = readFor(c, 1u << 20, 600, eof);
   std::vector<long> seqs;
   for (size_t o = 0; o + sizeof(Blk) <= got.size(); o += sizeof(Blk)) { seqs.push_back(seqOf(reinterpret_cast<const int16_t*>(got.data() + o))); }
   CHECK(got.size() % sizeof(Blk) == 0);
-  CHECK(seqs == range(100, 220)); // pre-roll 30 + speech 20 + hangover 70, raw s16, nothing else
+  CHECK(seqs == range(100, 190)); // pre-roll 30 + speech 20 + hangover 40, raw s16, nothing else
 
   // The PC closes: the sender sees it while idle and redials after the >= 1 s backoff.
   close(c);
@@ -263,15 +323,45 @@ static void testSender()
   c = acceptIn(ls, 4000);
   const long redial = msSince(t0);
   CHECK(c >= 0 && redial >= 900);
-  printf("sender: %zu bytes, redial after %ld ms\n", got.size(), redial);
+  // Accept-then-close: a short-lived connection does not reset the backoff, so the next gap doubles.
+  close(c);
+  t0 = std::chrono::steady_clock::now();
+  c = acceptIn(ls, 5000);
+  const long redial2 = msSince(t0);
+  CHECK(c >= 0 && redial2 >= 1900);
+  printf("sender: %zu bytes, redials after %ld then %ld ms\n", got.size(), redial, redial2);
+
+  // A short port 0 (inside one 100 ms wait) still forces a fresh connection, at once (backoff reset).
+  __atomic_store_n(&kMyVector_MicStreamPort, 0, __ATOMIC_RELAXED);
+  hook(300, false);
+  __atomic_store_n(&kMyVector_MicStreamPort, port, __ATOMIC_RELAXED);
+  hook(301, false);
+  readFor(c, 1, 1000, eof);
+  CHECK(eof);
+  close(c);
+  t0 = std::chrono::steady_clock::now();
+  c = acceptIn(ls, 1000);
+  CHECK(c >= 0 && msSince(t0) < 500);
+
+  // C4 stall: the PC accepts but never reads; once the buffers fill, pending stops shrinking: close + redial.
+  t0 = std::chrono::steady_clock::now();
+  int c2 = -1;
+  for (uint32_t seq = 1000; c2 < 0 && msSince(t0) < 20000;) {
+    for (int i = 0; i < 50; ++i) { hook(seq++, true); }
+    c2 = acceptIn(ls, 10);
+  }
+  CHECK(c2 >= 0 && mvLogged("closed: send stalled") == 1);
+  printf("stall: redial after %ld ms\n", msSince(t0));
+  close(c);
+  c = c2;
 
   __atomic_store_n(&kMyVector_MicStreamPort, 0, __ATOMIC_RELAXED); // port 0: the sender closes the socket
-  readFor(c, 1, 2500, eof);
+  readFor(c, 1u << 24, 2500, eof); // drains what the stall run left queued
   CHECK(eof);
   close(c);
   t0 = std::chrono::steady_clock::now();
   MyVectorMicStreamStop();
-  CHECK(sMyVectorMicSender == nullptr && msSince(t0) < 500);
+  CHECK(!sMyVectorMicSenderRunning && msSince(t0) < 500);
   close(ls);
 }
 
@@ -283,6 +373,7 @@ int main()
   testRingRace();
   testPortZero();
   testHost();
+  testSenderStartFails();
   testSender();
   printf("%s: %d checks, %d failures\n", fails ? "RED" : "GREEN", checks, fails);
   if (fails) {
