@@ -1,7 +1,7 @@
 // Command memoryprobe runs one memory pass step on a JSONL episode fixture with the configured memory model,
 // printing the model reply and the parsed result. From chipper/:
 //
-//	go run ./pkg/myvector/memoryprobe -fixture pkg/myvector/memory/testdata/session_et.jsonl -step extract
+//	go run ./pkg/myvector/memoryprobe -fixture pkg/myvector/memory/testdata/session_et.jsonl -step extract|merge|profile
 package main
 
 import (
@@ -15,12 +15,13 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
 )
 
 func main() {
 	cfgPath := flag.String("config", "../secrets/server/myvectorConfig.json", "myvectorConfig.json to read memory_model, the Ollama URL and the Claude key from")
 	fixture := flag.String("fixture", "", "episodes JSONL (memory.Episode lines)")
-	step := flag.String("step", "extract", "extract (merge, profile, diary, guard land with their stages)")
+	step := flag.String("step", "extract", "extract, merge (extract → merge) or profile (extract → merge → profile); diary, guard land with their stages")
 	esn := flag.String("esn", "probe", "ESN the fixture's sessions belong to")
 	flag.Parse()
 	lang.Path = func() string { return *cfgPath }
@@ -36,15 +37,45 @@ func main() {
 		fail(1, err.Error())
 	}
 	fmt.Printf("memory model %s %s at %s\n", t.Provider, t.Model, t.BaseURL)
-	switch *step {
-	case "extract":
-		extract(t, memory.Sessions(*esn, eps, time.Now()))
-	default:
+	steps := map[string]int{"extract": 1, "merge": 2, "profile": 3}[*step]
+	if steps == 0 {
 		fail(2, "-step "+*step+": not built yet")
+	}
+	st := &memory.Store{Profiles: map[string]memory.Profile{}}
+	st.Facts = extract(t, memory.Sessions(*esn, eps, time.Now()))
+	if steps >= 2 {
+		merge(t, st, *esn)
+	}
+	if steps >= 3 {
+		profile(t, st, *esn)
 	}
 }
 
-func extract(t llm.Target, sessions []memory.Session) {
+func merge(t llm.Target, st *memory.Store, esn string) {
+	for _, b := range st.Batches(esn) {
+		start := time.Now()
+		reply, err := memory.Ask(context.Background(), t, memory.MergePrompt, memory.MergeUser(b), memory.MergeReplyCap)
+		if err != nil {
+			fail(1, "merge "+b.Category+": "+err.Error())
+		}
+		fmt.Printf("\n== merge %s (%s)\n-- sent:\n%s-- reply:\n%s\n", b.Category, time.Since(start).Round(time.Millisecond), memory.MergeUser(b), reply)
+		ops := memory.ParseMerge(reply, b)
+		changed := st.ApplyMerge(b, ops)
+		fmt.Printf("-- ops %+v changed=%v\n", ops, changed)
+	}
+	for _, f := range st.Facts {
+		fmt.Printf("%-11s %-9s %s\n", f.Status, f.Category, f.Text)
+	}
+}
+
+func profile(t llm.Target, st *memory.Store, esn string) {
+	start := time.Now()
+	text, err := memory.BuildProfile(context.Background(), t, st.ActiveFacts(esn))
+	stored := st.SetProfile(esn, text, err, time.Now())
+	fmt.Printf("\n== profile (%s, ~%d tokens, cap %d, stored=%v)\n%s\n", time.Since(start).Round(time.Millisecond), prompt.Estimate(text), memory.ProfileCap, stored, text)
+}
+
+func extract(t llm.Target, sessions []memory.Session) (all []memory.Fact) {
 	for _, s := range sessions {
 		start := time.Now()
 		reply, err := memory.Ask(context.Background(), t, memory.ExtractPrompt, memory.ExtractUser(s), memory.ExtractReplyCap)
@@ -58,7 +89,9 @@ func extract(t llm.Target, sessions []memory.Session) {
 		}
 		b, _ := json.MarshalIndent(facts, "", "  ")
 		fmt.Printf("-- kept %d:\n%s\n", len(facts), b)
+		all = append(all, facts...)
 	}
+	return all
 }
 
 func fail(code int, msg string) {

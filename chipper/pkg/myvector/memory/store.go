@@ -35,6 +35,7 @@ const (
 	Unconfirmed = "unconfirmed"
 	Active      = "active"
 	Superseded  = "superseded"
+	Rejected    = "rejected" // merge's call; unlike Removed it never blocks re-extraction
 	Removed     = "removed"
 )
 
@@ -50,6 +51,7 @@ type Fact struct {
 	Session      string     `json:"session,omitempty"`
 	Status       string     `json:"status"`
 	SupersededBy string     `json:"superseded_by,omitempty"`
+	Tries        int        `json:"tries,omitempty"` // merge passes that named this candidate in no op
 	RemovedAt    *time.Time `json:"removed_at,omitempty"`
 }
 
