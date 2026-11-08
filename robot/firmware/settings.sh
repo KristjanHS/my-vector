@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): volume, 24h clock + Celsius + Tallinn time zone, no-auto-update, T2 voice file, /data fill guard.
+# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): root SSH key, volume, 24h clock + Celsius + Tallinn time zone, no-auto-update, T2 voice file, /data fill guard.
 # Usage: settings.sh   idempotent: reads first, sets only what differs. Exit 0 = all in place; 1 = a WARN line printed; 2 = SETUP (robot/env.sh).  (env: ESN, SERVER)
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -14,6 +14,12 @@ jdocs=$robot_dir/../chipper/jdocs/jdocs.json # vars.JdocsPath (unpackaged wire-p
 rc=0
 ok() { echo "ok: $*"; }
 warn() { echo "WARN: $*"; rc=1; }
+
+# Root SSH key first (robot/sshkey): a reflash restores the image key, and every check below logs in with ROBOT_KEY.
+sk=$here/../sshkey/apply.sh
+if [[ ! -f $sk ]]; then warn "sshkey: $sk missing (older sha?); not checked"
+elif out=$(bash "$sk" 2>&1); then if [[ $out == WARN:* ]]; then warn "${out#WARN: }"; else ok "${out//$'\n'/; }"; fi
+else warn "sshkey: ${out//$'\n'/; }"; fi
 
 ssh_() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 ssh_ true 2>/dev/null || { warn "settings: SSH to $ip failed; nothing checked"; exit 1; }

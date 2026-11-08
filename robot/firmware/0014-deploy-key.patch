@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Sun, 8 Nov 2026 10:00:00 +0200
+Subject: [PATCH] deploy-key
+
+build/deploy-v.sh adds ${MYVECTOR_DEPLOY_KEY:-robot_sshkey} to the agent in all 3 branches
+and passes MYVECTOR_DEPLOY_KEY into the docker deploy: my-vector ship.sh installs the robot key
+as /myvector_sshkey (gitignored here) around the deploy, so the image key robot_sshkey (public in
+this repo) can be retired on the robot.
+---
+ .gitignore        | 1 +
+ build/deploy-v.sh | 7 ++++---
+ 2 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/.gitignore b/.gitignore
+index 0e363926..a5b259a3 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -419,6 +419,7 @@ victor-packages
+ log.txt
+ 
+ robot_sshkey
++/myvector_sshkey
+ ota/out
+ ota/ota-server/*.ota
+ snowboy/server/main
+diff --git a/build/deploy-v.sh b/build/deploy-v.sh
+index 16741da5..d2ae60ed 100755
+--- a/build/deploy-v.sh
++++ b/build/deploy-v.sh
+@@ -21,20 +21,21 @@ if [[ ! -f robot_sshkey ]]; then
+ fi
+ 
+ if [[ "$(uname -a)" == *"Darwin"* ]]; then
+-    ssh-add robot_sshkey && \
++    ssh-add "${MYVECTOR_DEPLOY_KEY:-robot_sshkey}" && \
+     ./project/victor/scripts/victor_deploy.sh -c Release -b && \
+     ./project/victor/scripts/victor_start.sh
+ else
+ 
+ if [[ "${nodocker}" != "" ]]; then
+     eval $(ssh-agent) && \
+-    ssh-add robot_sshkey && \
++    ssh-add "${MYVECTOR_DEPLOY_KEY:-robot_sshkey}" && \
+     ./project/victor/scripts/victor_deploy.sh -c Release -b && \
+     ./project/victor/scripts/victor_start.sh
+     exit 0
+ fi
+ 
+ docker run --rm -it \
++    -e MYVECTOR_DEPLOY_KEY \
+     -v $(pwd)/anki-deps:/home/$USER/.anki \
+     -v $(pwd):$(pwd) \
+     -v $(pwd)/build/cache:/home/$USER/.ccache \
+@@ -42,7 +43,7 @@ docker run --rm -it \
+     vic-standalone-builder-8 bash -c \
+     "cd $(pwd) && \
+     eval \$(ssh-agent) && \
+-    ssh-add robot_sshkey && \
++    ssh-add \"\${MYVECTOR_DEPLOY_KEY:-robot_sshkey}\" && \
+     ./project/victor/scripts/victor_deploy.sh $@ -c Release -b && \
+     ./project/victor/scripts/victor_start.sh"
+ fi
