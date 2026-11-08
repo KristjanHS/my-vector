@@ -61,9 +61,10 @@ tree_is_patches() {
 }
 
 if ((deploy)); then
-  # T6: a series with 0015 (vic-cloud drops the DDL root) ships only once wire-pod serves our CA's leaf; first, before any robot step.
+  # T6: a series with a *pod-trust.patch (vic-cloud drops the DDL root) ships only once wire-pod serves our CA's leaf; first, before any robot step.
   step "pod-trust interlock: robot/epod/interlock.sh on $sha's series"
   if [[ -f $head/robot/epod/interlock.sh ]]; then "$head/robot/epod/interlock.sh" "$pd/series" || die "pod-trust interlock (above)"
+  elif grep -q 'pod-trust\.patch$' "$pd/series"; then die "$sha's series lists a *pod-trust.patch but has no robot/epod/interlock.sh"
   else echo "no robot/epod/interlock.sh at $sha; skipped"; fi
 fi
 
@@ -181,11 +182,14 @@ install -m 600 "$key" "$src/myvector_sshkey"
 (cd "$src" && MYVECTOR_DEPLOY_KEY=myvector_sshkey script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
 rm -f "$src/myvector_sshkey"
 
-# A settings failure warns, never stops the ship: the robot already runs $sha.
-step "robot settings: settings.sh (master_volume, no-auto-update, T2 voice, /data guard)"
+# A settings failure warns, never stops the ship: the robot already runs $sha. Except T5 with pod-trust: the robot must trust ours only.
+step "robot settings: settings.sh (master_volume, no-auto-update, T2 voice, /data guard, server CA trust)"
 out=$("$pd/settings.sh" 2>&1) || true
 echo "$out"
 add_warns "$out"
+if grep -q 'pod-trust\.patch$' "$pd/series" && ! grep -q '^ok: epod: .*(ours[,)]' <<<"$out"; then
+  die "pod-trust: settings.sh did not confirm ROBOT_TRUST = our CA only (epod line above) — the robot already runs $sha and may not reach wire-pod, NOT pushed"
+fi
 
 step "robot smoke test: smoke.sh (units up + stable, log, head, face, speech, base still)"
 "$pd/smoke.sh" || die "robot smoke test failed — the robot is ALREADY running $sha, NOT pushed; fix and ship again, or ship the previous sha"
