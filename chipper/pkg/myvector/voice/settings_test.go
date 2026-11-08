@@ -368,7 +368,8 @@ func TestSettingsPage(t *testing.T) {
 	}
 	// the page picks each language's LLM from both providers and shows a rolled-back switch
 	for _, want := range []string{`<optgroup label="Local (Ollama)"`, `<optgroup label="Claude API"`, `"` + llm.ModelsAPI + `"`, `"` + llm.TestAPI + `"`,
-		`claude_key = ""`, `!cur.llmSaved`, `if (s.intentError)`, `+ s.intentError`} {
+		`claude_key = ""`, `!cur.llmSaved`, `if (s.intentError)`, `+ s.intentError`,
+		`<option value="off">`, `label="Claude API — sends transcripts to Anthropic"`, `memory_model: memoryChoice()`, `fillMemory(s.memoryModel)`} {
 		if !strings.Contains(w.Body.String(), want) {
 			t.Errorf("page lacks %s", want)
 		}
@@ -615,5 +616,35 @@ func TestDemoHandlerQuiet(t *testing.T) {
 	}
 	if len(rb.said)+len(rb.sent) != 0 || rb.controlled || rb.released != 0 {
 		t.Errorf("locked demo touched the robot: said %d, sent %d, control %v/%d", len(rb.said), len(rb.sent), rb.controlled, rb.released)
+	}
+}
+
+func TestSettingsMemory(t *testing.T) {
+	tempSettings(t)
+	const base = `{"lang":"en-US","t1":"af_bella","t2":"stock","t1_et":"mari","t2_et":"mari","slow":1`
+	get := func() string {
+		t.Helper()
+		var got settingsReply
+		json.Unmarshal(serve(http.MethodGet, "", "").Body.Bytes(), &got)
+		return got.MemoryModel
+	}
+	if m := get(); m != "ollama:"+llm.DefaultETModel {
+		t.Fatalf("nothing saved: memoryModel %q, want ollama:%s", m, llm.DefaultETModel)
+	}
+	for _, m := range []string{"claude:claude-haiku-4-5", "off", "ollama:qwen3:8b"} {
+		if w := serve(http.MethodPost, "application/json", base+`,"memory_model":"`+m+`"}`); w.Code != 200 {
+			t.Fatalf("POST %s: %d %s", m, w.Code, w.Body)
+		}
+		if got := get(); got != m {
+			t.Fatalf("saved %q, GET %q", m, got)
+		}
+	}
+	for _, bad := range []string{"openai:gpt-4o", "claude:", "ollama", "", "ollama:a b"} {
+		if w := serve(http.MethodPost, "application/json", base+`,"memory_model":"`+bad+`"}`); w.Code != 400 {
+			t.Errorf("memory_model %q: %d, want 400", bad, w.Code)
+		}
+	}
+	if got := get(); got != "ollama:qwen3:8b" {
+		t.Fatalf("a rejected POST changed memory_model: %q", got)
 	}
 }
