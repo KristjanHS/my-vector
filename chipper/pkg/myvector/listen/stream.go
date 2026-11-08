@@ -14,7 +14,7 @@ import (
 // around speech (G1 gate); no framing, no token — the PC firewall (wire-pod-guard.nft) is the auth.
 const (
 	StreamAddr = ":8093"
-	GapCut     = 300 * time.Millisecond // no bytes this long closes an utterance (the robot's 700 ms hangover is the pause cut)
+	GapCut     = 300 * time.Millisecond // no bytes this long closes an utterance (P1 700 ms pause = robot 400 ms hangover + GapCut)
 	MaxUtter   = 15 * time.Second       // audio length that splits an utterance nobody pauses in
 	pcmRate    = 32000                  // bytes/s of 16 kHz s16le mono
 )
@@ -81,6 +81,7 @@ type Stream struct {
 	Log   func(string)          // nil = none
 	Up    func(esn string) bool // a connection arrived; false drops it (robot not armed); nil = accept
 	Down  func(esn string)      // esn's current connection ended by itself (Close or a newer one = no Down)
+	// Up/Down run under mu, so Down never lands after a newer connection's Up; they must not call Close.
 
 	mu    sync.Mutex
 	conns map[string]net.Conn
@@ -135,12 +136,13 @@ func (s *Stream) Serve(l net.Listener) error {
 			c.Close()
 			continue
 		}
+		s.mu.Lock()
 		if s.Up != nil && !s.Up(esn) {
+			s.mu.Unlock()
 			s.logf("myvector listen: stream from " + esn + " while off")
 			c.Close()
 			continue
 		}
-		s.mu.Lock()
 		if s.conns == nil {
 			s.conns = map[string]net.Conn{}
 		}
@@ -169,15 +171,14 @@ func (s *Stream) Close(esn string) {
 func (s *Stream) read(esn string, c net.Conn) {
 	defer func() {
 		s.mu.Lock()
-		lost := s.conns[esn] == c
-		if lost {
+		if s.conns[esn] == c {
 			delete(s.conns, esn)
+			if s.Down != nil {
+				s.Down(esn)
+			}
 		}
 		s.mu.Unlock()
 		c.Close()
-		if lost && s.Down != nil {
-			s.Down(esn)
-		}
 	}()
 	cut := &Cutter{Emit: func(u Cut) {
 		select {

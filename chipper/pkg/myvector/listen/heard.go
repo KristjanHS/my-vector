@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
@@ -98,6 +99,9 @@ type Hearer struct {
 	Estonian func() bool
 	Now      func() time.Time
 	LogDir   string // A8 MYVECTOR_LISTEN_LOG
+
+	mu       sync.Mutex
+	speaking map[string]int // replies in Say: their echo window is stamped only once Say returns
 }
 
 func (h *Hearer) now() time.Time {
@@ -135,7 +139,7 @@ func (h *Hearer) Hear(u Utterance) func() {
 		s.Deactivate(u.ESN, "phrase")
 		return func() { h.speak(u.ESN, Confirm(false, h.Estonian != nil && h.Estonian())) }
 	}
-	if s.Echo(u.ESN, u.Start, u.End) {
+	if s.Echo(u.ESN, u.Start, u.End) || h.inSay(u.ESN) {
 		s.Log("myvector listen: echo dropped")
 		return nil
 	}
@@ -183,12 +187,29 @@ func (h *Hearer) speak(esn, text string) bool {
 		h.State.Log("myvector listen: reply dropped (quiet lock)")
 		return false
 	}
+	h.saying(esn, 1)
 	err := h.Say(esn, text)
 	h.State.Spoken(esn, from, h.now())
+	h.saying(esn, -1) // after Spoken: a Hear that misses inSay sees the window
 	if err != nil {
 		h.State.Log("myvector listen: say: " + err.Error())
 	}
 	return err == nil
+}
+
+func (h *Hearer) saying(esn string, d int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.speaking == nil {
+		h.speaking = map[string]int{}
+	}
+	h.speaking[esn] += d
+}
+
+func (h *Hearer) inSay(esn string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.speaking[esn] > 0
 }
 
 func (h *Hearer) logText(now time.Time, verdict, text string) {
