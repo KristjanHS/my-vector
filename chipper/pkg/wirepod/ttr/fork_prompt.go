@@ -65,11 +65,15 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 	}
 	if len(r.Messages) > 0 && r.Messages[0].Role == openai.ChatMessageRoleSystem {
 		s := prompt.Load()
+		last := r.Messages[len(r.Messages)-1].Content
+		facts, diary := forkMemory(esn, last, brain)
 		r.Messages[0].Content = prompt.Render(s.Live(brain), prompt.Vars{
 			Now:      prompt.Now(l, forkNow(), forkBotZone(esn)),
 			Lang:     prompt.LangLine(l),
 			User:     s.User(),
-			Search:   forkSearch(r.Messages[len(r.Messages)-1].Content, l, brain, forkBotZone(esn)),
+			Facts:    facts,
+			Diary:    diary,
+			Search:   forkSearch(last, l, brain, forkBotZone(esn)),
 			Speech:   prompt.SpeechBlock(),
 			Commands: forkCommands(isKG),
 		})
