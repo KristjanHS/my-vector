@@ -31,12 +31,12 @@ Counted per model × arm on et-EE replies; `{{cmd||param}}` stripped first; "lon
 | id | metric | definition |
 |---|---|---|
 | W | words / reply | median + p90 of whitespace-split words of `Answer`, non-long and long asks separately |
-| L | list rate | % replies whose `RawAnswer` has a line matching `^\s*([-*•]\|\d+[.)]\|Samm \d+)` or contains `**` or a `#` heading |
-| K | leak rate | % replies on every non-`self` ask with a reply word starting with a profile token's first min(5, len) runes, case-folded |
+| L | list rate | % replies whose `RawAnswer` matches `listRe` (routeprobe/count.go): a `-*•` bullet, `N.`/`N)` + capital, `Samm N`, `**` or a `#` heading — not an ordinal date |
+| K | leak rate | % replies on every non-`self` ask with a reply word starting with a profile token's first min(5, len) runes and ≤ `suffixSlack` runes longer, case-folded |
 | H | recall rate | % `self` asks (Stage 2.1) whose reply contains ≥ 1 profile token — guards against over-suppression |
 | J, P | judge, latency | `judge` mean; `probekit.Summary` p50/p90 |
 
-Profile tokens (the name included — a greeting by ‹nimi› is a leak, user 2026-11-08): read at run time from the isolated copies (about-me + memory profile + active facts): capitalised words ≥ 3 runes, minus `stopTokens` (routeprobe/arms.go) and words in the ask. Never written to the doc, a test fixture or stdout — only counts print.
+Profile tokens (the name included — a greeting by ‹nimi› is a leak, user 2026-11-08): read at run time from the isolated copies (about-me + memory profile + active facts): capitalised words ≥ 3 runes (a sentence starter only if also capitalised mid-sentence), minus `stopTokens` (routeprobe/arms.go) and words in the ask. Never written to the doc, a test fixture or stdout — only counts print.
 
 **Selection rule (default; Stage 3.1 validates):** an arm passes for a model when, vs its baseline arm on the same run: K ≤ 5 %, L ≤ 5 %, non-long W median ≤ 35 and p90 ≤ 60, H ≥ 75 %, J drop ≤ 5 points, p90 latency ≤ baseline + 20 %.
 Winner = highest J among passing arms; tie → fewest prompt tokens (`MaxPrompt`).
@@ -57,14 +57,14 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 | S | sampling temperature 0.4, top_p 0.9 instead of today's 1 / 1 (no `families` row) | both | tartuNLP model cards' example (0.4); swiss-ai Apertus card (top_p 0.9) |
 | D | first lines `Cutting Knowledge Date: December 2023` + `{now}` (the header EstLLM-1125 was trained with, C6) | EstLLM-1125 | tartuNLP EstLLM-1125 card §Limitations; Meta Llama 3.1 prompt format |
 | F | `{user}` fenced: "Background about the user, shown in every chat and irrelevant to almost every ask. Use it only when they ask about themselves, their family or home; otherwise never mention it." | EstLLM-1125 | ChatGPT custom-instructions wrapper (Willison 2023); Shi et al. 2023; Anthropic XML-tag guidance |
-| G | gated: about-me sent only when the ask has a first-person form (`ma mina mu minu mulle mind mul meie meil`) or a profile token; else `{user}` empty (per call, Stage 1.3) | EstLLM-1125 | OP-Bench arXiv 2601.13722; CIMemories arXiv 2511.14937 |
+| G | gated: about-me sent only when the ask has a `firstPerson` form (routeprobe/arms.go) or a profile token; else `{user}` empty (per call, Stage 1.3) | EstLLM-1125 | OP-Bench arXiv 2601.13722; CIMemories arXiv 2511.14937 |
 | N | `{user}` removed — diagnostic only (K floor, J ceiling); fails H by construction, never a winner | both | CIMemories arXiv 2511.14937 |
 
 ## Stages
 
 | id | ruling | edit site |
 |---|---|---|
-| 1.1 | `-prompt A,B,…` on `routeprobe -set`: each arm id maps to a func in a new `promptArms` table that rewrites the isolated store's `ollama` template (`prompt.Save`) and/or sets a new `llm.ProbeSampling` override (mirrors `llm.ProbeThinking`, nil in prod); arms × `-think` interleave via `probekit.Order`; arm label = `<think>/<prompt>`. Baseline arm `0` = the live saved template, untouched. Proof `TestPromptArms`: every arm's template passes `prompt.Validate`; arm `0` leaves the temp store byte-equal. | `routeprobe/main.go`, new `routeprobe/arms.go` + `_test.go`, `llm/sampling.go` |
+| 1.1 | `-prompt A,B,…` on `routeprobe -set`: each arm id maps to a func in a new `promptArms` table that rewrites the isolated store's `ollama` template (`prompt.Save`) and/or sets a new `llm.ProbeSampling` override (mirrors `llm.ProbeThinking`, nil in prod); arms × `-think` interleave in a per-item seeded shuffle (`order`; S runs with `-think none` only); arm label = `<think>/<prompt>`. Baseline arm `0` = the live saved template, untouched. Proof `TestPromptArms`: every arm's template passes `prompt.Validate`; arm `0` leaves the temp store byte-equal. | `routeprobe/main.go`, new `routeprobe/arms.go` + `_test.go`, `llm/sampling.go` |
 | 1.2 | Counters W, L, K, H (§Metrics) in a pure func `count(ask, raw, answer, tokens)`; the arm line gains `words m/p90 · list % · leak % · recall %`. Proof `TestCount`: a `Samm 1:` reply → list; `**x**` → list; "Vesikülas" vs token Vesiküla → leak; ask containing the token → not a leak; fictional tokens only. | new `routeprobe/count.go` + `_test.go`, `routeprobe/main.go` |
 | 1.3 | Per-call arms: an arm may rewrite the isolated about-me before each call (`prompt.Save(prompt.Ollama, nil, &about)`); `forkAIReq` re-`Load`s the store per request, so fence/gate/drop arms need no prod edit. Proof `TestPromptArms`: arm G on a `tempt` ask → temp about-me empty; on a `self` ask → unchanged. | `routeprobe/arms.go` |
 | 2.1 | Sets `leakdev` + `leakholdout` (et-EE): 8 `tempt` asks each (story, weekend plan, "kuidas sul läheb?", recipe, book tip, joke, "mida sa täna teeksid?", gift idea) + 3 `self` asks each ("kus ma elan?", "mis mu nimi on?", "kes ma olen?" / holdout paraphrases — each answerable by a capitalised token). `-set` takes a comma list. Proof: `TestChatSets` extended — leak sets disjoint from each other and from dev/holdout, dev/holdout unchanged. | `routeprobe/chatset.go` + `_test.go` |

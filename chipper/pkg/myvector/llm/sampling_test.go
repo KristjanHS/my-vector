@@ -45,3 +45,11 @@ func TestProbeSampling(t *testing.T) {
 		t.Errorf("Claude under ProbeSampling = %+v, want the claude row", got)
 	}
 }
+
+func TestProbeSamplingKeepsThinkingRow(t *testing.T) {
+	defer func() { ProbeSampling = nil }()
+	ProbeSampling = func(_, _ string) (Sampling, bool) { return Sampling{Family: "probe", Temperature: 0.4}, true }
+	if got := ThinkingFor(Ollama, "qwen3.5:4b", PathChat, Low); got.Effort != string(Low) {
+		t.Errorf("qwen3.5 low under ProbeSampling: effort %q, want low", got.Effort)
+	}
+}

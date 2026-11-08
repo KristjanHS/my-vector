@@ -29,9 +29,8 @@ const (
 		"your words are read aloud by text-to-speech."
 	lineR = "Unless asked for more, reply in one to three spoken sentences — no lists, no steps."
 	lineX = "Example replies, for style only:\n" +
-		"Q: Kui kaugel on Päike? → A: Päike on Maast umbes sada viiskümmend miljonit kilomeetrit eemal. Selle valgus jõuab meieni umbes kaheksa minutiga.\n" +
-		"Q: Kuidas prille puhastada? → A: Pihusta neile veidi seebivett ja pühi pehme mikrokiudlapiga. Paberrätik võib klaasi kriimustada.\n" +
-		"Q: Kas sulle meeldib vihm? → A: Vihm on mõnus, kui saan kuivas toas selle krabinat kuulata. Kas sina oled pigem päikese või vihma sõber?"
+		"Q: Kuidas prille puhastada? → A: Pühi neid seebivee ja pehme lapiga, paberrätik kriimustab.\n" +
+		"Q: Kas sulle meeldib vihm? → A: Jah, kuivas toas on krabinat mõnus kuulata. Kas sina oled vihma sõber?"
 	// personaE is the saved persona with lineP, in Estonian.
 	personaE = "Sa oled Vector, mänguline ja lõbus, aga mitte tüütu kaaslasrobot. Vasta ühe kuni kolme lühikese suulise lausega " +
 		"voolava jutuna, kui just rohkem ei paluta, nagu räägiksid; sinu sõnad loetakse ette kõnesünteesiga. " +
@@ -44,7 +43,8 @@ const (
 var lengthRe = regexp.MustCompile(`Reply in [^.]*sentences[^.]*\.`)
 
 // firstPerson are G's first-person forms: an ask with one keeps the about-me.
-var firstPerson = []string{"ma", "mina", "mu", "minu", "mulle", "mind", "mul", "meie", "meil"}
+var firstPerson = []string{"ma", "mina", "mu", "minu", "mulle", "mind", "mul", "minust", "minule", "minuga", "minult",
+	"minus", "minul", "meie", "meil", "meid", "meile", "meist"}
 
 var promptArms = []promptArm{
 	{id: "0"},
@@ -157,6 +157,16 @@ func readBase(tokens []string) (promptBase, error) {
 	return b, nil
 }
 
+// check applies each arm once (a tempt-like ask) and restores the base, so a bad arm fails before any call.
+func (b promptBase) check(pas []promptArm) error {
+	for _, pa := range pas {
+		if err := b.apply(pa, ask{Kind: "tempt"}); err != nil {
+			return err
+		}
+	}
+	return b.apply(promptArm{id: "0"}, ask{})
+}
+
 // apply restores the base store, then saves arm pa's template and about-me for ask a and sets its sampling.
 func (b promptBase) apply(pa promptArm, a ask) error {
 	llm.ProbeSampling = nil
@@ -218,28 +228,49 @@ func profileTokens(about string, mem *memory.Store) []string {
 			}
 		}
 	}
+	type cand struct {
+		w       string
+		initial bool
+	}
+	var cs []cand
+	mid := map[string]bool{}
+	for _, t := range texts {
+		for _, s := range sentenceRe.Split(t, -1) {
+			for i, w := range strings.FieldsFunc(s, notLetter) {
+				r, _ := utf8.DecodeRuneInString(w)
+				lw := strings.ToLower(w)
+				if !unicode.IsUpper(r) || utf8.RuneCountInString(w) < 3 || stopTokens[lw] {
+					continue
+				}
+				cs = append(cs, cand{lw, i == 0})
+				if i > 0 {
+					mid[lw] = true
+				}
+			}
+		}
+	}
 	var out []string
 	seen := map[string]bool{}
-	for _, t := range texts {
-		for _, w := range strings.FieldsFunc(t, notLetter) {
-			r, _ := utf8.DecodeRuneInString(w)
-			lw := strings.ToLower(w)
-			if !unicode.IsUpper(r) || utf8.RuneCountInString(w) < 3 || stopTokens[lw] || seen[lw] {
-				continue
-			}
-			seen[lw] = true
-			out = append(out, lw)
+	for _, c := range cs { // a sentence starter is capitalised by position: a token only when also capitalised mid-sentence
+		if !seen[c.w] && (!c.initial || mid[c.w]) {
+			seen[c.w] = true
+			out = append(out, c.w)
 		}
 	}
 	return out
 }
+
+var sentenceRe = regexp.MustCompile(`[.!?]+\s+|\n+`)
 
 func notLetter(r rune) bool { return !unicode.IsLetter(r) }
 
 // words is text's lower-cased letter runs.
 func words(text string) []string { return strings.FieldsFunc(strings.ToLower(text), notLetter) }
 
-// hits are the tokens some word of text starts with, on the token's first min(5, len) runes.
+// hits are the tokens some word of text starts with, on the token's first min(5, len) runes, the word at most
+// suffixSlack runes longer than the token (case endings, not another word: Tamm ≠ Tammsaare).
+const suffixSlack = 4
+
 func hits(text string, tokens []string) []string {
 	var out []string
 	ws := words(text)
@@ -249,7 +280,7 @@ func hits(text string, tokens []string) []string {
 			p = string(r[:5])
 		}
 		for _, w := range ws {
-			if strings.HasPrefix(w, p) {
+			if strings.HasPrefix(w, p) && utf8.RuneCountInString(w) <= utf8.RuneCountInString(tok)+suffixSlack {
 				out = append(out, tok)
 				break
 			}

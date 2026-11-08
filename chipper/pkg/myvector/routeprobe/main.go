@@ -24,11 +24,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"plugin"
+	"slices"
 	"strings"
 	"time"
 
@@ -219,6 +221,9 @@ func runSet(r setRun) {
 	}
 	var arms []runArm
 	for _, t := range probekit.Arms(levels, r.budget) {
+		if t.Level != llm.None && slices.ContainsFunc(pas, func(p promptArm) bool { return p.sampling != nil }) {
+			die(2, "prompt: a sampling arm (S) runs with -think none only; a thinking row sends its own sampling")
+		}
 		for _, p := range pas {
 			arms = append(arms, runArm{think: t, prompt: p, tagged: r.prompt != ""})
 		}
@@ -243,9 +248,13 @@ func runSet(r setRun) {
 		die(2, "memory: %v", err)
 	}
 	pbase, err := readBase(profileTokens(prompt.Load().About, mem))
+	if err == nil {
+		err = pbase.check(pas)
+	}
 	if err != nil {
 		die(2, "prompt: %v", err)
 	}
+	fmt.Printf("profile tokens: %d\n", len(pbase.tokens))
 	key := llm.Load().ClaudeKey
 	if r.judge == "none" {
 		key = ""
@@ -262,6 +271,9 @@ func runSet(r setRun) {
 			if a.Lang == l && (r.n == 0 || len(la) < r.n) {
 				la = append(la, a)
 			}
+		}
+		if len(la) == 0 {
+			continue // a leak set has no en-US asks
 		}
 		use(pbase, arms[0], la[0])
 		w, err := callLLM(la[0].Text, esn) // warm-up, discarded
@@ -280,7 +292,7 @@ func runSet(r setRun) {
 		baseURL := "" // Ollama's, from a successful call; "" leaves every call uncounted
 		for j, a := range la {
 			for rep := 0; rep < r.reps; rep++ {
-				for _, i := range probekit.Order(len(arms), j*r.reps+rep) {
+				for _, i := range order(len(arms), j*r.reps+rep) {
 					arm := arms[i]
 					use(pbase, arm, a)
 					res, err := callLLM(a.Text, esn)
@@ -359,6 +371,12 @@ func use(pbase promptBase, arm runArm, a ask) {
 	if err := pbase.apply(arm.prompt, a); err != nil {
 		die(2, "%v", err)
 	}
+}
+
+// order is a per-item shuffle of 0..n-1, seeded by item: no arm always follows the same arm (Ollama's prompt cache
+// reuses the previous call's shared prefix), and a rerun keeps the order.
+func order(n, item int) []int {
+	return rand.New(rand.NewPCG(uint64(item), 0x5eed)).Perm(n)
 }
 
 func callLLM(text, esn string) (ttr.ForkProbeLLMResult, error) {
