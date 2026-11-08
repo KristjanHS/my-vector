@@ -11,6 +11,8 @@
 // -audio speaks the text in the language's voice (TTS :8091) and routes the STT (:8092) transcript; STT serves only the SAVED lang.
 // Output lines: "stt: …", then "intent: <name> <params>" | "plugin: <reply>" | "llm: (not asked)" |
 // "llm-target: <provider> <model>" + "llm: <answer as spoken>" | "intent: intent_system_unmatched (LLM off: …)".
+// -set dev|holdout [-think none,low -think-budget N -reps R -n N -judge model] scores chatSets per arm, search off (T16):
+// a probekit Summary line + judge mean, Δ judge and Δ p50 vs the none arm per language; per-call lines on stderr.
 package main
 
 import (
@@ -32,8 +34,11 @@ import (
 	pb "github.com/digital-dream-labs/api/go/chipperpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/probekit"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	"github.com/kercre123/wire-pod/chipper/pkg/vtt"
 	ttr "github.com/kercre123/wire-pod/chipper/pkg/wirepod/ttr"
@@ -68,7 +73,23 @@ func main() {
 	custom := flag.Bool("custom", false, "load customIntents.json (a match RUNS its exec command / Lua script)")
 	tts := flag.String("tts", "http://127.0.0.1:8091", "TTS service")
 	stt := flag.String("stt", "http://127.0.0.1:8092", "STT service")
+	set := flag.String("set", "", "dev or holdout: score the chat set instead of one sentence")
+	think := flag.String("think", "", "-set: thinking arms, e.g. none,low (default none)")
+	budget := flag.Int("think-budget", 0, "-set: thinking budget for every arm but none (0 = the table's)")
+	reps := flag.Int("reps", 1, "-set: calls per ask per arm")
+	limit := flag.Int("n", 0, "-set: asks per language (0 = all)")
+	judgeModel := flag.String("judge", "claude-haiku-5-5", "-set: Claude judge model")
 	flag.Parse()
+	if *set != "" {
+		if flag.NArg() != 0 {
+			flag.Usage()
+			os.Exit(2)
+		}
+		logger.Init()
+		defer cleanup()
+		runSet(setRun{set: *set, lang: *l, brain: *brain, think: *think, budget: *budget, reps: *reps, n: *limit, judge: *judgeModel})
+		return
+	}
 	if flag.NArg() != 1 {
 		flag.Usage()
 		os.Exit(2)
@@ -144,6 +165,150 @@ func main() {
 		die(1, "llm: %v", err)
 	}
 	fmt.Println("llm: " + strings.Join(strings.Fields(a), " "))
+}
+
+type setRun struct {
+	set, lang, brain, think, judge string
+	budget, reps, n                int
+}
+
+// armRun is one arm's calls and judge scores in one language.
+type armRun struct {
+	arm    probekit.Arm
+	calls  []probekit.Call
+	scores []int
+}
+
+// runSet scores chatSets[r.set] per language × arm under isolate(), web search off; arms interleave per ask.
+func runSet(r setRun) {
+	asks, ok := chatSets[r.set]
+	if !ok {
+		die(2, "set: dev or holdout")
+	}
+	levels, err := probekit.ParseThink(r.think)
+	if err != nil {
+		die(2, "%v", err)
+	}
+	if r.reps < 1 || r.n < 0 {
+		die(2, "reps: at least 1; n: at least 0")
+	}
+	arms := probekit.Arms(levels, r.budget)
+	langs := []string{"en-US", "et-EE"}
+	if r.lang != "" {
+		if !lang.Valid(r.lang) {
+			die(2, "lang: one of %v", lang.Supported)
+		}
+		langs = []string{r.lang}
+	}
+	isolate()
+	sc := search.LoadConfig()
+	sc.Provider = "off" // no Tavily quota, no search variance (T16)
+	if err := search.Save(sc); err != nil {
+		die(2, "search off: %v", err)
+	}
+	vars.Init()
+	vars.CustomIntents, vars.CustomIntentsExist = nil, false
+	key := llm.Load().ClaudeKey
+	esn := ""
+	if len(vars.BotInfo.Robots) > 0 {
+		esn = vars.BotInfo.Robots[0].Esn
+	}
+	defer func() { llm.ProbeThinking = nil }()
+	for _, l := range langs {
+		override(l, r.brain)
+		var la []ask
+		for _, a := range asks {
+			if a.Lang == l && (r.n == 0 || len(la) < r.n) {
+				la = append(la, a)
+			}
+		}
+		use(arms[0])
+		w, err := callLLM(la[0].Text, esn) // warm-up, discarded
+		if err != nil {
+			die(1, "llm: %v", err)
+		}
+		fmt.Println("llm-target: " + w.Target)
+		f := strings.Fields(w.Target)
+		model := f[len(f)-1]
+		runs := make([]armRun, len(arms))
+		for _, a := range la {
+			for rep := 0; rep < r.reps; rep++ {
+				for i, arm := range arms {
+					use(arm)
+					res, err := callLLM(a.Text, esn)
+					if err != nil {
+						die(1, "llm: %v", err)
+					}
+					runs[i].arm = arm
+					runs[i].calls = append(runs[i].calls, probekit.Call{Reply: strings.TrimSpace(res.Answer), Finish: res.Finish,
+						Prompt: res.Usage.PromptTokens, Completion: res.Usage.CompletionTokens, Dur: res.Dur})
+					score := "-"
+					if key != "" && strings.TrimSpace(res.Answer) == "" { // a cut-off reply says nothing: 0, no judge call
+						runs[i].scores = append(runs[i].scores, 0)
+						score = "0"
+					} else if key != "" {
+						if n, err := judge(key, r.judge, a, res.Answer); err != nil {
+							fmt.Fprintf(os.Stderr, "judge: %v\n", err)
+						} else {
+							runs[i].scores = append(runs[i].scores, n)
+							score = fmt.Sprint(n)
+						}
+					}
+					fmt.Fprintf(os.Stderr, "%s %s %s %s | %s → %s\n", l, arm.Label(model), res.Finish, score, a.Text,
+						strings.Join(strings.Fields(res.Answer), " "))
+				}
+			}
+		}
+		base := -1
+		for i, arm := range arms {
+			if arm.Level == llm.None {
+				base = i
+			}
+		}
+		var baseSum probekit.Summary
+		if base >= 0 {
+			baseSum = probekit.Summarize(runs[base].calls, probekit.RunesPerToken)
+		}
+		for _, ar := range runs {
+			s := probekit.Summarize(ar.calls, probekit.RunesPerToken)
+			mean, dj, dp := "-", "-", "-"
+			m, ok := meanOf(ar.scores)
+			if ok {
+				mean = fmt.Sprintf("%.1f (n %d)", m, len(ar.scores))
+			}
+			if base >= 0 {
+				if b, okb := meanOf(runs[base].scores); ok && okb {
+					dj = fmt.Sprintf("%+.1f", m-b)
+				}
+				dp = fmt.Sprintf("%+d ms", (s.P50 - baseSum.P50).Milliseconds())
+			}
+			fmt.Printf("%s  judge %s  Δjudge %s  Δp50 %s\n", s.Line(l+" "+ar.arm.Label(model)), mean, dj, dp)
+		}
+	}
+}
+
+// use routes the chat path's Thinking to arm, past the saved level and ceiling (llm.ProbeThinking).
+func use(arm probekit.Arm) {
+	llm.ProbeThinking = func(_, model string, p llm.Path) (llm.Thinking, bool) {
+		return arm.Thinking(model, p), p == llm.PathChat
+	}
+}
+
+func callLLM(text, esn string) (ttr.ForkProbeLLMResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	return ttr.ForkProbeLLMFull(ctx, text, esn)
+}
+
+func meanOf(xs []int) (float64, bool) {
+	if len(xs) == 0 {
+		return 0, false
+	}
+	t := 0
+	for _, x := range xs {
+		t += x
+	}
+	return float64(t) / float64(len(xs)), true
 }
 
 // isolate points vars.ApiConfigPath, lang.Path, prompt.Path, memory.Path, vars.JdocsPath and the quiet lock at temp copies (run from chipper/); no nap.
@@ -222,8 +387,8 @@ func override(l, brain string) {
 		m["llm"] = profiles
 	}
 	b, _ = json.Marshal(m)
-	dir := filepath.Join(tmp, "override") // a new Path: lang caches Current per Path
-	if err := os.Mkdir(dir, 0o700); err != nil {
+	dir, err := os.MkdirTemp(tmp, "override") // a new Path: lang caches Current per Path
+	if err != nil {
 		die(2, "%v", err)
 	}
 	p := filepath.Join(dir, "myvectorConfig.json")

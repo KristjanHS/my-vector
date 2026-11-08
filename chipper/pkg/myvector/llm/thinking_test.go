@@ -38,6 +38,22 @@ func TestThinkingCeiling(t *testing.T) {
 	}
 }
 
+func TestProbeThinking(t *testing.T) {
+	c := Config{Think: map[Path]Level{PathChat: High}}
+	if got := c.Thinking(Ollama, "qwen3.5:4b", PathChat); got.Effort != "none" {
+		t.Errorf("nil hook: Effort %q, want the ceiling's none", got.Effort)
+	}
+	want := Thinking{Effort: "high", Budget: 200}
+	ProbeThinking = func(_, _ string, p Path) (Thinking, bool) { return want, p == PathChat }
+	defer func() { ProbeThinking = nil }()
+	if got := c.Thinking(Ollama, "qwen3.5:4b", PathChat); got != want {
+		t.Errorf("hook set: %+v, want %+v", got, want)
+	}
+	if got := c.Thinking(Ollama, "qwen3.5:4b", PathListen); got.Effort != "none" {
+		t.Errorf("hook not ok: Effort %q, want none", got.Effort)
+	}
+}
+
 func TestThinkingApply(t *testing.T) {
 	r := openai.ChatCompletionRequest{MaxCompletionTokens: 9}
 	Thinking{Effort: "high", Budget: 400, Sampling: Sampling{"qwen3.5", 1, 0.95, 1.5}}.Apply(&r, 80)
