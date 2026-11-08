@@ -156,6 +156,28 @@ func TestHeardEchoGate(t *testing.T) {
 	}
 }
 
+func TestHeardWakeTurn(t *testing.T) {
+	r := newRig(t)
+	r.reply = "Kell on kaheksa."
+	r.onAsk = func() { r.h.State.Turn(esn, r.now.Add(-time.Second)) } // wake audio began inside the clip
+	r.hear(time.Second, "kui palju kell on?")
+	if r.calls != 1 || len(r.said) != 0 {
+		t.Fatalf("turn during the Ask: calls %d said %v", r.calls, r.said)
+	}
+	r = newRig(t)
+	r.reply = "Kell on kaheksa."
+	for _, text := range []string{"Hey Vector, kui palju kell on?", "hei vektor mis kell on", "heivektor mis kell on"} {
+		r.hear(time.Minute, text)
+	}
+	if r.calls != 0 || len(r.said) != 0 {
+		t.Fatalf("wake text: calls %d said %v", r.calls, r.said)
+	}
+	r.hear(time.Minute, "mis kell on, vektor?")
+	if r.calls != 1 || len(r.said) != 1 {
+		t.Fatalf("named, no wake word: calls %d said %v", r.calls, r.said)
+	}
+}
+
 func TestHeardLockedAndLog(t *testing.T) {
 	r := newRig(t)
 	r.h.LogDir = t.TempDir()

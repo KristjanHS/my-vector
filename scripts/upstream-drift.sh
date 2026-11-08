@@ -16,7 +16,7 @@ allowed_edits=(
   chipper/pkg/wirepod/localization/localization.go # GetText asks forkGetText first (fork_lang.go)
   chipper/pkg/wirepod/ttr/words2num.go   # words2num input = forkTimerText(...) — et-EE timer forms (fork_timer.go)
   chipper/pkg/wirepod/ttr/weather.go     # weatherParser apiLocation = forkWeatherLocation(...) — et-EE city word; getWeather returns forkGetWeather(...) first — weatherapi forecast + Open-Meteo race (fork_weather.go)
-  chipper/pkg/wirepod/preqs/server.go    # sttHandler = forkMicCapture(forkSTTRouter(...)) — mic capture (fork_miccap.go) + et-EE STT router (fork_stt.go)
+  chipper/pkg/wirepod/preqs/server.go    # sttHandler = forkMicCapture(forkSTTRouter(...)) — wake-turn start stamp + mic capture (fork_miccap.go) + et-EE STT router (fork_stt.go)
   chipper/webroot/index.html             # nav links to the fork pages /myvector/voice (myvector/voice), /myvector/prompt (myvector/prompt) and /myvector/wifi (myvector/wifi)
   chipper/pkg/initwirepod/startserver.go # non-android TLS pair = vars.CertPath/KeyPath (fork_paths.go: secrets/server/certs), was ../certs; EPConfig pair = forkEpodCert() (fork_epod.go)
   .dockerignore                          # + secrets, certs (never bake keys into an image)
