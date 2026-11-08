@@ -19,8 +19,8 @@ import (
 const (
 	Ollama = "ollama"
 	Claude = "claude"
-	// DefaultETModel is the et-EE Ollama model (Estonian plan E11, E25) when nothing else is saved.
-	DefaultETModel   = "hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M"
+	// DefaultETModel is the et-EE Ollama model when nothing else is saved (user ruling 2026-11-08: same model as listen.Model).
+	DefaultETModel   = "gemma4:e4b-it-qat"
 	DefaultENModel   = "qwen3.5:4b"
 	DefaultOllamaURL = "http://localhost:11434"
 	AnthropicVersion = "2023-06-01"

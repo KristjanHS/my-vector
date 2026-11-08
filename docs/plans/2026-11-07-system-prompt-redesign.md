@@ -8,7 +8,7 @@ Status: rulings done; slices 1–3 shipped or planned, rung 4 planned; 5–6 unp
 |---|---|
 | R1 | Awareness: date + time + weekday, who the user is, location context. Own situation (docked, worn battery) not picked. |
 | R2 | Web search for both Claude and Ollama: LLM tools where possible, other approaches considered too. |
-| R3 | Behaviour: animations while speaking, camera ("what do you see"), multi-turn conversation. The Estonian Ollama model (EstLLM 8B) has no vision, so alternatives need research. |
+| R3 | Behaviour: animations while speaking, camera ("what do you see"), multi-turn conversation. The Estonian Ollama model is `gemma4:e4b-it-qat` (`llm.DefaultETModel`). |
 | R4 | Long-term memory: built from every conversation, with an occasional pass that categorizes and organizes all memories. Must respect the Ollama vs Claude context limits. |
 | R5 | Persona: warm companion, playful, but it must not become annoying or repetitive. 2–4 sentences, sometimes a question back. |
 | R6 | Language: the configured language; foreign names and terms stay as they are, not Estonianised. |
@@ -26,7 +26,7 @@ Built in three places: `CreateAIReq` (persona), `CreatePrompt` (STT note and com
 | et-EE and en-US brain | Claude `claude-haiku-5-5` (both) |
 | `commands_enable` / `save_chat` | false / false |
 | `openai_prompt` | empty → default persona |
-| ET Ollama model / EN + vision fallback | EstLLM 8B Q4_K_M (text-only) / `qwen3.5:4b` |
+| ET Ollama model / EN + vision fallback | `gemma4:e4b-it-qat` (ruled 2026-11-08) / `qwen3.5:4b` |
 
 | Block | chars | ≈ tokens | sent when |
 |---|---|---|---|

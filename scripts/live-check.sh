@@ -83,7 +83,7 @@ check_picker() {
 check_route_build() { (cd "$repo/chipper" && go build -o "$work/routeprobe" ./pkg/myvector/routeprobe) || setup "routeprobe does not build"; }
 
 check_route() {
-  local et_llm=hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M before out
+  local et_llm=gemma4:e4b-it-qat before out
   check_route_build
   before=$(mtimes)
   route() { # route <want-regex> <probe args…>: the probe's last line must match
