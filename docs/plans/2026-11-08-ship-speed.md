@@ -152,15 +152,15 @@ Compare `robot/work/ship-logs/` wall time (log name → mtime) for the next 3 sh
 | id | ruling | edit site |
 |---|---|---|
 | scope | rung 1 = A1 + A3 + per-step `+N s` + C1 + C2; rest stays backlog | — |
-| A1 | firmware lane iff built tip's `^{tree}` ≠ robot `/data/myvector/firmware-tree`; `make ship FIRMWARE=1` forces | `ship.sh`, `Makefile` |
+| A1 | firmware lane iff robot `/data/myvector/firmware-tree` ≠ "built tip's `^{tree}` + current `/anki/{bin,lib}` stat fingerprint"; `make ship FIRMWARE=1` forces | `ship.sh`, `Makefile` |
 | A1 marker | `rm` before deploy (fail = die, robot untouched); write after green full smoke; write fail = WARN | `ship.sh` |
 | A1/C5 smoke | no-firmware ship → `smoke.sh --server`: units baseline (no wait), link, battery, docked + log, face + short phrase, A3 intent, end PIDs | `smoke.sh` |
-| A3 | stamp key = sha1(content tree + go/g++/venv versions + clone HEAD); `check.sh` writes on green, `--head` exits 0 on a hit | `check.sh` |
+| A3 | stamp key = sha1(content tree + go/g++/venv versions + clone HEAD); `check.sh` writes on green; `--head` on a hit runs only drift + secrets | `check.sh` |
 | C1 | `ControlPath` in `ssh_opts` only (hostkey/sshkey pass `ControlPath=none`); ship opens one master after the keys step, closes on EXIT | `robot/env.sh`, `ship.sh` |
 | C2 | full smoke's stability sleep 15 s → 3 s; end-of-run `same_pids` stays | `smoke.sh` |
 | R7 | open: background build after each commit — not asked yet | — |
 
-- **Stage 1.1** A3 check stamp — `check.sh`; falsifier: second `make check` on an unchanged tree prints the stamp hit.
+- **Stage 1.1** A3 check stamp — `check.sh`; falsifier: `scripts/check.sh --head` on a tree `make check` passed prints `check skipped`.
 - **Stage 1.2** C1 + C2 + `step()` `+N s` — `robot/env.sh`, `smoke.sh`, `ship.sh`.
 - **Stage 1.3** A1 lanes + `smoke.sh --server` — `ship.sh`, `smoke.sh`, `Makefile`.
 - **Stage 1.4** `make check` + review; live: user runs `make ship` (server-only ship ≈ 20–25 s target).

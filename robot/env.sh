@@ -26,7 +26,9 @@ ssh_base=(-o BatchMode=yes -o ConnectTimeout=8 -o PubkeyAcceptedAlgorithms=+ssh-
 # ssh_opts reuse the master mux_open starts (make ship), else connect directly; ssh_base has no ControlPath (hostkey/sshkey pass ControlPath=none).
 # shellcheck disable=SC2034 # read by the sourcing scripts
 ssh_opts=(-i "$key" "${ssh_base[@]}" -o "ControlPath=${XDG_RUNTIME_DIR:-$robot_dir/work}/mv-ssh-%C")
-mux_open() { ssh "${ssh_opts[@]}" -O check "root@$ip" 2>/dev/null ||
+mux_open() { # a dead master's socket file would make the new one run unmultiplexed: remove it first
+  ssh "${ssh_opts[@]}" -O check "root@$ip" 2>/dev/null && return 0
+  rm -f "$(ssh -G "${ssh_opts[@]}" "root@$ip" 2>/dev/null | awk '$1 == "controlpath" { print $2 }')"
   ssh "${ssh_opts[@]}" -fN -o ControlMaster=yes -o ControlPersist=600 -o ServerAliveInterval=3 -o ServerAliveCountMax=2 "root@$ip" </dev/null >/dev/null 2>&1 || true; }
 mux_close() { ssh "${ssh_opts[@]}" -O exit "root@$ip" 2>/dev/null || true; }
 # The clone's build/deploy-v.sh reads the robot IP from <clone>/robot_ip.txt.
