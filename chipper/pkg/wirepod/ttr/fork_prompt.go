@@ -9,7 +9,6 @@ import (
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
-	"github.com/kercre123/wire-pod/chipper/pkg/myvector/listen"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
@@ -124,7 +123,7 @@ func forkCommands(isKG bool) string {
 	return prompt.Commands(emotions, isKG && k.SaveChat)
 }
 
-// forkCameraReq readies the getImage follow-up on forkResolveVision's target and swaps *cl to it; defer the returned
+// forkCameraReq readies the getImage follow-up on forkVision's target and swaps *cl to it; defer the returned
 // func. et-EE on Ollama (E26): the ET model is unloaded first and the vision model after, so one LLM stays resident.
 func forkCameraReq(r *openai.ChatCompletionRequest, cl **openai.Client) func() {
 	l, c, kg := lang.Current(), llm.Load(), forkKG()
@@ -140,7 +139,11 @@ func forkCameraReq(r *openai.ChatCompletionRequest, cl **openai.Client) func() {
 		llm.SamplingFor("", r.Model).Apply(r)
 		return func() {}
 	}
-	v, _ := forkResolveVision(c, l, kg)
+	v, vok := forkVision(c, l, kg, t)
+	if !vok {
+		logger.Println("myvector llm: camera " + l + " has no vision target — asking the brain " + t.Model)
+		v = t
+	}
 	logger.Println("myvector llm: camera " + l + " → " + v.Provider + " " + v.Model + " @ " + v.BaseURL)
 	*cl = llm.NewClient(v)
 	r.Model = v.Model
@@ -156,19 +159,25 @@ func forkCameraReq(r *openai.ChatCompletionRequest, cl **openai.Client) func() {
 	return func() { forkUnload(base, v.Model) }
 }
 
-// forkResolveVision is llm.ResolveVision; while any robot listens l's brain is listen.Model on Ollama, as in
-// forkResolve (a copied profile map: the saved one is untouched).
-func forkResolveVision(c llm.Config, l string, kg llm.KG) (llm.Target, bool) {
-	if forkListening.Any(time.Now()) {
-		ps := map[string]llm.Profile{l: {Provider: llm.Ollama, Model: listen.Model}}
-		for k, p := range c.Profiles {
-			if k != l {
-				ps[k] = p
-			}
-		}
-		c.Profiles = ps
+// forkVision is llm.ResolveVision on the already-resolved brain t (one listening read decides both): et-EE on Ollama
+// keeps t's base and takes the vision model; false = no vision target (a copied profile map: the saved one is untouched).
+func forkVision(c llm.Config, l string, kg llm.KG, t llm.Target) (llm.Target, bool) {
+	if !t.Ollama() || l != lang.Estonian {
+		return t, true
 	}
-	return llm.ResolveVision(c, l, kg)
+	ps := map[string]llm.Profile{l: {Provider: llm.Ollama, Model: t.Model}}
+	for k, p := range c.Profiles {
+		if k != l {
+			ps[k] = p
+		}
+	}
+	c.Profiles = ps
+	w, ok := llm.ResolveVision(c, l, kg)
+	if !ok || !w.Ollama() {
+		return llm.Target{}, false
+	}
+	t.Model = w.Model
+	return t, true
 }
 
 // forkUnload asks the Ollama at base to drop model from memory now (native /api/generate, keep_alive 0).
