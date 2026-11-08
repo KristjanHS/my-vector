@@ -1,6 +1,6 @@
 # Local-model thinking levels: measure, then decide
 
-Status: T1–T16 ruled 2026-11-08; Stage 0 done (both switches on over /v1); next Stage 1.1.
+Status: T1–T16 ruled 2026-11-08; Stages 0–1 done; next Stage 2.1.
 
 Goal: let qwen3.5:4b and gemma4:e4b-it-qat think on the chat, listen and follow-up paths, with each model's own thinking controls, and a cap that has room for both the thinking and the reply. Turn it on only where the probes show it helps.
 
@@ -79,6 +79,8 @@ Vision / camera request (`forkCameraReq`), Claude thinking, native `/api/chat`, 
 **Refactor-first: needed.** Three probes (routeprobe, listenprobe, followupprobe) each need the same `-think` parsing, `ThinkingFor` apply, p50/p90, cut % and token stats. With three callers, a shared helper passes its own skip test, so it is built: new `pkg/myvector/probekit`. The Claude judge call has two users (searchbench + routeprobe), so it is extracted too (1.1).
 
 Every new ttr test is named `TestFork*` so `make check` runs it. Ollama-touching runs are local and free; only judge calls spend Claude quota.
+
+Probe runs read gitignored `secrets/server/`: in a worktree, `ln -s <main>/secrets/server secrets/server` for the run and `rm` it before `make check` (its secrets test fails on the link).
 
 | id | ruling | edit site |
 |---|---|---|
