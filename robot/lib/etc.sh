@@ -1,6 +1,6 @@
 # POSIX-sh helpers for writing the robot's read-only rootfs; an installer sends `cat lib/etc.sh -` ahead of its heredoc.
-# ETC_ROOT prefixes every path (tests use a temp root); ETC_ARM_SCALE = seconds per arm minute (tests: 1).
-ETC_ROOT=${ETC_ROOT:-} ETC_RW= ETC_CHANGED=
+# ETC_ROOT prefixes every path (tests use a temp root); ETC_ARM_SCALE = seconds per arm minute (tests: 1); ROLLBACK_MIN = installers' arm window.
+ETC_ROOT=${ETC_ROOT:-} ETC_RW= ETC_CHANGED= ROLLBACK_MIN=${ROLLBACK_MIN:-5}
 
 etc_rw() {
   [ -n "$ETC_RW" ] && return 0
