@@ -1,6 +1,6 @@
 # Shut up → sound lock + nap
 
-Status: Stage 2 + 3.3 done; next Stage 3.1. "Shut up" / "turn off" (en + et, whole phrase) → 2 h lock on every robot
+Status: Stages 2–3 done (worktree-sec); next Stage 4.1. "Shut up" / "turn off" (en + et, whole phrase) → 2 h lock on every robot
 sound test Claude starts + volume 1 + the night-window deep sleep for 2 h. Stage 1 verdict (user-owed) gates Stage 5 only.
 
 ## Rulings
