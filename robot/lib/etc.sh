@@ -21,7 +21,12 @@ etc_put() {
   [ -f "$ETC_ROOT$1" ] && [ "$(cat "$ETC_ROOT$1")" = "$2" ] && return 0
   etc_rw
   mkdir -p "$(dirname "$ETC_ROOT$1")"
-  printf '%s\n' "$2" >"$ETC_ROOT$1"
+  # temp + rename: a crash mid-write never leaves a truncated file; cp -p keeps an existing file's mode
+  if [ -f "$ETC_ROOT$1" ]; then cp -p "$ETC_ROOT$1" "$ETC_ROOT$1.new"; fi
+  printf '%s\n' "$2" >"$ETC_ROOT$1.new"
+  sync
+  mv -f "$ETC_ROOT$1.new" "$ETC_ROOT$1"
+  sync
   ETC_CHANGED=1
   echo "changed $1"
 }
