@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Make the robot trust our server CA (T5): ROBOT_TRUST = ca.crt + its current certs while vic-cloud lacks the
-# my-vector.PodTrust marker (dual trust), ca.crt alone once it has it. No vic-cloud restart: the next deploy does that.
+# my-vector.PodTrust marker in /anki/etc/vic-cloud.env (dual trust; the vic-cloud binary is UPX-packed), ca.crt alone once it has it. No vic-cloud restart: the next deploy does that.
 # Usage: robot/epod/apply.sh   idempotent; settings.sh runs it. ca.crt: EPOD_CA, else secrets/epod/, else secrets/epod-new/.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -16,11 +16,11 @@ CA=$(base64 -w0 "$ca")
 # shellcheck disable=SC2029 # CA expands on the client: the point
 cat "$here/../lib/etc.sh" - <<'EOF' | ssh "${ssh_opts[@]}" "root@$ip" "CA=$CA sh -s"
 set -e
-trust=/data/data/wirepod-cert.crt anki=/anki/etc/wirepod-cert.crt bin=/anki/bin/vic-cloud
+trust=/data/data/wirepod-cert.crt anki=/anki/etc/wirepod-cert.crt marker=/anki/etc/vic-cloud.env
 [ ! -e "$ETC_ROOT$anki" ] || { echo "FAIL: $anki exists and would override $trust"; exit 1; }
 ca=$(echo "$CA" | base64 -d)
 case $ca in "-----BEGIN CERTIFICATE-----"*) ;; *) echo "FAIL: ca.crt is not a PEM certificate (CA)"; exit 1 ;; esac
-if grep -q my-vector.PodTrust "$ETC_ROOT$bin" 2>/dev/null; then mode=ours new=$ca
+if grep -q my-vector.PodTrust "$ETC_ROOT$marker" 2>/dev/null; then mode=ours new=$ca
 else
   mode=dual
   # our CA first, then each distinct cert block already trusted

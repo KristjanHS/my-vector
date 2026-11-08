@@ -11,7 +11,7 @@ body=$(sed -n "/<<'EOF' |/,/^EOF\$/{/<<'EOF' |/d;/^EOF\$/d;p}" "$robot/epod/appl
 pem() { printf -- '-----BEGIN CERTIFICATE-----\n%s\n-----END CERTIFICATE-----\n' "$1"; }
 ours=$(pem OURS) old=$(pem OLD)
 CA=$(printf '%s\n' "$ours" | base64 -w0)
-fresh() { mkdir -p "$tmp/$1/data/data" "$tmp/$1/anki/bin"; echo "$tmp/$1"; }
+fresh() { mkdir -p "$tmp/$1/data/data" "$tmp/$1/anki/etc"; echo "$tmp/$1"; }
 run() { (cat "$robot/lib/etc.sh"; echo "$body") | CA=$CA ETC_ROOT=$1 sh -e; }
 trust=data/data/wirepod-cert.crt
 
@@ -24,11 +24,11 @@ out2=$(run "$r") || die "dual 2nd run: $out2"
   die "dual runs: 1st=[$out1] 2nd=[$out2]"
 [[ $(sha256sum "$r/$trust") == "$sum" ]] || die "dual 2nd run changed the trust file (dedup)"
 
-r=$(fresh ours); printf '%s\n' "$old" >"$r/$trust"; echo 'x my-vector.PodTrust y' >"$r/anki/bin/vic-cloud"
+r=$(fresh ours); printf '%s\n' "$old" >"$r/$trust"; echo '# my-vector.PodTrust' >"$r/anki/etc/vic-cloud.env"
 out=$(run "$r") || die "marker run: $out"
 [[ $(cat "$r/$trust") == "$ours" ]] || die "marker: trust = [$(cat "$r/$trust")], want ours only"
 
-r=$(fresh anki); printf '%s\n' "$old" >"$r/$trust"; mkdir -p "$r/anki/etc"; : >"$r/anki/etc/wirepod-cert.crt"
+r=$(fresh anki); printf '%s\n' "$old" >"$r/$trust"; : >"$r/anki/etc/wirepod-cert.crt"
 if out=$(run "$r"); then die "/anki/etc/wirepod-cert.crt present but passed: $out"; fi
 [[ $(cat "$r/$trust") == "$old" ]] || die "/anki/etc copy present: trust file was written"
 echo "epod apply host test PASS"
