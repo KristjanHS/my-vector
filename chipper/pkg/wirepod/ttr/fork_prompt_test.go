@@ -328,3 +328,34 @@ func TestForkAIReqSearch(t *testing.T) {
 		t.Errorf("search block missing from the system prompt: %q", c)
 	}
 }
+
+func TestForkAIReqMemory(t *testing.T) {
+	lang.UseForTest(t, lang.Estonian)
+	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
+	useBotClock(t, "Europe/Tallinn")
+	old := forkMemory
+	t.Cleanup(func() { forkMemory = old })
+	var got []string
+	facts, diary := "", ""
+	forkMemory = func(esn, utterance, brain string) (string, string) {
+		got = []string{esn, utterance, brain}
+		return facts, diary
+	}
+
+	empty := CreateAIReq("kas mu koer on terve?", "esn", false, true).Messages[0].Content
+	if want := []string{"esn", "kas mu koer on terve?", prompt.Ollama}; !slices.Equal(got, want) {
+		t.Errorf("forkMemory got %q, want %q", got, want)
+	}
+	if want := prompt.Render(prompt.Default(prompt.Ollama), prompt.Vars{
+		Now:  "Praegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn).",
+		Lang: prompt.LangLine(lang.Estonian), Speech: prompt.SpeechBlock(),
+	}); empty != want {
+		t.Errorf("empty memory left residue:\n%q\nwant\n%q", empty, want)
+	}
+
+	facts, diary = "What you remember about the user:\n- The user has a dog named Muki.", "Your diary of recent days:\n- 2026-11-07: Talked about Muki."
+	c := CreateAIReq("kas mu koer on terve?", "esn", false, true).Messages[0].Content
+	if !strings.Contains(c, facts) || !strings.Contains(c, diary) {
+		t.Errorf("memory blocks missing from the system prompt: %q", c)
+	}
+}
