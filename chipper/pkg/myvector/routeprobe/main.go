@@ -32,6 +32,7 @@ import (
 	pb "github.com/digital-dream-labs/api/go/chipperpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	"github.com/kercre123/wire-pod/chipper/pkg/vtt"
@@ -145,7 +146,7 @@ func main() {
 	fmt.Println("llm: " + strings.Join(strings.Fields(a), " "))
 }
 
-// isolate points vars.ApiConfigPath, lang.Path, prompt.Path, vars.JdocsPath and the quiet lock at temp copies (run from chipper/); no nap.
+// isolate points vars.ApiConfigPath, lang.Path, prompt.Path, memory.Path, vars.JdocsPath and the quiet lock at temp copies (run from chipper/); no nap.
 // vars.ReadConfig rewrites apiConfig.json and, when env STT_SERVICE differs from it, blanks STT.provider; the copy takes that.
 func isolate() {
 	src := vars.ApiConfigPath
@@ -169,12 +170,13 @@ func isolate() {
 	}
 	os.Setenv("MYVECTOR_QUIET_FILE", filepath.Join(tmp, "quiet-until")) // a probed "shut up" never locks the real robot
 	os.Setenv("MYVECTOR_NAP", "off")
-	promptSrc := prompt.Path()
+	promptSrc, memSrc := prompt.Path(), memory.Path()
 	langSrc := lang.Path() // beside apiConfig.json (vars/fork_lang.go); follows ApiConfigPath to the copy below
 	vars.ApiConfigPath = filepath.Join(tmp, "apiConfig.json")
 	copyFile(src, vars.ApiConfigPath, true)
 	copyFile(langSrc, lang.Path(), false)
 	copyFile(promptSrc, prompt.Path(), false)
+	copyFile(memSrc, memory.Path(), false) // probed turns capture into tmp, never the real episode log
 	j := filepath.Join(tmp, "jdocs.json")
 	copyFile(vars.JdocsPath, j, false)
 	vars.JdocsPath = j
