@@ -87,6 +87,7 @@ func client(t llm.Target) *openai.Client {
 func ask(c *openai.Client, t llm.Target, sys, user string) (string, time.Duration, error) {
 	r := openai.ChatCompletionRequest{Model: t.Model, Messages: []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: sys}, {Role: openai.ChatMessageRoleUser, Content: user}}}
+	llm.SamplingFor(t.Provider, t.Model).Apply(&r)
 	if t.Ollama() {
 		r.ReasoningEffort, r.MaxTokens = "none", 8
 	} else {
