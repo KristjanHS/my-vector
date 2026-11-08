@@ -1,4 +1,4 @@
-# Template: `make daemon-enable` replaces @REPO@ and installs it as /etc/systemd/system/wire-pod.service.
+# Template: `make daemon-enable` replaces @REPO@/@USER@ and installs it as /etc/systemd/system/wire-pod.service.
 [Unit]
 Description=wire-pod server (my-vector fork)
 Wants=network-online.target
@@ -8,10 +8,13 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
+# Runs as you; the one capability lets it bind :443/:80. `+` runs only the firewall load as root.
+User=@USER@
+AmbientCapabilities=CAP_NET_BIND_SERVICE
 WorkingDirectory=@REPO@
-# run-server.sh loads the firewall and builds + runs the commit pinned in robot/work/server-sha (make ship writes it).
+ExecStartPre=+@REPO@/scripts/load-guard.sh
+# run-server.sh builds + runs the commit pinned in robot/work/server-sha (make ship writes it).
 ExecStart=@REPO@/scripts/run-server.sh
-Environment=HOME=/root GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=@REPO@
 Restart=on-failure
 RestartSec=5
 

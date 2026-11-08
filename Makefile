@@ -17,11 +17,14 @@ server-pin: ## Pin wire-pod to the committed HEAD and restart it (run a committe
 	$(CURDIR)/scripts/pin-server.sh HEAD
 	$(CURDIR)/scripts/restart-service.sh
 
-daemon-enable: ## Install + (re)start wire-pod.service (builds + runs the pinned commit; starts with WSL, restarts on crash); asks the sudo password
+daemon-enable: ## Install + (re)start wire-pod.service (builds + runs the pinned commit as you, not root; starts with WSL, restarts on crash); asks the sudo password
 	@systemctl is-active -q wire-pod || [ -z "$$(ss -Hltn 'sport = :443')" ] || { echo "something already listens on :443 (a foreground wire-pod?): stop it first"; exit 1; }
 	@[ -s $(CURDIR)/robot/work/server-sha ] || $(CURDIR)/scripts/pin-server.sh HEAD
-	sed 's|@REPO@|$(CURDIR)|g' $(CURDIR)/scripts/wire-pod.service | sudo tee /etc/systemd/system/wire-pod.service >/dev/null
+	@[ -d $(HOME)/.vosk/libvosk ] || { mkdir -p $(HOME)/.vosk && sudo cp -r /root/.vosk/libvosk $(HOME)/.vosk/ && sudo chown -R $(USER): $(HOME)/.vosk/libvosk; } || { echo "no libvosk in /root/.vosk: run sudo ./setup.sh"; exit 1; }
+	sed -e 's|@REPO@|$(CURDIR)|g' -e 's|@USER@|$(USER)|g' $(CURDIR)/scripts/wire-pod.service | sudo tee /etc/systemd/system/wire-pod.service >/dev/null
 	sudo systemctl daemon-reload
+	sudo systemctl stop wire-pod
+	sudo find $(CURDIR) $(wildcard $(HOME)/.anki_vector) -xdev -user root -exec chown $(USER): {} + # what a root wire-pod wrote
 	sudo systemctl enable wire-pod
 	sudo systemctl restart wire-pod
 	@echo "logs: journalctl -u wire-pod -f"
