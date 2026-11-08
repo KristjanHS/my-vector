@@ -42,3 +42,7 @@
 0013-wifi-watcher-reset.patch	bin	bin/vic-switchboard	my-vector.WifiWatcherReset
 0013-wifi-watcher-reset.patch	bin	bin/vic-switchboard	my-vector.WifiJob
 0014-deploy-key.patch	src	build/deploy-v.sh	MYVECTOR_DEPLOY_KEY
+0015-pod-trust.patch	src	cloud/cloud/main.go	my-vector.PodTrust
+0015-pod-trust.patch	src	cloud/internal/jdocs/client.go	no DDL escapepod root; the shared pool
+0015-pod-trust.patch	src	platform/config/etc/vic-cloud.env	my-vector.PodTrust
+0015-pod-trust.patch	bin	etc/vic-cloud.env	my-vector.PodTrust

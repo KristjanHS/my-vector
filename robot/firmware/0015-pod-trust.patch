@@ -1,0 +1,98 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Sun, 8 Nov 2026 11:00:00 +0200
+Subject: [PATCH] pod-trust
+
+vic-cloud stops trusting the DDL escapepod root CA (plan P1/T4): jdocs.newConn no longer appends
+escapepodRootPEM to the shared rootcerts.ServerCertPool(), and escapepod_root_cert.go is deleted, so
+the pool holds the public roots plus the wire-pod cert main loads (/anki/etc or /data/data
+wirepod-cert.crt). Marker my-vector.PodTrust: main logs it at start (journal), and
+/anki/etc/vic-cloud.env carries it as a comment, because anki_build_go UPX-packs vic-cloud and a
+packed binary's strings are unreadable.
+---
+ cloud/cloud/main.go                         |  1 +
+ cloud/internal/jdocs/client.go              |  3 +-
+ cloud/internal/jdocs/escapepod_root_cert.go | 37 ---------------------
+ platform/config/etc/vic-cloud.env           |  1 +
+ 4 files changed, 3 insertions(+), 39 deletions(-)
+ delete mode 100644 cloud/internal/jdocs/escapepod_root_cert.go
+
+diff --git a/cloud/cloud/main.go b/cloud/cloud/main.go
+index 781b1861..15891f44 100644
+--- a/cloud/cloud/main.go
++++ b/cloud/cloud/main.go
+@@ -89,6 +89,7 @@ func randomString() string {
+ func main() {
+ 	go mainGateway()
+ 	var pool = rootcerts.ServerCertPool()
++	log.Println("my-vector.PodTrust: DDL escapepod root not trusted; pod trust = " + podCert + " only")
+ 	// load custom cert
+ 	// /anki/etc/wirepod-cert.crt
+ 	certBytes, err := os.ReadFile(fsroot.RobotPath("/anki/etc/" + podCert))
+diff --git a/cloud/internal/jdocs/client.go b/cloud/internal/jdocs/client.go
+index cea6d0b4..abf35f8e 100644
+--- a/cloud/internal/jdocs/client.go
++++ b/cloud/internal/jdocs/client.go
+@@ -25,10 +25,9 @@ type conn struct {
+ 
+ func newConn(ctx context.Context, opts *options) (*conn, error) {
+ 
++	// my-vector 0015: no DDL escapepod root; the shared pool = public roots + the wire-pod cert main loaded.
+ 	pool := rootcerts.ServerCertPool()
+ 
+-	_ = pool.AppendCertsFromPEM([]byte(escapepodRootPEM))
+-
+ 	dialOpts := []grpc.DialOption{
+ 		grpc.WithTransportCredentials(
+ 			credentials.NewClientTLSFromCert(pool, ""),
+diff --git a/cloud/internal/jdocs/escapepod_root_cert.go b/cloud/internal/jdocs/escapepod_root_cert.go
+deleted file mode 100644
+index 22f11867..00000000
+--- a/cloud/internal/jdocs/escapepod_root_cert.go
++++ /dev/null
+@@ -1,37 +0,0 @@
+-package jdocs
+-
+-const escapepodRootPEM = `
+------BEGIN CERTIFICATE-----
+-MIIF5zCCA8+gAwIBAgIUd7+iytZTXyFdQRwAtMc28TtXutQwDQYJKoZIhvcNAQEL
+-BQAwgYExCzAJBgNVBAYTAlVTMRUwEwYDVQQIDAxQZW5uc3lsdmFuaWExEzARBgNV
+-BAcMClBpdHRzYnVyZ2gxGzAZBgNVBAoMEkRpZ2l0YWwgRHJlYW0gTGFiczEpMCcG
+-CSqGSIb3DQEJARYaYnJldHRAZGlnaXRhbGRyZWFtbGFicy5jb20wIBcNMjAxMjEw
+-MTgxODQwWhgPMjIyMDEwMjMxODE4NDBaMIGBMQswCQYDVQQGEwJVUzEVMBMGA1UE
+-CAwMUGVubnN5bHZhbmlhMRMwEQYDVQQHDApQaXR0c2J1cmdoMRswGQYDVQQKDBJE
+-aWdpdGFsIERyZWFtIExhYnMxKTAnBgkqhkiG9w0BCQEWGmJyZXR0QGRpZ2l0YWxk
+-cmVhbWxhYnMuY29tMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAvtk7
+-ccn6Y/1xQlynkvvon86fgj4wQuqYbKmUOeNZkNv80QhW+WcVEGuNkDctXNGAwTZI
+-kBM4nKl1CEq24OgT6I6skYMqEOEGJdaGld08LJwlf4PHG9V7qdNOiWv36GpK2blp
+-PB0UuAgxVgEF5DC6V+RWxbFYfaQcfa9OMeMCvzaL5yQdK1gVYZLjWS3yeFn33oh9
+-H2mhTelW/24+UXV7buneAvyEYXJEMdRmEjKTtsWktMGDp6d9Eg6cZjwQzJrlhuQj
+-FpHdM+FdpFkQ/22wGi+L27f2m+lCEE+G37bkPB+L2EXuYNSDv9mVSyqb6NbqpwX5
+-sPyEzPitDROP7+sUgeTjg83biQAjQyedKxOGab8BwKSJsbmGcodAgHS/sMdDAuV/
+-Uw2iy1zN8uQaOIvXxWCWpvXAcwA4Aro2ruEkMR7h/+Cc26dt6EQ2VrSyxVEzq+Sz
+-5fxAYtwFAsd023Tpztu+UewmNOhQHPb1Xj99/nW2lR4fH0kSfsyBFKlKXgFwDSZD
+-vbIQ0ZEEFrIpqnsgmwc/C2w1ztD22R5Jnfrb8s23xj4awv3/aPl+4NeVBwQMgxS6
+-8n/JWRuFvtIDj4gQWbKq5wjIdcGaPEhHRYsLiWr0NCDwn/R+CCdNIY8SCtMllrP8
+-PUBxwnlQ5NfBw4azwBO9tW47iD0pbVrxx48UfNECAwEAAaNTMFEwHQYDVR0OBBYE
+-FLEGVfbWGssezxPrNlderfGJaU0eMB8GA1UdIwQYMBaAFLEGVfbWGssezxPrNlde
+-rfGJaU0eMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggIBAKsD9769
+-YV23Ak3RBd5IBk1LNxwQLbp4oLes4k4XdSNRWEddMFOLHcfJgtjAugoJwRza1OIz
+-7I/2Pe0AhUpvtMqDn9zquDACx0Eno2/3xOGdjxCH8rXTF1Hpc/NEWjyzhJIj4Oz+
+-DHtNicWkJG4e/yLuHD6E4qlcqYW8JEQt3j156IZIQgJxkkSDHS7sxpDMVYX06AKd
+-b7Msmagde9gm4jeFIOqa3pCoGABUdPCG4poTIwAmuobDDji08bo7PBYFWvB8Ye6y
+-kcfVML0OzWRJgcG8AWltz1rA4GSVG91oSr0DXNyUTHR0GFc7OqX26KkxuHV6EoDz
+-SkqvwRxceOjTf49JobHlFbKuj6zN+t608ZEVPUq8g/uG68ecat9MBnH3mbenMFZ/
+-7AVW3dpEbxqrIK8wLGleoQQ2+l1Jkfu7LNbPqiMUIWF02FNK5PoD9W5KFl/geYqD
+-3cA4AKYtrHnvEql6DABZILfmEnkfxYipZkwBaOoUSLuRSLP/kdNwkZjdg8O+U9qA
+-ac9sgHFZ/wegv3etK46TtLTb0vrMWm5pFFcFRCiYeqNpAhAwEb1b8YQR0sjT9rlL
+-o6yMR+1kuDXYzB1REuuTOZHGDj7Zt1yiHv+nr1dPY/EBV+69is4e2lIXyHlI2ov8
+-HEtdAlxwZiakfw9zndxIweAw9YapnyT+4xp2
+------END CERTIFICATE-----`
+diff --git a/platform/config/etc/vic-cloud.env b/platform/config/etc/vic-cloud.env
+index 3c7acf53..65206db6 100644
+--- a/platform/config/etc/vic-cloud.env
++++ b/platform/config/etc/vic-cloud.env
+@@ -1,2 +1,3 @@
+ LD_LIBRARY_PATH="/anki/lib"
+ VIC_ONFAILURE_FAULTCODE="923"
++# my-vector.PodTrust: this vic-cloud does not trust the DDL escapepod root (patch 0015; the binary is UPX-packed, so its own marker is unreadable)
