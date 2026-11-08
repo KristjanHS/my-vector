@@ -147,8 +147,20 @@ Floor for a firmware ship ≈ real compile + rsync of changed files + robot stac
 
 Compare `robot/work/ship-logs/` wall time (log name → mtime) for the next 3 ships of the same lane against the table in §1; add per-step `+N s` stamps to ship.sh's `step()` (smoke.sh already has them) as part of rung 1 so later rungs are measured, not estimated.
 
-## Open questions for the user
+## Rung 1 — rulings (2026-11-08) and stages
 
-- A1: is a server-only ship allowed to skip the full robot smoke (head move, speech) and run only the server-side checks? (Today every ship ear-tests the robot.)
-- C5: keep the long Estonian speech phrase on every ship, or only in `make robot-test`?
-- R7: OK for a background build to run after each commit (CPU while you work)?
+| id | ruling | edit site |
+|---|---|---|
+| scope | rung 1 = A1 + A3 + per-step `+N s` + C1 + C2; rest stays backlog | — |
+| A1 | firmware lane iff built tip's `^{tree}` ≠ robot `/data/myvector/firmware-tree`; `make ship FIRMWARE=1` forces | `ship.sh`, `Makefile` |
+| A1 marker | `rm` before deploy (fail = die, robot untouched); write after green full smoke; write fail = WARN | `ship.sh` |
+| A1/C5 smoke | no-firmware ship → `smoke.sh --server`: units baseline (no wait), link, battery, docked + log, face + short phrase, A3 intent, end PIDs | `smoke.sh` |
+| A3 | stamp key = sha1(content tree + go/g++/venv versions + clone HEAD); `check.sh` writes on green, `--head` exits 0 on a hit | `check.sh` |
+| C1 | `ControlPath` in `ssh_opts` only (hostkey/sshkey pass `ControlPath=none`); ship opens one master after the keys step, closes on EXIT | `robot/env.sh`, `ship.sh` |
+| C2 | full smoke's stability sleep 15 s → 3 s; end-of-run `same_pids` stays | `smoke.sh` |
+| R7 | open: background build after each commit — not asked yet | — |
+
+- **Stage 1.1** A3 check stamp — `check.sh`; falsifier: second `make check` on an unchanged tree prints the stamp hit.
+- **Stage 1.2** C1 + C2 + `step()` `+N s` — `robot/env.sh`, `smoke.sh`, `ship.sh`.
+- **Stage 1.3** A1 lanes + `smoke.sh --server` — `ship.sh`, `smoke.sh`, `Makefile`.
+- **Stage 1.4** `make check` + review; live: user runs `make ship` (server-only ship ≈ 20–25 s target).
