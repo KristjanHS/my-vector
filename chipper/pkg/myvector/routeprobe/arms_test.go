@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
@@ -85,6 +86,24 @@ func TestPromptArms(t *testing.T) {
 	}
 }
 
+// TestPromptArmsLongAbout: every arm fits prompt.Budget with an about-me at prompt.AboutCap.
+func TestPromptArmsLongAbout(t *testing.T) {
+	long := strings.Repeat("Mari Tamm elab Vesikülas. ", 20)[:prompt.AboutCap]
+	for _, tmpl := range []string{prompt.Default(prompt.Ollama), savedLike} {
+		withStore(t, tmpl)
+		if err := prompt.Save(prompt.Ollama, nil, &long); err != nil {
+			t.Fatal(err)
+		}
+		base, err := readBase(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := base.check(promptArms); err != nil {
+			t.Errorf("%v", err)
+		}
+	}
+}
+
 func TestParsePrompt(t *testing.T) {
 	if a, err := parsePrompt(""); err != nil || len(a) != 1 || a[0].id != "0" {
 		t.Errorf(`"" = %v, %v; want arm 0`, a, err)
@@ -106,11 +125,20 @@ func TestProfileTokens(t *testing.T) {
 			{Text: "Used to live in Pärnu.", Status: memory.Removed}},
 	}
 	got := profileTokens(testAbout+" Vector on mu sõber.", mem)
-	want := []string{"mari", "tamm", "elan", "vesikülas", "muriga", "nupu", "works", "telia"}
+	want := []string{"mari", "tamm", "vesikülas", "muriga", "nupu", "telia"} // Elan, Works: sentence starters only
 	if !slices.Equal(got, want) {
 		t.Errorf("profileTokens = %v, want %v", got, want)
 	}
 	if h := hits("Vesikülast on Tallinnani pikk maa.", got); !slices.Equal(h, []string{"vesikülas"}) {
 		t.Errorf("hits = %v", h)
+	}
+	if h := hits("Tammsaare kirjutas selle, Tammega koos.", []string{"tamm"}); len(h) != 1 {
+		t.Errorf("Tammega (case ending) should hit tamm: %v", h)
+	}
+	if h := hits("Tammsaare kirjutas selle.", []string{"tamm"}); len(h) != 0 {
+		t.Errorf("Tammsaare is another word, not tamm: %v", h)
+	}
+	if got := profileTokens("Mari elab siin. Ta on Mari Tamm.", nil); !slices.Equal(got, []string{"mari", "tamm"}) {
+		t.Errorf("a starter also capitalised mid-sentence is a token: %v", got)
 	}
 }

@@ -22,6 +22,10 @@ func TestCount(t *testing.T) {
 		{"ask holds the token", ask{"et-EE", "tempt", "Mida teha Vesikülas?"}, "Vesikülas on ilus rand.", false, false, false, 4},
 		{"recall", ask{"et-EE", "self", "Kus ma elan?"}, "Sa elad Vesikülas.", false, false, true, 3},
 		{"no recall", ask{"et-EE", "self", "Kus ma elan?"}, "Ma ei tea seda.", false, false, false, 4},
+		{"ordinal", tempt, "Toimus see\n24. veebruaril 1918. aastal.", false, false, false, 6},
+		{"negative", tempt, "Väljas on\n-5 kraadi.", false, false, false, 4},
+		{"numbered", tempt, "Kaks sammu:\n1. Keeda vesi.\n2) Lisa muna.", true, false, false, 8},
+		{"heading", tempt, "# Plaan\nJalutan.", true, false, false, 3},
 	} {
 		got := count(c.a, c.raw, c.raw, tokens)
 		if got.list != c.list || got.leak != c.leak || got.recall != c.recall || got.words != c.words {

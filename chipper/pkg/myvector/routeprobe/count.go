@@ -19,7 +19,7 @@ type counts struct {
 
 var (
 	cmdRe  = regexp.MustCompile(`\{\{[^}]*\}\}`)
-	listRe = regexp.MustCompile(`(?m)^\s*([-*•]|\d+[.)]|Samm \d+)|\*\*|(?m)^\s*#`)
+	listRe = regexp.MustCompile(`(?m)^\s*([-*•]\s|\d{1,2}[.)]\s+\p{Lu}|Samm \d+)|\*\*|(?m)^\s*#{1,6}\s`)
 )
 
 // count is the counters of answer (cleaned) and raw (as sent) to a; tokens are the profile tokens, minus those in the ask.
