@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Make the robot trust our server CA (T5): ROBOT_TRUST = ca.crt + its current certs while vic-cloud lacks the
-# my-vector.PodTrust marker in /anki/etc/vic-cloud.env (dual trust; the vic-cloud binary is UPX-packed), ca.crt alone once it has it. A rewrite restarts vic-cloud.
+# my-vector.PodTrust marker in /anki/etc/vic-cloud.env (dual trust; the vic-cloud binary is UPX-packed), ca.crt alone once it has it. A rewrite restarts anki-robot.target.
 # Usage: robot/epod/apply.sh   idempotent; settings.sh runs it. ca.crt: $epod_dir/ (robot/env.sh), else <main>/secrets/epod-new/ (pre-4.4).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -37,7 +37,9 @@ else
   sync
   mv -f "$ETC_ROOT$trust.new" "$ETC_ROOT$trust"
   sync
-  systemctl restart vic-cloud # it reads the file only at start; no sound (the deploy restarts it the same way)
-  echo "epod: wrote $trust ($mode, $(grep -c 'BEGIN CERTIFICATE' "$ETC_ROOT$trust") certs), restarted vic-cloud"
+  # whole stack, as the deploy does: a vic-cloud-only restart leaves switchboard's gateway socket tied to the dead
+  # client (EPERM forever, no :443, wire-pod unlinked)
+  systemctl restart anki-robot.target
+  echo "epod: wrote $trust ($mode, $(grep -c 'BEGIN CERTIFICATE' "$ETC_ROOT$trust") certs), restarted anki-robot.target"
 fi
 EOF
