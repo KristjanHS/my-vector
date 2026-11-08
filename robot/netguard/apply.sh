@@ -5,6 +5,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
+silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../env.sh"
 selftest=0
 for a; do case $a in --selftest) selftest=1 ;; *) echo "SETUP: netguard: unknown arg $a (--selftest)" >&2; exit 2 ;; esac; done
