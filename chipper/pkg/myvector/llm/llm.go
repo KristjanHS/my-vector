@@ -45,6 +45,7 @@ type Config struct {
 	OllamaURL     string
 	ClaudeKey     string
 	LegacyETModel string
+	Think         map[Path]Level // saved "think" levels per path; see Config.Thinking
 }
 
 // KG is the upstream Knowledge fields the resolver reads (llm must not import vars).
@@ -71,6 +72,7 @@ func Load() Config {
 		OllamaURL string             `json:"ollama_url"`
 		ClaudeKey string             `json:"claude_key"`
 		ETModel   any                `json:"et_model"`
+		Think     map[string]string  `json:"think"`
 	}
 	b, err := os.ReadFile(lang.Path())
 	if err != nil || json.Unmarshal(b, &f) != nil {
@@ -79,6 +81,14 @@ func Load() Config {
 	c := Config{Profiles: f.LLM, OllamaURL: f.OllamaURL, ClaudeKey: f.ClaudeKey}
 	if m, ok := f.ETModel.(string); ok {
 		c.LegacyETModel = m
+	}
+	for p, v := range f.Think {
+		if l, ok := ParseLevel(v); ok {
+			if c.Think == nil {
+				c.Think = map[Path]Level{}
+			}
+			c.Think[Path(p)] = l
+		}
 	}
 	return c
 }
