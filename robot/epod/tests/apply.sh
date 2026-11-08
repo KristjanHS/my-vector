@@ -22,20 +22,20 @@ trust=data/data/wirepod-cert.crt
 r=$(fresh dual); printf '%s\n' "$old" >"$r/$trust"
 out1=$(run "$r") || die "dual 1st run: $out1"
 [[ $(cat "$r/$trust") == "$ours"$'\n'"$old" ]] || die "dual: trust = [$(cat "$r/$trust")], want ours + old"
-[[ $(calls "$r") == 'systemctl restart vic-cloud' ]] || die "dual 1st run: systemctl calls [$(calls "$r")], want one vic-cloud restart"
+[[ $(calls "$r") == 'systemctl restart anki-robot.target' ]] || die "dual 1st run: systemctl calls [$(calls "$r")], want one anki-robot.target restart"
 sum=$(sha256sum "$r/$trust")
 out2=$(run "$r") || die "dual 2nd run: $out2"
-[[ $out1 == "epod: wrote /$trust (dual, 2 certs), restarted vic-cloud" && $out2 == "epod: already installed (dual)" ]] ||
+[[ $out1 == "epod: wrote /$trust (dual, 2 certs), restarted anki-robot.target" && $out2 == "epod: already installed (dual)" ]] ||
   die "dual runs: 1st=[$out1] 2nd=[$out2]"
 [[ $(sha256sum "$r/$trust") == "$sum" ]] || die "dual 2nd run changed the trust file (dedup)"
-[[ $(calls "$r") == 'systemctl restart vic-cloud' ]] || die "dual 2nd run (unchanged) restarted: [$(calls "$r")]"
+[[ $(calls "$r") == 'systemctl restart anki-robot.target' ]] || die "dual 2nd run (unchanged) restarted: [$(calls "$r")]"
 
 r=$(fresh ours); printf '%s\n' "$old" >"$r/$trust"; echo '# my-vector.PodTrust' >"$r/anki/etc/vic-cloud.env"
 out=$(run "$r") || die "marker run: $out"
 [[ $(cat "$r/$trust") == "$ours" ]] || die "marker: trust = [$(cat "$r/$trust")], want ours only"
-[[ $(calls "$r") == 'systemctl restart vic-cloud' ]] || die "marker run: systemctl calls [$(calls "$r")]"
+[[ $(calls "$r") == 'systemctl restart anki-robot.target' ]] || die "marker run: systemctl calls [$(calls "$r")]"
 
 r=$(fresh anki); printf '%s\n' "$old" >"$r/$trust"; : >"$r/anki/etc/wirepod-cert.crt"
 if out=$(run "$r"); then die "/anki/etc/wirepod-cert.crt present but passed: $out"; fi
-[[ $(cat "$r/$trust") == "$old" && -z $(calls "$r") ]] || die "/anki/etc copy present: trust file was written or vic-cloud restarted"
+[[ $(cat "$r/$trust") == "$old" && -z $(calls "$r") ]] || die "/anki/etc copy present: trust file was written or the stack restarted"
 echo "epod apply host test PASS"
