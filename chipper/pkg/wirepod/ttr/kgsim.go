@@ -44,6 +44,7 @@ func PlaceChat(chat vars.RememberedChat) {
 
 // remember last 16 lines of chat
 func Remember(user, ai openai.ChatCompletionMessage, esn string) {
+	forkCaptureChat(user.Content, ai.Content, esn) // my-vector: memory episode (fork_memory.go)
 	chatAppend := []openai.ChatCompletionMessage{
 		user,
 		ai,
