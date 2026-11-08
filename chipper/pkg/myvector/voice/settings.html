@@ -163,6 +163,17 @@
         </div>
       </section>
 
+      <section class="card">
+        <h2>Memory</h2>
+        <div class="body">
+          <div class="field">
+            <label for="memory_model">Memory model</label>
+            <select id="memory_model"><option value="off">Off — record nothing</option><optgroup label="Local (Ollama)" data-provider="ollama"></optgroup><optgroup label="Claude API — sends transcripts to Anthropic" data-provider="claude"></optgroup></select>
+            <p class="hint">Learns facts about you from conversations, nightly. Off stops recording.</p>
+          </div>
+        </div>
+      </section>
+
       <details class="card">
         <summary>Connections <span class="hint" id="connHint"></span></summary>
         <div class="body">
@@ -226,13 +237,15 @@
       const c = choice(l);
       $("pick_" + l).textContent = c ? (c.provider === "claude" ? "Claude API" : "Ollama") + " · " + c.model : "";
     }
-    function fillLLM(l, want) {
-      const [local, claude] = $("llm_" + l).querySelectorAll("optgroup");
+    function fillModels(select, want) { // fills a select's Ollama + Claude optgroups and selects want {provider, model}
+      const [local, claude] = select.querySelectorAll("optgroup");
+      claude.dataset.label ||= claude.label;
       const o = (lists && lists.ollama) || { models: [] }, c = (lists && lists.claude) || { models: [], keySet: !!cur.claudeKey };
       local.replaceChildren(...o.models.map((m) => opt(m)));
       claude.replaceChildren(...c.models.map((m) => opt(m.id, m.name || m.id)));
       claude.disabled = !c.keySet;
-      claude.label = c.keySet ? "Claude API" : "Claude API — add a Claude key under Connections";
+      claude.label = c.keySet ? claude.dataset.label : claude.dataset.label + " — add a Claude key under Connections";
+      if (!want) return; // the caller selects a non-model option
       const group = want.provider === "claude" ? claude : local;
       let sel = [...group.children].find((x) => x.value === want.model);
       if (!sel) {
@@ -240,7 +253,16 @@
         group.append(sel = opt(want.model, want.model + why));
       }
       sel.selected = true;
-      showPick(l);
+    }
+    function fillLLM(l, want) { fillModels($("llm_" + l), want); showPick(l); }
+    function memoryChoice() { // "off" or "<provider>:<model>"
+      const o = $("memory_model").selectedOptions[0];
+      return !o ? cur.memoryModel : o.parentElement.dataset.provider ? o.parentElement.dataset.provider + ":" + o.value : o.value;
+    }
+    function fillMemory(m) {
+      const i = m.indexOf(":");
+      fillModels($("memory_model"), m === "off" ? null : { provider: m.slice(0, i), model: m.slice(i + 1) });
+      if (m === "off") $("memory_model").value = "off";
     }
     function warnings() {
       const w = [];
@@ -316,6 +338,7 @@
         $(t).value = s[t];
       }
       for (const l of s.langs) fillLLM(l, s.llm[l]);
+      fillMemory(s.memoryModel);
       if (!s.langs.includes(view)) view = s.lang;
       buildLang();
       renderLang();
@@ -348,10 +371,11 @@
         slow: Number($("slow").value), ...extra });
     }
     async function loadModels(refresh) {
-      const keep = cur && Object.fromEntries(cur.langs.map((l) => [l, choice(l)]));
+      const keep = cur && Object.fromEntries(cur.langs.map((l) => [l, choice(l)])), keepMemory = memoryChoice();
       try { lists = await call(undefined, modelsApi + (refresh ? "?refresh=1" : "")); }
       catch (err) { lists = { ollama: { models: [], error: err.message }, claude: { models: [], keySet: !!cur.claudeKey } }; }
       for (const l of cur.langs) fillLLM(l, keep[l]);
+      fillMemory(keepMemory);
       warnings();
     }
     function syncSample() { // swap the sample only while it still holds a default
@@ -405,7 +429,7 @@
       if (!cur) return status("Nothing to save: the settings did not load. Reload the page.", "err");
       $("save").disabled = true;
       status("Saving…");
-      const extra = { llm: Object.fromEntries(cur.langs.map((l) => [l, choice(l)])), ollama_url: $("ollama_url").value };
+      const extra = { llm: Object.fromEntries(cur.langs.map((l) => [l, choice(l)])), ollama_url: $("ollama_url").value, memory_model: memoryChoice() };
       if (clearKey) extra.claude_key = "";
       else if ($("claude_key").value.trim()) extra.claude_key = $("claude_key").value.trim();
       extra.search = { provider: $("search_provider").value, searxng_url: $("searxng_url").value, weather_place: $("weather_place").value };

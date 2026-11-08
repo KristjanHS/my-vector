@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	openai "github.com/sashabaranov/go-openai"
@@ -29,6 +30,22 @@ func Model() string {
 		return m
 	}
 	return "ollama:" + llm.DefaultETModel
+}
+
+// ValidModel admits "off", "ollama:[<model>]" and "claude:<model>" (M1).
+func ValidModel(m string) error {
+	p, model, ok := strings.Cut(m, ":")
+	switch {
+	case m == "off", ok && p == llm.Ollama && !strings.ContainsAny(model, " \t\n"),
+		ok && p == llm.Claude && model != "" && !strings.ContainsAny(model, " \t\n"):
+		return nil
+	}
+	return fmt.Errorf("memory_model: off, ollama:<model> or claude:<model>, not %q", m)
+}
+
+// SaveModel writes m as "memory_model" into myvectorConfig.json; the caller has run ValidModel.
+func SaveModel(m string) error {
+	return conf.Update(lang.Path(), map[string]any{"memory_model": m})
 }
 
 // Off stops all capture and every pass (M5).

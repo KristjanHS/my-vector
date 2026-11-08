@@ -22,6 +22,7 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
@@ -187,6 +188,7 @@ type settingsReply struct {
 	// IntentError is why the language switch was rolled back (its intents did not load); the other saves stand.
 	IntentError string      `json:"intentError,omitempty"`
 	Search      searchReply `json:"search"`
+	MemoryModel string      `json:"memoryModel"` // memory.Model: off, ollama:<model>, claude:<model>
 }
 
 // searchReply is the W12 search block; keys are llm.Mask'ed.
@@ -236,6 +238,8 @@ type settingsRequest struct {
 	OllamaURL *string                `json:"ollama_url"`
 	ClaudeKey *string                `json:"claude_key"`
 	Search    *searchRequest         `json:"search"`
+	// MemoryModel is saved by memory.SaveModel when present.
+	MemoryModel *string `json:"memory_model"`
 }
 
 func (q *settingsRequest) llmChanged() bool {
@@ -276,6 +280,11 @@ func (q *settingsRequest) valid() error {
 			return err
 		}
 	}
+	if q.MemoryModel != nil {
+		if err := memory.ValidModel(*q.MemoryModel); err != nil {
+			return err
+		}
+	}
 	return q.Validate()
 }
 
@@ -298,6 +307,11 @@ func save(q *settingsRequest) (intentErr string, err error) {
 	if q.Search != nil {
 		if err := search.Save(q.Search.config()); err != nil {
 			return "", fmt.Errorf("save search: %w", err)
+		}
+	}
+	if q.MemoryModel != nil {
+		if err := memory.SaveModel(*q.MemoryModel); err != nil {
+			return "", fmt.Errorf("save memory_model: %w", err)
 		}
 	}
 	old := lang.Current()
@@ -349,7 +363,7 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(settingsReply{Settings: Current(), Lang: lang.Current(), Langs: lang.Supported, Voices: voices,
 		SlowMin: SlowMin, SlowMax: SlowMax, LLM: profiles, Defaults: defaults, OllamaURL: url, ClaudeKey: llm.Mask(c.ClaudeKey), KGEnabled: vars.APIConfig.Knowledge.Enable,
 		LLMSaved: c.Profiles != nil, Knowledge: strings.TrimSpace(kg.Provider + " " + kg.Model),
-		PushError: pushErr, IntentError: intentErr, Search: currentSearch()})
+		PushError: pushErr, IntentError: intentErr, Search: currentSearch(), MemoryModel: memory.Model()})
 }
 
 // decode reads an application/json POST body into v and runs valid on it; on failure it has written the error.
