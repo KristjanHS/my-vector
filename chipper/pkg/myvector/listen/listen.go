@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
 )
@@ -37,22 +38,75 @@ var (
 	eiWake     = regexp.MustCompile(`^\W*ei\W+(vector|victor|vektor)\b`)
 )
 
-// Match reports whether text is an on (on=true) or off phrase.
+// Match reports whether text is an on (on=true) or off phrase: exact, else the closest phrase of the same word count
+// within slip (H4: et-EE STT "listering", "deaktiveeriv"); an on/off tie is no match.
 func Match(text string) (on, ok bool) {
 	t := strings.ToLower(text)
 	t = eiWake.ReplaceAllString(mergedWake.ReplaceAllString(t, "hei $1"), "hei $1")
-	got := strings.Join(quiet.Tokens(t), " ")
-	for _, p := range On {
-		if got == p {
-			return true, true
-		}
-	}
-	for _, p := range Off {
-		if got == p {
-			return false, true
-		}
+	got := quiet.Tokens(t)
+	best := map[bool]int{true: slip(got, On), false: slip(got, Off)}
+	switch {
+	case best[true] < best[false]:
+		return true, true
+	case best[false] < best[true]:
+		return false, true
 	}
 	return false, false
+}
+
+// slipMax: at most 1 edit per word of 5+ letters, none in shorter words, 2 per phrase.
+const slipMax = 2
+
+// slip is the fewest edits from got to one of phrases (slipMax+1 = none in reach).
+func slip(got []string, phrases []string) int {
+	best := slipMax + 1
+	for _, p := range phrases {
+		want := strings.Fields(p)
+		if len(want) != len(got) {
+			continue
+		}
+		n := 0
+		for i, w := range want {
+			d := edits(got[i], w)
+			if d > 1 || d == 1 && utf8.RuneCountInString(w) < 5 {
+				n = slipMax + 1
+				break
+			}
+			n += d
+		}
+		if n < best {
+			best = n
+		}
+	}
+	return best
+}
+
+// edits is the Levenshtein distance over runes.
+func edits(a, b string) int {
+	x, y := []rune(a), []rune(b)
+	prev := make([]int, len(y)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(x); i++ {
+		cur := make([]int, len(y)+1)
+		cur[0] = i
+		for j := 1; j <= len(y); j++ {
+			c := 1
+			if x[i-1] == y[j-1] {
+				c = 0
+			}
+			cur[j] = prev[j-1] + c
+			if d := prev[j] + 1; d < cur[j] {
+				cur[j] = d
+			}
+			if d := cur[j-1] + 1; d < cur[j] {
+				cur[j] = d
+			}
+		}
+		prev = cur
+	}
+	return prev[len(y)]
 }
 
 type span struct{ from, to time.Time }
