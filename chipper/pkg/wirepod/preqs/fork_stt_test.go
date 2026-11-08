@@ -3,6 +3,7 @@ package processreqs
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -144,5 +145,45 @@ func TestForkEndOfSpeechNeedsSpeech(t *testing.T) {
 	}
 	if got := forkEndAt(t, forkFrames(true, 190, false, 700)); got != 19+70-1 {
 		t.Fatalf("190 ms of speech: end at frame %d, want %d", got, 19+70-1)
+	}
+}
+
+// forkCollectFrames runs forkSTTCollect over a fake stream: one 10 ms frame per chunk (true = speech; its PCM byte
+// is the frame number), then io.EOF. It returns the PCM (one byte per frame read) and the error.
+func forkCollectFrames(t *testing.T, frames []bool) ([]byte, error) {
+	t.Helper()
+	oldNext, oldVAD := forkNextChunk, forkVADActive
+	forkVADActive = func(_ *sr.SpeechRequest, f []byte) (bool, error) { return f[0] == 1, nil }
+	i := 0
+	forkNextChunk = func(req *sr.SpeechRequest) ([]byte, error) {
+		if i == len(frames) {
+			return nil, io.EOF
+		}
+		f := make([]byte, 320)
+		if frames[i] {
+			f[0] = 1
+		}
+		req.LastAudioChunk = f
+		req.DecodedMicData = append(req.DecodedMicData, byte(i))
+		i++
+		return f, nil
+	}
+	t.Cleanup(func() { forkNextChunk, forkVADActive = oldNext, oldVAD })
+	return forkSTTCollect(sr.SpeechRequest{})
+}
+
+// A sentence still running at the robot's 6 s cap (EOF, no 700 ms pause yet) goes to STT whole; a near-empty one
+// that hits EOF stays an error; a pause ends the read before EOF.
+func TestForkSTTCollectEOF(t *testing.T) {
+	pcm, err := forkCollectFrames(t, forkFrames(true, 5600, false, 400))
+	if err != nil || len(pcm) != 600 {
+		t.Fatalf("speech to the cap: got %d frames, err %v; want 600, nil", len(pcm), err)
+	}
+	if _, err := forkCollectFrames(t, forkFrames(true, 100, false, 300)); !errors.Is(err, io.EOF) {
+		t.Fatalf("100 ms of speech then EOF: err %v, want io.EOF", err)
+	}
+	pcm, err = forkCollectFrames(t, forkFrames(true, 1000, false, 2000))
+	if err != nil || len(pcm) != 170 {
+		t.Fatalf("1 s speech + pause: got %d frames, err %v; want 170 (ends 700 ms in), nil", len(pcm), err)
 	}
 }
