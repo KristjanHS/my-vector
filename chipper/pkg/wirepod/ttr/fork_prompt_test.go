@@ -88,10 +88,8 @@ func TestForkPromptReadsStore(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "myvectorPrompt.json")
 	prompt.Path = func() string { return path }
 	t.Cleanup(func() { prompt.Path = old })
-	if err := prompt.Save(prompt.Ollama, "Be a pirate robot.\n\n{user}"); err != nil {
-		t.Fatal(err)
-	}
-	if err := prompt.SaveAbout("Mari lives in Tartu."); err != nil {
+	tmpl, about := "Be a pirate robot.\n\n{user}", "Mari lives in Tartu."
+	if err := prompt.Save(prompt.Ollama, &tmpl, &about); err != nil {
 		t.Fatal(err)
 	}
 	c := CreateAIReq("what day is it", "esn", false, true).Messages[0].Content

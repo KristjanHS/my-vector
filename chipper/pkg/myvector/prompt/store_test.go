@@ -12,6 +12,8 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 )
 
+func ptr(s string) *string { return &s }
+
 // useStore points Path at a temp file for t and captures log lines.
 func useStore(t *testing.T) (path string, logs *[]string) {
 	t.Helper()
@@ -48,7 +50,7 @@ func TestRenderAppendsMissing(t *testing.T) {
 		t.Errorf("default flagged: %v", appended)
 	}
 	_, _ = useStore(t)
-	if err := Save(Ollama, "Be brief."); err != nil {
+	if err := Save(Ollama, ptr("Be brief."), nil); err != nil {
 		t.Fatal(err)
 	}
 	if live := Load().Live(Ollama); !strings.Contains(live, "{commands}") {
@@ -70,10 +72,10 @@ func TestValidateBudget(t *testing.T) {
 
 func TestAboutCap(t *testing.T) {
 	_, logs := useStore(t)
-	if err := SaveAbout(strings.Repeat("ä", AboutCap)); err != nil {
+	if err := Save(Claude, nil, ptr(strings.Repeat("ä", AboutCap))); err != nil {
 		t.Errorf("at cap: %v", err)
 	}
-	if err := SaveAbout(strings.Repeat("ä", AboutCap+1)); err == nil {
+	if err := Save(Claude, nil, ptr(strings.Repeat("ä", AboutCap+1))); err == nil {
 		t.Error("over cap accepted")
 	}
 	if got := Load().User(); !strings.HasPrefix(got, "About the person you are talking with:\n") {
@@ -109,11 +111,11 @@ func TestLoadFallback(t *testing.T) {
 func TestVersionsKeepFive(t *testing.T) {
 	_, _ = useStore(t)
 	for i := 0; i < 7; i++ {
-		if err := Save(Claude, fmt.Sprintf("v%d", i)); err != nil {
+		if err := Save(Claude, ptr(fmt.Sprintf("v%d", i)), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	Save(Claude, "v6") // same as newest: no entry
+	Save(Claude, ptr("v6"), nil) // same as newest: no entry
 	if got := strings.Join(Load().Versions[Claude], " "); got != "v6 v5 v4 v3 v2" {
 		t.Errorf("versions = %s", got)
 	}
@@ -131,9 +133,9 @@ func TestVersionsKeepFive(t *testing.T) {
 
 func TestReset(t *testing.T) {
 	_, _ = useStore(t)
-	Save(Claude, "mine")
-	Save(Ollama, "theirs")
-	SaveAbout("Mari")
+	Save(Claude, ptr("mine"), nil)
+	Save(Ollama, ptr("theirs"), nil)
+	Save(Claude, nil, ptr("Mari"))
 	if err := Reset(Claude); err != nil {
 		t.Fatal(err)
 	}
@@ -146,10 +148,10 @@ func TestReset(t *testing.T) {
 func TestCorruptStoreNotOverwritten(t *testing.T) {
 	path, _ := useStore(t)
 	writes := map[string]func() error{
-		"Save":      func() error { return Save(Claude, "Hi.") },
-		"SaveAbout": func() error { return SaveAbout("Mari") },
-		"Reset":     func() error { return Reset(Claude) },
-		"Restore":   func() error { return Restore(Claude, 0) },
+		"Save":       func() error { return Save(Claude, ptr("Hi."), nil) },
+		"Save about": func() error { return Save(Claude, nil, ptr("Mari")) },
+		"Reset":      func() error { return Reset(Claude) },
+		"Restore":    func() error { return Restore(Claude, 0) },
 	}
 	for _, bad := range []string{`{not json`, `{"versions":{"claude":"x"},"about":"keep me"}`} {
 		for name, write := range writes {

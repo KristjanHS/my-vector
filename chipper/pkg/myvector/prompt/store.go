@@ -184,18 +184,55 @@ func Validate(brain, tmpl, about string) error {
 
 var mu sync.Mutex
 
-// Save validates tmpl against the saved about-me and makes it brain's live template.
-func Save(brain, tmpl string) error {
+// Save makes tmpl brain's live template and about the about-me, each only when non-nil (the page sends what changed).
+// Both brains' resulting templates must fit the resulting about-me; it is one write, so a rejected save changes nothing.
+func Save(brain string, tmpl, about *string) error {
+	if brain != Claude && brain != Ollama {
+		return Invalid{fmt.Errorf("unknown brain %q", brain)}
+	}
+	var a string
+	if about != nil {
+		a = strings.TrimSpace(*about)
+		if err := CheckAbout(a); err != nil {
+			return err
+		}
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	s, err := load()
 	if err != nil {
 		return err
 	}
-	if err := Validate(brain, tmpl, s.about()); err != nil {
-		return err
+	kv := map[string]any{}
+	if about == nil {
+		a = s.about()
+	} else {
+		kv["about"] = a
 	}
-	return s.put(brain, tmpl)
+	for _, b := range []string{Claude, Ollama} {
+		t, ok := s.Templates[b]
+		if b == brain && tmpl != nil {
+			t, ok = *tmpl, true
+		} else if about == nil {
+			continue // neither changed for b
+		}
+		if !ok {
+			t = Default(b)
+		}
+		if err := Validate(b, t, a); err != nil {
+			if b != brain {
+				return fmt.Errorf("%s template: %w", b, err)
+			}
+			return err
+		}
+	}
+	if tmpl != nil {
+		kv["templates"], kv["versions"] = s.with(brain, *tmpl)
+	}
+	if len(kv) == 0 {
+		return nil
+	}
+	return conf.Update(Path(), kv)
 }
 
 // Restore re-saves brain's version i (0 = newest).
@@ -213,7 +250,8 @@ func Restore(brain string, i int) error {
 	if err := Validate(brain, v[i], s.about()); err != nil {
 		return err
 	}
-	return s.put(brain, v[i])
+	t, vs := s.with(brain, v[i])
+	return conf.Update(Path(), map[string]any{"templates": t, "versions": vs})
 }
 
 // Reset drops brain's saved template, so the built-in default goes live; versions are kept.
@@ -232,31 +270,8 @@ func Reset(brain string) error {
 	return conf.Update(Path(), map[string]any{"templates": t})
 }
 
-// SaveAbout saves the about-me once it fits AboutCap and keeps both brains' live templates within Budget.
-func SaveAbout(about string) error {
-	about = strings.TrimSpace(about)
-	if err := CheckAbout(about); err != nil {
-		return err
-	}
-	mu.Lock()
-	defer mu.Unlock()
-	s, err := load()
-	if err != nil {
-		return err
-	}
-	for _, b := range []string{Claude, Ollama} {
-		t, ok := s.Templates[b]
-		if !ok {
-			t = Default(b)
-		}
-		if err := Validate(b, t, about); err != nil {
-			return fmt.Errorf("%s template: %w", b, err)
-		}
-	}
-	return conf.Update(Path(), map[string]any{"about": about})
-}
-
-func (s Store) put(brain, tmpl string) error {
+// with is s's templates and versions after tmpl becomes brain's live one (newest version first, keepVersions kept).
+func (s Store) with(brain, tmpl string) (map[string]string, map[string][]string) {
 	t, v := maps.Clone(s.Templates), maps.Clone(s.Versions)
 	if t == nil {
 		t = map[string]string{}
@@ -271,5 +286,5 @@ func (s Store) put(brain, tmpl string) error {
 	if len(v[brain]) > keepVersions {
 		v[brain] = v[brain][:keepVersions]
 	}
-	return conf.Update(Path(), map[string]any{"templates": t, "versions": v})
+	return t, v
 }
