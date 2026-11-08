@@ -1,6 +1,6 @@
 # System prompt redesign
 
-Status: rulings done; slices 1–3 shipped or planned, rung 4 planned; 5–6 unplanned. Trigger: "mis nädalapäev täna on?" → the robot says it doesn't know the date.
+Status: rulings done; every rung shipped or owned by its own plan. Trigger: "mis nädalapäev täna on?" → the robot says it doesn't know the date.
 
 ## Rulings (user, 2026-11-07)
 
@@ -79,7 +79,7 @@ Severity: CRITICAL / HIGH / MEDIUM / LOW.
 | P-budget | Per-tier config: reply cap, history turns, history gap, memory and search token budgets, Ollama `num_ctx`. Claude and Ollama are configured separately (R8). | `prompt` profile struct; `CreateAIReq` reply cap through the fork hook |
 | S | Search provider is a selector on the `/myvector/voice` page; default = the free tier (keyword router + pre-fetched snippets, provider picked by a bench of Tavily, SearXNG, Ollama web search on 10 Estonian queries) for every brain, Claude included. Claude's paid `web_search` runs only when selected there. | new `pkg/myvector/search`; selector in `myvector/voice`; bench script under `robot/` or `scripts/` |
 | S-guard | Per-provider monthly counter with a hard cap; results cached per query with a TTL. The future Claude tool gets max 1 search per turn and a daily cap. | `search` quota + cache in gitignored state |
-| V | Claude sees photos only when explicitly chosen in a separate vision setting in the wire-pod UI, even when the brain is Claude. Default: the best local Ollama vision model, picked by a 3–5 photo bench (gemma4:e4b, qwen3.5:4b — the models still installed; direct Estonian vs English). | `llm.VisionModel` + config field; `forkCameraReq`; UI selector |
+| V | Claude sees photos only when explicitly chosen in a separate vision setting in the wire-pod UI, even when the brain is Claude. Default: the best local Ollama vision model, picked per language by a 3–5 photo bench (gemma4:e4b-it-qat, qwen3.5:4b), asked directly in the configured language. | `llm.VisionModel` + config field; `forkCameraReq`; UI selector |
 | M | Facts, diary and profile are stored in English; the evidence quote stays verbatim from the transcript. M2 now: transcripts → per-session fact extraction (evidence-substring check, unconfirmed) → nightly diary entry (append-only) + merge of touched categories + profile rebuilt from facts + fixed question set with revert. M3 extras later. | new `pkg/myvector/memory`; gitignored store |
 | N | `{now}`: zone = robot jdoc `vic.RobotSettings.time_zone` by ESN, else `time.Local`; native line per language ("Praegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn)."), placed before the language line. | `prompt.Now`; `forkAIReq(aireq, esn)` |
 | M-later | M3: bge-m3 search, weekly Claude pass, "mida sa minust tead?" / "unusta see". Revisit once M2 has run ~2 weeks. | — |
@@ -90,5 +90,5 @@ Severity: CRITICAL / HIGH / MEDIUM / LOW.
 2. Templates + tags + P-guard + UI editor/preview; speech, persona and language fixes (critique 3–5, 7, 9). → plan: `2026-11-07-prompt-templates.md (docs/plans/)`
 3. History gap and follow-up listening decoupled from commands (critique 8). → plan: `2026-11-07-follow-up-listening.md (docs/plans/)`
 4. Search bench → router + snippets for every brain, plus Open-Meteo weather (S, S-guard). → plan: `2026-11-07-web-search.md (docs/plans/)`
-5. Vision setting + local vision bench (V).
-6. Memory M2: transcripts → extraction → nightly pass → `{facts}`/`{diary}` blocks.
+5. Vision setting + local vision bench (V). → plan: `2026-11-08-vision-setting.md (docs/plans/)`
+6. Memory M2: transcripts → extraction → nightly pass → `{facts}`/`{diary}` blocks. → plan: `2026-11-08-memory-m2.md (docs/plans/)`
