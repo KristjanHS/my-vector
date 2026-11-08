@@ -58,20 +58,25 @@ func TestForkListenShortCircuits(t *testing.T) {
 	utt := []string{"kuulamine", "shut"} // the plugin would claim both phrases
 	PluginUtterances = []*[]string{&utt}
 	esn := req.Device
+	var said []string
+	oldSay := forkConfirmSay
+	forkConfirmSay = func(_, text string) error { said = append(said, text); return nil }
+	t.Cleanup(func() { forkConfirmSay = oldSay })
 	for _, c := range []struct {
 		say, want, sets string
 		on              bool
 	}{
-		{"Hei Vektor, aktiveeri aktiivne kuulamine.", "say:Aktiivne kuulamine sees.", "0,8093", true},
-		{"deaktiveeri aktiivne kuulamine", "say:Aktiivne kuulamine väljas.", "0,8093,0", false},
+		{"Hei Vektor, aktiveeri aktiivne kuulamine.", "Aktiivne kuulamine sees.", "0,8093", true},
+		{"deaktiveeri aktiivne kuulamine", "Aktiivne kuulamine väljas.", "0,8093,0", false},
 	} {
 		s := &listenStream{}
 		req.Stream = s
+		said = nil
 		if !ProcessTextAll(req, c.say, nil, true) {
 			t.Fatalf("%q: ProcessTextAll = false, want forkListen to claim it", c.say)
 		}
-		if len(s.sent) != 1 || s.sent[0] != c.want {
-			t.Errorf("%q: sent %v, want only %q (ahead of the plugin)", c.say, s.sent, c.want)
+		if len(s.sent) != 1 || s.sent[0] != "intent_greeting_hello" || len(said) != 1 || said[0] != c.want {
+			t.Errorf("%q: sent %v said %v, want only intent_greeting_hello (ahead of the plugin) + PC voice %q", c.say, s.sent, said, c.want)
 		}
 		if got := forkListening.Any(forkNow()); got != c.on {
 			t.Errorf("%q: listening = %v, want %v", c.say, got, c.on)

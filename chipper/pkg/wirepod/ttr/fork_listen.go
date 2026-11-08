@@ -6,15 +6,14 @@ import (
 	"os"
 	"time"
 
-	pb "github.com/digital-dream-labs/api/go/chipperpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/listen"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/voice"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
-	"github.com/kercre123/wire-pod/chipper/pkg/vtt"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -97,14 +96,15 @@ func forkListen(req interface{}, voiceText, botSerial string) bool {
 	return true
 }
 
-// forkSpeak says text as the reply to req (the plugin-response path).
+// forkConfirmSay speaks the on/off confirmation (tests swap it).
+var forkConfirmSay = forkListenSay
+
+// forkSpeak ends req's turn as the LLM path does (intent_greeting_hello, LLM-marked so memory skips it), then says text
+// in the PC voice (H5).
 func forkSpeak(req interface{}, esn, voiceText, text string) {
-	if igr, ok := req.(*vtt.IntentGraphRequest); ok {
-		igr.Stream.Send(&pb.IntentGraphResponse{Session: igr.Session, DeviceId: igr.Device,
-			ResponseType: pb.IntentGraphMode_KNOWLEDGE_GRAPH, SpokenText: text, QueryText: voiceText, IsFinal: true})
-		return
-	}
-	if err := KGSim(esn, text); err != nil {
+	memory.MarkLLM(esn, voiceText)
+	IntentPass(req, "intent_greeting_hello", voiceText, map[string]string{}, false)
+	if err := forkConfirmSay(esn, text); err != nil {
 		logger.Println("myvector listen: say: " + err.Error())
 	}
 }
