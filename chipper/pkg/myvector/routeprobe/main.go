@@ -396,9 +396,10 @@ func meanOf(xs []int) (float64, bool) {
 	return float64(t) / float64(len(xs)), true
 }
 
-// isolate points vars.ApiConfigPath, lang.Path, prompt.Path, memory.Path, vars.JdocsPath and the quiet lock at temp copies (run from chipper/); no nap.
+// isolate points vars.ApiConfigPath, lang.Path, prompt.Path, memory.Path, vars.JdocsPath and the quiet lock at temp copies (run from chipper/); no nap, and the on/off confirmation prints.
 // vars.ReadConfig rewrites apiConfig.json and, when env STT_SERVICE differs from it, blanks STT.provider; the copy takes that.
 func isolate() {
+	ttr.ForkProbeMute(func(_, text string) error { fmt.Println("say: " + text); return nil }) // no robot speech or stream port
 	src := vars.ApiConfigPath
 	b, err := os.ReadFile(src)
 	if err != nil {

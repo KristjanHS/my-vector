@@ -31,7 +31,7 @@ var Backoff = []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute, 4 
 var named = regexp.MustCompile(`(?i)\b(?:vector|victor|vektor)\w*`)
 
 // wakeLead spots overheard text opening with the wake word (H1): the wake-word turn answers it, never the stream.
-var wakeLead = regexp.MustCompile(`(?i)^\W*(?:hei|hey|ei)\W*(?:vector|victor|vektor)\b`)
+var wakeLead = regexp.MustCompile(`(?i)^\W*(?:hei|hey)\W*(?:vector|victor|vektor)\b`)
 
 // Persona and SpeakRules also build listenprobe's prompt 1 arm.
 const (
@@ -185,7 +185,7 @@ func (h *Hearer) reply(u Utterance, now time.Time, before []string, words int) {
 	verdict := map[bool]string{false: "SKIP", true: "SPEAK"}[speak]
 	s.Log(fmt.Sprintf("myvector listen: %d words → %s %dms", words, verdict, h.now().Sub(now).Milliseconds()))
 	h.logText(now, verdict, u.Text)
-	if speak && s.Echo(u.ESN, u.Start, u.End) { // H1: a wake-word turn began during the Ask
+	if speak && s.Echo(u.ESN, u.Start, h.now()) { // H1: a wake-word turn began since the utterance
 		s.Log("myvector listen: reply dropped (wake turn)")
 		return
 	}

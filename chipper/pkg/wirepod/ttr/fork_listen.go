@@ -99,12 +99,21 @@ func forkListen(req interface{}, voiceText, botSerial string) bool {
 // forkConfirmSay speaks the on/off confirmation (tests swap it).
 var forkConfirmSay = forkListenSay
 
+// ForkProbeMute keeps routeprobe off the robot: say replaces the confirmation speaker, and arming never sets its stream port.
+func ForkProbeMute(say func(esn, text string) error) {
+	forkConfirmSay = say
+	forkArm.Set = func(string, int) error { return nil }
+}
+
 // forkSpeak ends req's turn as the LLM path does (intent_greeting_hello, LLM-marked so memory skips it), then says text
 // in the PC voice (H5).
 func forkSpeak(req interface{}, esn, voiceText, text string) {
 	memory.MarkLLM(esn, voiceText)
 	IntentPass(req, "intent_greeting_hello", voiceText, map[string]string{}, false)
-	if err := forkConfirmSay(esn, text); err != nil {
+	from := time.Now()
+	err := forkConfirmSay(esn, text)
+	forkListening.Spoken(esn, from, time.Now())
+	if err != nil {
 		logger.Println("myvector listen: say: " + err.Error())
 	}
 }
