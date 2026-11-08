@@ -15,12 +15,12 @@ type Robot struct {
 	GUID      string `json:"guid"`
 }
 
-// Path is $BOTINFO, else this checkout's chipper/jdocs/botSdkInfo.json.
+// Path is $BOTINFO, else the main checkout's secrets/server/jdocs/botSdkInfo.json.
 func Path() string {
 	if p := os.Getenv("BOTINFO"); p != "" {
 		return p
 	}
-	return os.ExpandEnv("$HOME/projects/my-vector/chipper/jdocs/botSdkInfo.json")
+	return os.ExpandEnv("$HOME/projects/my-vector/secrets/server/jdocs/botSdkInfo.json")
 }
 
 // Load returns the first robot in path; zero robots is an error.

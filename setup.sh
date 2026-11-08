@@ -395,7 +395,7 @@ function generateCerts() {
     echo "1: IP address (recommended for OSKR Vectors)"
     echo "2: Domain"
     echo "3: escapepod.local (required for regular production Vectors)"
-    if [[ -d ./certs ]]; then
+    if [[ -d ./secrets/server/certs ]]; then
         echo "4: Keep certificates as is"
     fi
     IPDNSPrompt
@@ -407,9 +407,9 @@ function generateCerts() {
                 DNSPrompt
             fi
             rm -f ./chipper/useepod
-            rm -rf ./certs
-            mkdir certs
-            cd certs
+            rm -rf ./secrets/server/certs
+            mkdir -p secrets/server/certs
+            cd secrets/server/certs
             echo ${address} >address
             echo "Creating san config"
             echo "[req]" >san.conf
@@ -436,7 +436,7 @@ function generateCerts() {
             echo
             echo "Certificates generated!"
             echo
-            cd ..
+            cd ../../..
         else
             echo
             echo "escapepod.local chosen."
@@ -456,7 +456,7 @@ function scpToBot() {
         echo
         exit 0
     fi
-    if [[ ! -f ./certs/server_config.json ]]; then
+    if [[ ! -f ./secrets/server/certs/server_config.json ]]; then
         echo "server_config.json file missing. You need to generate this file with ./setup.sh's 6th option."
         exit 0
     fi
@@ -516,14 +516,14 @@ function scpToBot() {
     fi
     ssh  -oStrictHostKeyChecking=no -i ${keyPath} root@${botAddress} "mount -o rw,remount / && mount -o rw,remount,exec /data && systemctl stop anki-robot.target && mv /anki/data/assets/cozmo_resources/config/server_config.json /anki/data/assets/cozmo_resources/config/server_config.json.bak"
     scp  -oStrictHostKeyChecking=no ${oldVar} -i ${keyPath} ./vector-cloud/build/vic-cloud root@${botAddress}:/anki/bin/
-    scp  -oStrictHostKeyChecking=no ${oldVar} -i ${keyPath} ./certs/server_config.json root@${botAddress}:/anki/data/assets/cozmo_resources/config/
+    scp  -oStrictHostKeyChecking=no ${oldVar} -i ${keyPath} ./secrets/server/certs/server_config.json root@${botAddress}:/anki/data/assets/cozmo_resources/config/
     scp  -oStrictHostKeyChecking=no ${oldVar} -i ${keyPath} ./vector-cloud/pod-bot-install.sh root@${botAddress}:/data/
     if [[ -f ./chipper/useepod ]]; then
         scp -oStrictHostKeyChecking=no ${oldVar} -i ${keyPath} ./chipper/epod/ep.crt root@${botAddress}:/anki/etc/wirepod-cert.crt
         scp -oStrictHostKeyChecking=no ${oldVar} -i ${keyPath} ./chipper/epod/ep.crt root@${botAddress}:/data/data/wirepod-cert.crt
     else
-        scp -oStrictHostKeyChecking=no ${oldVar} -i ${keyPath} ./certs/cert.crt root@${botAddress}:/anki/etc/wirepod-cert.crt
-        scp -oStrictHostKeyChecking=no ${oldVar} -i ${keyPath} ./certs/cert.crt root@${botAddress}:/data/data/wirepod-cert.crt
+        scp -oStrictHostKeyChecking=no ${oldVar} -i ${keyPath} ./secrets/server/certs/cert.crt root@${botAddress}:/anki/etc/wirepod-cert.crt
+        scp -oStrictHostKeyChecking=no ${oldVar} -i ${keyPath} ./secrets/server/certs/cert.crt root@${botAddress}:/data/data/wirepod-cert.crt
     fi
     ssh -oStrictHostKeyChecking=no -i ${keyPath} root@${botAddress} "chmod +rwx /anki/data/assets/cozmo_resources/config/server_config.json /anki/bin/vic-cloud /data/data/wirepod-cert.crt /anki/etc/wirepod-cert.crt /data/pod-bot-install.sh && /data/pod-bot-install.sh"
     rm -f /tmp/sshTest

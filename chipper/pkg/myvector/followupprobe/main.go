@@ -1,6 +1,6 @@
 // Command followupprobe scores candidate "listen again?" prompts (follow-up-listening.md (docs/plans/) Stage 1.1).
 //
-//	go run ./pkg/myvector/followupprobe [-config ../../../my-vector/chipper/myvectorConfig.json]   # from chipper/
+//	go run ./pkg/myvector/followupprobe [-config ../../../my-vector/secrets/server/myvectorConfig.json]   # from chipper/
 //
 // Each language's llm.Resolve target and claude-haiku-5-5 (thinking off) answer every (ask, reply) pair.
 package main
@@ -107,7 +107,7 @@ func ask(c *openai.Client, t llm.Target, sys, user string) (string, time.Duratio
 func yes(s string) bool { return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(s)), "YES") }
 
 func main() {
-	cfgPath := flag.String("config", "myvectorConfig.json", "myvectorConfig.json to read the LLM profiles and Claude key from")
+	cfgPath := flag.String("config", "../secrets/server/myvectorConfig.json", "myvectorConfig.json to read the LLM profiles and Claude key from")
 	also := flag.String("also", llm.DefaultETModel, "comma-separated extra Ollama models, scored as et-EE candidates")
 	flag.Parse()
 	lang.Path = func() string { return *cfgPath }

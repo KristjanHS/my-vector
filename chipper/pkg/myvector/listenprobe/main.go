@@ -1,6 +1,6 @@
 // Command listenprobe scores candidate active-listening prompts and models (2026-11-07-active-listening.md, 2026-11-07-et-listen-model.md (docs/plans/)).
 //
-//	go run ./pkg/myvector/listenprobe [-config ../../../my-vector/chipper/myvectorConfig.json] [-set dev,holdout -lang et-EE -models a,b -arm "prompt 2" -show]   # from chipper/
+//	go run ./pkg/myvector/listenprobe [-config ../../../my-vector/secrets/server/myvectorConfig.json] [-set dev,holdout -lang et-EE -models a,b -arm "prompt 2" -show]   # from chipper/
 //
 // Verdict: each language's saved Ollama profile, or each -models entry on its own; -alt models are reported only.
 package main
@@ -179,7 +179,7 @@ func die(msg string) {
 }
 
 func main() {
-	cfgPath := flag.String("config", "myvectorConfig.json", "myvectorConfig.json to read the LLM profiles from")
+	cfgPath := flag.String("config", "../secrets/server/myvectorConfig.json", "myvectorConfig.json to read the LLM profiles from")
 	alt := flag.Bool("alt", true, "also report gemma4:e4b-it-qat (en+et) and llm.DefaultETModel (et)")
 	setF := flag.String("set", "dev", "snippet sets, comma-separated: dev, holdout, confirm")
 	models := flag.String("models", "", "comma-separated Ollama models, each its own verdict, instead of the saved profiles (turns -alt off)")
