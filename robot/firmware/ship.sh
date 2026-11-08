@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Ship the patched firmware: pod-trust interlock (T6), tests, patches, robot keys (hostkey + sshkey apply.sh), robot compat + myvector-stt freshness checks, build (live progress), built-asset check, wire-pod restart
 # (only if chipper/, the firewall or run-server.sh changed since the running server's sha), deploy, robot settings, robot smoke check, git push.
-# Usage: ship.sh [--no-deploy]   --no-deploy stops after the build (no server restart, no deploy, no push).
+# Firmware lane: build, deploy and the full smoke run only when the built tip's tree differs from the robot's /data/myvector/firmware-tree;
+#   otherwise smoke.sh --server. The marker is cleared before a deploy and written after a green full smoke.
+# Usage: ship.sh [--no-deploy] [--firmware]   --no-deploy stops after the build (no server restart, no deploy, no push);
+#   --firmware (make ship FIRMWARE=1) takes the firmware lane whatever the marker says.
 #   Runs only in the main checkout on main (make syncwt first), never in a worktree.
 # HEAD-only: checks, patches and apply.sh come from the committed HEAD; uncommitted fork files are ignored.
 #   The server too: the restart pins the shipped sha (scripts/pin-server.sh), which run-server.sh builds; only the tree's
@@ -15,9 +18,10 @@ warns='' # compat.sh WARN + settings.sh WARN/SETUP lines, repeated at the end of
 add_warns() { local w; w=$(grep '^WARN\|^SETUP' <<<"$1" || true); [[ -z $w ]] || warns+=${warns:+$'\n'}$w; }
 show_warns() { [[ -z $warns ]] || printf '\033[1;33m%s\033[0m\n' "$warns" >&2; }
 die() { printf '\033[1;31mFAIL: %s\033[0m\n' "$*" >&2; show_warns; [[ -z ${SHIP_LOG:-} ]] || echo "log: $SHIP_LOG" >&2; exit 1; }
-case ${1:-} in '') deploy=1 ;; --no-deploy) deploy=0 ;; *) die "unknown arg: $1 (only --no-deploy)" ;; esac
-total=$((5 + deploy * 8)); i=0
-step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s/%s] %s  (+%s s)\033[0m\n' "$i" "$total" "$*" "$SECONDS"; }
+deploy=1 force_fw=0
+for a; do case $a in --no-deploy) deploy=0 ;; --firmware) force_fw=1 ;; *) die "unknown arg: $a (--no-deploy, --firmware)" ;; esac; done
+fw=1 marker=/data/myvector/firmware-tree i=0
+step() { i=$((i + 1)); printf '\n\033[1;36m==> [%s] %s  (+%s s)\033[0m\n' "$i" "$*" "$SECONDS"; }
 [[ $(git -C "$repo" rev-parse --absolute-git-dir) == "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)" ]] ||
   die "run from the main checkout, not a worktree: make syncwt, then make -C ~/projects/my-vector ship"
 [[ $(git -C "$repo" branch --show-current) == main ]] || die "main checkout is not on main"
@@ -97,6 +101,13 @@ if ((deploy)); then
   echo "$out"
   add_warns "$out"
 
+  step "firmware lane: tip tree vs robot $marker"
+  fw_tree=$(git -C "$src" rev-parse "$tip^{tree}")
+  robot_tree=$(ssh "${ssh_opts[@]}" "root@$ip" "cat $marker 2>/dev/null" || true)
+  if ((force_fw)); then echo "--firmware: build + deploy + full smoke"
+  elif [[ $robot_tree == "$fw_tree" ]]; then fw=0; echo "robot runs tree ${fw_tree:0:12} already: no build, no deploy; smoke.sh --server"
+  else echo "robot ${robot_tree:+runs tree ${robot_tree:0:12}}${robot_tree:-has no marker}, tip tree ${fw_tree:0:12}: build + deploy + full smoke"; fi
+
   # Server inputs: the Go tree, the firewall and the launchers that build + run the pinned commit on each (re)start.
   srv=(chipper scripts/wire-pod-guard.nft scripts/run-server.sh scripts/load-guard.sh)
   # Tracked data the server still reads from the tree at runtime (cwd chipper/), not from the pinned build.
@@ -141,21 +152,23 @@ if ((deploy)); then
   fi
 fi
 
-json=$(echo "$want" | grep '\.json$' || true)
-step "patched JSON parses"
-for f in $json; do
-  python3 -I -c 'import json,re,sys; json.loads(re.sub(r"(?<![:\"])//[^\n]*", "", open(sys.argv[1]).read()))' "$src/$f" ||
-    die "bad JSON: $f"
-done
-echo "$(echo "$json" | grep -c . || true) JSON files OK"
+if ((fw)); then
+  json=$(echo "$want" | grep '\.json$' || true)
+  step "patched JSON parses"
+  for f in $json; do
+    python3 -I -c 'import json,re,sys; json.loads(re.sub(r"(?<![:\"])//[^\n]*", "", open(sys.argv[1]).read()))' "$src/$f" ||
+      die "bad JSON: $f"
+  done
+  echo "$(echo "$json" | grep -c . || true) JSON files OK"
 
-step "build: ./build/build-v.sh"
-(cd "$src" && script -qec ./build/build-v.sh /dev/null) || die "build"
+  step "build: ./build/build-v.sh"
+  (cd "$src" && script -qec ./build/build-v.sh /dev/null) || die "build"
 
-step "built = patched (bin markers, built JSON); tree unchanged during the build"
-VICTOR_SRC=$src "$pd/check-static.sh" --built || die "built firmware lacks a patch (check-static.sh --built)"
-tree_is_patches
-echo "built firmware matches the tree"
+  step "built = patched (bin markers, built JSON); tree unchanged during the build"
+  VICTOR_SRC=$src "$pd/check-static.sh" --built || die "built firmware lacks a patch (check-static.sh --built)"
+  tree_is_patches
+  echo "built firmware matches the tree"
+fi
 
 ((deploy)) || { echo; echo "built, not deployed (--no-deploy) at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z"). log: $SHIP_LOG"; exit 0; }
 
@@ -178,11 +191,15 @@ else
   step "server: wire-pod already runs $running, ${srv[*]} unchanged — no restart"
 fi
 
-step "deploy: ./build/deploy-v.sh to $ip"
-# Patch 0014: deploy-v.sh ssh-adds MYVECTOR_DEPLOY_KEY (gitignored in the clone) instead of the image's robot_sshkey; cleanup removes it.
-install -m 600 "$key" "$src/myvector_sshkey"
-(cd "$src" && MYVECTOR_DEPLOY_KEY=myvector_sshkey script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
-rm -f "$src/myvector_sshkey"
+if ((fw)); then
+  step "deploy: ./build/deploy-v.sh to $ip"
+  # Cleared first: a deploy that dies half-way must not leave the old tree's marker (a later ship of that tree would skip).
+  ssh "${ssh_opts[@]}" "root@$ip" "rm -f $marker" || die "could not clear $marker on the robot — robot untouched, not pushed"
+  # Patch 0014: deploy-v.sh ssh-adds MYVECTOR_DEPLOY_KEY (gitignored in the clone) instead of the image's robot_sshkey; cleanup removes it.
+  install -m 600 "$key" "$src/myvector_sshkey"
+  (cd "$src" && MYVECTOR_DEPLOY_KEY=myvector_sshkey script -qec ./build/deploy-v.sh /dev/null) || die "deploy"
+  rm -f "$src/myvector_sshkey"
+fi
 
 # A settings failure warns, never stops the ship: the robot already runs $sha. Except T5 with pod-trust: the robot must trust ours only.
 step "robot settings: settings.sh (no-auto-update, T2 voice, /data guard, server CA trust)"
@@ -193,8 +210,15 @@ if grep -q 'pod-trust\.patch$' "$pd/series" && ! grep -q '^ok: epod: .*(ours[,)]
   die "pod-trust: settings.sh did not confirm ROBOT_TRUST = our CA only (epod line above) — the robot already runs $sha and may not reach wire-pod, NOT pushed"
 fi
 
-step "robot smoke test: smoke.sh (units up + stable, log, head, face, speech, base still)"
-"$pd/smoke.sh" || die "robot smoke test failed — the robot is ALREADY running $sha, NOT pushed; fix and ship again, or ship the previous sha"
+if ((fw)); then
+  step "robot smoke test: smoke.sh (units up + stable, log, head, face, speech, base still)"
+  "$pd/smoke.sh" || die "robot smoke test failed — the robot is ALREADY running $sha, NOT pushed; fix and ship again, or ship the previous sha"
+  ssh "${ssh_opts[@]}" "root@$ip" "echo $fw_tree >$marker" ||
+    add_warns "WARN could not write $marker on the robot: the next ship builds + deploys again"
+else
+  step "robot smoke test: smoke.sh --server (firmware unchanged: link, log, face, short phrase, log-level intent)"
+  "$pd/smoke.sh" --server || die "robot smoke test (--server) failed — wire-pod ALREADY runs $sha, NOT pushed; fix and ship again, or ship the previous sha"
+fi
 
 # Push the pinned sha, not the branch tip: a parallel session may have committed during the build,
 # and pushing the tip would publish commits the robot is not running. Keeps origin == robot.

@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # On-robot smoke test (make robot-test; make ship after deploy): units up and stable, clean vic-robot log, wire-pod link, docked,
 # head moves to both limits, face + speech work, log-level intent, wheels never moved.
-# Usage: smoke.sh   → PASS (exit 0); FAIL (1) names the first failing check; SETUP (2) = no ESN/key/SSH/wire-pod link.  (env: ESN, SERVER)
+# Usage: smoke.sh [--server]   → PASS (exit 0); FAIL (1) names the first failing check; SETUP (2) = no ESN/key/SSH/wire-pod link.  (env: ESN, SERVER)
+#   --server (make ship, firmware unchanged): units up now, wire-pod link, docked + log, face + a short phrase, A3, units unchanged.
 # Moves only the head: check-static.sh S5 fails on a wheel/lift name in this file or fork_smoke.go (denylist), on any `sdk`/api-sdk
 # endpoint here not in its allowlist or not literal (cloud_intent only via intent my_vector_log_*), and on any Conn method in fork_smoke.go
 # other than EventStream/DisplayFaceImageRGB/SayText (myvector/voice: ExternalAudioStreamPlayback/SayText/BehaviorControl). A2 speaks in the saved language's T1 (PC voice :8091 or stock), WARN on fallback.
 set -euo pipefail
+case ${1:-} in '') full=1 steps=9 ;; --server) full=0 steps=6 ;; *) echo "usage: smoke.sh [--server]" >&2; exit 2 ;; esac
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
 . "$here/../env.sh"
@@ -18,7 +20,7 @@ die() { # once the units are up ($up), a failing check also reports a unit that 
 }
 setup() { echo "SETUP: $*" >&2; exit 2; }
 ok() { echo "ok: $*"; }
-steps=9 step_n=0
+step_n=0
 step() { echo "== [$((++step_n))/$steps] $*  (+${SECONDS} s)"; } # progress header before each stage
 on_exit=() # cleanup commands, run in order by the EXIT trap
 trap 'for c in "${on_exit[@]}"; do eval "$c" || true; done' EXIT
@@ -58,9 +60,10 @@ for try in 1 2 3; do
   ((try < 3)) || setup "no SSH to $ip"; sleep 3
 done
 
-step "units up and stable (up to 183 s)"
-# P1: units active within 180 s, PIDs unchanged 3 s later (and at the end: same_pids "during the run").
 t0=$(ssh_ 'date +%s' 2>/dev/null) || t0=$(date +%s)
+step "units up$( ((full)) && echo ' and stable') (up to 180 s)"
+# P1: units active within 180 s (--server: settings.sh's epod trust rewrite may have restarted them), PIDs unchanged 3 s later
+# (full run only) and at the end (same_pids "during the run").
 end=$((SECONDS + 180))
 while :; do
   rc=0; up=$(pids) || rc=$?
@@ -71,9 +74,11 @@ while :; do
   fi
   sleep 5
 done
-sleep 3
-same_pids "within 3 s (crash loop?)"
-ok "units active, stable 3 s: $up"
+if ((full)); then
+  sleep 3
+  same_pids "within 3 s (crash loop?)"
+  ok "units active, stable 3 s: $up"
+else ok "units active: $up"; fi
 
 step "wire-pod link"
 # P1: wire-pod reaches the robot within 20 s (else the setup, not the firmware, is broken).
@@ -119,13 +124,19 @@ EOF
 }
 logcheck start
 
+sdk() { curl -s -m "${sdk_m:-20}" "$server/api-sdk/$1?serial=$esn${2:+&$2}" || true; } # curl -m from sdk_m, default 20 s
+if ((!full)); then
+  # A2 under behavior control, as in the full run.
+  sdk assume_behavior_control >/dev/null
+  on_exit+=('sdk release_behavior_control >/dev/null')
+  sleep 2
+else
 step "vic-engine web server"
 # P1: vic-engine's web server answers.
 code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://$ip:8888/consolevars" || true)
 [[ $code == 200 ]] || die "vic-engine :8888/consolevars answered ${code:-nothing}"
 ok "vic-engine :8888 answers"
 
-sdk() { curl -s -m "${sdk_m:-20}" "$server/api-sdk/$1?serial=$esn${2:+&$2}" || true; } # curl -m from sdk_m, default 20 s
 state() { # state <label>: one robot_state sample as JSON, or die
   local s; s=$(sdk fork_robot_state)
   jq -e '.pose.x != null and .origin_id != null and .wheels_mm_s.l != null and .wheels_mm_s.r != null' <<<"$s" >/dev/null 2>&1 ||
@@ -174,6 +185,7 @@ head_to() { # head_to <speed> <label> <jq test on .head_angle_rad>: re-sent each
 }
 head_to 1 up '>= 0.7767 - 0.1'    # MAX_HEAD_ANGLE 44.5°
 head_to -1 down '<= -0.3840 + 0.1' # MIN_HEAD_ANGLE -22°
+fi
 step "A2 face + speech"
 r=$(sdk fork_face); [[ $r == ok ]] || die "A2: fork_face: ${r:0:200}"
 ok "A2 face shown"
@@ -184,6 +196,8 @@ said="Hello! This is Vector's speech test: one, two, three. Can you hear me clea
 if [[ $(curl -s -m 5 "$server/myvector/api/voice" | jq -r .lang 2>/dev/null) == et-EE ]]; then
   et_months=(jaanuar veebruar märts aprill mai juuni juuli august september oktoober november detsember)
   said="Tere! See on Vectori kõnetest: kell on $(date +%H:%M), täna on $(date +%-d). ${et_months[$(date +%-m) - 1]}. Kõik töötab, kas sa kuuled mind hästi?"
+  ((full)) || said="Tere, kõik töötab."
+else ((full)) || said="Hello, all good."
 fi
 r=$(sdk_m=35 sdk fork_say "text=$(jq -rn --arg s "$said" '$s|@uri')"); [[ $r == FINISHED\ * ]] || die "A2: fork_say ended '${r:0:200}', want FINISHED <voice>"
 [[ $r != 'FINISHED fallback'* ]] && ok "A2 said '$said' in ${r#FINISHED }" ||
@@ -212,6 +226,15 @@ n0=$(ssh_ 'wc -l </var/log/messages') || die "A3: cannot read /var/log/messages"
 intent my_vector_log_info
 seen 'my-vector\.LogLevel.*info \(app\)' || die "A3: no 'my-vector.LogLevel info (app)' within 10 s; saw: ${new:-nothing}"
 ok "A3 log-level intent: DEBUG on, back to info"
+
+if ((!full)); then
+  step "end checks: docked, units"
+  docked after
+  same_pids "during the run"
+  ok "units unchanged at the end"
+  echo "PASS (--server)"
+  exit 0
+fi
 
 step "end checks: A4 base still, docked, log, units"
 # A4 end: the base did not move during the run (head and lift do not change the pose).
