@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): sshd host keys, root SSH key, volume, 24h clock + Celsius + Tallinn time zone, no-auto-update, T2 voice file, /data fill guard.
+# Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): sshd host keys, root SSH key, volume, 24h clock + Celsius + Tallinn time zone, no-auto-update, T2 voice file, /data fill guard, server CA trust.
 # Usage: settings.sh   idempotent: reads first, sets only what differs. Exit 0 = all in place; 1 = a WARN line printed; 2 = SETUP (robot/env.sh).  (env: ESN, SERVER)
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -83,4 +83,9 @@ dg=$here/../diskguard/apply.sh
 if [[ ! -f $dg ]]; then warn "diskguard: $dg missing (older sha?); not installed"
 elif out=$(bash "$dg" 2>&1); then ok "${out//$'\n'/; }"
 else warn "diskguard: ${out//$'\n'/; }"; fi
+# Server CA trust (robot/epod): ROBOT_TRUST lives on /data; re-applied so the 0015 marker switches it to ours only.
+ep=$here/../epod/apply.sh
+if [[ ! -f $ep ]]; then warn "epod: $ep missing (older sha?); not applied"
+elif out=$(bash "$ep" 2>&1); then ok "${out//$'\n'/; }"
+else warn "epod: ${out//$'\n'/; }"; fi
 exit $rc
