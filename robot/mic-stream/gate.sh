@@ -56,7 +56,7 @@ for w in "${wins[@]}"; do
   setport 0 && { [[ $w == off ]] || setport "$PORT"; } || { echo "SETUP: :8889 refused the port set"; exit 2; }
   if [[ $w == on ]]; then # the 0 → PORT flip makes the robot redial: wait for a NEW connection
     for _ in $(seq 30); do (($(count conn) > c0)) && break; sleep 1; done
-    (($(count conn) > c0)) || { echo "SETUP: robot never reached :$PORT (Windows firewall? plan §1.2)"; exit 2; }
+    (($(count conn) > c0)) || { echo "SETUP: robot never reached :$PORT (open :$PORT inbound: Windows + Hyper-V firewall, mirrored WSL)"; exit 2; }
   fi
   sleep 5; e0=$(count eof) b0=$(bytes)
   pct=$(sample) || { echo "SETUP: no vic-anim sample"; exit 2; }
