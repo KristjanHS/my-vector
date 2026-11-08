@@ -1,6 +1,6 @@
 # et-EE chat prompt tuning per model
 
-Status: planned — not implemented (user, 2026-11-08).
+Status: Stages 1.1–3.2 in progress (qimpag 2026-11-08); stops at 4.1 Q1.
 
 **Ask**: fix the two et picks of 2026-11-08-et-llm-research.md (docs/plans/) §Stage 2 with model-specific prompt changes:
 `apertus-estllm:8b` answers long and list-shaped (`Samm 1:`, bullets); EstLLM-8B-1125 drops ‹nimi›/‹kodukoht›/family into unrelated replies.
@@ -36,7 +36,7 @@ Counted per model × arm on et-EE replies; `{{cmd||param}}` stripped first; "lon
 | H | recall rate | % `self` asks (Stage 2.1) whose reply contains ≥ 1 profile token — guards against over-suppression |
 | J, P | judge, latency | `judge` mean; `probekit.Summary` p50/p90 |
 
-Profile tokens: read at run time from the isolated copies (about-me + memory profile + active facts): capitalised words ≥ 3 runes, minus `Vector` and words in the ask. Never written to the doc, a test fixture or stdout — only counts print.
+Profile tokens (the name included — a greeting by ‹nimi› is a leak, user 2026-11-08): read at run time from the isolated copies (about-me + memory profile + active facts): capitalised words ≥ 3 runes, minus `Vector` and words in the ask. Never written to the doc, a test fixture or stdout — only counts print.
 
 **Selection rule (default; Stage 3.1 validates):** an arm passes for a model when, vs its baseline arm on the same run: K ≤ 5 %, L ≤ 5 %, non-long W median ≤ 35 and p90 ≤ 60, H ≥ 75 %, J drop ≤ 5 points, p90 latency ≤ baseline + 20 %.
 Winner = highest J among passing arms; tie → fewest prompt tokens (`MaxPrompt`).
@@ -46,7 +46,7 @@ Stage 3.2 holdout (`-reps 3`) confirms only the winner; failing holdout = no wir
 
 ## Prompt variants
 
-Every arm is a delta on arm `0` (the live saved `ollama` template + today's request fields); all run on both models, the target is whose defect it aims at.
+Every arm is a delta on arm `0` (the live saved `ollama` template + today's request fields); each model runs only its targeted arms (user, 2026-11-08): Apertus `0,P,R,X,E,S,N` · EstLLM-1125 `0,X,E,S,D,F,G,N`.
 
 | id | change | target | source |
 |---|---|---|---|
@@ -68,7 +68,7 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 | 1.2 | Counters W, L, K, H (§Metrics) in a pure func `count(ask, raw, answer, tokens)`; the arm line gains `words m/p90 · list % · leak % · recall %`. Proof `TestCount`: a `Samm 1:` reply → list; `**x**` → list; "Vesikülas" vs token Vesiküla → leak; ask containing the token → not a leak; fictional tokens only. | new `routeprobe/count.go` + `_test.go`, `routeprobe/main.go` |
 | 1.3 | Per-call arms: an arm may rewrite the isolated about-me before each call (`prompt.Save(prompt.Ollama, nil, &about)`); `forkAIReq` re-`Load`s the store per request, so fence/gate/drop arms need no prod edit. Proof `TestPromptArms`: arm G on a `tempt` ask → temp about-me empty; on a `self` ask → unchanged. | `routeprobe/arms.go` |
 | 2.1 | Sets `leakdev` + `leakholdout` (et-EE): 8 `tempt` asks each (story, weekend plan, "kuidas sul läheb?", recipe, book tip, joke, "mida sa täna teeksid?", gift idea) + 3 `self` asks each ("kus ma elan?", "mis mu nimi on?", "kes ma olen?" / holdout paraphrases — each answerable by a capitalised token). `-set` takes a comma list. Proof: `TestChatSets` extended — leak sets disjoint from each other and from dev/holdout, dev/holdout unchanged. | `routeprobe/chatset.go` + `_test.go` |
-| 3.1 | Dev run, per model: `routeprobe -lang et-EE -brain ollama:<tag> -set dev,leakdev -think none -prompt 0,<arms> -reps 2`; record each arm line in §Results. Apply §Metrics stop rule. Raw output to `robot/work/et-prompt-tuning/` (gitignored). | this plan |
+| 3.1 | Dev run, per model: `routeprobe -lang et-EE -brain ollama:<tag> -set dev,leakdev -think none -prompt <that model's arms, §Prompt variants> -reps 2`; record each arm line in §Results. Apply §Metrics stop rule. Raw output to `robot/work/et-prompt-tuning/` (gitignored). | this plan |
 | 3.2 | Holdout confirm of each model's winner: `-set holdout,leakholdout -prompt 0,<winner> -reps 3`. | this plan |
 | 4.1 | `[USER DECISION]` wiring: see §Open questions Q1. Then the winning text lands in `prompt` defaults or per-model store keys, `llm.SamplingFor` gets the et rows, the golden tests regenerate, docs/model-prompt-formats.md §Main rule is rewritten. | `prompt/defaults.go`/`store.go`, `llm/sampling.go`, `prompt/testdata/*.golden` |
 | 5.1 | `make check` green. `[USER]` live check (robot sound lock: `robot/quiet/quiet.sh status` first; volume as the user left it): ask 1 story + 1 how-to + "kus ma elan?" in Estonian on the shipped model → short prose, no ‹nimi›/‹kodukoht› in the first two, correct in the third. | — |
@@ -82,7 +82,6 @@ Every arm is a delta on arm `0` (the live saved `ollama` template + today's requ
 ## Open questions
 
 - `[USER DECISION]` Q1 (Stage 4.1) wiring: one shared `ollama` template change if a single arm wins both models; else per-model text (store key `ollama:<model>` vs a style line beside `llm.SamplingFor` `families`) — which model ships stays the `docs/backlog.md` §OWED[USER] et-model line.
-- `[USER DECISION]` Q2 (before 2.1): does Vector greeting you by ‹nimi› in an unrelated reply count as a leak? Default: yes — the name is a profile token like any other.
 - `[USER DECISION]` Q3 (Stage 4.1, only if G wins): gating `{user}` in prod drops the about-me from most asks, and the same gate on `{facts}` needs a 2026-11-08-memory-m2.md (docs/plans/) M18 ruling.
 
 ## Sources
