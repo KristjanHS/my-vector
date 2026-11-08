@@ -11,7 +11,7 @@ blob() { if [[ -f $1.pub ]]; then awk '{ print $2; exit }' "$1.pub"; else ssh-ke
 new=$(blob "$key") && old=$(blob "$key_old") && [[ -n $new && -n $old ]] ||
   { echo "SETUP: sshkey: cannot read the public half of $key or $key_old" >&2; exit 2; }
 if [[ $new == "$old" ]]; then
-  echo "WARN: sshkey: ROBOT_KEY is the image key (victor-dev); swap skipped — set ROBOT_KEY=backup/myvector_ed25519 in robot/robot.env"
+  echo "WARN: sshkey: ROBOT_KEY is the image key (victor-dev); swap skipped — set ROBOT_KEY=../secrets/myvector_ed25519 in robot/robot.env"
   exit 0
 fi
 [[ -f $key.pub ]] || { echo "SETUP: sshkey: no $key.pub" >&2; exit 2; }
