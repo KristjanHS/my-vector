@@ -8,12 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/listen"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 )
 
 // TestMain stubs forkSearch to "" and points the weather endpoints at a closed port so no ttr test reaches the
-// network, the search state and memory store at temp files, and listen.sh at `true` (exit 0 = 410: no robot, no restart).
+// network, the search state and memory store at temp files, listen.sh at `true` (exit 0 = 410: no robot, no restart),
+// and the stream-port console at a closed port.
 func TestMain(m *testing.M) {
 	forkSearch = func(sentence, l, brain string, zone *time.Location) string { return "" }
 	search.GeocodeURL, search.ForecastURL, forkWeatherAPIForecastURL = "http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1"
@@ -21,6 +23,7 @@ func TestMain(m *testing.M) {
 	search.StatePath = func() string { return dir + "/myvectorSearch.json" }
 	memory.Path = func() string { return dir + "/myvectorMemory.json" }
 	forkCapture.Script = func() (string, error) { return exec.LookPath("true") }
+	listen.ConsoleURL = func(string) string { return "http://127.0.0.1:1" }
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
@@ -38,5 +41,11 @@ func TestForkSearchStubbed(t *testing.T) {
 func TestForkCaptureStubbed(t *testing.T) {
 	if p, _ := forkCapture.Script(); filepath.Base(p) == "listen.sh" {
 		t.Fatalf("forkCapture runs %s: ttr tests could reach the robot", p)
+	}
+}
+
+func TestForkArmStubbed(t *testing.T) {
+	if u := listen.ConsoleURL("10.0.0.9"); u != "http://127.0.0.1:1" {
+		t.Fatalf("stream-port console %s: ttr tests could reach the robot", u)
 	}
 }
