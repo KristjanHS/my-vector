@@ -136,8 +136,8 @@ func runESN(ctx context.Context, t llm.Target, esn string, zone *time.Location) 
 	return nil
 }
 
-// check rebuilds the profile and runs the guard against pre minus facts Removed meanwhile (M26); a failed guard call
-// reverts as if every answer was lost.
+// check rebuilds the profile and runs the guard, every call synced with Removes made meanwhile (M26); a loss after a Remove
+// during the guard is re-asked of the synced baseline. A failed guard call reverts with no try (M14); a refused one stops the pass (M2).
 func check(ctx context.Context, t llm.Target, esn string, pre *Store, now time.Time) (string, error) {
 	mid, err := Read()
 	if err != nil {
@@ -151,24 +151,49 @@ func check(ctx context.Context, t llm.Target, esn string, pre *Store, now time.T
 	if err := pre.DropRemoved(esn); err != nil {
 		return "", err
 	}
+	gone := removedN(pre, esn)
 	before, err := Answers(ctx, t, pre, esn)
 	var after map[string]bool
 	if err == nil {
 		after, err = Answers(ctx, t, mid, esn)
 	}
 	lost := Lost(before, after)
+	if err == nil && len(lost) > 0 {
+		if err = pre.DropRemoved(esn); err == nil && removedN(pre, esn) > gone {
+			var again map[string]bool
+			if again, err = answers(ctx, t, pre, esn, lost); err == nil {
+				for _, c := range lost {
+					before[c] = again[c]
+				}
+				lost = Lost(before, after)
+			}
+		}
+	}
 	if err != nil {
 		logf("myvector: memory guard "+esn+" call failed, reverting:", err)
 		lost = []string{"error"}
 	}
 	snap := pre.Snapshot(esn)
-	if err := Update(func(st *Store) error { st.Guard(snap, lost, now); return nil }); err != nil {
+	if uerr := Update(func(st *Store) error { st.Guard(snap, lost, err == nil, now); return nil }); uerr != nil {
+		return "", uerr
+	}
+	if errors.Is(err, ErrRefused) {
 		return "", err
 	}
 	if len(lost) > 0 {
 		return "revert " + strings.Join(lost, ","), nil
 	}
 	return "ok", nil
+}
+
+// removedN counts esn's Removed facts in st.
+func removedN(st *Store, esn string) (n int) {
+	for _, f := range st.Facts {
+		if f.ESN == esn && f.Status == Removed {
+			n++
+		}
+	}
+	return n
 }
 
 // counts are the candidates in pre that post has Active, and pre's active facts post has Superseded.

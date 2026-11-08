@@ -179,8 +179,11 @@ func TestPruneKeepsLocalMidnightSession(t *testing.T) {
 }
 
 func TestRunRemoveMidPass(t *testing.T) {
-	for _, during := range []string{"Category: family", "- ["} { // the merge call, the profile call
-		t.Run(during, func(t *testing.T) {
+	for _, c := range []struct {
+		name, during string
+		nth          int
+	}{{"merge", "Category: family", 1}, {"profile", "- [", 1}, {"baseline guard", "Profile:", 1}, {"post-merge guard", "Profile:", len(Categories) + 1}} {
+		t.Run(c.name, func(t *testing.T) {
 			useEpisodes(t, `{}`)
 			useModel(t, `{}`)
 			oldNow := Now
@@ -197,9 +200,12 @@ func TestRunRemoveMidPass(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
-			calls, removedAt := 0, -1
+			calls, seen, removedAt := 0, 0, -1
 			tg, users := recordModel(t, func(u string) string {
-				if calls++; removedAt < 0 && strings.HasPrefix(u, during) {
+				if calls++; removedAt < 0 && strings.HasPrefix(u, c.during) {
+					seen++
+				}
+				if removedAt < 0 && seen == c.nth {
 					Update(func(st *Store) error { st.Remove("f1", Now()); return nil }) // the user deletes Muki mid-call
 					removedAt = calls
 				}
@@ -255,5 +261,56 @@ func TestRunStopsWhenModelSwitchedOff(t *testing.T) {
 	}
 	if len(*users) != 1 {
 		t.Fatalf("%d model calls, want 1: none after memory_model turned off", len(*users))
+	}
+}
+
+func TestRunGuardCallErrorNoTry(t *testing.T) {
+	for _, name := range []string{"cancelled", "refused"} {
+		t.Run(name, func(t *testing.T) {
+			useEpisodes(t, `{}`)
+			useModel(t, `{}`)
+			var off atomic.Bool
+			configBytes = func() ([]byte, error) {
+				if off.Load() {
+					return []byte(`{"memory_model":"off"}`), nil
+				}
+				return []byte(`{}`), nil
+			}
+			oldNow := Now
+			Now = func() time.Time { return time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC) }
+			t.Cleanup(func() { Now = oldNow })
+			if err := Capture(esn, Episode{At: Now(), Kind: Chat, User: "Tere.", Reply: "Tere!"}, time.UTC); err != nil {
+				t.Fatal(err)
+			}
+			if err := Update(func(st *Store) error {
+				st.Facts = []Fact{mfact("c1", "family", Unconfirmed, "The user has a sister Mari."), mfact("f1", "pets", Active, "The user has a dog named Muki.")}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			tg, _ := recordModel(t, func(u string) string {
+				if strings.HasPrefix(u, "Profile:") { // the guard's first call fails / the model is switched off during it
+					if name == "cancelled" {
+						cancel()
+					} else {
+						off.Store(true)
+					}
+				}
+				if strings.HasPrefix(u, "Category:") {
+					return "confirm c1"
+				}
+				return Unknown
+			})
+			err := Run(ctx, tg, utc)
+			st, _ := Read()
+			if name == "refused" && (err == nil || !strings.Contains(err.Error(), "refused") || !st.LastRun.IsZero()) {
+				t.Fatalf("Run = %v, last_run %v; a refused guard call stops the pass after the revert", err, st.LastRun)
+			}
+			if s, n := status(st), tries(st); s["c1"] != Unconfirmed || n["c1"] != 0 || !strings.HasSuffix(st.LastGuard, " revert error") {
+				t.Fatalf("c1 %s tries %d last_guard %q; a guard call error reverts with no try", s["c1"], n["c1"], st.LastGuard)
+			}
+		})
 	}
 }

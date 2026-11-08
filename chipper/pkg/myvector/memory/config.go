@@ -3,6 +3,7 @@ package memory
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -72,11 +73,14 @@ func Target(c llm.Config, l string, kg llm.KG) (llm.Target, bool) {
 	return llm.Target{}, false
 }
 
+// ErrRefused is Ask once Model() no longer names its target (M2).
+var ErrRefused = errors.New("call refused")
+
 // Ask is one thinking-off, temperature-0 call to t only — an error never retries on the other provider; refused with no
 // call once Model() no longer names t (M2).
 func Ask(ctx context.Context, t llm.Target, system, user string, replyCap int) (string, error) {
 	if m := Model(); !names(m, t) {
-		return "", fmt.Errorf("memory model is now %q, not %s:%s — call refused", m, t.Provider, t.Model)
+		return "", fmt.Errorf("memory model is now %q, not %s:%s — %w", m, t.Provider, t.Model, ErrRefused)
 	}
 	r := openai.ChatCompletionRequest{Model: t.Model, Messages: []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: system}, {Role: openai.ChatMessageRoleUser, Content: user}}}
