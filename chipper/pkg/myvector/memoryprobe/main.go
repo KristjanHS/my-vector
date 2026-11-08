@@ -1,7 +1,7 @@
 // Command memoryprobe runs one memory pass step on a JSONL episode fixture with the configured memory model,
 // printing the model reply and the parsed result. From chipper/:
 //
-//	go run ./pkg/myvector/memoryprobe -fixture pkg/myvector/memory/testdata/session_et.jsonl -step extract|merge|profile|guard
+//	go run ./pkg/myvector/memoryprobe -fixture pkg/myvector/memory/testdata/session_et.jsonl -step extract|merge|profile|guard|diary
 package main
 
 import (
@@ -21,7 +21,7 @@ import (
 func main() {
 	cfgPath := flag.String("config", "../secrets/server/myvectorConfig.json", "myvectorConfig.json to read memory_model, the Ollama URL and the Claude key from")
 	fixture := flag.String("fixture", "", "episodes JSONL (memory.Episode lines)")
-	step := flag.String("step", "extract", "extract, merge (extract → merge), profile (→ profile) or guard (baseline → merge → profile → check); diary lands with its stage")
+	step := flag.String("step", "extract", "extract, merge (extract → merge), profile (→ profile) guard (baseline → merge → profile → check) or diary (one entry per fixture day, no extract)")
 	esn := flag.String("esn", "probe", "ESN the fixture's sessions belong to")
 	flag.Parse()
 	lang.Path = func() string { return *cfgPath }
@@ -37,6 +37,10 @@ func main() {
 		fail(1, err.Error())
 	}
 	fmt.Printf("memory model %s %s at %s\n", t.Provider, t.Model, t.BaseURL)
+	if *step == "diary" {
+		diary(t, eps)
+		return
+	}
 	steps := map[string]int{"extract": 1, "merge": 2, "profile": 3, "guard": 4}[*step]
 	if steps == 0 {
 		fail(2, "-step "+*step+": not built yet")
@@ -55,6 +59,26 @@ func main() {
 	}
 	if steps >= 4 {
 		fmt.Println("-- lost:", memory.Lost(before, guard(t, st, *esn, "check")))
+	}
+}
+
+func diary(t llm.Target, eps []memory.Episode) {
+	byDay := map[string][]memory.Episode{}
+	var days []string
+	for _, e := range eps {
+		d := e.At.Format("2006-01-02")
+		if byDay[d] == nil {
+			days = append(days, d)
+		}
+		byDay[d] = append(byDay[d], e)
+	}
+	for _, d := range days {
+		start := time.Now()
+		reply, err := memory.Ask(context.Background(), t, memory.DiaryPrompt, memory.DiaryUser(d, byDay[d]), memory.DiaryReplyCap)
+		if err != nil {
+			fail(1, "diary "+d+": "+err.Error())
+		}
+		fmt.Printf("\n== diary %s (%s, %d runes, cap %d)\n%s\n", d, time.Since(start).Round(time.Millisecond), len([]rune(reply)), memory.DiaryCap, reply)
 	}
 }
 
