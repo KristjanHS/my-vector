@@ -2,7 +2,7 @@
 
 ## OWED[USER]
 
-- Thinking levels 2.1 gate (`2026-11-08-local-thinking-levels.md` (docs/plans/) R9): gemma4 × chat et exact 75% < 95%, off by ≤ 1 token — loosen to |err| ≤ 1, or debug first.
+- Thinking levels 2.1 gate (`2026-11-08-local-thinking-levels.md` (docs/plans/) R9): gemma4 × chat et exact 15/16 < 95% (n 16 needs 16/16), err +0/+1 — loosen to `err` within ±1, or debug first.
 - et chat on `gemma4:e4b-it-qat` (EstLLM deleted 2026-11-08): by-ear Estonian quality — keep, or re-pull `hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M`.
 - et active listening: no Ollama model reached the `listenprobe` bar (`2026-11-07-et-listen-model.md` (docs/plans/) W1) — next lever owed.
 - LLM picker page by eye (`2026-11-06-llm-picker-page.md` (docs/plans/) Stage 5 §2 items 3+5): Ollama-down warning, cleared key → Claude disabled + 400, upstream Knowledge save keeps the fork profile.
