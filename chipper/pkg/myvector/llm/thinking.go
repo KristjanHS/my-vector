@@ -99,8 +99,16 @@ func ThinkingFor(provider, model string, path Path, level Level) Thinking {
 	return Thinking{Effort: string(level), Budget: r.budget[path][level.rank()-1], Native: r.native, Sampling: r.on}
 }
 
+// ProbeThinking is nil in production; a probe sets it so its arm's Thinking bypasses the saved level and ceiling.
+var ProbeThinking func(provider, model string, path Path) (Thinking, bool)
+
 // Thinking is the production setup: the saved "think" level (else DefaultThink), clamped to the model's ceiling (T15).
 func (c Config) Thinking(provider, model string, path Path) Thinking {
+	if ProbeThinking != nil {
+		if t, ok := ProbeThinking(provider, model, path); ok {
+			return t
+		}
+	}
 	level, ok := c.Think[path]
 	if !ok {
 		level = DefaultThink[path]
