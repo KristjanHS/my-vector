@@ -59,11 +59,14 @@ func Parse(reply string) bool {
 	return s != "" && !strings.HasPrefix(s, "SKIP")
 }
 
-// Ask is one Prompt call.
+// ReplyCap is the listen reply's max_tokens before any thinking budget.
+const ReplyCap = 80
+
+// Ask is one Prompt call, thinking per llm.Config.Thinking for PathListen.
 func Ask(ctx context.Context, c *openai.Client, model, user string) (string, error) {
-	r := openai.ChatCompletionRequest{Model: model, ReasoningEffort: "none", MaxTokens: 80, Messages: []openai.ChatCompletionMessage{
+	r := openai.ChatCompletionRequest{Model: model, Messages: []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: Prompt}, {Role: openai.ChatMessageRoleUser, Content: user}}}
-	llm.SamplingFor(llm.Ollama, model).Apply(&r)
+	llm.Load().Thinking(llm.Ollama, model, llm.PathListen).Apply(&r, ReplyCap)
 	res, err := c.CreateChatCompletion(ctx, r)
 	if err != nil || len(res.Choices) == 0 {
 		return "", fmt.Errorf("no answer: %v", err)
