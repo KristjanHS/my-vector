@@ -118,3 +118,38 @@ func TestPrune(t *testing.T) {
 		t.Fatalf("cut = %q (%d runes)", got, len([]rune(got)))
 	}
 }
+
+func TestRunRebuildsRemovedProfile(t *testing.T) {
+	useEpisodes(t, `{}`)
+	useModel(t, `{}`)
+	oldNow := Now
+	Now = func() time.Time { return time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { Now = oldNow })
+	if err := Capture(esn, Episode{At: Now(), Kind: Chat, User: "Tere.", Reply: "Tere!"}, time.UTC); err != nil { // today: open, no diary
+		t.Fatal(err)
+	}
+	t0 := Now().Add(-48 * time.Hour)
+	if err := Update(func(st *Store) error {
+		st.Facts = []Fact{fact("f1", "The user's dog is called Muki.", "mu koer Muki", t0), fact("f2", "The user lives in Tartu.", "elan Tartus", t0)}
+		st.Profiles[esn] = Profile{Text: "Lives in Tartu, has a dog Muki."}
+		st.Remove("f1", Now())
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tg, users := recordModel(t, func(u string) string {
+		if strings.HasPrefix(u, "- [") {
+			return "Lives in Tartu."
+		}
+		return Unknown
+	})
+	if err := Run(context.Background(), tg, utc); err != nil {
+		t.Fatal(err)
+	}
+	if want := 1 + 2*len(Categories); len(*users) != want {
+		t.Fatalf("%d model calls, want %d (1 profile, 2×guard)", len(*users), want)
+	}
+	if st, _ := Read(); st.Profiles[esn].Text != "Lives in Tartu." {
+		t.Fatalf("profile %+v, want rebuilt without the removed fact", st.Profiles)
+	}
+}

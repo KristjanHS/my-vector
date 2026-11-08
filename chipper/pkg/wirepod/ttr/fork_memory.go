@@ -1,13 +1,27 @@
 package wirepod_ttr
 
 import (
+	"context"
+	"errors"
 	"strings"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
+
+func init() { memory.Pass = forkMemoryPass }
+
+// forkMemoryPass is one memory.Run on the memory target with each robot's zone; off or no target → an error, nothing run.
+func forkMemoryPass(ctx context.Context) error {
+	t, ok := memory.Target(llm.Load(), lang.Current(), forkKG())
+	if !ok {
+		return errors.New("memory model " + memory.Model() + ": off or unavailable (see the log)")
+	}
+	return memory.Run(ctx, t, forkBotZone)
+}
 
 // forkMemory is esn's {facts} and {diary} for utterance on brain; a var so tests fake it.
 var forkMemory = func(esn, utterance, brain string) (facts, diary string) {
