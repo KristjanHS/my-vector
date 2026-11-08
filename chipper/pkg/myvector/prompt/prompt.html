@@ -151,7 +151,7 @@
     }
 
     const tmplDirty = () => !!cur && $("tmpl").value !== cur.brains[brain].template;
-    const aboutDirty = () => !!cur && $("about").value.trim() !== cur.about;
+    const aboutDirty = () => !!cur && $("about").value.trim() !== cur.about.trim();
 
     // keep.tmpl / keep.about leave that textarea's unsaved text in place.
     function show(keep = {}) {
@@ -230,7 +230,7 @@
       if (!("template" in body || "about" in body)) return status("No changes to save");
       post(body, "Saved");
     };
-    addEventListener("beforeunload", (e) => { if (tmplDirty() || aboutDirty()) e.preventDefault(); });
+    addEventListener("beforeunload", (e) => { if (tmplDirty() || aboutDirty()) { e.preventDefault(); e.returnValue = ""; } });
     $("reset").onclick = () => confirm(`Use the built-in ${brain} template?`) &&
       post({ action: "reset", brain }, "Reset to built-in", { about: aboutDirty() });
     call("/myvector/api/prompt").then((r) => { cur = r; show(); }).catch((e) => status("Load failed: " + e.message, "err"));

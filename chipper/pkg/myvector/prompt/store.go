@@ -220,8 +220,8 @@ func Save(brain string, tmpl, about *string) error {
 			t = Default(b)
 		}
 		if err := Validate(b, t, a); err != nil {
-			if b != brain {
-				return fmt.Errorf("%s template: %w", b, err)
+			if b != brain || tmpl == nil { // a saved template, not the one sent: name it
+				return fmt.Errorf("saved %s template: %w", b, err)
 			}
 			return err
 		}
