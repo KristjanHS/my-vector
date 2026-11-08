@@ -50,7 +50,7 @@ Sources:
 | R5 | Runtime `context_length` 4096 for both (and for gemma4:e2b); three models resident at once | `curl -s localhost:11434/api/ps` |
 | R7 | Exact reply count: et think-off reply, prompt-token delta + 1 = completion_tokens (qwen 103/103, gemma4 74/74), repeat identical; runes/token 2.83 / 3.03, not 4.0 | `/v1` reply → `{user: reply}`, `max_tokens` 1, minus `{user: ""}` |
 | R8 | Seed 7, T 0, "Is 391 prime?": low vs high identical (qwen pt 20 ct 800, gemma4 pt 26 ct 342, same reasoning) — efforts are one request | `/v1` `seed`, `temperature` 0 |
-| R9 | 2.1 think-off dev, exact %: chat qwen en 100, gemma4 et **75** (T p90 1); listen qwen 95/95/100, gemma4 100; follow-up 100. Max prompt: chat 206, listen 290, follow-up 111 | `routeprobe -set dev -think none -judge none`; `listenprobe`/`followupprobe -think none` |
+| R9 | 2.1 think-off dev (b074c03), exact % and signed err: chat qwen en 100 (+0/+0), gemma4 et **94** = 15/16 (+0/+1); listen and follow-up 100 on every prompt × model. Max prompt: chat 222, listen 290, follow-up 111 | `routeprobe -set dev -think none -judge none`; `listenprobe`/`followupprobe -think none` |
 | R6 | Decode tok/s (thinking calls, model alone): qwen p50 74 (n=9), gemma4 p50 69 (n=5); prompt eval ~0.1–0.2 s | `robot/work/think/zz_switch_test.go` (Stage 0.2/0.3) |
 
 ## Budget table
