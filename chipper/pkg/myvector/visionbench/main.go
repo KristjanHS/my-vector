@@ -61,16 +61,23 @@ func loadChecklist(dir string) ([]item, error) {
 		if len(it.ET) == 0 || len(it.EN) == 0 {
 			return nil, fmt.Errorf("checklist.json: photo %q needs non-empty et and en word lists", it.Photo)
 		}
+		for _, w := range append(append([]string{}, it.ET...), it.EN...) {
+			if w == "" || strings.IndexFunc(w, notWordRune) >= 0 {
+				return nil, fmt.Errorf("checklist.json: photo %q: word %q must be one word of letters/digits", it.Photo, w)
+			}
+		}
 	}
 	return items, nil
 }
+
+func notWordRune(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }
 
 // score is the share of words some answer token starts with, case-folded (V13).
 func score(answer string, words []string) float64 {
 	if len(words) == 0 {
 		return 0
 	}
-	toks := strings.FieldsFunc(strings.ToLower(answer), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	toks := strings.FieldsFunc(strings.ToLower(answer), notWordRune)
 	hit := 0
 	for _, w := range words {
 		w = strings.ToLower(w)
@@ -106,6 +113,9 @@ func unload(base, model string) {
 		return
 	}
 	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintln(os.Stderr, "unload "+model+": "+resp.Status)
+	}
 }
 
 func median(ds []time.Duration) time.Duration {
@@ -122,7 +132,7 @@ func die(msg string) {
 }
 
 func main() {
-	cfgPath := flag.String("config", "../secrets/server/myvectorConfig.json","myvectorConfig.json to read the Ollama URL from")
+	cfgPath := flag.String("config", "../secrets/server/myvectorConfig.json", "myvectorConfig.json to read the Ollama URL from")
 	dir := flag.String("dir", "../robot/work/vision-bench", "photos + checklist.json")
 	langF := flag.String("lang", "", "only this language: en-US or et-EE")
 	models := flag.String("models", "gemma4:e4b-it-qat,qwen3.5:4b", "comma-separated Ollama vision models")
@@ -145,8 +155,12 @@ func main() {
 			die(err.Error())
 		}
 	}
+	if _, err := os.Stat(*cfgPath); err != nil {
+		die("-config: " + err.Error()) // llm.Load would silently fall back to DefaultOllamaURL
+	}
 	lang.Path = func() string { return *cfgPath }
 	_, base := llm.Effective(llm.Load(), llm.KG{})
+	fmt.Println("ollama " + base + ", " + fmt.Sprint(len(items)) + " photos; keywords % counts an errored photo as 0")
 	var ms []string
 	for _, m := range strings.Split(*models, ",") {
 		if m = strings.TrimSpace(m); m != "" {
