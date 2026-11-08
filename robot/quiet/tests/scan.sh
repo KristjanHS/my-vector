@@ -12,4 +12,7 @@ rc=0; out=$(SCAN_JOURNAL=$tmp/j "$here/../scan.sh" '1 min ago' 2>/dev/null) || r
 ((rc == 1)) && [[ $out == "HIT: vector shut up" ]] || die "'vector shut up': want exit 1 + HIT, got $rc: $out"
 j "turn off the kitchen light"
 SCAN_JOURNAL=$tmp/j "$here/../scan.sh" '1 min ago' >/dev/null || die "'turn off the kitchen light' read as a stop phrase"
+mkdir -p "$tmp/bin"; printf '#!/bin/sh\necho "Failed to parse timestamp" >&2\nexit 1\n' >"$tmp/bin/journalctl"; chmod +x "$tmp/bin/journalctl"
+rc=0; out=$(PATH="$tmp/bin:$PATH" "$here/../scan.sh" 'not a time' 2>&1) || rc=$?
+((rc == 2)) && [[ $out == *SETUP:* ]] || die "failed journalctl: want exit 2 + SETUP, got $rc: $out"
 echo "scan.sh host test OK"
