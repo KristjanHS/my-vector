@@ -1,6 +1,7 @@
 package listen
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -201,5 +204,34 @@ func TestTurnKeepsIdleOff(t *testing.T) {
 	s.Turn(esn, t0.Add(IdleOff+time.Minute))
 	if s.Active(esn, t0.Add(IdleOff+time.Minute)) {
 		t.Fatal("a wake-word ask after IdleOff must not revive listening")
+	}
+}
+
+// TestAskRequest pins production Ask's body for qwen3.5:4b with nothing saved: thinking off, ReplyCap, its sampling.
+func TestAskRequest(t *testing.T) {
+	lang.UseForTest(t, lang.English)
+	var sent map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+		json.NewDecoder(q.Body).Decode(&sent)
+		w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":" SKIP "}}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	cfg := openai.DefaultConfig("ollama")
+	cfg.BaseURL = srv.URL + "/v1"
+	got, err := Ask(context.Background(), openai.NewClientWithConfig(cfg), "qwen3.5:4b", "hi")
+	if err != nil || got != "SKIP" {
+		t.Fatalf("Ask = %q, %v", got, err)
+	}
+	if sent["model"] != "qwen3.5:4b" || sent["reasoning_effort"] != "none" || sent["max_tokens"] != float64(ReplyCap) {
+		t.Errorf("sent model %v, reasoning_effort %v, max_tokens %v", sent["model"], sent["reasoning_effort"], sent["max_tokens"])
+	}
+	s := llm.SamplingFor(llm.Ollama, "qwen3.5:4b")
+	for k, v := range map[string]float32{"temperature": s.Temperature, "top_p": s.TopP, "presence_penalty": s.PresencePenalty} {
+		if f, _ := sent[k].(float64); float32(f) != v {
+			t.Errorf("%s = %v; want %v", k, sent[k], v)
+		}
+	}
+	if v, ok := sent["max_completion_tokens"]; ok {
+		t.Errorf("max_completion_tokens = %v; want absent", v)
 	}
 }

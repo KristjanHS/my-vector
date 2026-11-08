@@ -133,11 +133,13 @@ func Chat(baseURL string, r openai.ChatCompletionRequest) (Call, error) {
 		Prompt: out.Usage.PromptTokens, Completion: out.Usage.CompletionTokens, Dur: dur}, nil
 }
 
-// Warm is one discarded tiny call that loads model.
-func Warm(baseURL, model string) error {
-	_, err := Chat(baseURL, openai.ChatCompletionRequest{Model: model, ReasoningEffort: string(llm.None), MaxTokens: 8,
-		Messages: []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: "warm up"}}})
-	return err
+// Order is arm indices 0..n-1 starting at item mod n: item i runs arm i mod n first (no fixed arm order per prompt).
+func Order(n, item int) []int {
+	out := make([]int, n)
+	for k := range out {
+		out[k] = (item + k) % n
+	}
+	return out
 }
 
 // Summary is one arm's calls: latency, cut-off (T6), thinking share and tokens (T13), peak context.

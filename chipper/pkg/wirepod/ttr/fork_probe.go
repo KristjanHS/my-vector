@@ -1,9 +1,13 @@
 package wirepod_ttr
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
@@ -16,10 +20,25 @@ import (
 var ErrForkLLMOff = errors.New("LLM off")
 
 // ForkProbeLLMResult is one ForkProbeLLMFull call: Finish and Usage from the non-streamed reply, Dur of the request.
+// RawAnswer is the content before cleaning; Reasoning is Ollama's "reasoning" (go-openai drops it).
 type ForkProbeLLMResult struct {
-	Target, Answer, Finish string
-	Usage                  openai.Usage
-	Dur                    time.Duration
+	Target, Answer, RawAnswer, Reasoning, Finish string
+	Usage                                        openai.Usage
+	Dur                                          time.Duration
+}
+
+// forkProbeBody is the probe client's transport: it keeps the last response body for ForkProbeLLMFull to decode.
+type forkProbeBody struct{ raw []byte }
+
+func (b *forkProbeBody) RoundTrip(r *http.Request) (*http.Response, error) {
+	res, err := http.DefaultTransport.RoundTrip(r)
+	if err != nil {
+		return nil, err
+	}
+	b.raw, err = io.ReadAll(res.Body)
+	res.Body.Close()
+	res.Body = io.NopCloser(bytes.NewReader(b.raw))
+	return res, err
 }
 
 // ForkProbeLLM asks the LLM what StreamingKGSim would for transcribedText, without the robot: same gate, client and
@@ -40,30 +59,35 @@ func ForkProbeLLMFull(ctx context.Context, transcribedText, esn string) (ForkPro
 	if k.Provider == "houndify" {
 		return res, fmt.Errorf("%w: provider houndify", ErrForkLLMOff)
 	}
+	body := &forkProbeBody{}
+	client := func(key, base string) *openai.Client { // StreamingKGSim's / forkClient's config, body-keeping transport
+		conf := openai.DefaultConfig(key)
+		if base != "" {
+			conf.BaseURL = base
+		}
+		conf.HTTPClient = &http.Client{Transport: body}
+		return openai.NewClientWithConfig(conf)
+	}
 	var c *openai.Client
 	switch k.Provider { // StreamingKGSim's switch
 	case "together":
 		if k.Model == "" {
 			vars.APIConfig.Knowledge.Model = "meta-llama/Llama-3-70b-chat-hf" // StreamingKGSim also writes it to disk
 		}
-		conf := openai.DefaultConfig(k.Key)
-		conf.BaseURL = "https://api.together.xyz/v1"
-		c = openai.NewClientWithConfig(conf)
+		c = client(k.Key, "https://api.together.xyz/v1")
 	case "custom":
-		conf := openai.DefaultConfig(k.Key)
-		conf.BaseURL = k.Endpoint
-		c = openai.NewClientWithConfig(conf)
+		c = client(k.Key, k.Endpoint)
 	case "openai":
-		c = openai.NewClient(k.Key)
+		c = client(k.Key, "")
 	}
 	if t, ok := forkResolve(llm.Load(), lang.Current(), forkKG()); ok {
 		res.Target = t.Provider + " " + t.Model
+		c = client(t.Key, t.BaseURL) // forkClient's llm.NewClient(t)
 	} else if c == nil {
 		return res, fmt.Errorf("no client for Knowledge provider %q and no fork profile for %s", k.Provider, lang.Current())
 	} else {
 		res.Target = "wire-pod knowledge " + k.Provider + " " + vars.APIConfig.Knowledge.Model
 	}
-	c = forkClient(c)
 	r := CreateAIReq(transcribedText, esn, false, false)
 	r.Stream = false
 	start := time.Now()
@@ -77,7 +101,19 @@ func ForkProbeLLMFull(ctx context.Context, transcribedText, esn string) (ForkPro
 		return res, nil
 	}
 	res.Finish = string(resp.Choices[0].FinishReason)
-	res.Answer = removeSpecialCharacters(resp.Choices[0].Message.Content)
+	res.RawAnswer = resp.Choices[0].Message.Content
+	res.Reasoning = resp.Choices[0].Message.ReasoningContent
+	var raw struct {
+		Choices []struct {
+			Message struct {
+				Reasoning string `json:"reasoning"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if json.Unmarshal(body.raw, &raw) == nil && len(raw.Choices) > 0 && raw.Choices[0].Message.Reasoning != "" {
+		res.Reasoning = raw.Choices[0].Message.Reasoning
+	}
+	res.Answer = removeSpecialCharacters(res.RawAnswer)
 	if resp.Choices[0].FinishReason == openai.FinishReasonLength {
 		res.Answer = forkCutTail(res.Answer, true) // as the stream loops' forkDropCut
 	}
