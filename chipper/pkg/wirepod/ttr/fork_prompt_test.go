@@ -131,7 +131,7 @@ func TestForkPromptReplyCap(t *testing.T) {
 		useKnowledge(t, "custom", k.endpoint, k.model)
 		checkCap(t, k.model, CreateAIReq("hi", "esn", false, false), k.ollama, k.want)
 		cam := openai.ChatCompletionRequest{Model: k.model, MaxCompletionTokens: 2048}
-		forkCameraReq(&cam)()
+		forkCameraReq(&cam, new(*openai.Client))()
 		checkCap(t, k.model+" camera", cam, k.ollama, k.want)
 	}
 }
@@ -187,7 +187,7 @@ func TestForkPromptReplyCapProfile(t *testing.T) {
 		ollama := k.profile.Provider == llm.Ollama
 		checkCap(t, k.profile.Provider+" profile", r, ollama, k.want)
 		cam := openai.ChatCompletionRequest{Model: k.model}
-		forkCameraReq(&cam)()
+		forkCameraReq(&cam, new(*openai.Client))()
 		checkCap(t, k.profile.Provider+" profile camera", cam, ollama, k.want)
 	}
 }
@@ -283,7 +283,7 @@ func TestForkCameraEstonianUnloads(t *testing.T) {
 		r := CreateAIReq("mida sa näed?", "esn", false, true)
 		r.Model = vars.APIConfig.Knowledge.Model // DoGetImage's own model pick
 		r.ReasoningEffort = ""
-		done := forkCameraReq(&r)
+		done := forkCameraReq(&r, new(*openai.Client))
 		if r.ReasoningEffort != "none" || r.Model != "qwen3.5:4b" {
 			t.Errorf("%s: camera request ReasoningEffort %q, Model %q", c.lang, r.ReasoningEffort, r.Model)
 		}

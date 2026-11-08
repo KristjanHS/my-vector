@@ -170,3 +170,38 @@ func TestLLMResolveOllama(t *testing.T) {
 		t.Error("unknown language resolved")
 	}
 }
+
+func TestResolveVision(t *testing.T) {
+	old := AnthropicBase
+	AnthropicBase = "https://claude.test"
+	t.Cleanup(func() { AnthropicBase = old })
+	const key, pc = "sk-ant-0123456789abcdefWxYz", "http://pc:11434"
+	legacy, kg := Config{LegacyETModel: "estllm:x"}, KG{"custom", ollamaV1, "llama:k"}
+	saved := func(en, et Profile, key string) Config {
+		return Config{OllamaURL: pc, ClaudeKey: key, Profiles: map[string]Profile{lang.English: en, lang.Estonian: et}}
+	}
+	claude := Target{Claude, "https://claude.test/v1", key, "claude-haiku-5-5"}
+	for _, w := range []struct {
+		name string
+		c    Config
+		l    string
+		kg   KG
+		want Target
+		ok   bool
+	}{
+		{"legacy en", legacy, lang.English, kg, Target{}, false},
+		{"legacy et ollama", legacy, lang.Estonian, kg, Target{Ollama, ollamaV1, "ollama", "llama:k"}, true},
+		{"legacy et ollama no model", legacy, lang.Estonian, KG{"custom", ollamaV1, ""}, Target{Ollama, ollamaV1, "ollama", DefaultENModel}, true},
+		{"legacy et openai", legacy, lang.Estonian, KG{"openai", "", "gpt-4o-mini"}, Target{}, false},
+		{"en X et Y: et", saved(Profile{Ollama, "x:1"}, Profile{Ollama, "y:1"}, ""), lang.Estonian, kg, Target{Ollama, pc + "/v1", "ollama", "x:1"}, true},
+		{"en X et Y: en", saved(Profile{Ollama, "x:1"}, Profile{Ollama, "y:1"}, ""), lang.English, kg, Target{Ollama, pc + "/v1", "ollama", "x:1"}, true},
+		{"en claude et ollama", saved(Profile{Claude, "claude-haiku-5-5"}, Profile{Ollama, "y:1"}, key), lang.Estonian, kg, Target{Ollama, pc + "/v1", "ollama", DefaultENModel}, true},
+		{"et claude key", saved(Profile{Ollama, "x:1"}, Profile{Claude, "claude-haiku-5-5"}, key), lang.Estonian, kg, claude, true},
+		{"en claude key", saved(Profile{Claude, "claude-haiku-5-5"}, Profile{Ollama, "y:1"}, key), lang.English, kg, claude, true},
+		{"et claude no key", saved(Profile{Ollama, "x:1"}, Profile{Claude, "claude-haiku-5-5"}, ""), lang.Estonian, kg, Target{}, false},
+	} {
+		if got, ok := ResolveVision(w.c, w.l, w.kg); got != w.want || ok != w.ok {
+			t.Errorf("%s: ResolveVision = %+v %v, want %+v %v", w.name, got, ok, w.want, w.ok)
+		}
+	}
+}
