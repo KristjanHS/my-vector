@@ -131,16 +131,16 @@ func CountReply(baseURL, model, content, finish string) (int, error) {
 }
 
 func promptTokens(baseURL, model, content string) (int, error) {
-	c, _, err := post(baseURL, openai.ChatCompletionRequest{Model: model, ReasoningEffort: "none", MaxTokens: 1,
-		Messages: []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleUser, Content: content}}})
+	c, _, err := post(baseURL, map[string]any{"model": model, "reasoning_effort": "none", "max_tokens": 1, // a map: go-openai omits "" content, Ollama 400s
+		"messages": []map[string]string{{"role": openai.ChatMessageRoleUser, "content": content}}})
 	if err != nil {
 		return 0, fmt.Errorf("count: %w", err)
 	}
 	return c.Prompt, nil
 }
 
-// post sends r and returns the Call (Reply trimmed) and the untrimmed content.
-func post(baseURL string, r openai.ChatCompletionRequest) (Call, string, error) {
+// post sends r (a request body) and returns the Call (Reply trimmed) and the untrimmed content.
+func post(baseURL string, r any) (Call, string, error) {
 	body, err := json.Marshal(r)
 	if err != nil {
 		return Call{}, "", err
