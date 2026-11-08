@@ -2,6 +2,7 @@
 
 ## OWED[USER]
 
+- et chat on `gemma4:e4b-it-qat` (EstLLM deleted 2026-11-08): by-ear Estonian quality — keep, or re-pull `hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M`.
 - et active listening: no Ollama model reached the `listenprobe` bar (`2026-11-07-et-listen-model.md` (docs/plans/) W1) — next lever owed.
 - LLM picker page by eye (`2026-11-06-llm-picker-page.md` (docs/plans/) Stage 5 §2 items 3+5): Ollama-down warning, cleared key → Claude disabled + 400, upstream Knowledge save keeps the fork profile.
 - PC voice loudness (V1): T1 `af_bella`/`cori` quieter than stock beyond 3 dB — rule.
