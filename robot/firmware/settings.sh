@@ -9,8 +9,8 @@ settings=/data/data/com.anki.victor/persistent/jdocs/vic.RobotSettings.json
 volume=1 # master_volume: MUTE 0 … HIGH 5 (user ruling 2026-11-06: 1, the voice disturbs the next room)
 tz=Europe/Tallinn # robot clock + time_zone jdoc (user ruling 2026-11-06; onboarding left America/Los_Angeles)
 flag=/data/data/user-do-not-auto-update
-conf=$robot_dir/../chipper/myvectorConfig.json # voice.SettingsPath: wire-pod (cwd chipper/) saves it beside apiConfig.json
-jdocs=$robot_dir/../chipper/jdocs/jdocs.json # vars.JdocsPath (unpackaged wire-pod)
+conf=$robot_dir/../secrets/server/myvectorConfig.json # voice.SettingsPath: beside apiConfig.json (vars/fork_paths.go)
+jdocs=$robot_dir/../secrets/server/jdocs/jdocs.json # vars.JdocsPath (vars/fork_paths.go)
 rc=0
 ok() { echo "ok: $*"; }
 warn() { echo "WARN: $*"; rc=1; }
@@ -24,7 +24,7 @@ else warn "sshkey: ${out//$'\n'/; }"; fi
 ssh_() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 ssh_ true 2>/dev/null || { warn "settings: SSH to $ip failed; nothing checked"; exit 1; }
 
-# A field of the robot's own settings jdoc (wire-pod's chipper/jdocs copy goes stale: it missed a 4→1 set); empty if unreadable.
+# A field of the robot's own settings jdoc (wire-pod's secrets/server/jdocs copy goes stale: it missed a 4→1 set); empty if unreadable.
 robot_setting() { ssh_ "sed -n 's/.*\"$1\" *: *\"\{0,1\}\([A-Za-z0-9_/+-]*\).*/\1/p' $settings" 2>/dev/null; }
 # The same field in wire-pod's copy (vic.RobotSettings in $jdocs; intentparam's weather units + clock read it); empty if unreadable.
 wirepod_setting() {

@@ -2,7 +2,7 @@
 //
 //	go run ./pkg/myvector/routeprobe [-lang et-EE] [-audio] [-llm] [-plugins] "text"   # run from chipper/, beside apiConfig.json
 //
-// Nothing under chipper/ is written: apiConfig.json, myvectorConfig.json, myvectorPrompt.json and jdocs/jdocs.json are read from temp copies
+// Nothing under secrets/server/ is written: apiConfig.json, myvectorConfig.json, myvectorPrompt.json and jdocs/jdocs.json are read from temp copies
 // (vars.ReadConfig rewrites apiConfig.json on every start), removed on exit.
 // -lang / -brain test another language / LLM profile (they edit the temp copy of myvectorConfig.json).
 // -plugins / -plugin f.so / -custom RUN code on a match: plugin Action funcs, and customIntents.json's exec commands and

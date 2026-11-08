@@ -3,7 +3,7 @@
 GET /health -> {"voices": [...], "device": ..., "kokoro_loaded": bool}. Piper (+ Kokoro if selected) warm before the port opens.
 Kokoro holds the GPU only while a kokoro voice is wire-pod's T1/T2 (myvectorConfig.json); unselected it loads for one request only.
 Env: TTS_BIND (0.0.0.0), TTS_PORT (8091), TTS_PIPER_DIR (Piper .onnx dir), TTS_DEVICE (cuda|cpu), HF_HOME / HF_HUB_CACHE (the one shared HF cache),
-TTS_VOICE_CONFIG (wire-pod's voice settings, polled every 5 s; default chipper/myvectorConfig.json in this repo).
+TTS_VOICE_CONFIG (wire-pod's voice settings, polled every 5 s; default secrets/server/myvectorConfig.json in this repo).
 """
 
 import contextlib
@@ -58,7 +58,7 @@ LANG_VOICES = {
     "en-US": (("t1", "t2"), DEFAULT_VOICE, (set(VOICES) - ET_VOICES) | {STOCK}),
     "et-EE": (("t1_et", "t2_et"), "mari", ET_VOICES),
 }
-VOICE_CONFIG = Path(__file__).resolve().parents[1] / "chipper/myvectorConfig.json"
+VOICE_CONFIG = Path(__file__).resolve().parents[1] / "secrets/server/myvectorConfig.json"
 CONFIG_POLL_S = 5
 
 _SENT_END = re.compile(r"(?<=[.!?…])[\"')\]]*\s+|\n+")

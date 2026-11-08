@@ -7,5 +7,6 @@ main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-d
 out=${1:-$main/secrets/myvector_ed25519}
 [[ ! -e $out && ! -e $out.pub ]] || { echo "FAIL: $out or $out.pub exists; not overwriting" >&2; exit 1; }
 mkdir -p "$(dirname "$out")"
+[[ -n ${1:-} ]] || chmod 700 "$main/secrets" # only the default dir: a given path's parent may be shared
 ssh-keygen -q -t ed25519 -N '' -C "my-vector robot root" -f "$out"
 ssh-keygen -lf "$out.pub"

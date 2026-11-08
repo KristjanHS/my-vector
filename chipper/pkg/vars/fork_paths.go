@@ -1,0 +1,24 @@
+package vars
+
+import "os"
+
+// SecretsDir holds wire-pod's private state (apiConfig, fork settings, jdocs, session certs, TLS certs); relative to cwd chipper/.
+const SecretsDir = "../secrets/server"
+
+func init() {
+	ApiConfigPath = SecretsDir + "/apiConfig.json" // fork_lang/fork_prompt and voice.SettingsPath put the myvector*.json files beside it
+	BotConfigsPath = SecretsDir + "/botConfig.json"
+	JdocsDir = SecretsDir + "/jdocs"
+	JdocsPath = JdocsDir + "/jdocs.json"
+	BotInfoPath = JdocsDir + "/" + BotInfoName
+	SessionCertPath = SecretsDir + "/session-certs/"
+	Certs = SecretsDir + "/certs"
+	CertPath = Certs + "/cert.crt"
+	KeyPath = Certs + "/cert.key"
+	ServerConfigPath = Certs + "/server_config.json"
+	if _, err := os.Stat("../secrets"); err == nil { // a checkout's chipper/, not a go test cwd: upstream writes into these dirs without creating them
+		for _, d := range []string{JdocsDir, SessionCertPath, Certs} {
+			os.MkdirAll(d, 0o700)
+		}
+	}
+}

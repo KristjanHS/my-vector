@@ -26,7 +26,7 @@ if [[ -f $dir/robot/firmware/tests/pc-voice.sh ]]; then "$dir"/robot/firmware/te
 if [[ -f $dir/robot/firmware/tests/night-check.sh ]]; then "$dir"/robot/firmware/tests/night-check.sh; fi
 if [[ -f $dir/robot/lib/tests/etc.sh ]]; then "$dir"/robot/lib/tests/etc.sh; fi
 if [[ -f $dir/robot/sshkey/tests/apply.sh ]]; then "$dir"/robot/sshkey/tests/apply.sh; fi
-if [[ -f $dir/scripts/tests/secrets.sh ]]; then "$dir"/scripts/tests/secrets.sh "$repo" "${head[@]}"; fi
+if [[ -f $dir/scripts/tests/secrets.sh ]]; then "$dir"/scripts/tests/secrets.sh "$repo" "${head[@]}" ${head[0]:+"$dir"}; fi
 if [[ -f $dir/robot/openmic/tests/listen.sh ]]; then "$dir"/robot/openmic/tests/listen.sh; fi
 (cd "$dir/chipper" && go vet ./pkg/wirepod/sdkapp/ && go test -run Fork ./pkg/wirepod/sdkapp/)
 echo "go vet + Fork tests sdkapp OK"
