@@ -7,12 +7,14 @@ import (
 
 func TestMatchTable(t *testing.T) {
 	on := []string{"hey vector, activate active listening", "Activate active listening!", "vector active listening on please",
-		"Hei Vektor, aktiveeri aktiivne kuulamine.", "palun aktiivne kuulamine sees", "Heivektor, aktiveeri aktiivne kuulamine."}
+		"Hei Vektor, aktiveeri aktiivne kuulamine.", "palun aktiivne kuulamine sees", "Heivektor, aktiveeri aktiivne kuulamine.", "aktiveerige aktiivne kuulamine.",
+		"Hey Vector, turn on active listening.", "activate the active listening", "turn active listening on"}
 	off := []string{"hey vector, deactivate active listening", "active listening off.", "Hei Vektor, deaktiveeri, aktiivne kuulamine!",
-		"Ei, vektor, aktiivne kuulamine välja.", "aktiivne kuulamine välja"}
+		"Ei, vektor, aktiivne kuulamine välja.", "aktiivne kuulamine välja", "deaktiveerige aktiivne kuulamine",
+		"hey vector, turn off active listening", "deactivate the active listening", "turn active listening off"}
 	misses := []string{"activate the lights", "listening to music", "ära aktiveeri aktiivne kuulamine",
 		"the active listening off switch", "ei aktiveeri aktiivne kuulamine", "can you activate active listening for me",
-		"active listening", "", "shut up"}
+		"active listening", "", "shut up", "don't turn on active listening", "turn on the lights"}
 	for _, s := range on {
 		if isOn, ok := Match(s); !ok || !isOn {
 			t.Errorf("Match(%q) = %v %v, want on", s, isOn, ok)

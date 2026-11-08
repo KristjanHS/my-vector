@@ -11,9 +11,15 @@ import (
 )
 
 // On and Off are whole phrases after quiet.Fillers removal (every saved language).
+// "aktiveerige"/"deaktiveerige" are et-EE STT variants of the imperative (live log 2026-11-08); the en
+// "turn on/off" and "the" forms are the matching everyday phrasings.
 var (
-	On  = []string{"activate active listening", "active listening on", "aktiveeri aktiivne kuulamine", "aktiivne kuulamine sees"}
-	Off = []string{"deactivate active listening", "active listening off", "deaktiveeri aktiivne kuulamine", "aktiivne kuulamine välja"}
+	On = []string{"activate active listening", "activate the active listening", "turn on active listening",
+		"turn active listening on", "active listening on",
+		"aktiveeri aktiivne kuulamine", "aktiveerige aktiivne kuulamine", "aktiivne kuulamine sees"}
+	Off = []string{"deactivate active listening", "deactivate the active listening", "turn off active listening",
+		"turn active listening off", "active listening off",
+		"deaktiveeri aktiivne kuulamine", "deaktiveerige aktiivne kuulamine", "aktiivne kuulamine välja"}
 )
 
 // Model answers every LLM call while on, both languages (P1: listenprobe held-out 16/20, 0 false SPEAK).
