@@ -10,6 +10,7 @@ import (
 )
 
 func TestGuardRevert(t *testing.T) {
+	useEpisodes(t, `{}`)
 	logs := useModel(t, `{}`)
 	after := false
 	tg, users := recordModel(t, func(u string) string {
@@ -57,7 +58,7 @@ func TestGuardRevert(t *testing.T) {
 	if len(lost) != 1 || lost[0] != "identity" {
 		t.Fatalf("lost = %v; pets changed but is still known, only identity is lost", lost)
 	}
-	st.Guard(snap, lost, now)
+	st.Guard(snap, lost, true, now)
 
 	if s := tries(st); s["pc"] != 1 || s["ic"] != 1 || s["i1"] != 0 {
 		t.Fatalf("a revert is one try per restored candidate: %v", s)
@@ -77,11 +78,11 @@ func TestGuardRevert(t *testing.T) {
 	st2 := (&Store{Facts: []Fact{mfact("gone", "pets", Active, "h")}}).init()
 	snap2 := st2.Snapshot(esn)
 	st2.Facts[0].Status, st2.Facts[0].RemovedAt = Removed, &now
-	st2.Guard(snap2, []string{"pets"}, now)
+	st2.Guard(snap2, []string{"pets"}, true, now)
 	if st2.Facts[0].Status != Removed || st2.Facts[0].RemovedAt == nil {
 		t.Fatal("a revert must not bring back a fact the user removed during the pass")
 	}
-	st2.Guard(snap2, nil, now)
+	st2.Guard(snap2, nil, true, now)
 	if !strings.HasSuffix(st2.LastGuard, " ok") {
 		t.Fatalf("no loss → last_guard ok, got %q", st2.LastGuard)
 	}
@@ -101,7 +102,7 @@ func TestGuardRevertsEndInReject(t *testing.T) {
 	for pass := 1; pass <= MergeRetries+1; pass++ {
 		snap := st.Snapshot(esn)
 		st.ApplyMerge(st.Batches(esn)[0], []Op{{Kind: Confirm, ID: "c"}})
-		st.Guard(snap, []string{"pets"}, t0)
+		st.Guard(snap, []string{"pets"}, true, t0)
 		if got, want := st.Facts[0].Status, Unconfirmed; got != want && pass <= MergeRetries || pass > MergeRetries && got != Rejected {
 			t.Fatalf("revert %d: status %s tries %d; rejected only past MergeRetries", pass, got, st.Facts[0].Tries)
 		}
@@ -118,7 +119,7 @@ func TestGuardDropsProfileOfRemovedFact(t *testing.T) {
 	snap := st.Snapshot(esn)
 	now := t0.Add(time.Hour)
 	st.Facts[0].Status, st.Facts[0].RemovedAt = Removed, &now
-	st.Guard(snap, []string{"pets"}, now)
+	st.Guard(snap, []string{"pets"}, true, now)
 	if p, ok := st.Profiles[esn]; ok {
 		t.Fatalf("revert restored profile %+v built from a removed fact", p)
 	}

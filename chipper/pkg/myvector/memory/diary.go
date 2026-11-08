@@ -108,7 +108,7 @@ func cut(s string, n int) string {
 }
 
 // Prune deletes esn's episode files older than RetainEpisodes before today (in its zone) and forgets extracted session ids
-// that start before the cutoff day − (24h + SessionGap), so a kept file's session is never re-extracted (M27).
+// that start before the cutoff day − (24h + SessionGap), so an extracted session whose files are all kept is never re-extracted (M27).
 func (st *Store) Prune(esn string, days []string, today time.Time) (gone int, err error) {
 	cutoff := today.Add(-RetainEpisodes).Format("2006-01-02")
 	day, err := time.ParseInLocation("2006-01-02", cutoff, today.Location())

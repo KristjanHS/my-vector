@@ -47,10 +47,18 @@ func GuardUser(st *Store, esn, category string) string {
 	return b.String()
 }
 
-// Answers asks t every question against st; known[category] = the answer was not Unknown.
+// Answers asks t every question against st, synced with the stored Removes before each call (M26); known[category] = the
+// answer was not Unknown.
 func Answers(ctx context.Context, t llm.Target, st *Store, esn string) (known map[string]bool, err error) {
+	return answers(ctx, t, st, esn, Categories)
+}
+
+func answers(ctx context.Context, t llm.Target, st *Store, esn string, cats []string) (known map[string]bool, err error) {
 	known = map[string]bool{}
-	for _, c := range Categories {
+	for _, c := range cats {
+		if err := st.DropRemoved(esn); err != nil {
+			return nil, err
+		}
 		a, err := Ask(ctx, t, GuardPrompt, GuardUser(st, esn, c), GuardReplyCap)
 		if err != nil {
 			return nil, err
@@ -92,9 +100,9 @@ func (st *Store) Snapshot(esn string) Snapshot {
 	return Snapshot{ESN: esn, Facts: b, Profile: p, HadProfile: ok}
 }
 
-// Guard records the guard's verdict in LastGuard; lost ≠ nil also puts back snap's facts and profile, keeping any Removed
-// status a user set meanwhile: restored candidates are Unconfirmed with one more try (M14), a profile fed by a now-Removed fact is dropped (M26).
-func (st *Store) Guard(snap Snapshot, lost []string, now time.Time) {
+// Guard records the verdict in LastGuard; lost ≠ nil restores snap but keeps Removes made meanwhile: candidates Unconfirmed,
+// +1 try only if judged (not a call error, M14), a profile fed by a now-Removed fact dropped (M26).
+func (st *Store) Guard(snap Snapshot, lost []string, judged bool, now time.Time) {
 	st.LastGuard = snap.ESN + " " + now.Format(time.RFC3339) + " ok"
 	if len(lost) == 0 {
 		return
@@ -116,7 +124,7 @@ func (st *Store) Guard(snap Snapshot, lost []string, now time.Time) {
 		if at, ok := removed[f.ID]; ok {
 			f.Status, f.RemovedAt = Removed, at
 		}
-		if f.Status == Unconfirmed {
+		if judged && f.Status == Unconfirmed {
 			tried(&f, snap.ESN, "tries, the last a guard revert")
 		}
 		keep = append(keep, f)
