@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -46,6 +47,24 @@ var lengthRe = regexp.MustCompile(`Reply in [^.]*sentences[^.]*\.`)
 var firstPerson = []string{"ma", "mina", "mu", "minu", "mulle", "mind", "mul", "minust", "minule", "minuga", "minult",
 	"minus", "minul", "meie", "meil", "meid", "meile", "meist"}
 
+// toMe are the "to me" forms G2 drops from G's gate: "Räägi mulle lugu" is no ask about the user.
+var toMe = map[string]bool{"mulle": true, "minule": true, "meile": true}
+
+// gate keeps the about-me only when the ask has one of forms or a profile token.
+func gate(forms []string) func(string, ask, []string) string {
+	return func(about string, a ask, tokens []string) string {
+		for _, w := range words(a.Text) {
+			if slices.Contains(forms, w) {
+				return about
+			}
+		}
+		if len(hits(a.Text, tokens)) > 0 {
+			return about
+		}
+		return ""
+	}
+}
+
 var promptArms = []promptArm{
 	{id: "0"},
 	{id: "P", tmpl: func(t string) (string, error) {
@@ -76,19 +95,8 @@ var promptArms = []promptArm{
 		}
 		return strings.Replace(t, "{user}", fenceF+"\n{user}", 1), nil
 	}},
-	{id: "G", about: func(about string, a ask, tokens []string) string {
-		for _, w := range words(a.Text) {
-			for _, f := range firstPerson {
-				if w == f {
-					return about
-				}
-			}
-		}
-		if len(hits(a.Text, tokens)) > 0 {
-			return about
-		}
-		return ""
-	}},
+	{id: "G", about: gate(firstPerson)},
+	{id: "G2", about: gate(slices.DeleteFunc(slices.Clone(firstPerson), func(w string) bool { return toMe[w] }))},
 	{id: "N", about: func(string, ask, []string) string { return "" }},
 }
 
@@ -112,7 +120,7 @@ func after(t, tag, s string) (string, error) {
 	return t[:i] + s + t[i:], nil
 }
 
-// parsePrompt is -prompt's arms in order; "" is arm 0 alone.
+// parsePrompt is -prompt's arms in order; "" is arm 0 alone; "A+B" is a combo arm (combine).
 func parsePrompt(s string) ([]promptArm, error) {
 	if s == "" {
 		return promptArms[:1], nil
@@ -121,19 +129,70 @@ func parsePrompt(s string) ([]promptArm, error) {
 	seen := map[string]bool{}
 	for _, id := range strings.Split(s, ",") {
 		id = strings.TrimSpace(id)
-		i := -1
-		for k, a := range promptArms {
-			if a.id == id {
-				i = k
+		var parts []promptArm
+		for _, p := range strings.Split(id, "+") {
+			i := slices.IndexFunc(promptArms, func(a promptArm) bool { return a.id == p })
+			if i < 0 {
+				ids := make([]string, len(promptArms))
+				for k, a := range promptArms {
+					ids[k] = a.id
+				}
+				return nil, fmt.Errorf("prompt: unknown arm %q (one of %s, or A+B)", p, strings.Join(ids, " "))
 			}
+			parts = append(parts, promptArms[i])
 		}
-		if i < 0 || seen[id] {
-			return nil, fmt.Errorf("prompt: unknown or repeated arm %q (one of 0 P R X E S D F G N)", id)
+		pa, err := combine(parts)
+		if err != nil {
+			return nil, err
 		}
-		seen[id] = true
-		out = append(out, promptArms[i])
+		if seen[pa.id] {
+			return nil, fmt.Errorf("prompt: repeated arm %q", pa.id)
+		}
+		seen[pa.id] = true
+		out = append(out, pa)
 	}
 	return out, nil
+}
+
+// combine chains the arms' template rewrites in order; at most one may set the sampling, one the about-me.
+func combine(parts []promptArm) (promptArm, error) {
+	if len(parts) == 1 {
+		return parts[0], nil
+	}
+	var ids []string
+	var tmpls []func(string) (string, error)
+	var c promptArm
+	for _, p := range parts {
+		if p.id == "0" {
+			return c, errors.New("prompt: arm 0 is no part of a combo")
+		}
+		if (p.sampling != nil && c.sampling != nil) || (p.about != nil && c.about != nil) {
+			return c, fmt.Errorf("prompt: %s and another combo part both set the sampling or the about-me", p.id)
+		}
+		ids = append(ids, p.id)
+		if p.tmpl != nil {
+			tmpls = append(tmpls, p.tmpl)
+		}
+		if p.sampling != nil {
+			c.sampling = p.sampling
+		}
+		if p.about != nil {
+			c.about = p.about
+		}
+	}
+	c.id = strings.Join(ids, "+")
+	if len(tmpls) > 0 {
+		c.tmpl = func(t string) (string, error) {
+			for _, f := range tmpls {
+				var err error
+				if t, err = f(t); err != nil {
+					return "", err
+				}
+			}
+			return t, nil
+		}
+	}
+	return c, nil
 }
 
 // promptBase is the isolated store before any arm: its bytes, the live ollama template and the saved about-me.
