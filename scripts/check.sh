@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace) + scripts/tests/guard.sh, firmware static checks (check-static.sh), patch 0010 + 0016 host tests (tests/pc-voice.sh, tests/mic-stream.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + scripts/tests/secrets.sh + robot/openmic/tests/listen.sh, go vet + Fork tests of the patched sdkapp,
+# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace) + scripts/tests/guard.sh, firmware static checks (check-static.sh), patch 0010 + 0016 host tests (tests/pc-voice.sh, tests/mic-stream.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + robot/netguard/tests/{rules,hosts,apply}.sh + scripts/tests/secrets.sh + robot/openmic/tests/listen.sh, go vet + Fork tests of the patched sdkapp,
 # chipper myvector + vars + localization fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir), tts + stt pytest (when each venv exists).
 # Usage: check.sh [--head [rev]]   --head checks only that commit (default HEAD) via a git archive copy;
 #   make ship passes its pinned sha so the checked commit is the one it ships.
@@ -54,6 +54,7 @@ if [[ -f $dir/robot/sshkey/tests/apply.sh ]]; then "$dir"/robot/sshkey/tests/app
 if [[ -f $dir/robot/hostkey/tests/apply.sh ]]; then "$dir"/robot/hostkey/tests/apply.sh; fi
 if [[ -f $dir/robot/epod/tests/mkcert.sh ]]; then "$dir"/robot/epod/tests/mkcert.sh; fi
 if [[ -f $dir/robot/epod/tests/apply.sh ]]; then "$dir"/robot/epod/tests/apply.sh; fi
+for t in rules hosts apply; do if [[ -f $dir/robot/netguard/tests/$t.sh ]]; then "$dir"/robot/netguard/tests/$t.sh; fi; done
 if [[ -f $dir/robot/epod/tests/interlock.sh ]]; then "$dir"/robot/epod/tests/interlock.sh; fi
 if [[ -f $dir/scripts/tests/secrets.sh ]]; then "$dir"/scripts/tests/secrets.sh "$repo" "${head[@]}" ${head[0]:+"$dir"}; fi
 if [[ -f $dir/robot/openmic/tests/listen.sh ]]; then "$dir"/robot/openmic/tests/listen.sh; fi
