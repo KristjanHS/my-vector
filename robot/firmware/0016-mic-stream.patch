@@ -12,21 +12,22 @@ G1: blocks pass only while the raw DoSVad flag is on (before the robot-noise for
 QuietTimeCooldown), with 300 ms pre-roll and 400 ms hangover; P1: hangover + the PC's 300 ms GapCut = the
 700 ms pause cut. C3: a 2 s ring the trigger loop never blocks on, drained by thread MyVectorMicTx
 (pthread_create: -fno-exceptions, a failure leaves the stream off); a stall drops the oldest, logged at
-most once a minute. C4: raw s16 16 kHz mono, one send() per 100 ms; keepalive 5+3x2 s and TCP_USER_TIMEOUT
-3 s end a half-open socket, 2 s without send progress closes it; redial after a 1-30 s backoff that
-doubles per loss and resets only after a 10 s connection (a PC close is seen while idle); an off -> on
-port flip redials at once. C5: MyVectorMicTx runs nice 10 on cores 0+3 (MicProcRaw pins 2, MicProcTrigger
+most once a minute. C4: raw s16 16 kHz mono, one send() per 100 ms; keepalive (5 s idle, 2 s probes) with
+TCP_USER_TIMEOUT 3 s ends a half-open socket in ~7 s idle, 3 s with data unacked; 2 s without send
+progress closes it; redial after a 1-30 s backoff that doubles per loss and resets only after a 10 s
+connection (a PC close is seen while idle); an off -> on port flip seen by the trigger loop redials with
+the ring cleared and the backoff reset, within ~1 s. C5: MyVectorMicTx runs nice 10 on cores 0+3 (MicProcRaw pins 2, MicProcTrigger
 1). Logs my-vector.MicStream. Host test: robot/firmware/tests/mic-stream.sh.
 ---
- .../cozmoAnim/micData/micDataProcessor.cpp    | 334 ++++++++++++++++++
+ .../cozmoAnim/micData/micDataProcessor.cpp    | 342 ++++++++++++++++++
  .../src/cozmoAnim/micData/micDataProcessor.h  |   1 +
- 2 files changed, 335 insertions(+)
+ 2 files changed, 343 insertions(+)
 
 diff --git a/animProcess/src/cozmoAnim/micData/micDataProcessor.cpp b/animProcess/src/cozmoAnim/micData/micDataProcessor.cpp
-index c67b1b9a..93b30f27 100644
+index c67b1b9a..cc0534b8 100644
 --- a/animProcess/src/cozmoAnim/micData/micDataProcessor.cpp
 +++ b/animProcess/src/cozmoAnim/micData/micDataProcessor.cpp
-@@ -41,11 +41,337 @@
+@@ -41,11 +41,345 @@
  #include <list>
  #include <sched.h>
  
@@ -175,7 +176,10 @@ index c67b1b9a..93b30f27 100644
 +constexpr const char* kMyVectorMicVoiceFile = "/data/data/myvector-voice.json"; // patch 0010's file: its url names the PC
 +constexpr uint32_t kMyVectorMicSendBlocks = 10;                                   // C4: one send() per 100 ms (3.2 KB)
 +constexpr int kMyVectorMicStallMs = 2000;   // C4: pending unsent that long (peer never reads, half-open) = close + redial
-+constexpr int kMyVectorMicHealthyS = 10;    // only a connection that lived this long resets the backoff to 1 s
++#ifndef MYVECTOR_MIC_HEALTHY_S
++#define MYVECTOR_MIC_HEALTHY_S 10 // the host test shortens it to 1
++#endif
++constexpr int kMyVectorMicHealthyS = MYVECTOR_MIC_HEALTHY_S; // only a connection that lived this long resets the backoff to 1 s
 +static_assert(kMyVectorMicBlock == kSamplesPerBlockPerChannel, "mic-stream block = one processed 10 ms block");
 +static_assert(sizeof(AudioUtil::AudioSample) == sizeof(int16_t), "mic-stream sends s16");
 +
@@ -223,7 +227,11 @@ index c67b1b9a..93b30f27 100644
 +  return fd;
 +}
 +
-+// Half-open (PC sleep, wifi roam, WSL restart: no FIN): keepalive ends an idle socket in ~11 s, unacked data in 3 s.
++#ifndef TCP_USER_TIMEOUT
++#define TCP_USER_TIMEOUT 18 // linux/tcp.h value, in case a sysroot's netinet/tcp.h predates it
++#endif
++// Half-open (PC sleep, wifi roam, WSL restart: no FIN): idle, the first unanswered probe past the 3 s user timeout
++// aborts it (~7 s = 5 s idle + one 2 s interval); unacked data aborts in 3 s.
 +bool MyVectorMicKeepAlive(int fd)
 +{
 +  const int on = 1, idle = 5, intvl = 2, cnt = 3;
@@ -280,6 +288,7 @@ index c67b1b9a..93b30f27 100644
 +    const int port = MyVectorMicStreamPort(); // after the wait: a flip during it is acted on now
 +    const uint32_t starts = sMyVectorMicTap.starts.load(std::memory_order_relaxed);
 +    if (port != fdPort || starts != fdStarts) {
++      if (fd >= 0) { ring.Skip(); } // the old stream's unsent audio must not lead the new connection
 +      closeFd(port == 0 ? "port 0" : port != fdPort ? "port changed" : "stream restarted");
 +      fdPort = port;
 +      fdStarts = starts;
@@ -364,7 +373,7 @@ index c67b1b9a..93b30f27 100644
  namespace {
    
  #define LOG_CHANNEL "Microphones"
-@@ -380,6 +706,7 @@ MicDataProcessor::~MicDataProcessor()
+@@ -380,6 +714,7 @@ MicDataProcessor::~MicDataProcessor()
    _dataReadyCondition.notify_all();
    _processThread.join();
    _processTriggerThread.join();
@@ -372,7 +381,7 @@ index c67b1b9a..93b30f27 100644
  
    MMIfDestroy();
  }
-@@ -421,6 +748,7 @@ void MicDataProcessor::ProcessRawAudio(RobotTimeStamp_t timestamp,
+@@ -421,6 +756,7 @@ void MicDataProcessor::ProcessRawAudio(RobotTimeStamp_t timestamp,
      nextSample.audioBlock.data(),
      robotStatus,
      robotAngle);
@@ -380,7 +389,7 @@ index c67b1b9a..93b30f27 100644
  
  #ifdef STANDALONE_SIM
    // assume in front of robot if sim
-@@ -534,6 +862,7 @@ MicDirectionData MicDataProcessor::ProcessMicrophonesSE(const AudioUtil::AudioSa
+@@ -534,6 +870,7 @@ MicDirectionData MicDataProcessor::ProcessMicrophonesSE(const AudioUtil::AudioSa
      activityFlag = DoSVad(_sVadObject.get(),           // object
                            vadConfidence,               // confidence it is okay to measure noise floor, i.e. no known activity like gear noise
                            (int16_t*)audioChunk);       // pointer to input data
@@ -388,7 +397,7 @@ index c67b1b9a..93b30f27 100644
      latestPowerValue = _sVadObject->AvePowerInBlock;
      latestNoiseFloor = _sVadObject->NoiseFloor;
    
-@@ -809,6 +1138,11 @@ void MicDataProcessor::ProcessTriggerLoop()
+@@ -809,6 +1146,11 @@ void MicDataProcessor::ProcessTriggerLoop()
      {
        job->CollectProcessedAudio(processedAudio.data(), processedAudio.size());
      }
