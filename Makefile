@@ -75,8 +75,8 @@ check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax,
 robot-test: ## On-robot smoke test (~45 s, needs wire-pod + the docked robot); exit 0 PASS, 1 FAIL, 2 setup
 	$(CURDIR)/robot/firmware/smoke.sh
 
-ship: ## Ship committed HEAD: check, patch, build (live), deploy the robot firmware, robot smoke test (fail = no push), git push; NO_DEPLOY=1 stops after the build; log in robot/work/ship-logs/
-	$(CURDIR)/robot/firmware/ship.sh $(if $(NO_DEPLOY),--no-deploy)
+ship: ## Ship committed HEAD: check (skipped if make check passed this tree), patch, build + deploy + full robot smoke only if the firmware tree differs from the robot's (else smoke --server; FIRMWARE=1 forces), git push; NO_DEPLOY=1 stops after the build; log in robot/work/ship-logs/
+	$(CURDIR)/robot/firmware/ship.sh $(if $(NO_DEPLOY),--no-deploy) $(if $(FIRMWARE),--firmware)
 
 # Shared worktree/commit targets (syncwt, commit, commitwt) from dotfiles. At the bottom so
 # the include can't steal the default goal; `-include` so a clone without dotfiles still runs.
