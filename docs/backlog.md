@@ -17,4 +17,7 @@
 
 ## Assistant-owed
 
+- ⚠ listen on/off phrase misses on et-EE STT ("activate active listering", "deaktiveeriv aktiivne kuulamine") fall to the LLM, which says "Activating active listening right now." and does nothing · seam: `listen.Match` near-miss + the LLM prompt · falsifier: `go test ./pkg/myvector/listen -run TestMatch` with those two strings as cases (from chipper/)
+- ⚠ listen on/off confirmation speaks in the robot's built-in voice, not the PC voice · seam: `forkSpeak` (KNOWLEDGE_GRAPH `SpokenText`) → `forkSayText` · falsifier: `! grep -q 'SpokenText: text' chipper/pkg/wirepod/ttr/fork_listen.go`
+
 - ⚠ et-EE story ask answers ~14 words, no story (seen on the deleted gemma4:e2b-it-qat; recheck on gemma4:e4b-it-qat; not cap-cut) · seam: et prompt/model · falsifier (from chipper/): `go run ./pkg/myvector/routeprobe -llm -lang et-EE "räägi mulle muinasjutt robotist" | awk '/^llm: /{exit NF<60}'`
