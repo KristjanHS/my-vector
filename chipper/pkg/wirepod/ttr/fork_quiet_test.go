@@ -42,6 +42,7 @@ type quietFakes struct {
 	mu     sync.Mutex
 	vol    int
 	getErr error
+	setErr error
 	gets   int
 	sets   []string
 	armed  []time.Duration
@@ -64,7 +65,7 @@ func quietRigFake(t *testing.T, ip string) (*vtt.IntentGraphRequest, *quietStrea
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.sets = append(f.sets, esn+"="+strconv.Itoa(v))
-		return nil
+		return f.setErr
 	}
 	forkQuietNow = func() time.Time { return f.now }
 	forkQuietAfter = func(d time.Duration, fn func()) func() bool {
@@ -121,8 +122,8 @@ func TestForkQuietShortCircuits(t *testing.T) {
 	case q := <-naps:
 		v, err := url.ParseQuery(q)
 		sec, _ := strconv.ParseInt(v.Get("value"), 10, 64)
-		if want := before.Add(quiet.NapFor).Unix(); err != nil || v.Get("key") != "SleepCycle_NapUntil_s" || sec < want-2 || sec > want+2 {
-			t.Errorf("nap query %q, want SleepCycle_NapUntil_s=%d (epoch s, now+NapFor)", q, want)
+		if want := before.Add(quiet.LockFor).Unix(); err != nil || v.Get("key") != "SleepCycle_NapUntil_s" || sec < want-2 || sec > want+2 {
+			t.Errorf("nap query %q, want SleepCycle_NapUntil_s=%d (epoch s, the lock's end)", q, want)
 		}
 	case <-time.After(2 * time.Second):
 		t.Error("no nap request")
@@ -210,11 +211,95 @@ func TestQuietVolumeReadFails(t *testing.T) {
 	forkQuietLock(quietESN, "shut up", f.now)
 	forkNaps.Wait()
 	wantLock(t, f.now.Add(quiet.LockFor), quiet.NoVolume, "voice:shut up")
-	wantSets(t, f, quietESN+"=1")
+	wantSets(t, f) // no volume 1 without a saved volume to restore
 	f.now = f.now.Add(quiet.LockFor)
 	f.fire()
-	wantSets(t, f, quietESN+"=1")
+	wantSets(t, f)
 	wantNoLock(t)
+}
+
+// napValue reads the next nap request's SleepCycle_NapUntil_s epoch.
+func napValue(t *testing.T, naps chan string) int64 {
+	t.Helper()
+	select {
+	case q := <-naps:
+		v, _ := url.ParseQuery(q)
+		sec, _ := strconv.ParseInt(v.Get("value"), 10, 64)
+		return sec
+	case <-time.After(2 * time.Second):
+		t.Fatal("no nap request")
+	}
+	return 0
+}
+
+// TestQuietNapRunsToLockEnd: a start under a longer lock naps to that lock's end, both ways (?on= under voice, voice under ?on=).
+func TestQuietNapRunsToLockEnd(t *testing.T) {
+	_, _, naps, f := quietRigFake(t, "10.0.0.9")
+	forkQuietLock(quietESN, "shut up", f.now)
+	forkNaps.Wait()
+	voiceEnd := f.now.Add(quiet.LockFor)
+	if got := napValue(t, naps); got != voiceEnd.Unix() {
+		t.Fatalf("voice nap %d, want %d", got, voiceEnd.Unix())
+	}
+	if w := quietPost(t, http.MethodPost, "?on=30"); w.Code != http.StatusOK {
+		t.Fatalf("on=30: %d %q", w.Code, w.Body.String())
+	}
+	if got := napValue(t, naps); got != voiceEnd.Unix() {
+		t.Errorf("on=30 under a 2h voice lock: nap %d, want the lock's end %d", got, voiceEnd.Unix())
+	}
+	if err := quiet.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if w := quietPost(t, http.MethodPost, "?on=300"); w.Code != http.StatusOK {
+		t.Fatalf("on=300: %d %q", w.Code, w.Body.String())
+	}
+	cliEnd := f.now.Add(300 * time.Minute)
+	if got := napValue(t, naps); got != cliEnd.Unix() {
+		t.Fatalf("on=300 nap %d, want %d", got, cliEnd.Unix())
+	}
+	forkQuietLock(quietESN, "shut up", f.now)
+	forkNaps.Wait()
+	if got := napValue(t, naps); got != cliEnd.Unix() {
+		t.Errorf("voice shut up under a 5h CLI lock: nap %d, want the lock's end %d", got, cliEnd.Unix())
+	}
+}
+
+// TestQuietRestoreFailsKeepsVolume: a failed restore keeps the volume in an expired (unlocked) file and retries.
+func TestQuietRestoreFailsKeepsVolume(t *testing.T) {
+	_, _, _, f := quietRigFake(t, "10.0.0.9")
+	if err := quiet.SetVol(f.now.Add(time.Hour), 4, "voice:shut up"); err != nil {
+		t.Fatal(err)
+	}
+	ForkQuietRearm()
+	f.setErr = os.ErrDeadlineExceeded
+	f.now = f.now.Add(time.Hour)
+	f.fire()
+	wantLock(t, f.now, 4, "voice:shut up")
+	if _, locked := quiet.Line(f.now); locked {
+		t.Error("the kept-volume file reads locked")
+	}
+	if n := len(f.armed); n != 2 || f.armed[1] != forkQuietRetry {
+		t.Fatalf("armed %v, want a retry after forkQuietRetry", f.armed)
+	}
+	f.setErr = nil
+	f.fire()
+	wantSets(t, f, quietESN+"=4", quietESN+"=4")
+	wantNoLock(t)
+}
+
+// TestQuietOffNoRobotKeepsVolume: off with no robot known ends the lock now but keeps the volume for the retry.
+func TestQuietOffNoRobotKeepsVolume(t *testing.T) {
+	_, _, _, f := quietRigFake(t, "")
+	if err := quiet.SetVol(f.now.Add(time.Hour), 3, "cli:quiet.sh"); err != nil {
+		t.Fatal(err)
+	}
+	if w := quietPost(t, http.MethodPost, "?off=1"); w.Code != http.StatusOK {
+		t.Fatalf("off: %d %q", w.Code, w.Body.String())
+	}
+	wantLock(t, f.now, 3, "cli:quiet.sh")
+	if len(f.armed) != 1 || f.armed[0] != forkQuietRetry {
+		t.Fatalf("armed %v, want [forkQuietRetry]", f.armed)
+	}
 }
 
 func TestQuietRestoreOnExpiry(t *testing.T) {

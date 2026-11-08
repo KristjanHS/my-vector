@@ -38,14 +38,18 @@ func forkQuiet(req interface{}, voiceText, botSerial string) bool {
 
 // forkQuietLock is a "shut up" match's lock + listen off + nap + volume (wake-word and overheard alike).
 func forkQuietLock(esn, phrase string, now time.Time) {
-	_ = forkQuietStart([]string{esn}, now.Add(quiet.LockFor), now.Add(quiet.NapFor), "voice:"+phrase)
+	_ = forkQuietStart([]string{esn}, now.Add(quiet.LockFor), "voice:"+phrase)
 }
 
-// forkQuietStart locks until lockUntil, then per robot: listen off, async nap and volume; the error is the lock write's.
-func forkQuietStart(esns []string, lockUntil, napUntil time.Time, source string) error {
-	err := quiet.Set(lockUntil, source)
+// forkQuietStart locks until max(current, until), then per robot: listen off, async nap to the lock's end, volume; the error is the lock write's.
+func forkQuietStart(esns []string, until time.Time, source string) error {
+	err := quiet.Set(until, source)
 	if err != nil {
 		logger.Println("my-vector quiet: lock: " + err.Error())
+	}
+	napUntil := until
+	if l, rerr := quiet.Read(); rerr == nil && l.Until.After(napUntil) {
+		napUntil = l.Until
 	}
 	for _, esn := range esns {
 		forkListening.Deactivate(esn, "quiet")
@@ -123,14 +127,20 @@ func forkQuietVolume(esns []string) {
 		logger.Println("my-vector quiet: volume skipped: no readable lock")
 		return
 	}
-	if l.Vol == quiet.NoVolume && len(esns) > 0 {
+	saved := l.Vol != quiet.NoVolume
+	if !saved && len(esns) > 0 {
 		if v, err := forkVolumeGet(esns[0]); err != nil {
-			logger.Println("my-vector quiet: volume read: " + err.Error() + " (nothing to restore)")
+			logger.Println("my-vector quiet: volume read: " + err.Error() + " (volume left as is: nothing to restore it to)")
 		} else if err := quiet.SetVol(l.Until, v, l.Source); err != nil {
-			logger.Println("my-vector quiet: volume save: " + err.Error())
+			logger.Println("my-vector quiet: volume save: " + err.Error() + " (volume left as is)")
+		} else {
+			saved = true
 		}
 	}
 	for _, esn := range esns {
+		if !saved {
+			break
+		}
 		if err := forkVolumeSet(esn, quiet.LockVolume); err != nil {
 			logger.Println("my-vector quiet: volume set: " + err.Error())
 		}
@@ -171,24 +181,47 @@ func forkQuietExpire() {
 	forkQuietRestore(l)
 }
 
-// forkQuietRestore (forkQuietMu held) sets l.Vol on every paired robot (skipped for quiet.NoVolume), then removes the lock.
+// forkQuietRetry: a failed restore retries after this; meanwhile an expired lock file keeps the volume (start-up re-arm restores it too).
+var forkQuietRetry = 5 * time.Minute
+
+// forkQuietRestore (forkQuietMu held) sets l.Vol on every paired robot, then removes the lock; on a failure (or no robot
+// known) it keeps l.Vol in a lock file expired at min(l.Until, now) and arms forkQuietRetry.
 func forkQuietRestore(l quiet.Lock) {
 	if l.Vol == quiet.NoVolume {
 		logger.Println("my-vector quiet: lock ended, no saved volume")
-	}
-	for _, esn := range forkRobotESNs() {
-		if l.Vol == quiet.NoVolume {
-			break
+	} else if !forkQuietSetAll(l.Vol) {
+		if now := forkQuietNow(); l.Until.After(now) {
+			l.Until = now
 		}
-		if err := forkVolumeSet(esn, l.Vol); err != nil {
-			logger.Println("my-vector quiet: volume restore: " + err.Error())
-		} else {
-			logger.Println("my-vector quiet: volume " + strconv.Itoa(l.Vol) + " restored on " + esn)
+		if err := quiet.Hold(l); err != nil {
+			logger.Println("my-vector quiet: volume keep: " + err.Error())
 		}
+		logger.Println("my-vector quiet: volume " + strconv.Itoa(l.Vol) + " kept for a retry in " + forkQuietRetry.String())
+		forkQuietStop = forkQuietAfter(forkQuietRetry, forkQuietExpire)
+		return
 	}
 	if err := quiet.Clear(); err != nil {
 		logger.Println("my-vector quiet: unlock: " + err.Error())
 	}
+}
+
+// forkQuietSetAll sets v on every paired robot; false when one fails or none is known.
+func forkQuietSetAll(v int) bool {
+	esns := forkRobotESNs()
+	if len(esns) == 0 {
+		logger.Println("my-vector quiet: volume restore: no robots known")
+		return false
+	}
+	ok := true
+	for _, esn := range esns {
+		if err := forkVolumeSet(esn, v); err != nil {
+			logger.Println("my-vector quiet: volume restore: " + err.Error())
+			ok = false
+		} else {
+			logger.Println("my-vector quiet: volume " + strconv.Itoa(v) + " restored on " + esn)
+		}
+	}
+	return ok
 }
 
 // ForkQuietRearm arms the restore from an existing lock file at server start; an expired lock restores at once.
@@ -236,7 +269,7 @@ func forkQuietHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		now := forkQuietNow()
 		until := now.Add(time.Duration(min) * time.Minute)
-		if err := forkQuietStart(forkRobotESNs(), until, until, "cli:quiet.sh"); err != nil {
+		if err := forkQuietStart(forkRobotESNs(), until, "cli:quiet.sh"); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

@@ -22,8 +22,8 @@ var Phrases = []string{"shut up", "shutup", "turn off", "ole vait", "jää vait"
 var Fillers = []string{"hey", "hei", "vector", "victor", "vektor", "please", "palun", "now", "nüüd"}
 
 const (
+	// LockFor is a voice "shut up"'s lock; the nap runs to the lock's end (an existing longer lock wins).
 	LockFor = 2 * time.Hour
-	NapFor  = 2 * time.Hour
 	// LockVolume is master_volume while locked (vectorpb Volume_LOW; ruled V1: low, not mute).
 	LockVolume = 1
 	// MaxVolume is vectorpb Volume_HIGH.
@@ -178,14 +178,31 @@ func SetVol(until time.Time, vol int, source string) error {
 			until, source = cur.Until, cur.Source
 		}
 	}
-	if source = strings.Join(strings.Fields(source), " "); source == "" {
+	return write(p, Lock{Until: until, Vol: vol, Source: source})
+}
+
+// Hold writes l as is (no max): a failed volume restore leaves an expired file keeping l.Vol, which reads as unlocked.
+func Hold(l Lock) error {
+	p := Path()
+	if p == "" {
+		return fmt.Errorf("quiet: no robot/work dir and no $MYVECTOR_QUIET_FILE")
+	}
+	if l.Vol < NoVolume || l.Vol > MaxVolume {
+		return fmt.Errorf("quiet: volume %d not in 0..%d", l.Vol, MaxVolume)
+	}
+	return write(p, l)
+}
+
+func write(p string, l Lock) error {
+	source := strings.Join(strings.Fields(l.Source), " ")
+	if source == "" {
 		source = "unknown"
 	}
 	v := "-"
-	if vol != NoVolume {
-		v = strconv.Itoa(vol)
+	if l.Vol != NoVolume {
+		v = strconv.Itoa(l.Vol)
 	}
-	return conf.WriteFile(p, ".quiet-until-*", []byte(fmt.Sprintf("%d %s %s\n", until.Unix(), v, source)), 0o666)
+	return conf.WriteFile(p, ".quiet-until-*", []byte(fmt.Sprintf("%d %s %s\n", l.Until.Unix(), v, source)), 0o666)
 }
 
 // Clear removes the lock file; a missing one is no error.

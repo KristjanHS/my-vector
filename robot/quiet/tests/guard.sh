@@ -55,26 +55,44 @@ rc=0; out=$(PATH="$tmp/bin3:$PATH" CONDS=base:1.0 SOUNDS="chime blink curious" O
 ((rc == 3)) && [[ $out == *QUIET:* ]] || die "sweep.sh with a mid-run lock: want exit 3 + QUIET, got $rc: $out"
 [[ $(wc -l <"$tmp/sounds") -eq 1 ]] || die "sweep.sh played $(wc -l <"$tmp/sounds") sounds after the lock, want 1"
 
-# Static: every robot script reaching env.sh is a listed sound script or sets silent=1 (a new unlisted script fails here).
-srcre='^[[:space:]]*(\[\[[^]]*\]\][[:space:]]*\|\|[[:space:]]*)?\.[[:space:]]+".*'
-reaches() { # reaches <file>: it sources env.sh, or a lib.sh (own dir or ../<dir>/lib.sh) that does
-  grep -qE "$srcre/env\.sh\"" "$1" && return 0
-  local lib
-  for lib in $(grep -oE "$srcre/lib\.sh\"" "$1" | grep -oE '(\.\./[a-z-]+/)?lib\.sh"$' | tr -d '"'); do
-    lib=$(dirname "$1")/$lib
-    [[ -f $lib ]] && grep -qE "$srcre/env\.sh\"" "$lib" && return 0
-  done
-  return 1
+# Static: every robot/**/*.sh reaching env.sh (`.`/`source` of env.sh, $envsh, or a lib.sh that does) is a listed sound
+# script or sets silent=1 before its first such line; fixtures below prove each form is caught.
+srcre='(^|[;&|({[:space:]])(\.|source)[[:space:]]+[^#]*'
+src_lines() { grep -nE "$srcre$2" "$1" | grep -vE '^[0-9]+:[[:space:]]*#' | cut -d: -f1 || true; }
+first_src() { # first_src <file>: line number of its first line reaching env.sh, empty when none
+  local lib n p
+  { src_lines "$1" '(env\.sh|envsh)'
+    for n in $(src_lines "$1" 'lib\.sh'); do
+      p=$(sed -n "${n}p" "$1" | grep -oE '(\.\./[A-Za-z0-9_-]+/)?lib\.sh' | head -1)
+      lib=$(dirname "$1")/$p
+      [[ -n $p && -f $lib && -z $(src_lines "$lib" '(env\.sh|envsh)') ]] || echo "$n" # an unresolvable lib.sh counts as reaching
+    done; } | sort -n | head -1
 }
-unlisted=()
-for f in "$robot"/*/*.sh "$robot"/*/tests/*.sh; do
-  rel=${f#"$robot"/}
-  [[ $rel == */lib.sh || $rel == quiet/* || $rel == env.sh ]] && continue
-  reaches "$f" || continue
-  [[ " ${sound[*]} " == *" $rel "* ]] && continue
-  grep -qE '^silent=1( |$)' "$f" || unlisted+=("$rel")
-done
-((${#unlisted[@]} == 0)) || die "sources env.sh but neither a listed sound script nor silent=1: ${unlisted[*]}"
+unlisted_in() { # unlisted_in <root>: the scripts under <root> failing the check, root-relative
+  local f rel first s
+  while IFS= read -r f; do
+    rel=${f#"$1"/}
+    [[ $rel == */lib.sh || $rel == env.sh ]] && continue
+    first=$(first_src "$f"); [[ -n $first ]] || continue
+    [[ " ${sound[*]} " == *" $rel "* ]] && continue
+    s=$(grep -nE '^[[:space:]]*silent=1([[:space:]]|;|$)' "$f" | head -1 | cut -d: -f1)
+    [[ -n $s ]] && ((s < first)) || echo "$rel"
+  done < <(find "$1" \( -path "$1/work" -o -path "$1/ota" -o -path "$1/backup" -o -path "$1/quiet" \) -prune -o -name '*.sh' -type f -print)
+}
+fx=$tmp/fx; mkdir -p "$fx/a/deep" "$fx/b" "$fx/lib"
+# shellcheck disable=SC2016 # fixture scripts: literal $
+{
+printf 'source "$x/env.sh"\n' >"$fx/a/deep/source-form.sh"
+printf 'envsh=$h/robot/env.sh\n. "$envsh"\n' >"$fx/a/envsh-form.sh"
+printf '. "$h/../env.sh"\nsilent=1\n' >"$fx/a/silent-after.sh"
+printf '. "$h/../lib/lib.sh"\n' >"$fx/b/via-lib.sh"; printf '. "$d/../env.sh"\n' >"$fx/lib/lib.sh"
+printf 'silent=1 # x\n[[ -n $y ]] || . "$h/../env.sh"\n' >"$fx/b/ok.sh"
+printf '# . "$h/../env.sh"\n. "$h/guard.sh" # no env.sh\n' >"$fx/b/comment-only.sh"
+}
+got=$(unlisted_in "$fx" | sort | tr '\n' ' ')
+[[ $got == "a/deep/source-form.sh a/envsh-form.sh a/silent-after.sh b/via-lib.sh " ]] || die "static check fixtures: flagged '$got'"
+unlisted=$(unlisted_in "$robot" | tr '\n' ' ')
+[[ -z $unlisted ]] || die "sources env.sh but neither a listed sound script nor silent=1 before it: $unlisted"
 
 # quiet.sh with wire-pod down: on writes the lock file, never shortens it, status exits 3, off removes it.
 rm -f "$MYVECTOR_QUIET_FILE"
@@ -89,4 +107,17 @@ rc=0; "$robot/quiet/quiet.sh" status >/dev/null || rc=$?
 ((rc == 3)) || die "status locked: want exit 3, got $rc"
 "$robot/quiet/quiet.sh" off >/dev/null 2>&1
 [[ ! -e $MYVECTOR_QUIET_FILE ]] || die "off left the lock file"
+# I3: on keeps a saved volume (a live shorter lock's, an expired file's); off with one expires the file, prints it.
+for d in 60 -60; do
+  lock "$d" 4
+  "$robot/quiet/quiet.sh" on 5 >/dev/null 2>&1 || die "on 5 over a lock with volume 4 failed"
+  read -r u v src <"$MYVECTOR_QUIET_FILE"
+  ((u > $(date +%s) + 290)) && [[ $v == 4 && $src == cli:quiet.sh ]] || die "on 5 over '$d s, vol 4' wrote: $(cat "$MYVECTOR_QUIET_FILE")"
+done
+out=$("$robot/quiet/quiet.sh" off 2>&1)
+[[ $out == *"volume back to 4"* ]] || die "off WARN lacks the saved volume: $out"
+[[ -f $MYVECTOR_QUIET_FILE ]] || die "off with a saved volume removed the lock file"
+read -r u v _ <"$MYVECTOR_QUIET_FILE"
+((u <= $(date +%s))) && [[ $v == 4 ]] || die "off with a saved volume: want an expired file keeping 4, got $(cat "$MYVECTOR_QUIET_FILE")"
+"$robot/quiet/quiet.sh" status >/dev/null || die "status after off: want unlocked"
 echo "quiet guard host test OK"

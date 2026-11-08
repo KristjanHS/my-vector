@@ -9,16 +9,21 @@ quiet_file() {
   printf '%s\n' "$(dirname "$common")/robot/work/quiet-until"
 }
 
-# quiet_locked: 0 while locked, sets quiet_until (epoch) and quiet_source; an unreadable or garbage file reads as unlocked.
-quiet_locked() {
+# quiet_read: sets quiet_until (epoch), quiet_vol (saved volume, digits or -) and quiet_source, expired or not; 1 when unreadable or garbage.
+quiet_read() {
   local f u rest
+  quiet_vol=-
   f=$(quiet_file)
   [[ -r $f ]] || return 1
   read -r u rest <"$f" || [[ -n ${u:-} ]] || return 1
-  [[ $u =~ ^[0-9]+$ ]] && ((u > $(date +%s))) || return 1
-  [[ $rest =~ ^(-|[0-9]+)\ (.*)$ ]] && rest=${BASH_REMATCH[2]} # a saved volume field (V1) precedes the source
+  [[ $u =~ ^[0-9]+$ ]] || return 1
+  # shellcheck disable=SC2034 # quiet.sh reads it
+  [[ $rest =~ ^(-|[0-9]+)\ (.*)$ ]] && quiet_vol=${BASH_REMATCH[1]} rest=${BASH_REMATCH[2]} # V1's volume field precedes the source
   quiet_until=$u quiet_source=$rest
 }
+
+# quiet_locked: 0 while locked (quiet_read's fields set); an expired, unreadable or garbage file reads as unlocked.
+quiet_locked() { quiet_read && ((quiet_until > $(date +%s))); }
 
 quiet_line() { echo "QUIET: robot sound locked until $(date -d "@$quiet_until" +%H:%M) ($quiet_source); make unquiet lifts it"; }
 
