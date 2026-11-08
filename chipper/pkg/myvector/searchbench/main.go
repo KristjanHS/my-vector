@@ -6,14 +6,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -21,6 +18,7 @@ import (
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/probekit"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 )
 
@@ -72,37 +70,11 @@ func judge(key, model, query string, rs []search.Result) (score, error) {
 	for i, r := range rs {
 		fmt.Fprintf(&b, "%d. %s (%s) %s\n%s\n", i+1, r.Title, r.URL, r.Date, r.Snippet)
 	}
-	body, _ := json.Marshal(map[string]any{
-		"model": model, "max_tokens": 200, "system": judgePrompt, "thinking": map[string]string{"type": "disabled"},
-		"messages": []map[string]string{{"role": "user", "content": b.String()}},
-	})
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, llm.AnthropicBase+"/v1/messages", bytes.NewReader(body))
-	req.Header.Set("x-api-key", key)
-	req.Header.Set("anthropic-version", llm.AnthropicVersion)
-	req.Header.Set("content-type", "application/json")
-	res, err := http.DefaultClient.Do(req)
+	reply, err := probekit.Claude(key, model, judgePrompt, b.String(), 200)
 	if err != nil {
 		return score{}, err
 	}
-	defer res.Body.Close()
-	raw, _ := io.ReadAll(res.Body)
-	if res.StatusCode != http.StatusOK {
-		return score{}, fmt.Errorf("judge HTTP %d", res.StatusCode)
-	}
-	var out struct {
-		Content []struct{ Type, Text string } `json:"content"`
-	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return score{}, fmt.Errorf("judge reply: %v", err)
-	}
-	for _, c := range out.Content {
-		if c.Type == "text" {
-			return parseScore(c.Text)
-		}
-	}
-	return score{}, errors.New("judge reply has no text block")
+	return parseScore(reply)
 }
 
 type row struct {
