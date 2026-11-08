@@ -158,8 +158,7 @@ func StartChipper() {
 		}
 	} else {
 		if vars.APIConfig.Server.EPConfig {
-			certPub, _ = os.ReadFile("./epod/ep.crt")
-			certPriv, _ = os.ReadFile("./epod/ep.key")
+			certPub, certPriv = forkEpodCert()
 		} else {
 			var err error
 			certPub, _ = os.ReadFile(vars.CertPath)
