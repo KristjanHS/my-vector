@@ -6,6 +6,9 @@ import "os"
 const SecretsDir = "../secrets/server"
 
 func init() {
+	if Packaged { // Init joins these onto UserConfigDir: keep upstream's relative names there
+		return
+	}
 	ApiConfigPath = SecretsDir + "/apiConfig.json" // fork_lang/fork_prompt and voice.SettingsPath put the myvector*.json files beside it
 	BotConfigsPath = SecretsDir + "/botConfig.json"
 	JdocsDir = SecretsDir + "/jdocs"

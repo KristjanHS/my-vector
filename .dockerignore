@@ -26,3 +26,5 @@ chipper/pico.key
 chipper/useepod
 chipper/source.sh
 .env
+secrets
+certs
