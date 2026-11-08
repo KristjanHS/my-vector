@@ -28,10 +28,43 @@ var forkSTTCollect = func(req sr.SpeechRequest) ([]byte, error) {
 		if _, err := req.GetNextStreamChunk(); err != nil {
 			return nil, err
 		}
-		if done, _ := req.DetectEndOfSpeech(); done {
+		if forkEndOfSpeech(&req) {
 			return req.DecodedMicData, nil
 		}
 	}
+}
+
+// forkEndSilence ends a "Hey Vector" request after this much VAD silence (user ruling 2026-11-08: 700 ms, the
+// active-listening pause cut P1). Upstream DetectEndOfSpeech stops at 230 ms and cut sentences at a comma.
+const forkEndSilence = 700 * time.Millisecond
+
+// forkMinSpeechFrames is upstream's ActiveFrames > 18: no end before 190 ms of speech.
+const forkMinSpeechFrames = 19
+
+// forkVADActive is one 10 ms frame's VAD verdict (a seam for tests).
+var forkVADActive = func(req *sr.SpeechRequest, frame []byte) (bool, error) { return req.VADInst.Process(16000, frame) }
+
+// forkEndOfSpeech is sr.DetectEndOfSpeech with a forkEndSilence window, over req.LastAudioChunk's 10 ms frames.
+func forkEndOfSpeech(req *sr.SpeechRequest) bool {
+	need := int(forkEndSilence / (10 * time.Millisecond))
+	for _, frame := range sr.SplitVAD(req.LastAudioChunk) {
+		active, err := forkVADActive(req, frame)
+		if err != nil {
+			logger.Println("VAD err: " + err.Error())
+			return true
+		}
+		if active {
+			req.ActiveFrames++
+			req.InactiveFrames = 0
+		} else {
+			req.InactiveFrames++
+		}
+		if req.InactiveFrames >= need && req.ActiveFrames >= forkMinSpeechFrames {
+			logger.Println("(Bot " + req.Device + ") End of speech detected.")
+			return true
+		}
+	}
+	return false
 }
 
 // forkSTTRouter sends every lang to myvector-stt (?lang=); its failure is an error, never h (Vosk), as plan E20 ruled for
