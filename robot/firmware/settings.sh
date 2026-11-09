@@ -67,6 +67,13 @@ case $(ssh_ "[ -e $flag ] && echo present || { touch $flag && echo created; }" 2
   *) warn "no-auto-update: could not check or create $flag over SSH to $ip" ;;
 esac
 
+# Shut-up nap (shut-up-sleep N3): a ship or epod restart zeroes vic-engine's console vars; re-arm it while the lock holds.
+if quiet_locked; then
+  if curl -sf -m 5 -o /dev/null "http://$ip:8888/consolevarset?key=SleepCycle_NapUntil_s&value=$quiet_until"; then
+    ok "nap re-armed until $(date -d "@$quiet_until" +%H:%M) (sound lock)"
+  else warn "nap: re-arm to $quiet_until failed at $ip:8888 (vic-engine down?)"; fi
+fi
+
 # T2 voice (plan R15, E30): the saved language's T2 (t2, or t2_et for et-EE) + slow, as voice.Settings.For;
 # voice.Defaults() (af_bella / mari, 1.2) for a missing file or field.
 conf_field() { sed -n "s/.*\"$1\": *\"\{0,1\}\([A-Za-z_0-9.-]*\).*/\1/p" "$conf" 2>/dev/null | head -1; }
