@@ -2,8 +2,6 @@
 
 ## OWED[USER]
 
-- G2 repeat filter failed 8.1 at 0.75 and 0.80 (`2026-11-07-follow-up-listening.md` (docs/plans/) P6): the 3 "other" drops are true repeats, so re-rule the bar (or not) before 8.2; also rule 1–2-word questions ("Minu?" always matches itself).
-- G1 judge failed 7.1 (`2026-11-07-follow-up-listening.md` (docs/plans/) P5): pick the next lever — B (cap 3), a stricter F prompt, or no judge (7.4+7.5 only); 7.2 waits on it.
 - Follow-up "jah" by voice (`2026-11-07-follow-up-listening.md` (docs/plans/) 7.5, after 7.3's ship): `mkdir robot/work/et-stt/mic` (capture is on only while it exists), answer a follow-up with "jah", then `robot/work/et-stt/venv/bin/python et-stt/nospeech.py --max 0.6 <newest robot/work/et-stt/mic/*.ogg>` must exit 0.
 - SDK audio orphan live (`2026-11-09-sdk-audio-orphan.md` (docs/plans/)): `make ship` (patch 0019 + vic-cloud gateway), then `voiceprobe overlap` — B refused (ResourceExhausted), A/C/D/F hear PlaybackComplete, no `starved` / `VERIFY(_audioPrepared)` line.
 - WiFi baseline live (`2026-11-07-wifi-baseline-hardening.md` (docs/plans/) 4.4 row, 6.1): restart vic-cloud → `make server-pin` → `mv secrets/epod-new secrets/epod && make start` → `make syncwt` → `make ship` → `robot/netguard/apply.sh --selftest` → the 6.1 ranked e2e.
