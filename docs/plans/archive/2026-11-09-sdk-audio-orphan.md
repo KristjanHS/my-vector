@@ -1,5 +1,7 @@
 # SDK audio orphan — overlapping voice streams jam vic-anim and fill RAM
 
+Status: ✅ SHIPPED (code on main; live confirm → `docs/backlog.md` §OWED[USER])
+
 Repro: `voiceprobe overlap` (silent). Fixed when A hears `PlaybackComplete`, and no `starved` / `VERIFY(_audioPrepared)` line follows.
 
 | id | ruling | edit site |
