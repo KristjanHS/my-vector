@@ -105,7 +105,7 @@ printf "ROBOT_ESN=0\nROBOT_IP=127.0.0.1\nROBOT_SERVER=http://wp\nROBOT_KEY=key\n
 : >"$vp/voice.json"; vp_run voice-push.sh af_bella 1.0 >/dev/null || die "voice-push.sh af_bella 1.0 failed"
 grep -qF '"lang":"en-US"' "$vp/voice.json" || die "voice-push.sh 2-arg: no \"lang\":\"en-US\" in $(cat "$vp/voice.json")"
 : >"$vp/voice.json"; vp_run voice-push.sh mari 1.0 et-EE >/dev/null || die "voice-push.sh mari 1.0 et-EE failed"
-grep -F '"voice":"mari"' "$vp/voice.json" | grep -qF '"lang":"et-EE"' || die "voice-push.sh et-EE wrote $(cat "$vp/voice.json")"
+grep -qF '"lang":"et-EE"' <<<"$(grep -F '"voice":"mari"' "$vp/voice.json")" || die "voice-push.sh et-EE wrote $(cat "$vp/voice.json")"
 rc=0; out=$(vp_run voice-push.sh af_bella 1.0 fi-FI) || rc=$?
 ((rc == 1)) || die "voice-push.sh fi-FI: exit $rc, want 1 ($out)"
 

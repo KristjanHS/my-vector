@@ -21,7 +21,7 @@ while (($#)); do case $1 in -i) k=$2; shift 2 ;; -o) shift 2 ;; root@*) shift; b
 cmd=$* name=$(basename "$k") b=$(ssh-keygen -y -f "$k" | awk '{ print $2 }')
 ph=$(sed -n 's/^PHASE=\([a-z]*\) .*/\1/p' <<<"$cmd"); ph=${ph:-$cmd}
 if [[ $b != "${FAKE_KEEP:-}" ]] && { [[ $b == "${FAKE_REJECT:-}" ]] ||
-  ! cat "$ETC_ROOT/etc/ssh/authorized_keys" "$ETC_ROOT/root/.ssh/authorized_keys" 2>/dev/null | grep -qF -- "$b"; }; then
+  ! grep -qF -- "$b" <<<"$(cat "$ETC_ROOT/etc/ssh/authorized_keys" "$ETC_ROOT/root/.ssh/authorized_keys" 2>/dev/null)"; }; then
   echo "ssh $name $ph refused" >>"$ETC_ROOT/calls"; echo "root@robot: Permission denied (publickey)." >&2; exit 255
 fi
 echo "ssh $name $ph" >>"$ETC_ROOT/calls"
@@ -82,8 +82,8 @@ out=$(run "$r") || die "happy path: $out"
 want='ssh new true refused|ssh old add|ssh new true|ssh new swap|setsid|ssh new true|ssh old true refused|ssh new confirm|ssh new check'
 [[ $(seq_of "$r") == "$want" ]] || die "happy path order: [$(seq_of "$r")] want [$want]"
 [[ $out == *"PASS: sshkey: fresh new-key login; image-key login refused"* && $out == *"PASS: sshkey: image key in no"* ]] || die "happy path output: $out"
-keys "$r" | grep -qF -- "$oldb" && die "happy path: the image key is still authorized"
-keys "$r" | grep -qF -- "$newb" || die "happy path: the new key is not authorized"
+grep -qF -- "$oldb" <<<"$(keys "$r")" && die "happy path: the image key is still authorized"
+grep -qF -- "$newb" <<<"$(keys "$r")" || die "happy path: the new key is not authorized"
 [[ $(stat -c %a "$r/etc/ssh/authorized_keys") == 600 ]] || die "happy path: authorized_keys mode changed"
 grep -q ' ro ' "$r/proc/mounts" || die "happy path left / rw"
 
@@ -104,8 +104,8 @@ run "$r2" FAKE_KEEP="$oldb" >/dev/null && die "stale: the failing 1st run passed
 out=$(run "$r2") || die "stale: re-run: $out"
 [[ $out == *"sshkey: already installed"* ]] || die "stale: re-run did not see the swap: $out"
 sleep 2 # the 1 s windows pass; happy's and stale's confirmed timers must not fire
-keys "$r2" | grep -qF -- "$oldb" && die "stale: the earlier run's timer restored the image key after the re-run passed"
+grep -qF -- "$oldb" <<<"$(keys "$r2")" && die "stale: the earlier run's timer restored the image key after the re-run passed"
 [[ $(stat -c %a "$r/etc/ssh/authorized_keys") == 600 ]] || die "no confirm: the restore changed authorized_keys' mode"
-keys "$r" | grep -qF -- "$newb" && [[ $(keys "$r" | grep -cF -- "$oldb") == 1 ]] || die "no confirm: rollback did not restore image + new key: $(keys "$r")"
-keys "$tmp/happy" | grep -qF -- "$oldb" && die "happy path: the confirmed rollback still fired"
+grep -qF -- "$newb" <<<"$(keys "$r")" && [[ $(keys "$r" | grep -cF -- "$oldb") == 1 ]] || die "no confirm: rollback did not restore image + new key: $(keys "$r")"
+grep -qF -- "$oldb" <<<"$(keys "$tmp/happy")" && die "happy path: the confirmed rollback still fired"
 echo "sshkey host test OK"

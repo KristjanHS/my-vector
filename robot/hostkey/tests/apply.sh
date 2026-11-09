@@ -76,7 +76,7 @@ run() { local r=$1; shift; env ETC_ROOT="$r" ETC_ARM_SCALE=3 ROLLBACK_MIN=1 PATH
 store_pubs() { local t; for t in ecdsa rsa; do echo "$ip $(awk '{ print $1, $2 }' "$1/data/myvector/ssh/ssh_host_${t}_key.pub")"; done; }
 is_image() { local t; for t in ecdsa rsa; do cmp -s "$1/etc/ssh/ssh_host_${t}_key" "$tmp/image/ssh_host_${t}_key" || return 1; done; }
 is_store() { local t; for t in ecdsa rsa; do cmp -s "$1/etc/ssh/ssh_host_${t}_key" "$1/data/myvector/ssh/ssh_host_${t}_key" || return 1; done; }
-pubs_in() { ssh-keygen -F $ip -f "$2" | awk '!/^#/ { print $3 }' | grep -qxF -- "$(awk '{ print $2 }' "$1/data/myvector/ssh/ssh_host_ecdsa_key.pub")"; }
+pubs_in() { grep -qxF -- "$(awk '{ print $2 }' "$1/data/myvector/ssh/ssh_host_ecdsa_key.pub")" <<<"$(ssh-keygen -F $ip -f "$2" | awk '!/^#/ { print $3 }')"; }
 
 r=$(fresh happy)
 out=$(run "$r") || die "happy path: $out"

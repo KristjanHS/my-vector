@@ -13,8 +13,8 @@ o=$tmp/out
 openssl verify -CAfile "$o/ca.crt" "$o/ep.crt" >/dev/null 2>&1 || die "ep.crt does not verify against ca.crt"
 san=$(openssl x509 -in "$o/ep.crt" -noout -ext subjectAltName | sed -n '2s/^ *//p')
 [[ $san == DNS:escapepod.local ]] || die "leaf SAN = '$san'"
-openssl x509 -in "$o/ep.crt" -noout -ext extendedKeyUsage | grep -q 'TLS Web Server Authentication' || die "leaf lacks EKU serverAuth"
-openssl x509 -in "$o/ca.crt" -noout -ext basicConstraints | grep -q 'CA:TRUE, pathlen:0' || die "CA lacks pathlen:0"
+grep -q 'TLS Web Server Authentication' <<<"$(openssl x509 -in "$o/ep.crt" -noout -ext extendedKeyUsage)" || die "leaf lacks EKU serverAuth"
+grep -q 'CA:TRUE, pathlen:0' <<<"$(openssl x509 -in "$o/ca.crt" -noout -ext basicConstraints)" || die "CA lacks pathlen:0"
 for c in ca ep; do
   nb=$(date -u -d "$(openssl x509 -in "$o/$c.crt" -noout -startdate | cut -d= -f2)" +%s)
   ((nb <= $(date +%s) - 23 * 3600)) || die "$c.crt notBefore is not backdated a day"
