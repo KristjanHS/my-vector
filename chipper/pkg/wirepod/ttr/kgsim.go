@@ -17,6 +17,7 @@ import (
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/robotconn"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	"github.com/sashabaranov/go-openai"
 )
@@ -215,7 +216,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 	}
 	if matched {
 		var err error
-		robot, err = vector.New(vector.WithSerialNo(esn), vector.WithToken(guid), vector.WithTarget(target))
+		robot, err = robotconn.Get(esn, guid, target) // my-vector: one shared conn per robot (robotconn)
 		if err != nil {
 			return err.Error(), err
 		}
@@ -530,7 +531,7 @@ func KGSim(esn string, textToSay string) error {
 	}
 	if matched {
 		var err error
-		robot, err = vector.New(vector.WithSerialNo(esn), vector.WithToken(guid), vector.WithTarget(target))
+		robot, err = robotconn.Get(esn, guid, target) // my-vector: one shared conn per robot (robotconn)
 		if err != nil {
 			return err
 		}

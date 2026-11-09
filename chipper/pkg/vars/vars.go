@@ -15,6 +15,7 @@ import (
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/robotconn"
 	"github.com/sashabaranov/go-openai"
 	"github.com/wlynxg/anet"
 )
@@ -430,7 +431,7 @@ func GetRobot(esn string) (*vector.Vector, error) {
 	if !matched {
 		return nil, errors.New("robot not in botsdkinfo")
 	}
-	robot, err := vector.New(vector.WithSerialNo(esn), vector.WithToken(guid), vector.WithTarget(target))
+	robot, err := robotconn.Get(esn, guid, target) // my-vector: one shared conn per robot (robotconn)
 	if err != nil {
 		return nil, err
 	}
