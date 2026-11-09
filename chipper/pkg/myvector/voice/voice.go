@@ -17,6 +17,9 @@ import (
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
+	"github.com/kercre123/wire-pod/chipper/pkg/logger"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -28,6 +31,7 @@ const (
 	boostDB      = 2.0                    // R23: on top of the service's -14 LUFS base; ~3% of speech already limited >3 dB, no headroom left
 	lead         = 300 * time.Millisecond // audio queued ahead of the speaker
 	grace        = 2 * time.Second        // the stream outlives the caller ctx by this, for its Cancel
+	refusedRetry = 200 * time.Millisecond // wait before retrying a stream the gateway refused
 )
 
 var (
@@ -37,7 +41,7 @@ var (
 	FirstAudio = 3 * time.Second
 	// Stall bounds each later read: one sentence's synthesis (Kokoro CPU fallback ~4 s).
 	Stall  = 10 * time.Second
-	tail   = 300 * time.Millisecond                                                      // wait past the last queued frame
+	tail   = time.Second                                                                 // wait past the last queued frame for the robot's PlaybackComplete
 	client = &http.Client{Transport: &http.Transport{IdleConnTimeout: 20 * time.Second}} // server idles out at 30 s
 )
 
@@ -64,7 +68,8 @@ func envOr(k, def string) string {
 }
 
 // Say speaks text in voice (at slow, 1 = normal) and returns the voice that spoke: voice, or Fallback with
-// the reason. An error after the first PC audio is returned as is (no fallback: half the text already played).
+// the reason. An error after the first PC audio is returned as is (no fallback: half the text already played),
+// except a stream the gateway refused (ResourceExhausted: one per robot, nothing played): retried once, then fallback.
 func Say(ctx context.Context, v *vector.Vector, text, voice string, slow float64) (string, error) {
 	body, err := fetch(ctx, text, voice, slow)
 	var first []byte
@@ -81,7 +86,18 @@ func Say(ctx context.Context, v *vector.Vector, text, voice string, slow float64
 		return fallback(ctx, v, text, err)
 	}
 	defer body.Close()
-	return voice, stream(ctx, v, first, body)
+	var played bytes.Buffer // what the first try read from body, replayed on the retry
+	err = stream(ctx, v, first, io.TeeReader(body, &played))
+	if status.Code(err) == codes.ResourceExhausted {
+		sleep(ctx, refusedRetry)
+		if err = ctx.Err(); err == nil {
+			err = stream(ctx, v, first, io.MultiReader(&played, body))
+		}
+		if status.Code(err) == codes.ResourceExhausted {
+			return fallback(ctx, v, text, err)
+		}
+	}
+	return voice, err
 }
 
 // Speak says text in s.T1 at s.Slow and returns the voice that spoke, as Say does; Stock is the robot's Acapela voice (plan R12; no robot-voice effect since patch 0010).
@@ -227,16 +243,22 @@ func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader)
 		return err
 	}
 	done := make(chan error, 1)
-	var verdict atomic.Bool // the robot ended the stream itself: no Cancel
+	var ours, verdict atomic.Bool // ours: our Complete went out; verdict: the robot ended the stream itself: no Cancel
 	go func() {
 		for {
 			r, err := c.Recv()
 			if err != nil {
+				if _, ok := status.FromError(err); ok {
+					done <- err // the gateway's refusal shows only here: Send gets io.EOF
+				}
 				return
 			}
 			var e error
 			switch {
 			case r.GetAudioStreamPlaybackComplete() != nil:
+				if !ours.Load() {
+					continue // an earlier playback's broadcast
+				}
 			case r.GetAudioStreamBufferOverrun() != nil:
 				e = errors.New("robot audio buffer overrun")
 			case r.GetAudioStreamPlaybackFailyer() != nil:
@@ -269,10 +291,8 @@ func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader)
 			AudioStreamChunk: &vectorpb.ExternalAudioStreamChunk{AudioChunkSizeBytes: uint32(len(b)), AudioChunkSamples: b}}})
 		end = end.Add(time.Duration(len(b)) * time.Second / (2 * rate))
 		select {
-		case e := <-done: // overrun/failure ends it; a mid-text complete (drained between sentences) does not
-			if e != nil {
-				return e
-			}
+		case e := <-done: // overrun, failure or a closed stream; a PlaybackComplete counts only after our Complete
+			return e // (vic-anim sends it only after Complete/Cancel/cleanup, so an earlier one is stale)
 		default:
 		}
 		if err == nil {
@@ -285,9 +305,19 @@ func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader)
 		}
 	}
 	if err == nil {
+		ours.Store(true) // before Send: the robot's PlaybackComplete can beat its return
 		err = c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamComplete{
 			AudioStreamComplete: &vectorpb.ExternalAudioStreamComplete{}}})
 		completed = err == nil
+	}
+	if errors.Is(err, io.EOF) { // the stream is closed: its status reaches Recv only
+		select {
+		case e := <-done:
+			if e != nil {
+				err = e
+			}
+		case <-time.After(tail):
+		}
 	}
 	if err != nil {
 		return err
@@ -296,6 +326,7 @@ func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader)
 	case err = <-done:
 		return err
 	case <-time.After(time.Until(end) + tail):
+		logger.Println("myvector voice: no robot verdict " + tail.String() + " past the audio's end; stream ended unconfirmed")
 		return ctx.Err()
 	}
 }
