@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace) + scripts/tests/guard.sh, firmware static checks (check-static.sh), patch 0010 + 0011 + 0016 host tests (tests/pc-voice.sh, tests/nap.sh, tests/mic-stream.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + robot/netguard/tests/{rules,hosts,apply}.sh + scripts/tests/secrets.sh + robot/openmic/tests/listen.sh, go vet + Fork tests of the patched sdkapp,
+# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace) + scripts/tests/guard.sh, firmware static checks (check-static.sh), patch 0010 + 0011 + 0016 + 0017 host tests (tests/pc-voice.sh, tests/nap.sh, tests/mic-stream.sh, tests/silent-start.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + robot/netguard/tests/{rules,hosts,apply}.sh + scripts/tests/secrets.sh + robot/openmic/tests/listen.sh, go vet + Fork tests of the patched sdkapp,
 # chipper myvector + vars + localization fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir), tts + stt pytest (when each venv exists).
 # Usage: check.sh [--head [rev]]   --head checks only that commit (default HEAD) via a git archive copy;
 #   make ship passes its pinned sha so the checked commit is the one it ships.
@@ -48,6 +48,7 @@ elif [[ -f $dir/scripts/wire-pod-guard.nft ]]; then echo "nft guard check skippe
 "$dir"/robot/firmware/check-static.sh
 if [[ -f $dir/robot/firmware/tests/pc-voice.sh ]]; then "$dir"/robot/firmware/tests/pc-voice.sh; fi # SKIPs itself without g++/clone
 if [[ -f $dir/robot/firmware/tests/nap.sh ]]; then "$dir"/robot/firmware/tests/nap.sh; fi # SKIPs itself without g++
+if [[ -f $dir/robot/firmware/tests/silent-start.sh ]]; then "$dir"/robot/firmware/tests/silent-start.sh; fi # SKIPs itself without g++
 if [[ -f $dir/robot/firmware/tests/mic-stream.sh ]]; then "$dir"/robot/firmware/tests/mic-stream.sh; fi # SKIPs itself without g++/clone
 if [[ -f $dir/robot/firmware/tests/night-check.sh ]]; then "$dir"/robot/firmware/tests/night-check.sh; fi
 if [[ -f $dir/robot/lib/tests/etc.sh ]]; then "$dir"/robot/lib/tests/etc.sh; fi

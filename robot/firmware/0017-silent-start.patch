@@ -1,0 +1,63 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Mon, 9 Nov 2026 06:24:28 +0200
+Subject: [PATCH] silent-start
+
+vic-engine: while /data/my-vector/silent-start exists, an AnimSequence holding the InitialWakeUp trigger
+(NormalWakeUp, the power-on anim after each engine start) ends on activation without playing it; ending
+rather than refusing to activate starts InitNormalOperation's run-once cooldown, so it never replays later.
+restarts.sh -s / catch.sh -s create the file before a restart and remove it after the anim window.
+Logs my-vector.SilentStart. Host test: robot/firmware/tests/silent-start.sh.
+---
+ .../behaviorAnimSequence.cpp                  | 24 +++++++++++++++++++
+ 1 file changed, 24 insertions(+)
+
+diff --git a/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorAnimSequence.cpp b/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorAnimSequence.cpp
+index 87c8eef2..e8c985c3 100644
+--- a/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorAnimSequence.cpp
++++ b/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorAnimSequence.cpp
+@@ -17,6 +17,9 @@
+ #include "engine/aiComponent/behaviorComponent/behaviorExternalInterface/beiRobotInfo.h"
+ #include "util/cladHelpers/cladFromJSONHelpers.h"
+ 
++#include <algorithm>
++#include <unistd.h>
++
+ namespace Anki {
+ namespace Vector {
+   
+@@ -30,6 +33,18 @@ const char* kTracksToLock   = "tracksToLock";
+ const char* kRenderInEyeHue = "renderInEyeHue";
+ }
+ 
++namespace { // my-vector silent start
++// restarts.sh -s / catch.sh -s create this before an engine restart and remove it after the power-on anim window.
++const char* const kMyVectorSilentStartFile = "/data/my-vector/silent-start";
++
++// True: skip this activation's anims. Only a sequence holding the InitialWakeUp trigger (NormalWakeUp, the power-on
++// anim InitNormalOperation plays once per engine start) is skipped, and only while the flag file exists.
++bool MyVectorSilentStart(bool hasInitialWakeUp)
++{
++  return hasInitialWakeUp && access(kMyVectorSilentStartFile, F_OK) == 0;
++}
++} // namespace (my-vector silent start)
++
+ 
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ BehaviorAnimSequence::InstanceConfig::InstanceConfig() :
+@@ -121,6 +136,15 @@ bool BehaviorAnimSequence::WantsToBeActivatedBehavior() const
+ // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+ void BehaviorAnimSequence::OnBehaviorActivated()
+ {
++  const auto& triggers = _iConfig.animTriggers;
++  const bool hasInitialWakeUp = std::find(triggers.begin(), triggers.end(), AnimationTrigger::InitialWakeUp) != triggers.end();
++  if (MyVectorSilentStart(hasInitialWakeUp)) {
++    // Ending here (not refusing WantsToBeActivated) lets InitNormalOperation start the -1 cooldown, so it never replays.
++    LOG_CH_INFO("Behaviors", "my-vector.SilentStart", "%s: %s exists, InitialWakeUp skipped",
++                GetDebugLabel().c_str(), kMyVectorSilentStartFile);
++    CancelSelf();
++    return;
++  }
+   StartPlayingAnimations();
+ }
+ 
