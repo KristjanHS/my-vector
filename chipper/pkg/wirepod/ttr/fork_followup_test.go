@@ -365,7 +365,7 @@ func TestForkNextChunk(t *testing.T) {
 	(&forkRepeats{}).wake(ready)
 	select {
 	case <-ready:
-		t.Error("wake with nothing dropped")
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(2 * time.Second):
+		t.Error("no wake with nothing dropped: a lost send or an extraBit append leaves the loop waiting")
 	}
 }
