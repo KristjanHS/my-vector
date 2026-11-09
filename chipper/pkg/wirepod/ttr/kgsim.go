@@ -507,6 +507,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 		}
 		forkFollowUp(robot, turn, esn, interrupted || disconnect) // my-vector: listen again on the decider's YES (fork_followup.go)
 	}
+	forkEndKGLoop(isKG, &kgStopLooping, kgReadyToAnswer) // my-vector: start closed unsent leaves the searching anim looping (fork_answer.go)
 	return "", nil
 }
 

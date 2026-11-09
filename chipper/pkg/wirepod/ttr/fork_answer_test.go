@@ -153,7 +153,61 @@ func TestForkBControlNeverStarts(t *testing.T) {
 	waitStartEnds(t, start)
 }
 
-// waitStartEnds fails unless start closes without a send, as StreamingKGSim's `for range start` needs.
+func TestForkBControlStartEndsAfterAnswer(t *testing.T) {
+	old := forkAnswerHold
+	forkAnswerHold = 200 * time.Millisecond
+	t.Cleanup(func() { forkAnswerHold = old })
+	for name, endAnswer := range map[string]func(stop chan bool, end func()){
+		"stop":   func(stop chan bool, _ func()) { stop <- true },
+		"return": func(_ chan bool, end func()) { end() },
+		"hold":   func(chan bool, func()) {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			start, stop := make(chan bool), make(chan bool)
+			end := forkBControl(&vector.Vector{Conn: &controlBot{}}, context.Background(), start, stop, "00e5"+name)
+			defer end()
+			<-start
+			endAnswer(stop, end)
+			waitStartEnds(t, start)
+		})
+	}
+}
+
+func TestForkEndKGLoop(t *testing.T) {
+	for name, c := range map[string]struct {
+		isKG, stopped, looping bool
+	}{
+		"unstarted": {true, false, true}, // start closed unsent: the searching anim still loops
+		"started":   {true, true, false}, // the speak loop already stopped it
+		"not KG":    {false, false, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stopped, ready, sent := c.stopped, make(chan bool), make(chan struct{})
+			if c.looping {
+				go func() { ready <- true; close(sent) }() // the anim loop's exit, once it sees stopLooping
+			}
+			returned := make(chan struct{})
+			go func() { forkEndKGLoop(c.isKG, &stopped, ready); close(returned) }()
+			select {
+			case <-returned:
+			case <-time.After(time.Second):
+				t.Fatal("forkEndKGLoop blocked")
+			}
+			if want := c.isKG; stopped != want {
+				t.Errorf("stopLooping = %v, want %v", stopped, want)
+			}
+			if c.looping {
+				select {
+				case <-sent:
+				case <-time.After(time.Second):
+					t.Error("the anim loop's exit send was never received: the loop goroutine leaks")
+				}
+			}
+		})
+	}
+}
+
+// waitStartEnds fails unless start closes without a (further) send, as StreamingKGSim's `for range start` needs.
 func waitStartEnds(t *testing.T, start chan bool) {
 	t.Helper()
 	ended := make(chan int, 1)
@@ -167,7 +221,7 @@ func waitStartEnds(t *testing.T, start chan bool) {
 	select {
 	case n := <-ended:
 		if n != 0 {
-			t.Errorf("start sent %d time(s) without control, want 0", n)
+			t.Errorf("start sent %d more time(s), want 0", n)
 		}
 	case <-time.After(time.Second):
 		t.Error("start never closed: StreamingKGSim's speak loop waits forever")
