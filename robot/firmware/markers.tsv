@@ -54,3 +54,5 @@
 0016-mic-stream.patch	src	animProcess/src/cozmoAnim/micData/micDataProcessor.h	int myVectorVad = 0;
 0016-mic-stream.patch	bin	bin/vic-anim	my-vector.MicStream
 0016-mic-stream.patch	bin	bin/vic-anim	kMyVector_MicStreamPort
+0017-silent-start.patch	src	engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorAnimSequence.cpp	my-vector.SilentStart
+0017-silent-start.patch	bin	lib/libcozmo_engine.so	my-vector.SilentStart

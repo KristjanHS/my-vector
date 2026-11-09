@@ -4,8 +4,9 @@
 # new vic-anim and breaks on NrGainLookupCore's line-191 failure branch, before the assert's fprintf clobbers the
 # registers. A hit dumps the operands (result s16, ratio s18, gain s4, 1-floor s2), the gain table at r4, the stack
 # (saved d8 = caller floor at sp+8, saved lr names the caller) and fpscr.
-# Every restart plays the power-on animation sound (volume stays as set).
-# Usage: catch.sh [-d] [max_rounds=10]   stops at the first hit; exit 0 = hit, 1 = no hit, 2 = setup.
+# Every restart plays the power-on animation sound (volume stays as set) unless -s (patch 0017's flag file skips
+# vic-engine's InitialWakeUp anim; removed 60 s after each new vic-anim, past its ~30 s window).
+# Usage: catch.sh [-d] [-s] [max_rounds=10]   stops at the first hit; exit 0 = hit, 1 = no hit, 2 = setup.
 # Output: robot/work/seassert/catch-<timestamp>/ (rounds.log, round-N.gdb.log, deploy-N.log).
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -14,8 +15,11 @@ silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../env.sh"
 # shellcheck source=robot/crash-review/lib.sh
 . "$here/../crash-review/lib.sh"
-deploy=0
-[[ ${1:-} == -d ]] && { deploy=1; shift; }
+deploy=0 ss=
+while [[ ${1:-} == -[ds] ]]; do
+  case $1 in -d) deploy=1 ;; -s) ss='mkdir -p /data/my-vector && touch /data/my-vector/silent-start && ' ;; esac
+  shift
+done
 max=${1:-10}
 window=30 # s attached per round; both crashes came ~13 s after vic-anim started
 src=$here/../work/wire-os-victor
@@ -47,9 +51,14 @@ gpid=
 heal='sleep 1; killall gdbserver 2>/dev/null; for p in $(pidof vic-anim); do f=/proc/$p/status
   [ "$(sed -n "s/^State:[[:space:]]*\(.\).*/\1/p" $f)" = T ] && [ "$(sed -n "s/^TracerPid:[[:space:]]*//p" $f)" = 0 ] &&
   kill -CONT $p && echo "CONTed $p"; done; true'
+# -s: ss_at = when the flag went up / the last new vic-anim showed; ss_off removes it once 60 s have passed since.
+ss_at=
+ss_off() { [[ -n $ss_at ]] || return 0; local w=$((ss_at + 60 - SECONDS)); ((w <= 0)) || sleep "$w"; ssh_ 'rm -f /data/my-vector/silent-start' || true; ss_at=; }
 cleanup() {
   [[ -n $gpid ]] && kill "$gpid" 2>/dev/null
   ssh_ "$heal; systemctl start --no-block anki-robot.target" || true
+  [[ -z $ss_at ]] || ss_at=$SECONDS
+  ss_off
 }
 trap cleanup EXIT
 
@@ -58,7 +67,8 @@ for ((i = 1; i <= max; i++)); do
   # A fault-code restart in flight (fault 800 = a unit failed) would race our restart.
   for _ in $(seq 30); do ssh_ 'systemctl is-active -q fault-code.service' 2>/dev/null || break; sleep 2; done
   old=$(ssh_ 'pidof -s vic-anim' 2>/dev/null) || old=none
-  t0=$(ssh_ 'date +%s') || { log "round $i: ssh failed"; sleep 10; continue; }
+  t0=$(ssh_ "${ss}date +%s") || { log "round $i: ssh failed"; sleep 10; continue; }
+  [[ -z $ss ]] || ss_at=$SECONDS
   if ((deploy)); then
     # Same order as robot/firmware/ship.sh: deploy-v.sh (stop, rsync, start), then settings.sh.
     (
@@ -79,6 +89,7 @@ for ((i = 1; i <= max; i++)); do
     p=$(ssh_ 'pidof -s vic-anim' 2>/dev/null) && [[ $p != "$old" ]] && { pid=$p; break; }
     sleep 0.5
   done
+  [[ -z $ss_at ]] || ss_at=$SECONDS
   # -d: the new vic-anim must be the clone's build before the clone's offset means anything.
   if [[ -n $pid ]] && ((deploy)) && [[ $(robot_md5) != "$want_md5" ]]; then
     log "round $i: robot vic-anim is not the clone build after the deploy — stop"
@@ -160,6 +171,7 @@ EOF
     wait "$dpid" || true
     st+=" | $(grep '^== ' "$out/deploy-$i.log" | tr '\n' ' ')"
   fi
+  ss_off
   crash=$(ssh_ "journalctl -o short-iso --no-pager --since @$t0 | grep -E 'SeAssert|terminated by signal|Handle fault code|Failed with result' | head -4" || true)
   if grep -q 'mov[[:space:]]*r3, #191' "$g" && grep -q '^s16 ' "$g" && ((s >= window)); then
     attached=$((attached + 1))
