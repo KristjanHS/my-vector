@@ -583,3 +583,37 @@ func TestStreamTimeoutEnds(t *testing.T) {
 		t.Errorf("%d timeout log line(s), want 1", n-logged)
 	}
 }
+
+func TestStreamCancelsAfterCompleteOnInterrupt(t *testing.T) {
+	for name, c := range map[string]struct {
+		verdictFirst bool
+		wantCancel   bool
+	}{
+		"no verdict":    {false, true},
+		"verdict first": {true, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			service(t, oneSecond)
+			r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1), completeOnEnd: c.verdictFirst}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			ret := make(chan error, 1)
+			go func() { _, err := Say(ctx, &vector.Vector{Conn: r}, "smoke test", "cori", 1); ret <- err }()
+			for sent := false; !sent; time.Sleep(10 * time.Millisecond) {
+				r.mu.Lock()
+				sent = len(r.sent) > 0 && r.sent[len(r.sent)-1].GetAudioStreamComplete() != nil
+				r.mu.Unlock()
+			}
+			if c.verdictFirst {
+				time.Sleep(50 * time.Millisecond) // the verdict lands before the interrupt
+			}
+			cancel()
+			<-ret
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if got := r.sent[len(r.sent)-1].GetAudioStreamCancel() != nil; got != c.wantCancel {
+				t.Errorf("last message is Cancel = %v, want %v", got, c.wantCancel)
+			}
+		})
+	}
+}
