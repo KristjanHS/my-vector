@@ -172,8 +172,8 @@ func main() {
 					die("%v", err)
 				}
 				fmt.Printf("%s %d %d [%s %dtok %dms] %s → %s\n", arm, rep, i+1, l.Target, l.Prompt, l.Ms, ask, l.Reply)
-				if *chained && err == nil {
-					remember(ask, l.Reply, esn) // what forkAfterReply remembers: the spoken sentences joined
+				if *chained && err == nil && l.Reply != "" {
+					remember(ask, l.Reply, esn) // what forkAfterReply remembers: the spoken sentences joined, G2 repeats dropped (forkProbeSpoken); an empty reply remembers no turn, as live
 				}
 			}
 		}

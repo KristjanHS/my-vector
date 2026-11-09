@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -275,6 +276,10 @@ func TestForkRepeats(t *testing.T) {
 	if !r.drop(q, "", []string{"Hea küll."}, &full) || full != "Hea küll." {
 		t.Errorf("repeat: dropped %d, full %q, want 1 and %q", r.dropped, full, "Hea küll.")
 	}
+	full = "Hea küll. " + q + " See on hea."
+	if !r.drop(q, " See on hea.", []string{"Hea küll."}, &full) || full != "Hea küll. See on hea." {
+		t.Errorf("mid-reply repeat: full %q, want %q (the kept chunks joined)", full, "Hea küll. See on hea.")
+	}
 	if r.drop("Mis kell praegu on?", "", nil, &full) {
 		t.Error("a new question dropped")
 	}
@@ -289,5 +294,78 @@ func TestForkRepeats(t *testing.T) {
 	}
 	if forkRepeatFilter(esn).only(make(forkTurn, 1), nil) {
 		t.Error("only with nothing dropped")
+	}
+}
+
+// TestForkNextChunk: C1 — the speak loop re-checks after every wake: a wake with no new chunk neither indexes past
+// the slice nor ends the loop, and a reply whose last sentence was a dropped repeat ends the loop (rep.wake) instead
+// of leaving it waiting for a sentence that never comes.
+func TestForkNextChunk(t *testing.T) {
+	var mu sync.Mutex
+	var chunks []string
+	var done bool
+	checked := make(chan struct{}, 16) // one per done() check: the loop is about to wait
+	get := func() []string { mu.Lock(); defer mu.Unlock(); return chunks }
+	isDone := func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		select {
+		case checked <- struct{}{}:
+		default:
+		}
+		return done
+	}
+	ready := make(chan string)
+	next := func(n int) <-chan string {
+		ch := make(chan string, 1)
+		go func() {
+			s, ok := forkNextChunk(get, isDone, n, ready)
+			if !ok {
+				s = "<end>"
+			}
+			ch <- s
+		}()
+		return ch
+	}
+	want := func(ch <-chan string, want, what string) {
+		t.Helper()
+		select {
+		case got := <-ch:
+			if got != want {
+				t.Errorf("%s: got %q, want %q", what, got, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s: speak loop still waiting", what)
+		}
+	}
+	got := next(0)
+	ready <- "" // received: the loop was waiting
+	select {
+	case s := <-got:
+		t.Fatalf("a wake with no chunk returned %q", s)
+	case <-time.After(50 * time.Millisecond):
+	}
+	mu.Lock()
+	chunks = []string{"Hea küll."}
+	mu.Unlock()
+	ready <- "Hea küll."
+	want(got, "Hea küll.", "kept sentence")
+
+	for len(checked) > 0 {
+		<-checked
+	}
+	got = next(1)
+	<-checked // spoke every chunk, not done: waits for the dropped question that never comes
+	mu.Lock()
+	done = true // stream EOF
+	mu.Unlock()
+	(&forkRepeats{dropped: 1}).wake(ready)
+	want(got, "<end>", "last sentence a dropped repeat")
+
+	(&forkRepeats{}).wake(ready)
+	select {
+	case <-ready:
+		t.Error("wake with nothing dropped")
+	case <-time.After(50 * time.Millisecond):
 	}
 }

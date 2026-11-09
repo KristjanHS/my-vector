@@ -351,6 +351,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 					extraBit := strings.TrimPrefix(fullRespText, newStr)
 					fullRespSlice = append(fullRespSlice, extraBit)
 				}
+				rep.wake(speakReady) // my-vector: a dropped last sentence leaves the speak loop waiting (fork_followup.go)
 				if vars.APIConfig.Knowledge.SaveChat {
 					Remember(openai.ChatCompletionMessage{
 						Role:    openai.ChatMessageRoleUser,
@@ -472,23 +473,15 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 		var disconnect bool
 		numInResp := 0
 		for {
-			respSlice := fullRespSlice
-			if len(respSlice)-1 < numInResp {
-				if !isDone {
-					logger.Println("Waiting for more content from LLM...")
-					for range speakReady {
-						respSlice = fullRespSlice
-						break
-					}
-				} else {
-					break
-				}
+			chunk, ok := forkNextChunk(func() []string { return fullRespSlice }, func() bool { return isDone }, numInResp, speakReady) // my-vector: re-checks after every wake (fork_followup.go)
+			if !ok {
+				break
 			}
 			if interrupted {
 				break
 			}
-			logger.Println(respSlice[numInResp])
-			acts := GetActionsFromString(respSlice[numInResp])
+			logger.Println(chunk)
+			acts := GetActionsFromString(chunk)
 			nChat[len(nChat)-1].Content = fullRespText
 			disconnect = PerformActions(nChat, acts, robot, stopStop)
 			if disconnect {

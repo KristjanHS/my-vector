@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
@@ -43,7 +44,7 @@ func (b *forkProbeBody) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 // ForkProbeLLM asks the LLM what StreamingKGSim would for transcribedText, without the robot: same gate, client and
-// request, one reply cleaned as it is spoken. target names who answers: "<provider> <model>" for the llm.Resolve
+// request, one reply cleaned and kept as it is spoken and remembered (forkProbeSpoken). target names who answers: "<provider> <model>" for the llm.Resolve
 // target, else "wire-pod knowledge <provider> <model>".
 func ForkProbeLLM(ctx context.Context, transcribedText, esn string) (target, answer string, err error) {
 	r, err := ForkProbeLLMFull(ctx, transcribedText, esn)
@@ -94,6 +95,7 @@ func ForkProbeLLMFull(ctx context.Context, transcribedText, esn string) (ForkPro
 	}
 	r := CreateAIReq(transcribedText, esn, false, false)
 	r.Stream = false
+	rep := forkRepeatFilter(esn) // the stream goroutine's G2 snapshot: the chat before this turn
 	start := time.Now()
 	resp, err := c.CreateChatCompletion(ctx, r)
 	res.Dur = time.Since(start)
@@ -117,9 +119,24 @@ func ForkProbeLLMFull(ctx context.Context, transcribedText, esn string) (ForkPro
 	if json.Unmarshal(body.raw, &raw) == nil && len(raw.Choices) > 0 && raw.Choices[0].Message.Reasoning != "" {
 		res.Reasoning = raw.Choices[0].Message.Reasoning
 	}
-	res.Answer = removeSpecialCharacters(res.RawAnswer)
-	if resp.Choices[0].FinishReason == openai.FinishReasonLength {
-		res.Answer = forkCutTail(res.Answer, true) // as the stream loops' forkDropCut
-	}
+	res.Answer = forkProbeSpoken(removeSpecialCharacters(res.RawAnswer), resp.Choices[0].FinishReason == openai.FinishReasonLength, rep)
 	return res, nil
+}
+
+// forkProbeSpoken is a whole reply as StreamingKGSim's stream loop keeps it — what is spoken and what forkAfterReply
+// remembers: the forkSplitSentence split with rep's G2 repeat drops, then the stream EOF's forkDropCut (cut = the
+// cap cut the reply), forkFlushHeld and forkFlushUnpunctuated, the kept chunks joined. "" = nothing is spoken.
+func forkProbeSpoken(answer string, cut bool, rep *forkRepeats) string {
+	var chunks []string
+	full, tail := answer, answer
+	for s, rest, ok := forkSplitSentence(tail); ok; s, rest, ok = forkSplitSentence(tail) {
+		if !rep.drop(s, rest, chunks, &full) {
+			chunks = append(chunks, s)
+		}
+		tail = rest
+	}
+	forkDropCut(cut, chunks, &full, &tail)
+	chunks, tail, _ = forkFlushHeld(chunks, tail)
+	chunks, _ = forkFlushUnpunctuated(chunks, tail)
+	return strings.Join(chunks, " ")
 }

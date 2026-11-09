@@ -133,7 +133,9 @@ func (r *forkRepeats) drop(sentence, rest string, chunks []string, full *string)
 		return false
 	}
 	r.dropped++
-	*full = strings.TrimSpace(strings.Join(append(chunks[:len(chunks):len(chunks)], rest), " "))
+	// rest keeps forkSplitSentence's leading space: untrimmed it doubled the join's space, full stopped matching the
+	// kept chunks joined, and upstream's EOF check appended an empty chunk
+	*full = strings.TrimSpace(strings.Join(append(chunks[:len(chunks):len(chunks)], strings.TrimSpace(rest)), " "))
 	logger.Println("myvector: follow-up repeat dropped: " + sentence)
 	return true
 }
@@ -147,6 +149,40 @@ func (r *forkRepeats) only(turn forkTurn, chunks []string) bool {
 	turn <- nil
 	logger.Println("myvector: reply was only repeated questions, says nothing, chain ends")
 	return true
+}
+
+// wake runs at stream EOF after isDone is set and the last chunk appended: a dropped sentence sends no speakReady
+// wake, so a speak loop that spoke every kept chunk and waits for the next one would never see isDone. Bounded like
+// forkSignalHeld (forkHeldWait, in a goroutine), so it never blocks the stream goroutine; a loop still speaking finds
+// isDone by itself and the send times out.
+func (r *forkRepeats) wake(speakReady chan string) {
+	if r.dropped == 0 {
+		return
+	}
+	timeout := time.After(forkHeldWait)
+	go func() {
+		select {
+		case speakReady <- "":
+		case <-timeout:
+		}
+	}()
+}
+
+// forkNextChunk is the speak loop's chunk n: chunks()[n] once the stream has it, ok false once done() and none is
+// left. It waits on speakReady and re-checks after every wake, so a wake that brings no chunk (rep.wake, a stale
+// forkSignalHeld) neither indexes past the slice nor stops the loop early. chunks and done read the stream
+// goroutine's fullRespSlice and isDone.
+func forkNextChunk(chunks func() []string, done func() bool, n int, speakReady chan string) (string, bool) {
+	for {
+		if s := chunks(); n < len(s) {
+			return s[n], true
+		}
+		if done() {
+			return "", false
+		}
+		logger.Println("Waiting for more content from LLM...")
+		<-speakReady
+	}
 }
 
 // forkMax is esn's chain cap: MaxListening while active listening is on (G1), else Max.
