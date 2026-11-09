@@ -3,7 +3,7 @@
 # chipper myvector + vars + localization fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir), tts + stt pytest (when each venv exists).
 # Usage: check.sh [--head [rev]]   --head checks only that commit (default HEAD) via a git archive copy;
 #   make ship passes its pinned sha so the checked commit is the one it ships.
-# Green writes a pass stamp robot/work/check-pass/<key>, key = content tree + toolchain + clone (stamp_key); --head exits 0 on a stamped key.
+# Green writes a pass stamp robot/work/check-pass/<key>, key = content tree + toolchain + clone (stamp_key); --head or a clean working tree skips on a stamped key, CHECK_FULL=1 runs all.
 set -euo pipefail
 repo=$(cd "$(dirname "$0")/.." && pwd)
 main=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")
@@ -33,8 +33,8 @@ else tree=$(wt_tree) key=$(stamp_key "$tree")
 fi
 (cd "$repo" && scripts/upstream-drift.sh "${head[@]}")
 # A stamp hit still runs the commit-range checks (drift above, secrets in every unpushed commit): the key holds only the tree.
-if [[ -n ${head[*]} && -f $stamps/$key ]]; then
-  if [[ -f $dir/scripts/tests/secrets.sh ]]; then "$dir"/scripts/tests/secrets.sh "$repo" "${head[@]}" "$dir"; fi
+if [[ -z ${CHECK_FULL:-} && -f $stamps/$key ]] && [[ -n ${head[*]} || $tree == "$(git -C "$repo" rev-parse 'HEAD^{tree}')" ]]; then
+  if [[ -f $dir/scripts/tests/secrets.sh ]]; then "$dir"/scripts/tests/secrets.sh "$repo" "${head[@]}" ${head[0]:+"$dir"}; fi
   echo "check skipped: tree ${tree:0:12} passed already ($(<"$stamps/$key")); drift + secrets ran"; exit 0
 fi
 shopt -s nullglob # a pre-R6 commit has no robot/*.sh
