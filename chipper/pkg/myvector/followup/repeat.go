@@ -8,6 +8,9 @@ import (
 // RepeatMin is G2's word overlap at which a closing question repeats an earlier one (8.1; 0.80 is the one allowed raise).
 const RepeatMin = 0.75
 
+// RepeatWords: a question with fewer words ("Mida?") never drops (user ruling 11-09).
+const RepeatWords = 4
+
 // words is s's distinct words: lowercase, punctuation stripped.
 func words(s string) map[string]bool {
 	w := map[string]bool{}
@@ -71,9 +74,9 @@ func Questions(msg string) []string {
 	return out
 }
 
-// Repeats reports whether sentence s is a question with Overlap ≥ min against a question in the earlier assistant messages said.
+// Repeats reports whether sentence s is a question of ≥ RepeatWords words with Overlap ≥ min against a question in the earlier assistant messages said.
 func Repeats(s string, said []string, min float64) bool {
-	if !question(s) {
+	if !question(s) || len(words(s)) < RepeatWords {
 		return false
 	}
 	for _, m := range said {

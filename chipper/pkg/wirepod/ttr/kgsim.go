@@ -303,7 +303,8 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 	})
 	fmt.Println("LLM stream response: ")
 	go func() {
-		var cut bool // my-vector: the reply cap cut the reply (fork_split.go forkDropCut)
+		var cut bool                 // my-vector: the reply cap cut the reply (fork_split.go forkDropCut)
+		rep := forkRepeatFilter(esn) // my-vector: G2 repeated-question filter (fork_followup.go)
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
@@ -315,6 +316,11 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 				if fullRespSlice, flushed = forkFlushUnpunctuated(fullRespSlice, fullRespText); flushed {
 					isDone = true
 					successIntent <- true
+				}
+				if rep.only(turn, fullRespSlice) { // my-vector: only repeated questions → silent, chain ends (fork_followup.go)
+					isDone = true
+					successIntent <- true
+					return
 				}
 				// prevents a crash
 				if len(fullRespSlice) == 0 {
@@ -376,6 +382,10 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 			fullfullRespText = fullfullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
 			fullRespText = fullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
 			for sentence, rest, ok := forkSplitSentence(fullRespText); ok; sentence, rest, ok = forkSplitSentence(fullRespText) { // my-vector: no split at a '.' between digits (fork_split.go)
+				if rep.drop(sentence, rest, fullRespSlice, &fullfullRespText) { // my-vector: G2 (fork_followup.go)
+					fullRespText = rest
+					continue
+				}
 				fullRespSlice = append(fullRespSlice, sentence)
 				fullRespText = rest
 				select {

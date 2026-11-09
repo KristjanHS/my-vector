@@ -109,6 +109,46 @@ func forkFollowUp(robot *vector.Vector, turn forkTurn, esn string, skip bool) bo
 	return yes
 }
 
+// forkRepeats is one reply's G2 repeat filter, holding esn's remembered assistant messages from the stream's start.
+type forkRepeats struct {
+	esn     string
+	said    []string
+	dropped int
+}
+
+func forkRepeatFilter(esn string) *forkRepeats {
+	r := &forkRepeats{esn: esn}
+	for _, m := range GetChat(esn).Chats {
+		if m.Role == openai.ChatMessageRoleAssistant {
+			r.said = append(r.said, m.Content)
+		}
+	}
+	return r
+}
+
+// drop: sentence repeats a remembered question (followup.Repeats) and is not spoken; full becomes the kept chunks +
+// rest, so upstream's "content after the last punctuation mark" check adds nothing back (forkDropCut's move).
+func (r *forkRepeats) drop(sentence, rest string, chunks []string, full *string) bool {
+	if !followup.Repeats(sentence, r.said, followup.RepeatMin) {
+		return false
+	}
+	r.dropped++
+	*full = strings.TrimSpace(strings.Join(append(chunks[:len(chunks):len(chunks)], rest), " "))
+	logger.Println("myvector: follow-up repeat dropped: " + sentence)
+	return true
+}
+
+// only runs at stream EOF: every sentence was a dropped repeat, so the reply says nothing and the chain ends.
+func (r *forkRepeats) only(turn forkTurn, chunks []string) bool {
+	if len(chunks) > 0 || r.dropped == 0 {
+		return false
+	}
+	forkChain.Reset(r.esn)
+	turn <- nil
+	logger.Println("myvector: reply was only repeated questions, says nothing, chain ends")
+	return true
+}
+
 // forkMax is esn's chain cap: MaxListening while active listening is on (G1), else Max.
 func forkMax(esn string) int {
 	if forkListening.Active(esn, forkNow()) {
