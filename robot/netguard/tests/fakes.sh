@@ -61,6 +61,8 @@ case $u in
 esac
 EOF
 chmod +x "$tmp/bin/"*
+# shellcheck source=robot/lib/tests/fakeclock.sh
+. "$robot/lib/tests/fakeclock.sh"; fakeclock_install "$tmp/bin" # arm timers park: a slow run never meets a fired rollback
 : >"$tmp/key"
 # env_file [tts_url]: a robot.env; prints its path
 env_file() { local f; f=$(mktemp "$tmp/robot.XXXXXX.env")

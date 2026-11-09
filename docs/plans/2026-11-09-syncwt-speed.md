@@ -3,7 +3,7 @@
 Goal: cut the wall-clock time of `make syncwt` (rebase the worktree onto `main` → gate → ff-land).
 Builds on [2026-11-08-ship-speed.md](2026-11-08-ship-speed.md): its B1, E2–E4, R6 and R7 are the same
 levers seen from the syncwt side; its Rung 1 A3 (check pass stamp) is already in `scripts/check.sh`.
-Rung 1 (S1, S2, S6a) is on `worktree-sec`; next is R3 below, then re-pick S3–S5.
+Rung 1 (S1, S2, S6a) and R3 are on `main`; next: re-pick S3–S5.
 
 ## 1. Where the time goes (measured 2026-11-09, worktree `sec`, 10 cores, 49 GB)
 
@@ -77,7 +77,7 @@ With S2 the gate is only as fast as its slowest test; these cut the top of the l
   and scale the test's waits to match. Touches a firmware patch → the next ship takes the firmware
   lane once. Check the seam compiles out (check-static or `nm` on the built lib).
 - **S3b hostkey (13 → ~4 s).** Make the 3 s confirm window an env knob the test sets to 0.3 s
-  (`sleep 4` → `sleep 0.5`), and cache the RSA/ECDSA/ed25519 fixture keys in a gitignored
+  (`sleep 4` → `sleep 0.5`; done by R3's fake clock), and cache the RSA/ECDSA/ed25519 fixture keys in a gitignored
   `robot/work/hostcache/` (ship-speed E3; `origin` is public, so no committed keys).
 - **S3c guard.sh sweep case (7.5 → ~1 s).** `sweep.sh`'s `sleep 2.5` per event becomes `${EV_GAP:-2.5}`;
   the guard test passes `EV_GAP=0`.
@@ -136,7 +136,7 @@ re-picked after the rung is measured. S3c and S3b are the cheapest of them (env 
 |---|---|---|
 | R1 | S2's runner is a sourceable lib with its own fake-job test (pass/fail/slow → rc, log, kill, order) | `scripts/lib/check-runner.sh`, `scripts/tests/check-runner.sh` |
 | R2 | S6a lands from this session, dotfiles commit pathspec'd to the one file | dotfiles `bin/bin/syncwt` `run_gate` + report |
-| R3 | Fake clock: a test-PATH `sleep` that blocks until the test touches `$tmp/fire` (replaces the wall-clock wait), then waits for the timers to exit; falsifier: fake sshd `-t` sleeping 3.5 s stays green | `robot/{hostkey,sshkey}/tests/apply.sh`, `robot/netguard/tests/fakes.sh` (`arm()` in `robot/lib/etc.sh` calls `sleep` via PATH) |
+| R3 | Fake clock, one shared helper (`fakeclock_install`/`fakeclock_fire`), lib-etc included; falsifier: fake sshd `-t` sleeping 3.5 s stays green | `robot/lib/tests/fakeclock.sh`, sourced by `robot/{hostkey,sshkey,lib}/tests/*.sh`, `robot/netguard/tests/fakes.sh` |
 
 ### Pre-registered check
 - S1: the falsifier in §S1 (second `make check` on a clean committed tree prints `check skipped`; a

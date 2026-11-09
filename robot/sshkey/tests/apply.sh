@@ -43,6 +43,8 @@ echo "setsid" >>"$ETC_ROOT/calls"
 exec "$@"
 EOF
 chmod +x "$tmp/bin/"*
+# shellcheck source=robot/lib/tests/fakeclock.sh
+. "$robot/lib/tests/fakeclock.sh"; fakeclock_install "$tmp/bin" # arm timers park until fakeclock_fire
 # env_file <key> [old]: a robot.env with ROBOT_KEY=<key>, ROBOT_KEY_OLD=<old> (default old); prints its path
 env_file() { printf '%s\n' ROBOT_ESN=0 ROBOT_IP=192.0.2.9 ROBOT_SERVER=x "ROBOT_KEY=$k/$1" "ROBOT_KEY_OLD=$k/${2:-old}" >"$tmp/$1-${2:-old}.env"; echo "$tmp/$1-${2:-old}.env"; }
 # fresh <name>: a fake robot root as probed: / ro, the image key only in /etc/ssh/authorized_keys (600), no /root/.ssh; prints its path
@@ -103,7 +105,7 @@ r2=$(fresh stale) # a failed run's timer, then a re-run inside its window
 run "$r2" FAKE_KEEP="$oldb" >/dev/null && die "stale: the failing 1st run passed"
 out=$(run "$r2") || die "stale: re-run: $out"
 [[ $out == *"sshkey: already installed"* ]] || die "stale: re-run did not see the swap: $out"
-sleep 2 # the 1 s windows pass; happy's and stale's confirmed timers must not fire
+fakeclock_fire # the windows end; happy's and stale's confirmed timers must not fire
 grep -qF -- "$oldb" <<<"$(keys "$r2")" && die "stale: the earlier run's timer restored the image key after the re-run passed"
 [[ $(stat -c %a "$r/etc/ssh/authorized_keys") == 600 ]] || die "no confirm: the restore changed authorized_keys' mode"
 grep -qF -- "$newb" <<<"$(keys "$r")" && [[ $(keys "$r" | grep -cF -- "$oldb") == 1 ]] || die "no confirm: rollback did not restore image + new key: $(keys "$r")"
