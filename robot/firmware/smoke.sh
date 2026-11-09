@@ -22,7 +22,7 @@ die() { # once the units are up ($up), a failing check also reports a unit that 
   exit 1
 }
 setup() { echo "SETUP: $*" >&2; exit 2; }
-ok() { echo "ok: $*"; }
+ok() { echo "ok: $* (+$SECONDS s)"; }
 step_n=0
 step() { echo "== [$((++step_n))/$steps] $*  (+${SECONDS} s)"; } # progress header before each stage
 on_exit=() # cleanup commands, run in order by the EXIT trap
@@ -244,7 +244,7 @@ seen() { # seen <ERE>...: every pattern appears in /var/log/messages* after the 
     miss=
     for p; do grep -qE -- "$p" <<<"$new" || miss=1; done
     [[ -n $miss ]] || return 0
-    ((SECONDS < end)) || return 1; sleep 2
+    ((SECONDS < end)) || return 1; sleep 0.5
   done
 }
 tag=$(ssh_ "$(log_mark a3)") || die "A3: log tag never reached /var/log/messages"

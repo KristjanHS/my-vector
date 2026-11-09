@@ -45,7 +45,9 @@ else echo "journald: already capped in $j"; fi
 if [ -n "$sl" ] || stale syslog-ng@default $c; then systemctl restart syslog-ng@default; echo "syslog-ng: /var/log/messages 8MB+1 + d_keep set in $c"
 else echo "syslog-ng: already capped in $c"; fi
 systemctl is-active -q syslog-ng@default || { echo "FAIL: syslog-ng@default not active"; exit 1; }
-tag="my-vector logkeep $(date +%s)-$$"; logger "$tag"; sleep 2
+tag="my-vector logkeep $(date +%s)-$$"; logger "$tag"
+n=0 # L1 (ship-speed): grep at once, then <= 3 x 1 s
+until grep -q "$tag\$" $R/var/log/messages && grep -q "$tag\$" $R/data/log/keep/messages; do [ $n -lt 3 ] || break; n=$((n + 1)); sleep 1; done
 for f in /var/log/messages /data/log/keep/messages; do
   grep -q "$tag\$" $R$f || { echo "FAIL: $tag not in $f"; exit 1; }
 done
