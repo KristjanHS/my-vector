@@ -2,6 +2,7 @@
 
 ## OWED[USER]
 
+- Follow-up "jah" by voice (`2026-11-07-follow-up-listening.md` (docs/plans/) 7.5, after 7.3's ship): answer a follow-up with "jah", then `robot/work/et-stt/venv/bin/python et-stt/nospeech.py --max 0.6 <its mic-2026 clip>` must exit 0.
 - SDK audio orphan live (`2026-11-09-sdk-audio-orphan.md` (docs/plans/)): `make ship` (patch 0019 + vic-cloud gateway), then `voiceprobe overlap` — B refused (ResourceExhausted), A/C/D/F hear PlaybackComplete, no `starved` / `VERIFY(_audioPrepared)` line.
 - WiFi baseline live (`2026-11-07-wifi-baseline-hardening.md` (docs/plans/) 4.4 row, 6.1): restart vic-cloud → `make server-pin` → `mv secrets/epod-new secrets/epod && make start` → `make syncwt` → `make ship` → `robot/netguard/apply.sh --selftest` → the 6.1 ranked e2e.
 - WiFi baseline keys + leftovers (same plan, 4.1/1.2/2.1): `ca.key` + `secrets/myvector_ed25519` to the password manager, then `rm` `ca.key`; `make server-pin` nft 8084 check; live `robot/diskguard/apply.sh`.

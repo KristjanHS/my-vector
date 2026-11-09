@@ -1,4 +1,4 @@
-"""my-vector STT service: POST /stt?lang=<en-US|et-EE> (16 kHz s16le mono PCM body) -> {"text"}; GET /health -> {"lang", "loaded", "device"}.
+"""my-vector STT service: POST /stt?lang=<en-US|et-EE> (16 kHz s16le mono PCM body) -> {"text", "no_speech"}; GET /health -> {"lang", "loaded", "device"}.
 
 One faster-whisper model on the GPU: myvectorConfig.json "lang"'s (TalTech turbo-et or MODEL_EN); a ?lang= that differs -> 409; a missing ?lang= means et-EE (back-compat with an older wire-pod).
 Env: STT_BIND (127.0.0.1), STT_PORT (8092), STT_MODEL / STT_MODEL_EN (CT2 dirs), STT_DEVICE (cuda), STT_COMPUTE (int8_float16), STT_CONFIG (polled every 5 s).
@@ -52,8 +52,15 @@ def config_lang(path):
     return lang, None
 
 
+def heard(segments):
+    """(text, no_speech): the joined text and the highest segment no_speech_prob (no segments -> 1.0)."""
+    segments = list(segments)
+    text = "".join(s.text for s in segments).strip()
+    return text, max((s.no_speech_prob for s in segments), default=1.0)
+
+
 def _whisper_child(conn, model, device, compute):
-    """Child process body: load once, then (audio, language, beam) -> ("ok", text) | ("err", repr) until the pipe closes."""
+    """Child process body: load once, then (audio, language, beam) -> ("ok", heard()) | ("err", repr) until the pipe closes."""
     try:
         from faster_whisper import WhisperModel
 
@@ -69,7 +76,7 @@ def _whisper_child(conn, model, device, compute):
             return
         try:
             segments, _ = m.transcribe(audio, language=language, beam_size=beam)
-            conn.send(("ok", "".join(s.text for s in segments).strip()))
+            conn.send(("ok", heard(segments)))
         except Exception as e:
             conn.send(("err", repr(e)))
 
@@ -167,7 +174,7 @@ class Recognizer:
                     "model not loaded (load failed: see the service log)"
                 )
             if not audio.size:
-                return ""
+                return "", 1.0
             try:
                 return self._model.transcribe(audio, WHISPER_LANG[lang], BEAM)
             except Exception:
@@ -262,7 +269,7 @@ def make_handler(rec, watcher):
             watcher.poll_logged()  # a request right after the switch sees it now, not at the next poll (plan E21)
             t = time.monotonic()
             try:
-                text = rec.transcribe(pcm, lang)
+                text, no_speech = rec.transcribe(pcm, lang)
             except Inactive:
                 self._json(409, {"error": f"lang is {rec.lang}, not {lang}"})
                 return
@@ -271,9 +278,9 @@ def make_handler(rec, watcher):
                 self._json(500, {"error": str(e)})
                 return
             log.info(
-                "%.2f s audio -> %.2f s: %s", n / 2 / RATE, time.monotonic() - t, text
+                "%.2f s audio -> %.2f s: %s (no_speech %.3f)", n / 2 / RATE, time.monotonic() - t, text, no_speech
             )
-            self._json(200, {"text": text})
+            self._json(200, {"text": text, "no_speech": no_speech})
 
     return Handler
 

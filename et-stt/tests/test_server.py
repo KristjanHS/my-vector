@@ -18,7 +18,7 @@ class StubModel:
         self.st.calls.append((audio, language, beam_size))
         if self.st.crash:
             raise RuntimeError("whisper child exited (-11)")
-        return "Mis kell on?"
+        return "Mis kell on?", 0.01
 
     def close(self):
         self.st.closes += 1
@@ -41,6 +41,15 @@ def stub():
     return st
 
 
+def test_heard_scores_the_least_speech_like_segment():
+    def seg(text, p):
+        return types.SimpleNamespace(text=text, no_speech_prob=p)
+
+    assert server.heard(iter([seg(" Mis on", 0.01), seg(" OECD?", 0.02)])) == ("Mis on OECD?", 0.02)
+    assert server.heard([seg(" Mis on OECD?", 0.01), seg(" Tere.", 0.94)]) == ("Mis on OECD? Tere.", 0.94)
+    assert server.heard([]) == ("", 1.0)
+
+
 def echo_child(conn, model, device, compute):
     conn.send(("ok", None))
     while True:
@@ -48,7 +57,7 @@ def echo_child(conn, model, device, compute):
             audio, language, beam = conn.recv()
         except EOFError:
             return
-        conn.send(("ok", f"{model} {language} {beam} {len(audio)}"))
+        conn.send(("ok", (f"{model} {language} {beam} {len(audio)}", 0.5)))
 
 
 def failing_child(conn, model, device, compute):
@@ -93,7 +102,7 @@ def test_config_lang_matches_lang_go(tmp_path, body, want):
 def test_transcribe_scales_pcm_in_lang(stub, lang, code):
     stub.rec.set_lang(lang)
     pcm = np.array([16384, -32768], "<i2").tobytes()
-    assert stub.rec.transcribe(pcm, lang) == "Mis kell on?"
+    assert stub.rec.transcribe(pcm, lang) == ("Mis kell on?", 0.01)
     audio, language, beam = stub.calls[0]
     assert audio.dtype == np.float32 and audio.tolist() == [0.5, -1.0]
     assert (language, beam) == (code, server.BEAM)
@@ -140,7 +149,7 @@ def test_crashed_model_is_freed_and_next_poll_reloads(tmp_path, stub):
 
 def test_child_whisper_round_trip_and_close_exits():
     m = server.ChildWhisper("m", "cpu", "int8", target=echo_child)
-    assert m.transcribe(np.zeros(3, np.float32), "et", 5) == "m et 5 3"
+    assert m.transcribe(np.zeros(3, np.float32), "et", 5) == ("m et 5 3", 0.5)
     m.close()
     assert m._proc.exitcode == 0
 
@@ -193,7 +202,7 @@ def test_http_lang_mismatch_is_409(serve):
 
 
 def test_http_english_answers(serve):
-    assert serve.post(b"\0\0", "/stt?lang=en-US") == (200, {"text": "Mis kell on?"})
+    assert serve.post(b"\0\0", "/stt?lang=en-US") == (200, {"text": "Mis kell on?", "no_speech": 0.01})
     assert serve.stub.calls[0][1] == "en"
 
 
@@ -201,7 +210,7 @@ def test_http_request_right_after_switch_loads_and_answers(serve):
     write_lang(
         serve.cfg, "et-EE"
     )  # no background poll in the test: the request's own poll must see it
-    assert serve.post(b"\0\0") == (200, {"text": "Mis kell on?"})
+    assert serve.post(b"\0\0") == (200, {"text": "Mis kell on?", "no_speech": 0.01})
 
 
 def test_http_load_failure_is_500(serve):

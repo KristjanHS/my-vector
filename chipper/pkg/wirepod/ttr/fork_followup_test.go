@@ -226,4 +226,19 @@ func TestForkBegin(t *testing.T) {
 	if !begin(true, "  ") || forkChain.Count(esn) != 0 || forkChain.Begin(esn, forkNow()) {
 		t.Errorf("blank follow-up: want skip and the chain reset, count %d", forkChain.Count(esn))
 	}
+	arm()
+	followup.SetNoSpeech(esn, 0.94)
+	if !begin(true, "tere.") || forkChain.Count(esn) != 0 || forkChain.Begin(esn, forkNow()) {
+		t.Errorf("no-speech follow-up: want skip and the chain reset, count %d", forkChain.Count(esn))
+	}
+	arm()
+	followup.SetNoSpeech(esn, 0.015)
+	if begin(true, "mis on oecd?") || forkChain.Count(esn) != 2 {
+		t.Errorf("spoken follow-up: want it answered, count %d", forkChain.Count(esn))
+	}
+	forkChain.Reset(esn)
+	followup.SetNoSpeech(esn, 0.94)
+	if begin(true, "tere.") {
+		t.Error("unarmed knowledge request (\"I have a question\"): no-speech must not skip it")
+	}
 }

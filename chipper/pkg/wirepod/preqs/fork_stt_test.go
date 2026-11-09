@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/followup"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	sr "github.com/kercre123/wire-pod/chipper/pkg/wirepod/speechrequest"
 )
@@ -46,6 +47,20 @@ func TestForkSTTRouterPostsLang(t *testing.T) {
 		if err != nil || text != c.want || *calls != 0 {
 			t.Fatalf("%s: got %q, %v, vosk calls %d", c.lang, text, err, *calls)
 		}
+	}
+}
+
+func TestForkSTTRecordsNoSpeech(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"text": "Tere.", "no_speech": 0.94}`)
+	}))
+	defer srv.Close()
+	vosk, _ := forkSTTStub(t, srv.URL+"/stt")
+	if _, err := forkSTTRouter(vosk)(sr.SpeechRequest{Device: "nsp"}); err != nil {
+		t.Fatal(err)
+	}
+	if p := followup.TakeNoSpeech("nsp"); p != 0.94 {
+		t.Errorf("no_speech %v, want 0.94 recorded for the device", p)
 	}
 }
 
