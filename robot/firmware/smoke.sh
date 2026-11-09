@@ -12,6 +12,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
 silent=1 # UD1: a ship never blocks on the sound lock; A2 skips its speech while locked
 . "$here/../env.sh"
+# shellcheck source=robot/lib/logmark.sh
+. "$here/../lib/logmark.sh"
 units=(vic-engine vic-anim vic-robot)
 fatal='Fatal|SIGSEGV|SIGABRT|terminate called|Backtrace'
 die() { # once the units are up ($up), a failing check also reports a unit that died meanwhile
@@ -115,19 +117,25 @@ if [[ $ssf =~ ^([0-9]+)\ ([0-9]+)$ ]] && ((BASH_REMATCH[2] > BASH_REMATCH[1] && 
 fi
 
 # P1: since the running vic-robot's last Startup lift calibration: no crash lines, no recalibration loop (3 within 60 s).
+# The 8 MB messages rotation (robot/logkeep) can drop that line: then WARN (exit 3) and judge the lines left, as quiet-count.sh's INCOMPLETE.
 logcheck() {
-  local log
+  local log rc=0
   log=$(ssh_ "FATAL='$fatal' sh -s" <<'EOF'
 pid=$(pidof -s vic-robot) || { echo "vic-robot not running"; exit 1; }
 awk -v tag="vic-robot $pid " '
+  index($0, tag) && !seen++ { whole = index($0, "robot.main: Starting robot process") > 0 }
   index($0, tag) && /LiftController\.Calibrated.*reason Startup/ { on = 1; n = 0; loop = 0; bad = 0; msg = "" }
-  !on { next }
   /LiftController\.Calibrated/ { split($2, t, ":"); c[++n] = t[1] * 3600 + t[2] * 60 + t[3]
     if (n >= 3 && (c[n] - c[n - 2] + 86400) % 86400 < 60) loop++ }
   $0 ~ ENVIRON["FATAL"] { bad++; msg = msg "fatal: " substr($0, 1, 160) "\n" }
-  END { printf "%slift calibrated %d since Startup, loop hits %d, crash lines %d", msg, n, loop, bad; exit !(on && !loop && !bad) }' $(ls -tr /var/log/messages.* 2>/dev/null) /var/log/messages
+  END { cut = !on && !whole
+    printf "%s%slift calibrated %d since %s, loop hits %d, crash lines %d", msg, cut ? "log rotated past Startup; " : "", n,
+      cut ? "the oldest line" : "Startup", loop, bad
+    exit loop || bad || !cut && !on ? 1 : cut ? 3 : 0 }' $(ls -tr /var/log/messages.* 2>/dev/null) /var/log/messages
 EOF
-) || die "log ($1): $log"
+) || rc=$?
+  ((rc != 3)) || { echo "WARN: log ($1): $log"; return 0; }
+  ((rc == 0)) || die "log ($1): $log"
   ok "log ($1): $log"
 }
 logcheck start
@@ -224,21 +232,22 @@ step "A3 log-level intent"
 # A3: patch 0007's app intents turn vic-engine DEBUG on (marker + the DEBUG probe line, channel filtered at rest) and off.
 ssh_ "grep -qF my-vector.LogLevel /anki/lib/libcozmo_engine.so" || die "A3: firmware lacks patch 0007; skipped the log-level intent"
 intent() { curl -s -m 10 "$server/api-sdk/cloud_intent?serial=$esn&intent=$1" >/dev/null || true; }
-seen() { # seen <ERE>...: every pattern appears in /var/log/messages after line $n0 within 10 s; $new = the lines seen
+seen() { # seen <ERE>...: every pattern appears in /var/log/messages* after the log_mark $tag within 10 s; $new = the lines seen
   local end=$((SECONDS + 10)) p miss
   while :; do
-    new=$(ssh_ "tail -n +$((n0 + 1)) /var/log/messages | grep -F my-vector.LogLevel" 2>/dev/null || true) miss=
+    new=$(ssh_ "$(log_since "$tag" my-vector.LogLevel)" 2>/dev/null) || new="(log tag $tag not in /var/log/messages*)"
+    miss=
     for p; do grep -qE -- "$p" <<<"$new" || miss=1; done
     [[ -n $miss ]] || return 0
     ((SECONDS < end)) || return 1; sleep 2
   done
 }
-n0=$(ssh_ 'wc -l </var/log/messages') || die "A3: cannot read /var/log/messages"
+tag=$(ssh_ "$(log_mark a3)") || die "A3: log tag never reached /var/log/messages"
 on_exit+=('intent my_vector_log_info')
 intent my_vector_log_debug
 seen 'my-vector\.LogLevel.*debug on' 'vic-engine [0-9]+ \[@BehaviorSystem\] my-vector\.LogLevel\.Probe: (\(tc[0-9]+\) )?gate on' ||
   die "A3: no 'my-vector.LogLevel debug on' + DEBUG probe line within 10 s; saw: ${new:-nothing}"
-n0=$(ssh_ 'wc -l </var/log/messages') || die "A3: cannot read /var/log/messages"
+tag=$(ssh_ "$(log_mark a3)") || die "A3: log tag never reached /var/log/messages"
 intent my_vector_log_info
 seen 'my-vector\.LogLevel.*info \(app\)' || die "A3: no 'my-vector.LogLevel info (app)' within 10 s; saw: ${new:-nothing}"
 ok "A3 log-level intent: DEBUG on, back to info"

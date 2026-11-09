@@ -106,7 +106,7 @@ check_route() {
   route '^intent: intent_clock_settimer_extend \{"timer_duration":"600"\}$' -lang en-US "set a timer for ten minutes"
   route '^intent: intent_clock_settimer_extend \{"timer_duration":"300"\}$' -lang et-EE "pane taimer viieks minutiks"
   route '^intent: intent_clock_time$' -lang et-EE "mis kell on"
-  route_llm en-US ollama:qwen3.5:4b '^llm: .{20,}' "what should i cook tonight"
+  route_llm en-US ollama:gemma4:e4b-it-qat '^llm: .{20,}' "what should i cook tonight"
   route_llm en-US claude:claude-haiku-5-5 '^llm: .{20,}' "what should i cook tonight"
   route_llm et-EE "ollama:$et_llm" '^llm: .*[äõöü]' "mis on eesti pealinn ja miks see on tähtis"
   route_llm et-EE claude:claude-haiku-5-5 '^llm: .*[äõöü]' "mis on eesti pealinn ja miks see on tähtis"

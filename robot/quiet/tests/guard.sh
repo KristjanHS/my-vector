@@ -22,6 +22,8 @@ rc=0; out=$(bash "$tmp/sound.sh" 2>&1) || rc=$?
 ((rc == 3)) || die "sound script under an active lock: want exit 3, got $rc: $out"
 [[ $out == "QUIET: robot sound locked until "*" (voice:shut up); make unquiet lifts it" ]] || die "QUIET line: $out"
 out=$(bash "$tmp/silent.sh" 2>&1) || die "silent=1 script blocked: $out"
+rc=0; out=$(silent=1 bash "$tmp/sound.sh" 2>&1) || rc=$?
+((rc == 3)) || die "an exported silent=1 skipped the lock: want exit 3, got $rc: $out"
 lock -5
 out=$(bash "$tmp/sound.sh" 2>&1) || die "expired lock still blocks: $out"
 echo garbage >"$MYVECTOR_QUIET_FILE"
@@ -54,6 +56,71 @@ chmod +x "$tmp/bin3/curl"
 rc=0; out=$(PATH="$tmp/bin3:$PATH" CONDS=base:1.0 SOUNDS="chime blink curious" OUT=$tmp/out "$robot/volume-probe/sweep.sh" 2>&1) || rc=$?
 ((rc == 3)) && [[ $out == *QUIET:* ]] || die "sweep.sh with a mid-run lock: want exit 3 + QUIET, got $rc: $out"
 [[ $(wc -l <"$tmp/sounds") -eq 1 ]] || die "sweep.sh played $(wc -l <"$tmp/sounds") sounds after the lock, want 1"
+# I4: onset.sh and pcvoice.sh T2 re-check per run — the fake curl locks on the first console SayText; exactly one plays.
+mkdir -p "$tmp/bin4"
+cat >"$tmp/bin4/curl" <<F
+#!/bin/sh
+case "\$*" in
+  *get_sdk_info*) echo '{"esn":"000fake"}' ;;
+  *func=SayText*) echo say >>"$tmp/says"; echo "\$((\$(date +%s) + 600)) - voice:shut up" >"$MYVECTOR_QUIET_FILE" ;;
+esac
+F
+cat >"$tmp/bin4/ssh" <<'F'
+#!/bin/sh
+case "$*" in *'cat /data/data/myvector-voice.json') echo '{"url": "http://192.0.2.2:8091", "slow": 1.0}' ;; *'wc -l'*) echo 0 ;; esac
+F
+printf '#!/bin/sh\n' >"$tmp/bin4/sleep"
+chmod +x "$tmp/bin4/"*
+for s in voice-samples/onset.sh volume-probe/pcvoice.sh; do
+  rm -f "$MYVECTOR_QUIET_FILE" "$tmp/says"
+  rc=0; out=$(PATH="$tmp/bin4:$PATH" RUNS=3 OUT=$tmp/out4 "$robot/$s" stock 2>&1) || rc=$?
+  ((rc == 3)) && [[ $out == *QUIET:* ]] || die "$s with a mid-run lock: want exit 3 + QUIET, got $rc: $out"
+  [[ $(wc -l <"$tmp/says") -eq 1 ]] || die "$s played $(wc -l <"$tmp/says") SayText lines after the lock, want 1"
+done
+
+# C1: under a lock restarts.sh, catch.sh and epod/apply.sh write Q1's silent-start flag before the anki-robot.target restart;
+# unlocked they write none. A symlinked tree keeps their robot/work output in $tmp.
+t5=$tmp/tree; bin=$t5/work/wire-os-victor/_build/vicos/Release/bin
+mkdir -p "$t5/quiet" "$t5/crash-review" "$t5/seassert" "$bin" "$tmp/bin5" "$tmp/epod"
+for f in env.sh quiet/guard.sh crash-review/lib.sh crash-review/restarts.sh seassert/catch.sh; do ln -s "$robot/$f" "$t5/$f"; done
+echo stripped >"$bin/vic-anim"; echo full >"$bin/vic-anim.full"
+printf -- '-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n' >"$tmp/epod/ca.crt"
+cat >"$tmp/bin5/ssh" <<F
+#!/bin/sh
+for a; do c=\$a; done
+echo "ssh \$c" >>"$tmp/calls5"
+case "\$*" in
+  *silent-start*) ;;
+  *'sh -s') cat >/dev/null; echo 'epod: wrote' ;;
+  *fault-code.service*) exit 3 ;;
+  *pidof*) exit 1 ;;
+  *md5sum*) echo '$(md5sum <"$bin/vic-anim" | cut -d' ' -f1)  /anki/bin/vic-anim' ;;
+  *'date +%s'*) date +%s ;;
+esac
+F
+cat >"$tmp/bin5/gdb-multiarch" <<'F'
+#!/bin/sh
+case "$*" in *disas*) printf '   0x00001000 <+0>:\tldr\tr0, [pc]\n   0x00001004 <+4>:\tmov\tr3, #191\n' ;; esac
+F
+printf '#!/bin/sh\n' >"$tmp/bin5/sleep"
+chmod +x "$tmp/bin5/"*
+restarters=("$t5/crash-review/restarts.sh 1" "$t5/seassert/catch.sh 1" "$robot/epod/apply.sh")
+for locked in 1 0; do
+  if ((locked)); then lock 600; else rm -f "$MYVECTOR_QUIET_FILE"; fi
+  for s in "${restarters[@]}"; do
+    : >"$tmp/calls5"
+    # shellcheck disable=SC2086 # s = script + args
+    rc=0; out=$(PATH="$tmp/bin5:$PATH" MYVECTOR_EPOD_DIR=$tmp/epod $s 2>&1 </dev/null) || rc=$?
+    w=$(grep -n silent-start "$tmp/calls5" | head -1 | cut -d: -f1 || true)
+    r=$(grep -nE 'systemctl (stop|restart) anki-robot\.target|sh -s$' "$tmp/calls5" | head -1 | cut -d: -f1 || true)
+    [[ -n $r ]] || die "${s#"$tmp"/} made no restart call (rc $rc): $out"
+    if ((locked)); then
+      { [[ -n $w ]] && ((w < r)); } || die "${s#"$tmp"/} under a lock: no silent-start write before the restart: $(head -5 "$tmp/calls5")"
+    else
+      [[ -z $w ]] || die "${s#"$tmp"/} unlocked wrote the silent-start flag: $(sed -n "${w}p" "$tmp/calls5")"
+    fi
+  done
+done
 
 # Static: every robot/**/*.sh reaching env.sh (`.`/`source` of env.sh, $envsh, or a lib.sh that does) is a listed sound
 # script or sets silent=1 before its first such line; fixtures below prove each form is caught.
@@ -120,4 +187,12 @@ out=$("$robot/quiet/quiet.sh" off 2>&1)
 read -r u v _ <"$MYVECTOR_QUIET_FILE"
 ((u <= $(date +%s))) && [[ $v == 4 ]] || die "off with a saved volume: want an expired file keeping 4, got $(cat "$MYVECTOR_QUIET_FILE")"
 "$robot/quiet/quiet.sh" status >/dev/null || die "status after off: want unlocked"
+# I-b: wire-pod answering off with 409 (a newer lock kept): no fallback, the file stays, off prints the QUIET line.
+mkdir -p "$tmp/bin409"
+printf '#!/bin/sh\nprintf 409\n' >"$tmp/bin409/curl"; chmod +x "$tmp/bin409/curl"
+lock 600 4
+out=$(PATH="$tmp/bin409:$PATH" "$robot/quiet/quiet.sh" off 2>&1)
+[[ $out == "QUIET: robot sound locked until "*" (voice:shut up); make unquiet lifts it" ]] || die "off answered 409: want the QUIET line, got: $out"
+read -r u v _ <"$MYVECTOR_QUIET_FILE"
+((u > $(date +%s) + 590)) && [[ $v == 4 ]] || die "off answered 409 changed the lock: $(cat "$MYVECTOR_QUIET_FILE")"
 echo "quiet guard host test OK"

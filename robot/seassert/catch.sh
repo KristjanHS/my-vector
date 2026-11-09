@@ -4,7 +4,7 @@
 # new vic-anim and breaks on NrGainLookupCore's line-191 failure branch, before the assert's fprintf clobbers the
 # registers. A hit dumps the operands (result s16, ratio s18, gain s4, 1-floor s2), the gain table at r4, the stack
 # (saved d8 = caller floor at sp+8, saved lr names the caller) and fpscr.
-# Every restart plays the power-on animation sound (volume stays as set) unless -s (patch 0017's flag skips vic-engine's
+# Every restart plays the power-on animation sound (volume stays as set) unless -s or the sound lock holds (patch 0017's flag skips vic-engine's
 # InitialWakeUp anim: each round writes its expiry, robot clock + 300 s, 600 s with -d).
 # Usage: catch.sh [-d] [-s] [max_rounds=10]   stops at the first hit; exit 0 = hit, 1 = no hit, 2 = setup.
 # Output: robot/work/seassert/catch-<timestamp>/ (rounds.log, round-N.gdb.log, deploy-N.log).
@@ -69,6 +69,7 @@ for ((i = 1; i <= max; i++)); do
   # A fault-code restart in flight (fault 800 = a unit failed) would race our restart.
   for _ in $(seq 30); do ssh_ 'systemctl is-active -q fault-code.service' 2>/dev/null || break; sleep 2; done
   old=$(ssh_ 'pidof -s vic-anim' 2>/dev/null) || old=none
+  [[ -n $ss ]] || quiet_silent_start $((deploy ? 600 : 300)) || { log "round $i: sound lock, no silent-start flag"; sleep 10; continue; }
   t0=$(ssh_ "${ss}date +%s") || { log "round $i: ssh failed"; sleep 10; continue; }
   ss_at=
   if ((deploy)); then

@@ -31,7 +31,9 @@ var Backoff = []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute, 4 
 var named = regexp.MustCompile(`(?i)\b(?:vector|victor|vektor)\w*`)
 
 // wakeLead spots overheard text opening with the wake word (H1): the wake-word turn answers it, never the stream.
-var wakeLead = regexp.MustCompile(`(?i)^\W*(?:hei|hey)\W*(?:vector|victor|vektor)\b`)
+// The robot's wake word is the custom "Pumpkin Hippo" (2026-11-09; "hey Vector" is kept for a revert). The hippo branch
+// takes a spoken "hey" lead, STT spellings like "pampkin hipo" and Estonian letters/endings ("pämpkin", "hipot").
+var wakeLead = regexp.MustCompile(`(?i)^\W*(?:(?:hei|hey)\W*(?:vector|victor|vektor)\b|(?:h?e[iy]\W*)?[bp]\pL{1,3}kin\W*h?[iy]p+o)`)
 
 // Persona and SpeakRules also build listenprobe's prompt 1 arm.
 const (
@@ -93,13 +95,12 @@ type Utterance struct {
 	Start, End time.Time
 }
 
-// Hearer decides each overheard utterance; nil Locked/Quiet/Now/Estonian mean unlocked, no-op, time.Now, English.
+// Hearer decides each overheard utterance; nil Locked/Now/Estonian mean unlocked, time.Now, English.
 type Hearer struct {
 	State    *State
 	Client   func() (*openai.Client, string, bool)
 	Say      func(esn, text string) error
 	Locked   func(now time.Time) bool
-	Quiet    func(esn, phrase string)
 	Estonian func() bool
 	Now      func() time.Time
 	LogDir   string // A8 MYVECTOR_LISTEN_LOG
@@ -133,11 +134,8 @@ func (h *Hearer) Hear(u Utterance) func() {
 		s.Log("myvector listen: wake turn's, dropped")
 		return nil
 	}
-	if p, ok := quiet.Match(u.Text); ok {
+	if _, ok := quiet.MatchExact(u.Text); ok { // ruled 2026-11-09: only "<wake word>, <phrase>" (the wake path) locks
 		s.Deactivate(u.ESN, "quiet")
-		if h.Quiet != nil {
-			h.Quiet(u.ESN, p)
-		}
 		return nil
 	}
 	if on, ok := Match(u.Text); ok {

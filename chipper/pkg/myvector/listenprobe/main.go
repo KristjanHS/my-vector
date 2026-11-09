@@ -207,6 +207,7 @@ func main() {
 	show := flag.Bool("show", false, "print every reply, not only the misses")
 	thinkF := flag.String("think", "none", "thinking arms, comma-separated: none, low, medium, high")
 	budget := flag.Int("think-budget", 0, "thinking budget in tokens for every arm but none (0 = llm table)")
+	dump := flag.String("think-dump", "", "append one JSON line per call to this file (probekit.Dump)")
 	flag.Parse()
 	levels, err := probekit.ParseThink(*thinkF)
 	if err != nil {
@@ -383,6 +384,9 @@ func main() {
 				}
 				fmt.Println()
 				fmt.Println("    " + probekit.Summarize(calls[k]).Line(th.Label(tg.t.Model)))
+				if err := probekit.Dump(*dump, "listen "+a.name+" "+tg.t.Model+" "+th.Label(tg.t.Model), calls[k]); err != nil {
+					die("-think-dump: " + err.Error())
+				}
 				if tg.group >= 0 {
 					gms[tg.group][k] = append(gms[tg.group][k], ms[k]...)
 					if gsc[tg.group][k] == nil {

@@ -37,15 +37,37 @@ wirepod_setting() {
     | .jdoc.json_doc | fromjson | if has($f) then .[$f] | tostring else empty end' "$jdocs" 2>/dev/null
 }
 
+# sdk_ready: wire-pod's SDK link to the robot works; checked once, and only when a set is due. make ship runs this right after
+# the deploy restarted the robot's :443 gateway: a set sent before it is back gets connection refused, upstream
+# setSettingSDKstring panics and curl sees an empty reply (ship 2026-11-09 11:03). Same wait as smoke.sh P1: get_battery
+# tries 2 s apart for 60 s (wall clock: a hanging gateway makes each try up to 20 s; ship's silent-start flag lasts 600 s),
+# at most 30 tries. Else sdk_why says whether wire-pod or its robot link is down.
+sdk_why=unchecked
+sdk_ready() {
+  [[ $sdk_why == unchecked ]] || { [[ -z $sdk_why ]]; return; }
+  local b= c=0 t0=$SECONDS
+  for _ in $(seq 30); do
+    c=0; b=$(curl -s -m 20 "$server/api-sdk/get_battery?serial=$esn") || c=$?
+    [[ $b == *'"battery_volts"'* ]] && { sdk_why=; return 0; }
+    ((SECONDS - t0 < 60)) || break
+    sleep 2
+  done
+  if ((c == 7)); then sdk_why="wire-pod not answering at $server (down?)"
+  else sdk_why="wire-pod at $server has no SDK link to $esn after $((SECONDS - t0)) s (robot gateway down?)${b:+: ${b:0:120}}"; fi
+  return 1
+}
+
 # ensure <label> <jdoc field> <want> <api-sdk call> [<what follows wire-pod's copy>]: set via wire-pod only if the robot differs
-# (with the 5th arg: or wire-pod's copy does); ≤15 s for the robot jdoc to show it, then get_sdk_settings re-pulls wire-pod's copy.
+# (with the 5th arg: or wire-pod's copy does), after sdk_ready; ≤15 s for the robot jdoc to show it, then get_sdk_settings
+# re-pulls wire-pod's copy.
 ensure() {
   local label=$1 field=$2 want=$3 call=$4 follows=${5:-} was now wp=
   was=$(robot_setting "$field")
   [[ -z $follows ]] || wp=$(wirepod_setting "$field")
   if [[ $was == "$want" && (-z $follows || $wp == "$want") ]]; then ok "$label already $want"; return; fi
+  if ! sdk_ready; then warn "$label: not set to $want: $sdk_why; robot has ${was:-unknown}"; return; fi
   if ! curl -sf -m 20 -o /dev/null "$server/api-sdk/$call"; then
-    warn "$label: set to $want failed at $server (wire-pod down?); robot has ${was:-unknown}"; return
+    warn "$label: set to $want failed at $server (wire-pod or its robot link dropped); robot has ${was:-unknown}"; return
   fi
   now=$was
   for _ in $(seq 15); do now=$(robot_setting "$field"); [[ $now == "$want" ]] && break; sleep 1; done
@@ -82,6 +104,11 @@ dg=$here/../diskguard/apply.sh
 if [[ ! -f $dg ]]; then warn "diskguard: $dg missing (older sha?); not installed"
 elif out=$(bash "$dg" 2>&1); then ok "${out//$'\n'/; }"
 else warn "diskguard: ${out//$'\n'/; }"; fi
+# RAM log caps + /data/log/keep (robot/logkeep): /etc syslog-ng + journald conf, dropped by a reflash.
+lk=$here/../logkeep/apply.sh
+if [[ ! -f $lk ]]; then warn "logkeep: $lk missing (older sha?); not applied"
+elif out=$(bash "$lk" 2>&1); then ok "${out//$'\n'/; }"
+else warn "logkeep: ${out//$'\n'/; }"; fi
 # Server CA trust (robot/epod): ROBOT_TRUST lives on /data; re-applied so the 0015 marker switches it to ours only.
 ep=$here/../epod/apply.sh
 if [[ ! -f $ep ]]; then warn "epod: $ep missing (older sha?); not applied"
@@ -94,10 +121,10 @@ elif out=$(bash "$ng" 2>&1); then if [[ $out == *WARN:* ]]; then warn "${out//$'
 else warn "netguard: ${out//$'\n'/; }"; fi
 # Shut-up nap (shut-up-sleep N3), last: the deploy and epod's trust rewrite above restart vic-engine, which zeroes its console
 # vars; re-arm the nap while the lock holds. Its console needs a while after a restart: up to 18 tries 5 s apart (~90 s).
-# vic-engine answers 200 even for an unknown var or a bad value; only a body echoing the value is a set. The nap is capped
-# at now + 4 h (patch 0011's kMyVectorNapMax_s, quiet.NapMax: a longer value is refused); the lock itself can run longer.
+# vic-engine answers 200 even for an unknown var or a bad value; only a body echoing the value is a set.
+# Nap cap = Go quiet.NapMax - quiet.NapMargin (4 h - 5 min): patch 0011 refuses past 4 h on the robot clock.
 if quiet_locked; then
-  nap_until=$(($(date +%s) + 4 * 60 * 60)) body='' up=''
+  nap_until=$(($(date +%s) + 4 * 60 * 60 - 5 * 60)) body='' up=''
   ((quiet_until > nap_until)) || nap_until=$quiet_until
   for _ in $(seq 18); do
     if body=$(curl -sf -m 5 "http://$ip:8888/consolevarset?key=SleepCycle_NapUntil_s&value=$nap_until" 2>/dev/null); then up=1; break; fi

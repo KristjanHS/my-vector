@@ -2,7 +2,7 @@
 # Crash rate per robot start, no gdb: N plain restarts of anki-robot.target (stop, 5 s, start), or with -d N ship-style
 # deploys of the clone's current _build (deploy-v.sh, then settings.sh — build first); 60 s watch each.
 # Per round: S1 (vic-anim SeAssert), S2 (vic-engine SIGSEGV), S3 (vic-anim start timeout), other crashes, new dumps.
-# Every round plays the power-on sound unless -s (patch 0017's flag skips vic-engine's InitialWakeUp anim: each round writes
+# Every round plays the power-on sound unless -s or the sound lock holds (patch 0017's flag skips vic-engine's InitialWakeUp anim: each round writes
 # its expiry, robot clock + 300 s, 600 s with -d). Usage: restarts.sh [-d] [-s] [rounds=5]   exit 0 = no crash, 1 = crash seen, 2 = setup.
 # Output: robot/work/crash-review/restarts-<timestamp>/rounds.log (+ round-N.journal, deploy-N.log).
 set -euo pipefail
@@ -45,6 +45,7 @@ declare -A total=([S1]=0 [S2]=0 [S3]=0 [other]=0)
 for ((i = 1; i <= max; i++)); do
   # A fault-code restart in flight (fault 800 = a unit failed) would race our restart.
   for _ in $(seq 30); do ssh_ 'systemctl is-active -q fault-code.service' 2>/dev/null || break; sleep 2; done
+  [[ -n $ss ]] || quiet_silent_start $((deploy ? 600 : 300)) || { log "round $i: sound lock, no silent-start flag"; sleep 10; continue; }
   t0=$(ssh_ "touch $mark; ${ss}date +%s") || { log "round $i: ssh failed"; sleep 10; continue; }
   ss_at=
   if ((deploy)); then

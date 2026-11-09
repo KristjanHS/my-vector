@@ -139,12 +139,25 @@ func TestForkCameraETUnloadsAtProfileURL(t *testing.T) {
 	if r.Model != llm.DefaultENModel || r.ReasoningEffort != "none" || strings.Join(f.unloads, ",") != "estllm:x" {
 		t.Errorf("before photo: model %q reasoning %q unloads %v", r.Model, r.ReasoningEffort, f.unloads)
 	}
-	if r.TopP != 0.8 || r.PresencePenalty != 1.5 { // the vision model's sampling, not estllm's
-		t.Errorf("before photo: top_p %v presence %v", r.TopP, r.PresencePenalty)
+	if s := llm.SamplingFor(llm.Ollama, llm.DefaultENModel); r.TopP != s.TopP || r.PresencePenalty != s.PresencePenalty { // the vision model's sampling, not estllm's
+		t.Errorf("before photo: top_p %v presence %v, want %v %v", r.TopP, r.PresencePenalty, s.TopP, s.PresencePenalty)
 	}
 	done()
 	if strings.Join(f.unloads, ",") != "estllm:x,"+llm.DefaultENModel {
 		t.Errorf("after photo: unloads %v", f.unloads)
+	}
+}
+
+func TestForkCameraETSameModelNoUnload(t *testing.T) {
+	f := newFakeLLM(t)
+	useKnowledge(t, "openai", "", "gpt-4o-mini")
+	saveLLM(t, lang.Estonian, llm.Config{OllamaURL: f.URL, ClaudeKey: testClaudeKey, Profiles: map[string]llm.Profile{
+		lang.Estonian: {Provider: llm.Ollama, Model: llm.DefaultENModel}, lang.English: {Provider: llm.Claude, Model: "claude-haiku-5-5"}}})
+	r := openai.ChatCompletionRequest{Model: openai.GPT4oMini, TopP: 1}
+	done := forkCameraReq(&r, new(*openai.Client))
+	done()
+	if r.Model != llm.DefaultENModel || len(f.unloads) != 0 { // et brain = vision model: no unload, no cold reload
+		t.Errorf("model %q unloads %v, want %q and none", r.Model, f.unloads, llm.DefaultENModel)
 	}
 }
 

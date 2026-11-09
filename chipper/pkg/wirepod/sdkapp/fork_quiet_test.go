@@ -12,25 +12,31 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
 )
 
-// soundPaths is G5's list, typed independently of forkQuietPaths so dropping one there fails here.
-var soundPaths = []string{"say_text", "play_sound", "trigger_wake_word", "button_hey_vector", "button_alexa", "cloud_intent"}
+// soundPaths is G5's list → the unlocked fall-through stub, typed independently of the fork lists so dropping one there fails here.
+var soundPaths = map[string]string{
+	"/api-sdk/say_text": "next", "/api-sdk/play_sound": "next", "/api-sdk/trigger_wake_word": "next",
+	"/api-sdk/button_hey_vector": "next", "/api-sdk/button_alexa": "next", "/api-sdk/cloud_intent": "next",
+	"/api-lua/run_script": "lua",
+}
 
 var (
 	catchAllOnce sync.Once
 	catchAllHit  http.HandlerFunc
 )
 
-// muxed serves path through http.DefaultServeMux (fork inits + a stub "/api-sdk/" catch-all) and reports which stub ran.
+// muxed serves path through http.DefaultServeMux (fork inits + stub "/api-sdk/" and "/api-lua/" catch-alls) and reports which stub ran.
 func muxed(t *testing.T, path string) (*httptest.ResponseRecorder, string) {
 	t.Helper()
 	var hit string
 	catchAllOnce.Do(func() {
 		http.HandleFunc("/api-sdk/", func(w http.ResponseWriter, r *http.Request) { catchAllHit(w, r) })
+		http.HandleFunc("/api-lua/", func(w http.ResponseWriter, r *http.Request) { catchAllHit(w, r) })
 	})
 	catchAllHit = func(w http.ResponseWriter, r *http.Request) { hit = "catch-all" }
-	old := forkQuietNext
+	old, oldLua := forkQuietNext, forkQuietLuaNext
 	forkQuietNext = func(w http.ResponseWriter, r *http.Request) { hit = "next" }
-	t.Cleanup(func() { forkQuietNext = old })
+	forkQuietLuaNext = func(w http.ResponseWriter, r *http.Request) { hit = "lua" }
+	t.Cleanup(func() { forkQuietNext, forkQuietLuaNext = old, oldLua })
 	w := httptest.NewRecorder()
 	sep := "?"
 	if strings.Contains(path, "?") {
@@ -59,37 +65,44 @@ func wantQuiet(t *testing.T, name string, w *httptest.ResponseRecorder) {
 }
 
 func TestForkQuietBlocksSound(t *testing.T) {
-	for _, p := range soundPaths {
+	for p, next := range soundPaths {
 		lock(t, true)
-		w, hit := muxed(t, "/api-sdk/"+p)
+		w, hit := muxed(t, p)
 		wantQuiet(t, p, w)
 		if hit != "" {
 			t.Errorf("%s locked: reached %s", p, hit)
 		}
 		lock(t, false)
-		if w, hit = muxed(t, "/api-sdk/"+p); hit != "next" || w.Code != http.StatusOK {
-			t.Errorf("%s unlocked: %d, reached %q, want the SdkapiHandler stub", p, w.Code, hit)
+		if w, hit = muxed(t, p); hit != next || w.Code != http.StatusOK {
+			t.Errorf("%s unlocked: %d, reached %q, want the %s stub", p, w.Code, hit, next)
 		}
 	}
 }
 
 func TestForkQuietLeavesSilent(t *testing.T) {
 	lock(t, true)
-	for _, p := range []string{"get_battery", "volume"} {
-		if w, hit := muxed(t, "/api-sdk/"+p); hit != "catch-all" || w.Code != http.StatusOK {
+	for _, p := range []string{"/api-sdk/get_battery", "/api-sdk/volume", "/api-lua/other"} {
+		if w, hit := muxed(t, p); hit != "catch-all" || w.Code != http.StatusOK {
 			t.Errorf("%s locked: %d, reached %q, want the catch-all", p, w.Code, hit)
 		}
 	}
 }
 
-// TestForkQuietLogIntentPasses: smoke.sh A3's log-level intents run while locked (UD1); any other cloud_intent stays refused.
+// TestForkQuietLogIntentPasses: patch 0007's two log-level intents run while locked (UD1); any other cloud_intent stays refused.
 func TestForkQuietLogIntentPasses(t *testing.T) {
 	lock(t, true)
-	if w, hit := muxed(t, "/api-sdk/cloud_intent?intent=my_vector_log_debug"); hit != "next" || w.Code != http.StatusOK {
-		t.Errorf("log intent locked: %d, reached %q, want the SdkapiHandler stub", w.Code, hit)
+	for _, i := range []string{"my_vector_log_debug", "my_vector_log_info"} {
+		if w, hit := muxed(t, "/api-sdk/cloud_intent?intent="+i); hit != "next" || w.Code != http.StatusOK {
+			t.Errorf("%s locked: %d, reached %q, want the SdkapiHandler stub", i, w.Code, hit)
+		}
 	}
-	w, _ := muxed(t, "/api-sdk/cloud_intent?intent=intent_greeting_hello")
-	wantQuiet(t, "cloud_intent greeting", w)
+	for _, i := range []string{"intent_greeting_hello", "my_vector_log_x"} {
+		w, hit := muxed(t, "/api-sdk/cloud_intent?intent="+i)
+		wantQuiet(t, i, w)
+		if hit != "" {
+			t.Errorf("%s locked: reached %s", i, hit)
+		}
+	}
 }
 
 func TestForkSayQuiet(t *testing.T) {

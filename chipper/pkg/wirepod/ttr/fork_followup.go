@@ -1,0 +1,121 @@
+package wirepod_ttr
+
+import (
+	"context"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/fforchino/vector-go-sdk/pkg/vector"
+	"github.com/kercre123/wire-pod/chipper/pkg/logger"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/followup"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/vars"
+	openai "github.com/sashabaranov/go-openai"
+)
+
+var (
+	forkDecideTimeout = followup.Timeout // bounds one decider call (tests shorten it)
+	forkFollowUpWait  = followup.Timeout // forkFollowUp's wait for a pending decision (tests shorten it)
+	forkChain         followup.Chain
+	forkDecider       = forkDecide
+	forkFire          = func(robot *vector.Vector) { go DoNewRequest(robot) }
+)
+
+// forkTurn carries one request's decider channel (nil = no decider) from its stream goroutine to its speak loop.
+type forkTurn chan (<-chan bool)
+
+// forkDecide asks t's brain whether the robot should listen again after reply (F1); error or timeout → false.
+func forkDecide(t llm.Target, ask, reply string) <-chan bool {
+	ch := make(chan bool, 1)
+	go func() { ch <- forkDecideNow(t, ask, reply) }()
+	return ch
+}
+
+// forkAfterReply runs at StreamingKGSim's stream-EOF Remember site: without SaveChat it still remembers the turn (F3),
+// and it starts the follow-up decider on the answering brain while the robot speaks (F1).
+func forkAfterReply(turn forkTurn, esn string, isKG bool, ask, reply string) {
+	if !vars.APIConfig.Knowledge.SaveChat {
+		Remember(openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: ask},
+			openai.ChatCompletionMessage{Role: openai.ChatMessageRoleAssistant, Content: reply}, esn)
+	}
+	var d <-chan bool
+	if t, ok := forkResolve(llm.Load(), lang.Current(), forkKG()); ok {
+		d = forkDecider(t, ask, reply)
+	}
+	turn <- d
+}
+
+// forkBegin runs as StreamingKGSim starts: a knowledge request consumes an armed follow-up (F2), any other
+// request resets the chain; a blank one ends it and skips the LLM call (B1). turn is this request's forkTurn.
+func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
+	turn = make(forkTurn, 1)
+	switch {
+	case !isKG:
+		forkChain.Reset(esn)
+	case strings.TrimSpace(text) == "":
+		forkChain.Reset(esn)
+		logger.Println("myvector: follow-up blank, chain ends")
+		return turn, true
+	default:
+		forkChain.Begin(esn, forkNow())
+	}
+	return turn, false
+}
+
+// forkFollowUp runs after the reply is spoken: on the decider's YES under the chain cap it arms the chain and
+// re-opens the mic (F1, F2); skip (interrupted / disconnected) drops the decision. Waits up to forkFollowUpWait
+// for turn's decider and its answer. Reports whether it fired.
+func forkFollowUp(robot *vector.Vector, turn forkTurn, esn string, skip bool) bool {
+	if skip {
+		return false
+	}
+	if !forkChain.Allow(esn) {
+		logger.Println("myvector: follow-up " + strconv.Itoa(followup.Max) + "/" + strconv.Itoa(followup.Max) + " cap reached, chain ends")
+		return false
+	}
+	n := strconv.Itoa(forkChain.Count(esn)+1) + "/" + strconv.Itoa(followup.Max)
+	verdict, yes := "timeout", false
+	deadline := time.After(forkFollowUpWait)
+	select {
+	case d := <-turn:
+		if d == nil {
+			return false
+		}
+		select {
+		case yes = <-d:
+			verdict = map[bool]string{true: "YES", false: "NO"}[yes]
+		case <-deadline:
+		}
+	case <-deadline:
+	}
+	logger.Println("myvector: follow-up " + n + " " + verdict)
+	if yes {
+		forkChain.Arm(esn, forkNow())
+		forkFire(robot)
+	}
+	return yes
+}
+
+func forkDecideNow(t llm.Target, ask, reply string) bool {
+	r := openai.ChatCompletionRequest{Model: t.Model, Messages: []openai.ChatCompletionMessage{
+		{Role: openai.ChatMessageRoleSystem, Content: followup.Prompt},
+		{Role: openai.ChatMessageRoleUser, Content: followup.User(ask, reply)}}}
+	if t.Ollama() {
+		r.MaxTokens = followup.MaxTokens
+		llm.Load().Thinking(llm.Ollama, t.Model, llm.PathFollowUp).Apply(&r, followup.MaxTokens)
+	} else {
+		r.Model = followup.ClaudeModel
+		llm.SamplingFor(t.Provider, r.Model).Apply(&r)
+		r.MaxCompletionTokens = followup.MaxTokens
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), forkDecideTimeout)
+	defer cancel()
+	res, err := llm.NewClientNoThink(t).CreateChatCompletion(ctx, r)
+	if err != nil || len(res.Choices) == 0 {
+		logger.Println("myvector: follow-up decider:", r.Model, err)
+		return false
+	}
+	return followup.Parse(res.Choices[0].Message.Content)
+}

@@ -44,6 +44,11 @@ run "$r" "arm late 1 'touch $r/restored'; arm ok 1 'touch $r/restored-ok'; confi
 fakeclock_fire
 [[ -e $r/restored ]] || die "arm without confirm: restore did not run"
 [[ ! -e $r/restored-ok ]] || die "confirm within the window: restore still ran"
+r=$(fresh slowarm); mkdir -p "$tmp/slow" && printf '#!/bin/sh\n%s 0.3\nexec "$@"\n' "$(command -v sleep)" >"$tmp/slow/setsid" && chmod +x "$tmp/slow/setsid"
+(cat "$lib"; echo "arm late 1 'touch $r/restored'") | ETC_ROOT=$r ETC_ARM_SCALE=1 PATH="$tmp/slow:$tmp/bin:$PATH" sh -e
+fakeclock_fire
+[[ -e $r/restored ]] || die "fakeclock: a timer still in its setsid at the fire was missed"
+PATH="$tmp/bin:$PATH" timeout 3 sleep 0.1 || die "fakeclock: a plain sleep on the fakes' PATH parked"
 
 r=$(fresh diskguard)
 body=$(sed -n "/<<'EOF' |/,/^EOF\$/{/<<'EOF' |/d;/^EOF\$/d;p}" "$robot/diskguard/apply.sh")
