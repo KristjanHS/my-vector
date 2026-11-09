@@ -15,16 +15,16 @@ for p in "${series[@]}"; do [[ $p == *.patch && -f $here/$p ]] || die "series na
 dup=$(printf '%s\n' "${series[@]}" | sort | uniq -d)
 [[ -z $dup ]] || die "series lists twice: $dup"
 for f in "$here"/*.patch; do
-  printf '%s\n' "${series[@]}" | grep -qxF "${f##*/}" || die "${f##*/} is not in series"
+  grep -qxF "${f##*/}" <<<"$(printf '%s\n' "${series[@]}")" || die "${f##*/} is not in series"
 done
 mapfile -t rows < <(grep -v '^#' "$here/markers.tsv" | grep -v '^[[:space:]]*$')
 for r in "${rows[@]}"; do
   IFS=$'\t' read -r p kind path marker extra <<<"$r"
   [[ -n $marker && -z ${extra:-} && $kind =~ ^(src|bin)$ && -n $path ]] || die "markers.tsv: bad row: $r"
-  printf '%s\n' "${series[@]}" | grep -qxF "$p" || die "markers.tsv names a patch outside series: $p"
+  grep -qxF "$p" <<<"$(printf '%s\n' "${series[@]}")" || die "markers.tsv names a patch outside series: $p"
 done
 for p in "${series[@]}"; do
-  printf '%s\n' "${rows[@]}" | grep -qF "$p"$'\tsrc\t' || die "markers.tsv has no src row for $p"
+  grep -qF "$p"$'\tsrc\t' <<<"$(printf '%s\n' "${rows[@]}")" || die "markers.tsv has no src row for $p"
 done
 echo "series/manifest OK (${#series[@]} patches, ${#rows[@]} markers)"
 
