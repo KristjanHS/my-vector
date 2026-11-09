@@ -21,6 +21,7 @@ L() { echo "11-09 $1 info vic-robot 1234 $2"; }
 start=$(L 10:00:00.000 'robot.main: Starting robot process')
 boot=$(L 10:00:05.000 'LiftController.Calibrated lift reason Startup')
 cal() { L "$1" 'LiftController.Calibrated lift reason Fall'; }
+ns() { echo "11-09 11:00:00.000 info vic-engine $1 BehaviorSystemManager.BehaviorStack.UpdateBehaviorStack.NoStackInitialized: (tc0059)"; }
 # run <name> <messages.1 lines> <messages lines>: prints "<rc> <output>"
 run() {
   local d=$tmp/$1 rc=0 out; mkdir -p "$d"
@@ -39,6 +40,7 @@ want 0 whole "$start"$'\n'"$boot"$'\n' "$(cal 11:00:00.000)"$'\n' 'since Startup
 want 3 rotated "$(cal 11:00:00.000)"$'\n' "$(cal 12:00:00.000)"$'\n' 'log rotated past Startup'
 want 1 rotated-loop "$(cal 11:00:00.000)"$'\n'"$(cal 11:00:20.000)"$'\n' "$(cal 11:00:40.000)"$'\n' 'loop hits 1'
 want 1 rotated-crash "$(cal 11:00:00.000)"$'\n' "$(L 11:00:01.000 'SIGSEGV in vic-robot')"$'\n' 'crash lines 1'
-want 1 empty-stack "$start"$'\n'"$boot"$'\n' "$(echo '11-09 11:00:00.000 info vic-engine 1234 BehaviorSystemManager.BehaviorStack.UpdateBehaviorStack.NoStackInitialized: (tc0059)')"$'\n' 'behavior stack empty: 1 NoStackInitialized'
+want 1 empty-stack "$start"$'\n'"$boot"$'\n' "$(ns 1234)" 'behavior stack empty: 1 NoStackInitialized'
+want 0 empty-stack-old-engine "$start"$'\n'"$boot"$'\n' "$(ns 999)" 'since Startup'
 want 1 no-startup "$start"$'\n' "$(cal 11:00:00.000)"$'\n'
 echo "logcheck host test OK"
