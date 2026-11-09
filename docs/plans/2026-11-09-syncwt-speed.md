@@ -136,7 +136,7 @@ re-picked after the rung is measured. S3c and S3b are the cheapest of them (env 
 |---|---|---|
 | R1 | S2's runner is a sourceable lib with its own fake-job test (pass/fail/slow → rc, log, kill, order) | `scripts/lib/check-runner.sh`, `scripts/tests/check-runner.sh` |
 | R2 | S6a lands from this session, dotfiles commit pathspec'd to the one file | dotfiles `bin/bin/syncwt` `run_gate` + report |
-| R3 | OPEN: hostkey flakes in the parallel gate (3/8 red under extra load, `mv: cannot stat …ssh_host_ecdsa_key.new`); suspect `ETC_ARM_SCALE=3` window firing mid-install — reproduce first (CPU-only load: 0/3) | `robot/hostkey/tests/apply.sh` `run()`, `robot/lib/etc.sh` `arm()` |
+| R3 | Fake clock: a test-PATH `sleep` that blocks until the test touches `$tmp/fire` (replaces the wall-clock wait), then waits for the timers to exit; falsifier: fake sshd `-t` sleeping 3.5 s stays green | `robot/{hostkey,sshkey}/tests/apply.sh`, `robot/netguard/tests/fakes.sh` (`arm()` in `robot/lib/etc.sh` calls `sleep` via PATH) |
 
 ### Pre-registered check
 - S1: the falsifier in §S1 (second `make check` on a clean committed tree prints `check skipped`; a
