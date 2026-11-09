@@ -75,10 +75,14 @@ func forkCutTail(tail string, none bool) string {
 // reply, the tail keeps only its finished sentences and full becomes the text that will be spoken,
 // so upstream's "content after the last punctuation mark" check adds nothing back.
 func forkDropCut(cut bool, chunks []string, full, tail *string) {
+	forkDropCutIf(cut, len(chunks) == 0, chunks, full, tail)
+}
+
+func forkDropCutIf(cut, none bool, chunks []string, full, tail *string) {
 	if !cut {
 		return
 	}
-	*tail = forkCutTail(*tail, len(chunks) == 0)
+	*tail = forkCutTail(*tail, none)
 	*full = strings.TrimSpace(strings.Join(append(chunks[:len(chunks):len(chunks)], *tail), " "))
 	logger.Println("myvector llm: reply hit the cap; unfinished last sentence dropped")
 }

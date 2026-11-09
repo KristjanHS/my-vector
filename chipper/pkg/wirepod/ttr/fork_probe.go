@@ -124,7 +124,7 @@ func ForkProbeLLMFull(ctx context.Context, transcribedText, esn string) (ForkPro
 }
 
 // forkProbeSpoken is a whole reply as StreamingKGSim's stream loop keeps it — what is spoken and what forkAfterReply
-// remembers: the forkSplitSentence split with rep's G2 repeat drops, then the stream EOF's forkDropCut (cut = the
+// remembers: the forkSplitSentence split with rep's G2 repeat drops, then the stream EOF's rep.dropCut (cut = the
 // cap cut the reply), forkFlushHeld and forkFlushUnpunctuated, the kept chunks joined. "" = nothing is spoken.
 func forkProbeSpoken(answer string, cut bool, rep *forkRepeats) string {
 	var chunks []string
@@ -135,7 +135,7 @@ func forkProbeSpoken(answer string, cut bool, rep *forkRepeats) string {
 		}
 		tail = rest
 	}
-	forkDropCut(cut, chunks, &full, &tail)
+	rep.dropCut(cut, chunks, &full, &tail)
 	chunks, tail, _ = forkFlushHeld(chunks, tail)
 	chunks, _ = forkFlushUnpunctuated(chunks, tail)
 	return strings.Join(chunks, " ")

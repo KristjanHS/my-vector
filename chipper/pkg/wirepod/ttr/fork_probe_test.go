@@ -71,7 +71,8 @@ func TestForkProbeSpoken(t *testing.T) {
 		{"repeat last", "Hea küll. " + q, false, "Hea küll."},
 		{"only the repeat", q, false, ""},
 		{"cut after a kept sentence", "Hea küll. " + q + " Ja siis", true, "Hea küll."},
-		{"cut, every sentence a repeat: the fragment is spoken", q + " Ja siis", true, "Ja siis"},
+		{"cut, every sentence a repeat: says nothing", q + " Ja siis", true, ""},
+		{"cut, nothing said: the fragment is spoken", "Ja siis", true, "Ja siis"},
 		{"held digit", "Hea küll. " + q + " Kell on 10.", false, "Hea küll. Kell on 10."},
 	} {
 		rep := &forkRepeats{said: []string{"Tere! " + q}}
