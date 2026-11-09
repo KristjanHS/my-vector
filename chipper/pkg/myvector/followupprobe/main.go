@@ -173,6 +173,7 @@ func main() {
 			ms := make([][]time.Duration, len(tas))
 			calls := make([][]probekit.Call, len(tas))
 			score := make([]map[string][2]int, len(tas)) // lang → {correct, total}
+			misses := make([][]string, len(tas))         // printed under the arm's own header
 			for k := range tas {
 				score[k] = map[string][2]int{}
 			}
@@ -191,7 +192,7 @@ func main() {
 					if err == nil && followup.Parse(got.Reply) == p.yes {
 						s[0]++
 					} else {
-						fmt.Printf("    %smiss %s %q → %q %v\n", pre(a), p.l, p.reply, got.Reply, err)
+						misses[k] = append(misses[k], fmt.Sprintf("    %smiss %s %q → %q %v", pre(a), p.l, p.reply, got.Reply, err))
 					}
 					score[k][p.l] = s
 				}
@@ -211,6 +212,9 @@ func main() {
 					sc[lang.English][0], sc[lang.English][1], sc[lang.Estonian][0], sc[lang.Estonian][1],
 					ms[k][len(ms[k])/2].Milliseconds(), ms[k][len(ms[k])-1].Milliseconds(), tg.langs)
 				fmt.Println("    " + probekit.Summarize(calls[k]).Line(a.Label(tg.t.Model)))
+				for _, m := range misses[k] {
+					fmt.Println(m)
+				}
 				if err := probekit.Dump(*dump, fmt.Sprintf("followup prompt %d %s %s", pi+1, tg.t.Model, a.Label(tg.t.Model)), calls[k]); err != nil {
 					fmt.Fprintln(os.Stderr, "-think-dump:", err)
 					os.Exit(1)
