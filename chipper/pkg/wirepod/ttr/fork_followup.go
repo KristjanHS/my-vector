@@ -48,7 +48,8 @@ func forkAfterReply(turn forkTurn, esn string, isKG bool, ask, reply string) {
 }
 
 // forkBegin runs as StreamingKGSim starts: a knowledge request consumes an armed follow-up (F2), any other
-// request resets the chain; a blank one ends it and skips the LLM call (B1). turn is this request's forkTurn.
+// request resets the chain; a blank one or a quiet/listen phrase (forkKGSwitch) ends it and skips the LLM call (B1).
+// turn is this request's forkTurn.
 func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
 	turn = make(forkTurn, 1)
 	switch {
@@ -57,6 +58,10 @@ func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
 	case strings.TrimSpace(text) == "":
 		forkChain.Reset(esn)
 		logger.Println("myvector: follow-up blank, chain ends")
+		return turn, true
+	case forkKGSwitch(esn, text):
+		forkChain.Reset(esn)
+		logger.Println("myvector: follow-up switch phrase, chain ends")
 		return turn, true
 	default:
 		forkChain.Begin(esn, forkNow())

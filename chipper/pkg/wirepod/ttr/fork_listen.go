@@ -67,16 +67,58 @@ func forkListen(req interface{}, voiceText, botSerial string) bool {
 	if !ok {
 		return false
 	}
-	text := listen.Confirm(on, lang.Current() == lang.Estonian)
+	text := forkListenFlip(botSerial, on)
+	memory.MarkLLM(botSerial, voiceText) // ends req's turn as the LLM path does, LLM-marked so memory skips it
+	IntentPass(req, "intent_greeting_hello", voiceText, map[string]string{}, false)
+	forkConfirm(botSerial, text)
+	return true
+}
+
+// forkKGSwitch is forkQuiet + forkListen for a knowledge-graph turn (a follow-up without the wake word), which never
+// reaches ProcessTextAll: a match is handled here and the LLM call is skipped.
+func forkKGSwitch(esn, text string) bool {
+	if phrase, ok := quiet.Match(text); ok {
+		forkQuietLock(esn, phrase, time.Now())
+		if err := forkKGCut(esn); err != nil {
+			logger.Println("my-vector quiet: kg cut: " + err.Error())
+		}
+		return true
+	}
+	on, ok := listen.Match(text)
+	if !ok {
+		return false
+	}
+	forkConfirm(esn, forkListenFlip(esn, on))
+	return true
+}
+
+// forkKGCut takes and drops behavior control, cutting streamingKG's placeholder answer as StreamingKGSim's
+// BControl does (tests swap it).
+var forkKGCut = func(esn string) error {
+	robot, err := vars.GetRobot(esn)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	release, err := voice.Control(ctx, robot)
+	if err != nil {
+		return err
+	}
+	release()
+	return nil
+}
+
+// forkListenFlip turns active listening on or off for esn and returns the confirmation to say.
+func forkListenFlip(esn string, on bool) string {
 	if on {
-		forkListening.Activate(botSerial, time.Now())
-		forkArm.Start(botSerial)
+		forkListening.Activate(esn, time.Now())
+		forkArm.Start(esn)
 		logger.Println("myvector listen: on")
 	} else {
-		forkListening.Deactivate(botSerial, "phrase")
+		forkListening.Deactivate(esn, "phrase")
 	}
-	forkSpeak(req, botSerial, voiceText, text)
-	return true
+	return listen.Confirm(on, lang.Current() == lang.Estonian)
 }
 
 // forkConfirmSay speaks the on/off confirmation (tests swap it).
@@ -88,11 +130,8 @@ func ForkProbeMute(say func(esn, text string) error) {
 	forkArm.Set = func(string, int) error { return nil }
 }
 
-// forkSpeak ends req's turn as the LLM path does (intent_greeting_hello, LLM-marked so memory skips it), then says text
-// in the PC voice (H5).
-func forkSpeak(req interface{}, esn, voiceText, text string) {
-	memory.MarkLLM(esn, voiceText)
-	IntentPass(req, "intent_greeting_hello", voiceText, map[string]string{}, false)
+// forkConfirm says text in the PC voice (H5), opening an echo window over it.
+func forkConfirm(esn, text string) {
 	from := time.Now()
 	err := forkConfirmSay(esn, text)
 	forkListening.Spoken(esn, from, time.Now())

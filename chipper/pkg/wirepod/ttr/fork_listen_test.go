@@ -12,6 +12,7 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/listen"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
 )
 
 type listenStream struct {
@@ -145,5 +146,60 @@ func TestForkStreamHeard(t *testing.T) {
 	case <-naps:
 		t.Fatal("an overheard quiet phrase napped: only the wake path locks")
 	case <-time.After(time.Second):
+	}
+}
+
+// TestForkBeginSwitch: a follow-up (knowledge request, no wake word) never reaches ProcessTextAll, so forkBegin
+// runs the quiet and listen phrases itself — each skips the LLM and ends the chain; a plain ask routes on.
+func TestForkBeginSwitch(t *testing.T) {
+	lang.UseForTest(t, lang.Estonian)
+	freshListening(t)
+	req, _, naps := quietRig(t, "10.0.0.9")
+	esn := req.Device
+	var said []string
+	var cuts int
+	oldSay, oldCut := forkConfirmSay, forkKGCut
+	forkConfirmSay = func(_, text string) error { said = append(said, text); return nil }
+	forkKGCut = func(string) error { cuts++; return nil }
+	t.Cleanup(func() { forkConfirmSay, forkKGCut = oldSay, oldCut })
+	follow := func(text string) bool {
+		forkChain.Reset(esn)
+		forkChain.Arm(esn, forkNow())
+		_, skip := forkBegin(esn, true, text)
+		return skip
+	}
+	for _, c := range []struct {
+		say, want string
+		on        bool
+	}{
+		{"aktiveeri aktiivne kuulamine.", "Aktiivne kuulamine sees.", true},
+		{"aktiivne kuulamine välja", "Aktiivne kuulamine väljas.", false},
+	} {
+		said = nil
+		if !follow(c.say) || forkChain.Count(esn) != 0 {
+			t.Fatalf("%q: want skip and the chain ended, count %d", c.say, forkChain.Count(esn))
+		}
+		if len(said) != 1 || said[0] != c.want || forkListening.Any(forkNow()) != c.on {
+			t.Errorf("%q: said %v listening %v, want %q and %v", c.say, said, forkListening.Any(forkNow()), c.want, c.on)
+		}
+	}
+	said = nil
+	if follow("aktiivne kuulamine") || forkChain.Count(esn) != 1 || len(said) != 0 {
+		t.Errorf("a non-phrase follow-up: want the LLM call (no skip, chain counted), said %v", said)
+	}
+	forkListening.Activate(esn, forkNow())
+	if !follow("ole vait") || cuts != 1 || forkListening.Any(forkNow()) {
+		t.Fatalf("quiet follow-up: want skip, one placeholder cut, listening off; cuts %d", cuts)
+	}
+	if _, src, _ := quiet.Until(); src != "voice:ole vait" {
+		t.Errorf("lock source %q, want voice:ole vait", src)
+	}
+	select {
+	case <-naps:
+	case <-time.After(2 * time.Second):
+		t.Error("quiet follow-up sent no nap")
+	}
+	if _, skip := forkBegin(esn, false, "ole vait"); skip {
+		t.Error("an intent request must not run the switch (ProcessTextAll already did)")
 	}
 }
