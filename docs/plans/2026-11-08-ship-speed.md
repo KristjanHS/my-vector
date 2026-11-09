@@ -158,9 +158,26 @@ Compare `robot/work/ship-logs/` wall time (log name → mtime) for the next 3 sh
 | A3 | stamp key = sha1(content tree + go/g++/venv versions + clone HEAD); `check.sh` writes on green; `--head` on a hit runs only drift + secrets | `check.sh` |
 | C1 | `ControlPath` in `ssh_opts` only (hostkey/sshkey pass `ControlPath=none`); ship opens one master after the keys step, closes on EXIT | `robot/env.sh`, `ship.sh` |
 | C2 | full smoke's stability sleep 15 s → 3 s; end-of-run `same_pids` stays | `smoke.sh` |
-| R7 | open: background build after each commit — not asked yet | — |
 
 - **Stage 1.1** A3 check stamp — `check.sh`; falsifier: `scripts/check.sh --head` on a tree `make check` passed prints `check skipped`.
 - **Stage 1.2** C1 + C2 + `step()` `+N s` — `robot/env.sh`, `smoke.sh`, `ship.sh`.
 - **Stage 1.3** A1 lanes + `smoke.sh --server` — `ship.sh`, `smoke.sh`, `Makefile`.
-- **Stage 1.4** `make check` + review; live: user runs `make ship` (server-only ship ≈ 20–25 s target).
+- **Stage 1.4** done: 9 server-lane ships reached push at 38–53 s (median ≈ 47 s) vs the 20–25 s target — missed; firmware lane ≈ 140 s.
+
+## Rung 2 — rulings (2026-11-09) and stages
+
+| id | ruling | edit site |
+|---|---|---|
+| scope | rung 2 = server lane only: C6 + L1 + C4 (`seen()` only) + T2 stamps; ship step 4 keys untouched (ControlPath=none stays) | — |
+| C6 | ship step 8 runs `SKIP_KEYS=1 settings.sh`; set → settings.sh skips hostkey + sshkey apply.sh; standalone default unchanged | `settings.sh`, `ship.sh` |
+| L1 | logkeep's `logger "$tag"; sleep 2` → grep both files at once, then ≤ 3 × `sleep 1`, then the existing FAIL | `robot/logkeep/apply.sh` |
+| C4 | `seen()` poll `sleep 2` → `sleep 0.5`; 10 s cap unchanged | `smoke.sh` |
+| T2 | settings.sh `ok`/`warn` and smoke.sh `ok` end with `(+$SECONDS s)` | `settings.sh`, `smoke.sh` |
+| R7 | open: background build after each commit — not asked yet | — |
+
+Refactor-first: skipped — each pick is a local edit; R5 would subsume C6/C7 and stays backlog.
+
+- **Stage 2.1** C6 — `settings.sh`, `ship.sh`, `robot/firmware/tests/pc-voice.sh`; falsifier: `bash robot/firmware/tests/pc-voice.sh` (new `SKIP_KEYS=1` case fails on a `hostkey stub`/`sshkey stub` line).
+- **Stage 2.2** L1 + C4 + T2 — `robot/logkeep/apply.sh`, `robot/logkeep/tests/apply.sh`, `smoke.sh`, `settings.sh`; falsifier: `bash robot/logkeep/tests/apply.sh` (new no-op-logger case must print `FAIL: … not in`).
+- **Stage 2.3** `make check` + code review; live: user runs 3 server-lane `make ship`; settings gap per log ≤ 6 s: `sed 's/\x1b\[[0-9;]*m//g' <log> | awk -F'[+ ]' '/^==> .*robot settings:/{a=$(NF-1)} /^==> .*robot smoke test:/{exit $(NF-1)-a > 6}'`.
+- **Target** median push stamp of the next 3 server-lane ships ≤ 33 s: `for f in $(grep -l 'smoke.sh --server' $(ls -t robot/work/ship-logs/*.log) | head -3); do sed 's/\x1b\[[0-9;]*m//g' "$f" | awk -F'[+ ]' '/^==> \[[0-9]+\] push:/{print $(NF-1)}'; done | sort -n | sed -n 2p | awk '{exit $1 > 33}'`
