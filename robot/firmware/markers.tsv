@@ -36,6 +36,8 @@
 0011-night-window.patch	src	engine/aiComponent/behaviorComponent/sleepTracker.cpp	kSleepTracker_moning_hour, CONSOLE_GROUP, 9,
 0011-night-window.patch	src	clad/src/clad/types/behaviorComponent/sleepingTypes.clad	  NightWindow,
 0011-night-window.patch	bin	lib/libcozmo_engine.so	my-vector.NightWindow
+0011-night-window.patch	src	engine/aiComponent/behaviorComponent/behaviors/sleeping/behaviorSleepCycle.cpp	kSleepCycle_NapUntil_s
+0011-night-window.patch	bin	lib/libcozmo_engine.so	kSleepCycle_NapUntil_s
 0012-se-isinff-bridge.patch	src	3rd/signalEssence/v009/vicos-highres/platform/anki_victor_example/build/math_abi_bridge.c	__se_isinff(float x)
 0012-se-isinff-bridge.patch	bin	bin/vic-anim.full	__se_isinff
 0013-wifi-watcher-reset.patch	src	platform/switchboard/switchboardd/wifiWatcher.cpp	my-vector.WifiWatcherReset
