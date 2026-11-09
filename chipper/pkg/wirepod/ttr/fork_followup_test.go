@@ -259,3 +259,35 @@ func TestForkBegin(t *testing.T) {
 		t.Error("unarmed knowledge request (\"I have a question\"): no-speech must not skip it")
 	}
 }
+
+// TestForkRepeats: G2 — a remembered question is not spoken and leaves full as the kept text; a reply of only
+// dropped repeats ends the chain with no decider.
+func TestForkRepeats(t *testing.T) {
+	old := vars.RememberedChats
+	t.Cleanup(func() { vars.RememberedChats = old })
+	vars.RememberedChats = nil
+	esn := "fu-repeats"
+	q := "Kas sinuk on mingid eriti huvilised tegurid?"
+	Remember(openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: "tere"},
+		openai.ChatCompletionMessage{Role: openai.ChatMessageRoleAssistant, Content: "Tere! " + q}, esn)
+	r := forkRepeatFilter(esn)
+	full := "Hea küll. " + q
+	if !r.drop(q, "", []string{"Hea küll."}, &full) || full != "Hea küll." {
+		t.Errorf("repeat: dropped %d, full %q, want 1 and %q", r.dropped, full, "Hea küll.")
+	}
+	if r.drop("Mis kell praegu on?", "", nil, &full) {
+		t.Error("a new question dropped")
+	}
+	if r.only(make(forkTurn, 1), []string{"Hea küll."}) {
+		t.Error("only with a kept chunk")
+	}
+	forkChain.Arm(esn, forkNow())
+	forkChain.Begin(esn, forkNow())
+	turn := make(forkTurn, 1)
+	if !r.only(turn, nil) || forkChain.Count(esn) != 0 || len(turn) != 1 || <-turn != nil {
+		t.Errorf("all dropped: chain count %d, turn len %d, want reset and a nil decider", forkChain.Count(esn), len(turn))
+	}
+	if forkRepeatFilter(esn).only(make(forkTurn, 1), nil) {
+		t.Error("only with nothing dropped")
+	}
+}

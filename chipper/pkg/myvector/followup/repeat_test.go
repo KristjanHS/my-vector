@@ -6,7 +6,7 @@ import (
 )
 
 func TestRepeatFilter(t *testing.T) {
-	said := []string{"Muidugi. Kas sinuk on mingid eriti huvilised tegurid? See on hea."}
+	said := []string{"Muidugi. Kas sinuk on mingid eriti huvilised tegurid? See on hea.", "Mida? Mis sa arvad? Kas sa soovid midagi?"}
 	for _, c := range []struct {
 		name, s string
 		want    bool
@@ -19,6 +19,9 @@ func TestRepeatFilter(t *testing.T) {
 		{"no history match", "Mis kell on?", false},
 		{"overlap exactly RepeatMin", "Kas sinuk on täna mingid eriti lihtsad tegurid?", true}, // 6/8
 		{"question in quotes", "Kas sinuk on mingid eriti huvilised tegurid?\"", true},
+		{"1 word under RepeatWords", "Mida?", false},
+		{"3 words under RepeatWords", "Mis sa arvad?", false},
+		{"4 words at RepeatWords", "Kas sa soovid midagi?", true},
 	} {
 		if got := Repeats(c.s, said, RepeatMin); got != c.want {
 			t.Errorf("%s: Repeats(%q) = %v", c.name, c.s, got)
