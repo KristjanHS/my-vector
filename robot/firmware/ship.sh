@@ -215,7 +215,7 @@ fi
 
 # A settings failure warns, never stops the ship: the robot already runs $sha. Except T5 with pod-trust: the robot must trust ours only.
 step "robot settings: settings.sh (no-auto-update, T2 voice, /data guard, server CA trust)"
-out=$("$pd/settings.sh" 2>&1) || true
+out=$(SKIP_KEYS=1 "$pd/settings.sh" 2>&1) || true # C6: the keys step above applied hostkey + sshkey
 echo "$out"
 add_warns "$out"
 if grep -q 'pod-trust\.patch$' "$pd/series" && ! grep -q '^ok: epod: .*(ours[,)]' <<<"$out"; then
