@@ -1,6 +1,6 @@
 # Vision setting + local vision bench
 
-Status: V1–V14 ruled 2026-11-08; 1.1, 1.3, 2.1 committed on worktree-sec (unshipped); next 1.2 USER, then 1.4 → D1 gates 3.1. Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 5, row V.
+Status: 1.1–1.4 + 2.1 on main (unshipped); D1 et fluency read is USER, then 3.1. Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 5, row V.
 
 ## Rulings
 
@@ -20,7 +20,7 @@ Status: V1–V14 ruled 2026-11-08; 1.1, 1.3, 2.1 committed on worktree-sec (unsh
 | V11 | Checklist `robot/work/vision-bench/checklist.json` (gitignored with the photos): `[{"photo":"01.jpg","et":["tass","laud"],"en":["cup","table"]}]`; USER writes it. | — |
 | V12 | `visionbench` flags `-config ../secrets/server/myvectorConfig.json` (missing → exit 2), `-dir ../robot/work/vision-bench`, `-lang`, `-models` (default `gemma4:e4b-it-qat,qwen3.5:4b`), `-show`. Per photo: system `prompt.Render(prompt.Default(prompt.Ollama), prompt.Sample(l))`, user "What do you see?" / "Mida sa näed?" + JPEG data URL `ImageURLDetailLow`; `llm.SamplingFor(llm.Ollama, m)`, reasoning none, `prompt.ReplyCap(prompt.Ollama)`; unload each model after its run. | new `pkg/myvector/visionbench/main.go` |
 | V13 | Score = matched / expected words (case-folded prefix match). Prints `model \| lang \| keywords % \| median ms \| errors`; `-show` prints every photo's answers side by side. Decision per language: highest keywords %, tie → median ms; the et winner also needs the USER fluency OK from `-show`, else the next model. | `visionbench` |
-| D1 | (Stage 1.4 writes the per-language winners.) If gemma4 wins both languages, qwen3.5:4b has no use left: USER `ollama rm qwen3.5:4b` (Windows), drop it from visionbench `-models`, `robot/et-llm/run.sh:11` and the routeprobe `-brain` help example (`DefaultENModel` is gemma4 since 31873b1). | `llm.DefaultVisionEN` / `DefaultVisionET` |
+| D1 | `DefaultVisionEN` = `DefaultVisionET` = `qwen3.5:4b` (1.4 winner, both languages; scores in the commit). et holds only on the USER fluency OK of the 1.4 `-show` answers; else no local et model passes → stop before 3.1. | `llm.DefaultVisionEN` / `DefaultVisionET` |
 
 ## Stages
 

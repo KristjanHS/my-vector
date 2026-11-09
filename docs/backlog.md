@@ -1,6 +1,7 @@
 # Backlog
 
 ## OWED[USER]
+- Vision et fluency (`2026-11-08-vision-setting.md` (docs/plans/) D1): read qwen3.5:4b's et answers (`go run ./pkg/myvector/visionbench -lang et-EE -show`, from chipper/) — OK → 3.1 runs; not OK → no local et vision model.
 - G3 et self-dialogue reproduces 4/20 and the prompt line does not fix it (`2026-11-07-follow-up-listening.md` (docs/plans/) P7): pick the next lever or accept (brain swap and decider-NO on filler asks ruled out, G3).
 
 - Follow-up "jah" by voice (`2026-11-07-follow-up-listening.md` (docs/plans/) 7.5, after 7.3's ship): `mkdir robot/work/et-stt/mic` (capture is on only while it exists), answer a follow-up with "jah", then `robot/work/et-stt/venv/bin/python et-stt/nospeech.py --max 0.6 <newest robot/work/et-stt/mic/*.ogg>` must exit 0.
