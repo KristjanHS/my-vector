@@ -1,6 +1,6 @@
 # System prompt redesign
 
-Status: rulings done; every rung shipped or owned by its own plan. Trigger: "mis nädalapäev täna on?" → the robot says it doesn't know the date.
+Status: ✅ SHIPPED — rulings done; every rung shipped or owned by its own plan. Trigger: "mis nädalapäev täna on?" → the robot says it doesn't know the date.
 
 ## Rulings (user, 2026-11-07)
 
