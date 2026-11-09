@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -140,8 +141,10 @@ func TestNapValueAndStatus(t *testing.T) {
 	var got []string
 	code := http.StatusOK
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = append(got, r.URL.Query().Get("value"))
+		v := r.URL.Query().Get("value")
+		got = append(got, v)
 		w.WriteHeader(code)
+		fmt.Fprintf(w, "%s<br>\n", v) // vic-engine's body for a set: the var's new value
 	}))
 	t.Cleanup(srv.Close)
 	old := NapURL
@@ -153,6 +156,46 @@ func TestNapValueAndStatus(t *testing.T) {
 	code = http.StatusInternalServerError
 	if err := Nap("x", time.Unix(1700000000, 0)); err == nil || got[1] != "1700000000" {
 		t.Errorf("Nap on a 500 = %v, sent %v; want an error and value in epoch seconds", err, got)
+	}
+}
+
+// vic-engine answers 200 with "Variable not found" (a firmware without the nap) or "Error setting variable": not a set.
+func TestNapBodyNotSet(t *testing.T) {
+	t.Setenv("MYVECTOR_NAP", "")
+	body := "Variable not found SleepCycle_NapUntil_s<br>\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) }))
+	t.Cleanup(srv.Close)
+	old := NapURL
+	NapURL = func(string) string { return srv.URL }
+	t.Cleanup(func() { NapURL = old })
+	if err := Nap("x", time.Now().Add(time.Hour)); err == nil {
+		t.Errorf("Nap on a 200 %q = nil, want an error", body)
+	}
+	body = "Error setting variable SleepCycle_NapUntil_s=0<br>\n"
+	if err := Nap("x", time.Time{}); err == nil {
+		t.Errorf("Nap on a 200 %q = nil, want an error", body)
+	}
+}
+
+// A lock past NapMax: the nap is capped at now+NapMax (patch 0011 would refuse the whole value).
+func TestNapCapsAtNapMax(t *testing.T) {
+	t.Setenv("MYVECTOR_NAP", "")
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query().Get("value")
+		fmt.Fprintf(w, "%s<br>\n", got)
+	}))
+	t.Cleanup(srv.Close)
+	old := NapURL
+	NapURL = func(string) string { return srv.URL }
+	t.Cleanup(func() { NapURL = old })
+	before := time.Now()
+	if err := Nap("x", before.Add(6*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	sec, _ := strconv.ParseInt(got, 10, 64)
+	if want := before.Add(NapMax).Unix(); sec < want || sec > want+2 {
+		t.Errorf("Nap(now+6h) sent value=%s, want now+NapMax (%d)", got, want)
 	}
 }
 

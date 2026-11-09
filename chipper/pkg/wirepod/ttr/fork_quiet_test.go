@@ -79,7 +79,10 @@ func quietRigFake(t *testing.T, ip string) (*vtt.IntentGraphRequest, *quietStrea
 	t.Setenv("MYVECTOR_QUIET_FILE", filepath.Join(t.TempDir(), "quiet-until"))
 	t.Setenv("MYVECTOR_NAP", "")
 	naps := make(chan string, 4)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { naps <- r.URL.RawQuery }))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		naps <- r.URL.RawQuery
+		w.Write([]byte(r.URL.Query().Get("value") + "<br>\n")) // vic-engine's body for a set
+	}))
 	t.Cleanup(srv.Close)
 	oldURL, oldBots := quiet.NapURL, vars.BotInfo
 	quiet.NapURL = func(string) string { return srv.URL }

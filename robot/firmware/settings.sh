@@ -67,13 +67,6 @@ case $(ssh_ "[ -e $flag ] && echo present || { touch $flag && echo created; }" 2
   *) warn "no-auto-update: could not check or create $flag over SSH to $ip" ;;
 esac
 
-# Shut-up nap (shut-up-sleep N3): a ship or epod restart zeroes vic-engine's console vars; re-arm it while the lock holds.
-if quiet_locked; then
-  if curl -sf -m 5 -o /dev/null "http://$ip:8888/consolevarset?key=SleepCycle_NapUntil_s&value=$quiet_until"; then
-    ok "nap re-armed until $(date -d "@$quiet_until" +%H:%M) (sound lock)"
-  else warn "nap: re-arm to $quiet_until failed at $ip:8888 (vic-engine down?)"; fi
-fi
-
 # T2 voice (plan R15, E30): the saved language's T2 (t2, or t2_et for et-EE) + slow, as voice.Settings.For;
 # voice.Defaults() (af_bella / mari, 1.2) for a missing file or field.
 conf_field() { sed -n "s/.*\"$1\": *\"\{0,1\}\([A-Za-z_0-9.-]*\).*/\1/p" "$conf" 2>/dev/null | head -1; }
@@ -99,4 +92,19 @@ ng=$here/../netguard/apply.sh
 if [[ ! -f $ng ]]; then warn "netguard: $ng missing (older sha?); not applied"
 elif out=$(bash "$ng" 2>&1); then if [[ $out == *WARN:* ]]; then warn "${out//$'\n'/; }"; else ok "${out//$'\n'/; }"; fi
 else warn "netguard: ${out//$'\n'/; }"; fi
+# Shut-up nap (shut-up-sleep N3), last: the deploy and epod's trust rewrite above restart vic-engine, which zeroes its console
+# vars; re-arm the nap while the lock holds. Its console needs a while after a restart: up to 18 tries 5 s apart (~90 s).
+# vic-engine answers 200 even for an unknown var or a bad value; only a body echoing the value is a set. The nap is capped
+# at now + 4 h (patch 0011's kMyVectorNapMax_s, quiet.NapMax: a longer value is refused); the lock itself can run longer.
+if quiet_locked; then
+  nap_until=$(($(date +%s) + 4 * 60 * 60)) body='' up=''
+  ((quiet_until > nap_until)) || nap_until=$quiet_until
+  for _ in $(seq 18); do
+    if body=$(curl -sf -m 5 "http://$ip:8888/consolevarset?key=SleepCycle_NapUntil_s&value=$nap_until" 2>/dev/null); then up=1; break; fi
+    sleep 5
+  done
+  if [[ $body == "$nap_until<br>"* ]]; then ok "nap re-armed until $(date -d "@$nap_until" +%H:%M) (sound lock)"
+  elif [[ -n $up ]]; then warn "nap: vic-engine did not set SleepCycle_NapUntil_s=$nap_until: ${body//<br>/ } (firmware without the nap?)"
+  else warn "nap: re-arm to $nap_until failed at $ip:8888 for ~90 s (vic-engine down?)"; fi
+fi
 exit $rc
