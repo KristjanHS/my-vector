@@ -1,6 +1,9 @@
 package followup
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRepeatFilter(t *testing.T) {
 	said := []string{"Muidugi. Kas sinuk on mingid eriti huvilised tegurid? See on hea."}
@@ -14,6 +17,8 @@ func TestRepeatFilter(t *testing.T) {
 		{"distinct question sharing words", "Kas sinuk on mingid lemmikloomad?", false},
 		{"repeated statement", "Kas sinuk on mingid eriti huvilised tegurid.", false},
 		{"no history match", "Mis kell on?", false},
+		{"overlap exactly RepeatMin", "Kas sinuk on täna mingid eriti lihtsad tegurid?", true}, // 6/8
+		{"question in quotes", "Kas sinuk on mingid eriti huvilised tegurid?\"", true},
 	} {
 		if got := Repeats(c.s, said, RepeatMin); got != c.want {
 			t.Errorf("%s: Repeats(%q) = %v", c.name, c.s, got)
@@ -32,8 +37,15 @@ func TestOverlap(t *testing.T) {
 }
 
 func TestQuestions(t *testing.T) {
-	got := Questions("Kell on 3.15. Kas sobib? Jah! Mis veel?")
-	if len(got) != 2 || got[0] != "Kas sobib?" || got[1] != "Mis veel?" {
-		t.Errorf("Questions = %q", got)
+	for msg, want := range map[string][]string{
+		"Kell on 3.15. Kas sobib? Jah! Mis veel?": {"Kas sobib?", "Mis veel?"},
+		`Ta ütles "tere." Kas sa tuled?`:          {"Kas sa tuled?"},
+		"Kas tõesti?! Jah.":                       {"Kas tõesti?!"},
+		`Ta küsis "kas sa tuled?" ja läks.`:       {`Ta küsis "kas sa tuled?"`},
+	} {
+		got := Questions(msg)
+		if strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Errorf("Questions(%q) = %q, want %q", msg, got, want)
+		}
 	}
 }

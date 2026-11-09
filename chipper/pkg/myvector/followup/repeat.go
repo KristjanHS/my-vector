@@ -36,25 +36,44 @@ func Overlap(a, b string) float64 {
 	return float64(common) / float64(n)
 }
 
-// Questions is the '?'-ending sentences of an assistant message.
+// closers may follow a sentence's end mark before the space (forkSplitSentence ends a sentence after `."` too).
+const closers = `"'”»)`
+
+// question reports whether sentence s ends in a mark run holding '?' ("?", "?!", `?"`).
+func question(s string) bool {
+	s = strings.TrimRight(s, closers+" \t\n")
+	end := strings.TrimRight(s, ".!?")
+	return strings.Contains(s[len(end):], "?")
+}
+
+// Questions is the question sentences of an assistant message; a sentence ends at a .!? run, closers, then space or the end.
 func Questions(msg string) []string {
 	var out []string
-	start := 0
 	rs := []rune(msg)
-	for i, r := range rs {
-		if (r == '.' || r == '!' || r == '?') && (i+1 == len(rs) || unicode.IsSpace(rs[i+1])) {
-			if r == '?' {
-				out = append(out, strings.TrimSpace(string(rs[start:i+1])))
-			}
-			start = i + 1
+	start := 0
+	for i := 0; i < len(rs); i++ {
+		if !strings.ContainsRune(".!?", rs[i]) {
+			continue
 		}
+		j := i
+		for j < len(rs) && strings.ContainsRune(".!?"+closers, rs[j]) {
+			j++
+		}
+		if j < len(rs) && !unicode.IsSpace(rs[j]) {
+			i = j - 1
+			continue
+		}
+		if s := strings.TrimSpace(string(rs[start:j])); question(s) {
+			out = append(out, s)
+		}
+		start, i = j, j-1
 	}
 	return out
 }
 
 // Repeats reports whether sentence s is a question with Overlap ≥ min against a question in the earlier assistant messages said.
 func Repeats(s string, said []string, min float64) bool {
-	if !strings.HasSuffix(strings.TrimSpace(s), "?") {
+	if !question(s) {
 		return false
 	}
 	for _, m := range said {
