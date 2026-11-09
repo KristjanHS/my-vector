@@ -151,22 +151,28 @@ fi
 
 # S4: each bin marker is in the built file, and every patched JSON is copied into _build unchanged.
 build=$src/_build/vicos/Release
-bin_strings() { # vic-cloud ships UPX-packed: strings of the unpacked image
-  if ! grep -qaF 'This file is packed with the UPX executable packer' "$1"; then strings -a "$1"; return; fi
-  local upx u
-  upx=$(ls "$src"/anki-deps/upx/dist/*/upx 2>/dev/null | head -1)
-  [[ -x $upx ]] || die "${1#"$build"/} is UPX-packed and no upx under $src/anki-deps/upx"
-  u=$(mktemp -u)
-  "$upx" -d -q -o "$u" "$1" >/dev/null || die "upx -d ${1#"$build"/}"
-  strings -a "$u" || true # grep -q's early exit SIGPIPEs strings; the rm still runs
-  rm -f "$u"
+mkdir -p "$main/robot/work"
+strs=$(mktemp -d "$main/robot/work/check-static.XXXXXX")
+trap 'rm -rf "$strs"' EXIT
+# bin_strings <file>: strings of it, UPX-unpacked first (vic-cloud ships packed), cached per file in $strs; prints the cache path.
+bin_strings() {
+  local s=$strs/${1//\//_} upx
+  [[ -f $s ]] && { echo "$s"; return; }
+  if grep -qaF 'This file is packed with the UPX executable packer' "$1"; then
+    upx=$(ls "$src"/anki-deps/upx/dist/*/upx 2>/dev/null | head -1)
+    [[ -x $upx ]] || die "${1#"$build"/} is UPX-packed and no upx under $src/anki-deps/upx"
+    "$upx" -d -q -o "$s.bin" "$1" >/dev/null || die "upx -d ${1#"$build"/}"
+    strings -a "$s.bin" >"$s"; rm -f "$s.bin"
+  else strings -a "$1" >"$s"; fi
+  echo "$s"
 }
 n=0
 for r in "${rows[@]}"; do
   IFS=$'\t' read -r p kind path marker <<<"$r"
   [[ $kind == bin ]] || continue
   [[ -f $build/$path ]] || die "$p: not built: $build/$path"
-  grep -qF -- "$marker" <(bin_strings "$build/$path") || die "$p: bin marker not in $path: $marker"
+  s=$(bin_strings "$build/$path") || exit 1
+  grep -qF -- "$marker" "$s" || die "$p: bin marker not in $path: $marker"
   n=$((n + 1))
 done
 m=0
