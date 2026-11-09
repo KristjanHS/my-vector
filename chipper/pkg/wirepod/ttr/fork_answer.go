@@ -41,12 +41,7 @@ func forkBControl(robot *vector.Vector, ctx context.Context, start, stop chan bo
 		defer forkDrain(stop, wait) // a late or second stop (interrupt + speak loop) must not block its sender
 		hold := time.NewTimer(wait)
 		defer hold.Stop()
-		started := false
-		defer func() {
-			if !started {
-				close(start) // ends StreamingKGSim's `for range start`
-			}
-		}()
+		defer close(start) // every exit ends StreamingKGSim's `for range start`; only this goroutine sends start, once
 		release := forkControl(robot, ctx, stop, done, hold.C)
 		if release == nil {
 			return
@@ -54,12 +49,11 @@ func forkBControl(robot *vector.Vector, ctx context.Context, start, stop chan bo
 		defer release()
 		select {
 		case start <- true:
-			started = true
 		case <-stop:
+			return
 		case <-done:
+			return
 		case <-hold.C:
-		}
-		if !started {
 			return
 		}
 		select {
@@ -99,6 +93,14 @@ func forkControl(robot *vector.Vector, ctx context.Context, stop chan bool, done
 		release()
 	}
 	return nil
+}
+
+// forkEndKGLoop stops kgsim's searching-anim loop when start closed unsent: that loop stops only inside `for range start`.
+func forkEndKGLoop(isKG bool, stopLooping *bool, ready chan bool) {
+	if isKG && !*stopLooping {
+		*stopLooping = true
+		<-ready
+	}
 }
 
 func forkDrain(stop chan bool, wait time.Duration) {
