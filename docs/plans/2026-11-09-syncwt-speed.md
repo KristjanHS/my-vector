@@ -132,6 +132,11 @@ three lines in dotfiles. The very next `make syncwt` shows either `check skipped
 parallel gate (~16 s) with a per-test timing table. S3a–d, S4 and S5 stay an unordered backlog,
 re-picked after the rung is measured. S3c and S3b are the cheapest of them (env knobs, no patch).
 
+| id | ruling (qimpag 2026-11-09) | edit site |
+|---|---|---|
+| R1 | S2's runner is a sourceable lib with its own fake-job test (pass/fail/slow → rc, log, kill, order) | `scripts/lib/check-runner.sh`, `scripts/tests/check-runner.sh` |
+| R2 | S6a lands from this session, dotfiles commit pathspec'd to the one file | dotfiles `bin/bin/syncwt` `run_gate` + report |
+
 ### Pre-registered check
 - S1: the falsifier in §S1 (second `make check` on a clean committed tree prints `check skipped`; a
   touched file runs in full).
