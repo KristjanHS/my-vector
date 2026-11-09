@@ -94,7 +94,7 @@ Focus: `robot/firmware/0011-night-window.patch`; `markers.tsv`; `tests/{nap.sh,0
 
 ## Stage 5 — open-mic build
 
-Status: blocked on §Stage 1 verdict. Shape if PASS (re-cut by the verdict's capture path): `quiet_guard` in a sound script, when open-mic is on, arms the `:8093` mic stream (`2026-11-08-mic-stream.md (docs/plans/)` M6) for the test's span: stream utterance → `quietmatch`; a hit → `quiet.sh on` + kill the test's process group. Falsifier: fake-stream fixture with "ole vait" → lock set and the parent test exits 3.
+Status: blocked on §Stage 1 verdict. Shape if PASS (re-cut by the verdict's capture path): `quiet_guard` in a sound script, when open-mic is on, arms the `:8093` mic stream (`2026-11-08-mic-stream.md (docs/plans/)` M6; needs a server arm endpoint) for the test's span; `Hearer` already sets the lock on a quiet phrase, so the guard only kills the test's process group on the lock. Falsifier: fake-stream fixture with "ole vait" → lock set and the parent test exits 3.
 
 ## Stage 6 — final
 
