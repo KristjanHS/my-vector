@@ -28,4 +28,3 @@
 ## Assistant-owed
 
 
-- ⚠ et-EE story ask answers ~14 words, no story (seen on the deleted gemma4:e2b-it-qat; recheck on gemma4:e4b-it-qat; not cap-cut) · seam: et prompt/model · falsifier (from chipper/): `go run ./pkg/myvector/routeprobe -llm -lang et-EE "räägi mulle muinasjutt robotist" | awk '/^llm: /{exit NF<60}'`
