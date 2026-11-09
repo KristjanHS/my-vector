@@ -3,7 +3,7 @@
 //	go run ./pkg/myvector/voiceprobe say  -dur 0.95 -vv=true "text"   # robot TTS (SayText)
 //	go run ./pkg/myvector/voiceprobe play -vol 100 file.pcm             # 16 kHz s16le mono via K2's stream
 //	go run ./pkg/myvector/voiceprobe cancel                             # silent: free a stream left open
-//	go run ./pkg/myvector/voiceprobe overlap                            # silent: repro of two overlapping streams
+//	go run ./pkg/myvector/voiceprobe overlap                            # silent: overlapping + short streams
 package main
 
 import (
@@ -121,28 +121,34 @@ func cancelStream(v *vector.Vector) error {
 	return err
 }
 
-// overlap is the silent repro of a Prepare arriving while another stream plays: stream A streams zeros, stream B
-// prepares mid-way, then A finishes. It prints what each stream hears back. On stock vic-anim B's refused Prepare
-// fails both (responses are broadcast), wipes A's state without ending its playback, and A's Complete is refused:
-// A's playback starves forever.
+// overlap (silent, zeros): A streams, B streams + completes over it, A completes; then singly C empty, D 96 ms (<0.2 s
+// start), E closes unfinished, F empty. With 0019: B ends ResourceExhausted; A, C, D, F hear PlaybackComplete; E nothing.
 func overlap(v *vector.Vector) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	open := func(name string) (vectorpb.ExternalInterface_ExternalAudioStreamPlaybackClient, error) {
+	stamp := func() string { return time.Now().Format("15:04:05.000") }
+	// open prepares a stream; heard ticks on its first response or its end.
+	open := func(ctx context.Context, name string) (vectorpb.ExternalInterface_ExternalAudioStreamPlaybackClient, <-chan struct{}, error) {
 		c, err := v.Conn.ExternalAudioStreamPlayback(ctx)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		heard := make(chan struct{}, 1)
 		go func() {
 			for {
 				r, err := c.Recv()
+				select {
+				case heard <- struct{}{}:
+				default:
+				}
 				if err != nil {
+					fmt.Printf("%s %s ended: %v\n", stamp(), name, err)
 					return
 				}
-				fmt.Printf("%s %s heard %T\n", time.Now().Format("15:04:05.000"), name, r.GetAudioResponseType())
+				fmt.Printf("%s %s heard %T\n", stamp(), name, r.GetAudioResponseType())
 			}
 		}()
-		return c, c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamPrepare{
+		return c, heard, c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamPrepare{
 			AudioStreamPrepare: &vectorpb.ExternalAudioStreamPrepare{AudioFrameRate: 16000, AudioVolume: 100}}})
 	}
 	zeros := make([]byte, 1024)
@@ -156,26 +162,77 @@ func overlap(v *vector.Vector) error {
 		}
 		return nil
 	}
-	a, err := open("A")
+	complete := func(c vectorpb.ExternalInterface_ExternalAudioStreamPlaybackClient) error {
+		return c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamComplete{
+			AudioStreamComplete: &vectorpb.ExternalAudioStreamComplete{}}})
+	}
+	pctx, pcancel := context.WithCancel(ctx)
+	defer pcancel()
+	a, _, err := open(pctx, "A")
 	if err == nil {
 		err = chunks(a, 40) // 1.3 s: posted after 0.2 s
 	}
 	if err != nil {
 		return err
 	}
-	fmt.Println(time.Now().Format("15:04:05.000"), "B prepares")
-	if _, err = open("B"); err != nil {
+	fmt.Println(stamp(), "B prepares, streams 0.6 s and completes while A streams")
+	b, _, berr := open(pctx, "B")
+	if b == nil {
+		return berr
+	}
+	bDone := make(chan struct{})
+	go func() { // B's send errors are expected (refused at the gateway): printed, not fatal
+		defer close(bDone)
+		err := berr
+		if err == nil {
+			err = chunks(b, 20)
+		}
+		if err == nil {
+			err = complete(b)
+		}
+		if err != nil {
+			fmt.Printf("%s B send: %v\n", stamp(), err)
+		}
+	}()
+	err = chunks(a, 30)
+	<-bDone
+	if err != nil {
 		return err
 	}
-	if err = chunks(a, 20); err != nil {
-		return err
-	}
-	fmt.Println(time.Now().Format("15:04:05.000"), "A completes")
-	if err = a.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamComplete{
-		AudioStreamComplete: &vectorpb.ExternalAudioStreamComplete{}}}); err != nil {
+	fmt.Println(stamp(), "A completes")
+	if err = complete(a); err != nil {
 		return err
 	}
 	time.Sleep(3 * time.Second)
+	pcancel()
+	time.Sleep(300 * time.Millisecond) // the gateway frees its one stream slot
+	for _, s := range []struct {
+		name     string
+		n        int
+		complete bool
+	}{{"C", 0, true}, {"D", 3, true}, {"E", 3, false}, {"F", 0, true}} {
+		fmt.Printf("%s %s prepares, %d chunks, complete=%v\n", stamp(), s.name, s.n, s.complete)
+		sctx, scancel := context.WithCancel(ctx)
+		c, heard, err := open(sctx, s.name)
+		if err == nil {
+			err = chunks(c, s.n)
+		}
+		if err == nil && s.complete {
+			err = complete(c)
+		}
+		if err == nil && s.complete {
+			select {
+			case <-heard:
+			case <-time.After(2 * time.Second):
+				fmt.Println(stamp(), s.name, "heard nothing in 2 s")
+			}
+		}
+		scancel()
+		if err != nil {
+			return fmt.Errorf("%s: %w", s.name, err)
+		}
+		time.Sleep(300 * time.Millisecond) // E's close: the gateway's Cancel lands before F's Prepare
+	}
 	return nil
 }
 

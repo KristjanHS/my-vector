@@ -63,3 +63,11 @@
 0019-sdk-audio-orphan.patch	src	animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp	++sMyVectorSdkPlayback;
 0019-sdk-audio-orphan.patch	src	animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp	my-vector sdk-audio-orphan: IsPlayingStream() is never true
 0019-sdk-audio-orphan.patch	bin	bin/vic-anim	my-vector.SdkAudioOrphan
+0019-sdk-audio-orphan.patch	src	cloud/cloud/message_handler.go	my-vector.SdkAudioOrphan: second audio stream refused
+0019-sdk-audio-orphan.patch	src	cloud/cloud/message_handler.go	my-vector.SdkAudioOrphan: stream closed after Prepare without Complete
+0019-sdk-audio-orphan.patch	bin	bin/vic-cloud	my-vector.SdkAudioOrphan: second audio stream refused
+0019-sdk-audio-orphan.patch	bin	bin/vic-cloud	my-vector.SdkAudioOrphan: stream closed after Prepare without Complete
+0019-sdk-audio-orphan.patch	src	animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp	instance != _waveData
+0019-sdk-audio-orphan.patch	src	animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp	Complete on an unposted stream: posted its
+0019-sdk-audio-orphan.patch	bin	bin/vic-anim	Complete on an unposted stream: posted its
+0019-sdk-audio-orphan.patch	bin	bin/vic-anim	Complete on an empty unposted stream

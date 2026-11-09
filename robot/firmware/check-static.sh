@@ -151,12 +151,22 @@ fi
 
 # S4: each bin marker is in the built file, and every patched JSON is copied into _build unchanged.
 build=$src/_build/vicos/Release
+bin_strings() { # vic-cloud ships UPX-packed: strings of the unpacked image
+  if ! grep -qaF 'This file is packed with the UPX executable packer' "$1"; then strings -a "$1"; return; fi
+  local upx u
+  upx=$(ls "$src"/anki-deps/upx/dist/*/upx 2>/dev/null | head -1)
+  [[ -x $upx ]] || die "${1#"$build"/} is UPX-packed and no upx under $src/anki-deps/upx"
+  u=$(mktemp -u)
+  "$upx" -d -q -o "$u" "$1" >/dev/null || die "upx -d ${1#"$build"/}"
+  strings -a "$u" || true # grep -q's early exit SIGPIPEs strings; the rm still runs
+  rm -f "$u"
+}
 n=0
 for r in "${rows[@]}"; do
   IFS=$'\t' read -r p kind path marker <<<"$r"
   [[ $kind == bin ]] || continue
   [[ -f $build/$path ]] || die "$p: not built: $build/$path"
-  grep -qF -- "$marker" <(strings -a "$build/$path") || die "$p: bin marker not in $path: $marker"
+  grep -qF -- "$marker" <(bin_strings "$build/$path") || die "$p: bin marker not in $path: $marker"
   n=$((n + 1))
 done
 m=0

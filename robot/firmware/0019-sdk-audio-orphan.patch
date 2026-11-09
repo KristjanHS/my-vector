@@ -10,14 +10,23 @@ IsPlayingStream() is never true, and the Wwise FX keeps its own ref, so a droppe
 plugin will be starved" ~60/s). Cancel's StopActiveAudio stops the kSdkGameObject game object (it passed the Stop
 event id as the game object: stopped nothing). Each ClearOperationData bumps a playback counter, so the end
 callback of a stopped playback no longer clears a later stream nor reports it Completed.
-Falsifier: voiceprobe overlap, A hears AudioStreamPlaybackComplete, no starved / VERIFY(_audioPrepared) line.
+B2: AddAudioChunk drops (AddAudioFailed + cleanup) a chunk with no wave data, a plugin instance other than the
+prepared stream's, or a size past the CLAD array. Complete on a stream never posted (under 0.2 s of audio) posts
+its audio, or, when empty, clears it and reports Completed: it held the one slot forever and every later Prepare
+was refused.
+vic-cloud gateway: one open ExternalAudioStreamPlayback at a time; a second gets ResourceExhausted (vic-anim
+cannot tell streams apart: B's chunks and Complete landed on A). A stream closing after Prepare without Complete
+or Cancel sends the engine Cancel; the slot frees only after it, so that Cancel cannot hit the next stream.
+Falsifier: voiceprobe overlap, A hears AudioStreamPlaybackComplete, B ends ResourceExhausted, C/D/F hear
+AudioStreamPlaybackComplete, no starved / VERIFY(_audioPrepared) line.
 ---
- .../src/cozmoAnim/audio/sdkAudioComponent.cpp | 23 +++++++++++++++----
- .../textToSpeech/textToSpeechComponent.cpp    |  3 ++-
- 2 files changed, 20 insertions(+), 6 deletions(-)
+ .../src/cozmoAnim/audio/sdkAudioComponent.cpp | 56 ++++++++++++++++---
+ .../textToSpeech/textToSpeechComponent.cpp    |  3 +-
+ cloud/cloud/message_handler.go                | 30 ++++++++++
+ 3 files changed, 79 insertions(+), 10 deletions(-)
 
 diff --git a/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp b/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp
-index 8d6776c4..f5d2c335 100644
+index 8d6776c4..eb1922e3 100644
 --- a/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp
 +++ b/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp
 @@ -36,6 +36,8 @@
@@ -29,7 +38,33 @@ index 8d6776c4..f5d2c335 100644
  }
  
  namespace Anki {
-@@ -95,6 +97,12 @@ void SdkAudioComponent::HandleMessage(const RobotInterface::ExternalAudioPrepare
+@@ -70,7 +72,24 @@ void SdkAudioComponent::HandleMessage(const RobotInterface::ExternalAudioComplet
+   if (ANKI_VERIFY(_audioPrepared, 
+                     "SdkAudioComponent.HandleMessage.ExternalAudioComplete", 
+                     "Audio stream complete message received without start")) {
+-    _waveData->DoneProducingData();      
++    if (!_audioPosted) {
++      // my-vector sdk-audio-orphan: under AUDIO_TO_BEGIN_PLAYING_SEC nothing was posted, so no end callback would clear it
++      if (_totalAudioFramesReceived == 0) {
++        LOG_WARNING("my-vector.SdkAudioOrphan", "Complete on an empty unposted stream: cleared, reported Completed");
++        ClearOperationData();
++        SendAnimToEngine(SDKAudioStreamingState::Completed, 0, 0);
++        return;
++      }
++      if (!PostAudioEvent()) {
++        LOG_ERROR("SdkAudioComponent.HandleMessage.ExternalAudioComplete", "Unable to post audio event Audio Streaming");
++        SendAnimToEngine(SDKAudioStreamingState::PostFailed);
++        CleanupAudioEngine();
++        return;
++      }
++      LOG_WARNING("my-vector.SdkAudioOrphan", "Complete on an unposted stream: posted its %u frames", _totalAudioFramesReceived);
++      _audioPosted = true;
++    }
++    _waveData->DoneProducingData();
+   }
+ }
+ 
+@@ -95,6 +114,12 @@ void SdkAudioComponent::HandleMessage(const RobotInterface::ExternalAudioPrepare
    LOG_DEBUG("SdkAudioComponent.HandleMessage.ExternalAudioPrepare", 
             "Sample rate %d, volume %d", msg.audio_volume, msg.audio_rate );
  
@@ -42,7 +77,28 @@ index 8d6776c4..f5d2c335 100644
    if (!PrepareAudioEngine(msg)) {
      LOG_DEBUG("SdkAudioComponent.HandleMessage.ExternalAudioPrepare", "Unable to prepare audio engine for streaming");
      SendAnimToEngine(SDKAudioStreamingState::PrepareFailed);
-@@ -241,8 +249,12 @@ bool SdkAudioComponent::PostAudioEvent()
+@@ -197,9 +222,17 @@ bool SdkAudioComponent::PrepareAudioEngine(const RobotInterface::ExternalAudioPr
+ bool SdkAudioComponent::AddAudioChunk(const RobotInterface::ExternalAudioChunk& msg) {
+   //check for dangerous buffer expansion
+   auto * pluginInterface = _audioController->GetPluginInterface();
+-  auto * plugin = pluginInterface->GetStreamingWavePortalPlugIn();
+-  const auto played = plugin->GetDataInstance(kSdkPluginId)->GetNumberOfFramesPlayed();
+-  const auto received = plugin->GetDataInstance(kSdkPluginId)->GetNumberOfFramesReceived();
++  auto * plugin = (pluginInterface != nullptr) ? pluginInterface->GetStreamingWavePortalPlugIn() : nullptr;
++  // my-vector sdk-audio-orphan: a chunk the prepared stream cannot take is dropped (false = cleanup), never dereferenced
++  const auto instance = (plugin != nullptr) ? plugin->GetDataInstance(kSdkPluginId) : nullptr;
++  if (!_waveData || instance != _waveData || msg.audio_chunk_size > sizeof(msg.audio_chunk_data)) {
++    LOG_WARNING("my-vector.SdkAudioOrphan", "Chunk dropped: no wave data, not the prepared stream, or %u bytes",
++                msg.audio_chunk_size);
++    SendAnimToEngine(SDKAudioStreamingState::AddAudioFailed);
++    return false;
++  }
++  const auto played = instance->GetNumberOfFramesPlayed();
++  const auto received = instance->GetNumberOfFramesReceived();
+   LOG_DEBUG("SdkAudioComponent::AddAudioChunk", "Played %u Received %u", played, received);
+   SendAnimToEngine(SDKAudioStreamingState::ChunkAdded, received, played);
+ 
+@@ -241,8 +274,12 @@ bool SdkAudioComponent::PostAudioEvent()
    // Register callback for event
    using namespace AudioEngine;
    std::weak_ptr<AudioCallbackType> weakOnFinished = _audioPlaybackFinishedPtr;
@@ -56,7 +112,7 @@ index 8d6776c4..f5d2c335 100644
      // if the user logs out, this callback could fire after sdkAudioComponent is destroyed. check that here.
      auto callback = weakOnFinished.lock();
      if( callback && (*callback) ) {
-@@ -280,11 +292,13 @@ void SdkAudioComponent::CleanupAudioEngine()
+@@ -280,11 +317,13 @@ void SdkAudioComponent::CleanupAudioEngine()
  void SdkAudioComponent::ClearOperationData()
  {
    LOG_DEBUG("SdkAudioComponent.ClearOperationData", "Clear Sdk Audio");
@@ -71,7 +127,7 @@ index 8d6776c4..f5d2c335 100644
    _audioPrepared = false;
    _audioPosted = false;
    _waveData = NULL;
-@@ -296,9 +310,8 @@ void SdkAudioComponent::ClearOperationData()
+@@ -296,9 +335,8 @@ void SdkAudioComponent::ClearOperationData()
  void SdkAudioComponent::StopActiveAudio()
  {
    LOG_DEBUG("SdkAudioComponent.StopActiveAudio", "Stop active Sdk audio");
@@ -97,3 +153,65 @@ index c595c34d..9b3b3aeb 100644
        waveData->DoneProducingData();
      }
      _bundleMap.erase(it);
+diff --git a/cloud/cloud/message_handler.go b/cloud/cloud/message_handler.go
+index 0d0ad73e..78200b0f 100644
+--- a/cloud/cloud/message_handler.go
++++ b/cloud/cloud/message_handler.go
+@@ -35,6 +35,9 @@ var (
+ 	statusStreamRunning bool
+ 	lastProgress        int64
+ 	lastExpected        int64
++
++	// my-vector sdk-audio-orphan: one open ExternalAudioStreamPlayback at a time (vic-anim plays one SDK stream)
++	myVectorAudioStreamSlot = make(chan struct{}, 1)
+ )
+ 
+ // TODO: we should find a way to auto-generate the equivalent of this function as part of clad or protoc
+@@ -3606,6 +3609,21 @@ func (service *rpcService) ExternalAudioStreamRequestToGatewayWrapper(request *e
+ 
+ func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalInterface_ExternalAudioStreamPlaybackServer, done chan struct{}) {
+ 	defer close(done)
++	// my-vector sdk-audio-orphan: the slot frees only after the Cancel below, so that Cancel cannot hit the next stream
++	defer func() { <-myVectorAudioStreamSlot }()
++	prepared := false
++	defer func() {
++		if !prepared {
++			return
++		}
++		log.Println("my-vector.SdkAudioOrphan: stream closed after Prepare without Complete, sending Cancel")
++		cancel := &extint.GatewayWrapper{OneofMessageType: &extint.GatewayWrapper_ExternalAudioStreamCancel{
++			ExternalAudioStreamCancel: &extint.ExternalAudioStreamCancel{},
++		}}
++		if _, _, err := engineProtoManager.Write(cancel); err != nil {
++			log.Printf("Could not write GatewayWrapper_ExternalAudioStreamCancel\n")
++		}
++	}()
+ 	for {
+ 		request, err := in.Recv()
+ 		if err != nil {
+@@ -3619,6 +3637,12 @@ func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalI
+ 			log.Println(err)
+ 			return
+ 		}
++		switch request.AudioRequestType.(type) {
++		case *extint.ExternalAudioStreamRequest_AudioStreamPrepare:
++			prepared = true
++		case *extint.ExternalAudioStreamRequest_AudioStreamComplete, *extint.ExternalAudioStreamRequest_AudioStreamCancel:
++			prepared = false
++		}
+ 
+ 		numCommandsSentFromSDK++
+ 		_, _, err = engineProtoManager.Write(msg)
+@@ -3654,6 +3678,12 @@ func (service *rpcService) ExternalAudioStreamResponseHandler(out extint.Externa
+ 
+ // Stream audio to the robot, stream audio playback status back
+ func (service *rpcService) ExternalAudioStreamPlayback(bidirectionalStream extint.ExternalInterface_ExternalAudioStreamPlaybackServer) error {
++	select {
++	case myVectorAudioStreamSlot <- struct{}{}: // released by ExternalAudioStreamRequestHandler
++	default:
++		log.Println("my-vector.SdkAudioOrphan: second audio stream refused, one is open")
++		return grpc.Errorf(codes.ResourceExhausted, "my-vector.SdkAudioOrphan: an audio stream is already open")
++	}
+ 	audioStartTime := time.Now()
+ 
+ 	log.Println("sdk.audiostream_started")
