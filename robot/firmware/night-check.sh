@@ -2,7 +2,10 @@
 # Night-window check (0011-night-window.patch): did Vector do anything overnight besides sleep and answer "Hey Vector"?
 # Reads the robot's kept log (/data/log/keep, ~20 h deep) for the night that starts on DATE at NIGHT_FROM.
 # Usage: night-check.sh [YYYY-MM-DD]   default: the most recent night start (yesterday's if run before NIGHT_FROM).
-#   env NIGHT_FROM=21:00 NIGHT_TO=09:00 (the firmware's SleepTracker defaults); NIGHT_LOG_DIR=<dir> reads that local dir, no ssh (host test).
+#        night-check.sh --nap   judges the last shut-up nap instead: from the last `my-vector.NightWindow ... nap until
+#          <epoch>` line to that epoch (shut-up-sleep N1; INCOMPLETE while the nap runs).
+#   env NIGHT_FROM=21:00 NIGHT_TO=09:00 (the firmware's SleepTracker defaults); NIGHT_LOG_DIR=<dir> reads that local dir, no ssh,
+#   and NIGHT_NOW=<epoch> fixes the clock (host test).
 # Allowed: GoToSleep anims, the InitialWakeUp anim ≤30 s after a vic-engine start ≤60 s after a system-partition remount
 #   (a ship; printed + counted as ships — a reboot's remount carries the stale boot clock, so a reboot stays a hit),
 #   and anything within 60 s after a voice event (wake word, listening, TTS, SDK, voice intent).
@@ -15,16 +18,35 @@ here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
 silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 [[ -n ${NIGHT_LOG_DIR:-} ]] || . "$here/../env.sh"
-from=${NIGHT_FROM:-21:00} to=${NIGHT_TO:-09:00}
-day=${1:-$(if [[ $(date +%H:%M) < $from ]]; then date -d yesterday +%F; else date +%F; fi)}
-start=$(date -d "$day $from" +%s) || { echo "FAIL: bad date or NIGHT_FROM: $day $from" >&2; exit 2; }
-# A window past midnight ends on the next calendar day (not start + 24 h: a DST night is 23 or 25 h long).
-end_day=$day
-[[ $to > $from ]] || end_day=$(date -d "$day +1 day" +%F)
-end=$(date -d "$end_day $to" +%s) || { echo "FAIL: bad NIGHT_TO: $to" >&2; exit 2; }
 fmt() { date -d "@$1" '+%m-%d %H:%M:%S'; }
-now=$(date +%s)
-echo "night $(fmt "$start") .. $(fmt "$end")"
+now=${NIGHT_NOW:-$(date +%s)} # NIGHT_NOW=<epoch>: host test's fixed clock
+# on_logs <sh prog>: runs prog (its $1 = the kept log dir, default /data/log/keep) on the robot, or over NIGHT_LOG_DIR.
+on_logs() {
+  if [[ -n ${NIGHT_LOG_DIR:-} ]]; then sh -s -- "$NIGHT_LOG_DIR" <<<"$1"
+  else ssh "${ssh_opts[@]}" "root@$ip" sh -s <<<"$1"; fi
+}
+if [[ ${1:-} == --nap ]]; then
+  napline=$(on_logs 'cd "${1:-/data/log/keep}" || exit 2; cat $(ls -tr messages.* 2>/dev/null) messages | grep "my-vector\.NightWindow: .*nap until [0-9]" | tail -n 1') ||
+    { echo "FAIL: no ${NIGHT_LOG_DIR:-/data/log/keep} (robot/logkeep/apply.sh)" >&2; exit 2; }
+  [[ $napline =~ ^([0-9][0-9]-[0-9][0-9]\ [0-9][0-9]:[0-9][0-9]:[0-9][0-9]).*nap\ until\ ([0-9]+) ]] ||
+    { echo "FAIL: no 'nap until' line in the kept log (no shut-up nap yet?)" >&2; exit 2; }
+  stamp=${BASH_REMATCH[1]} end=${BASH_REMATCH[2]}
+  # The stamp has no year: take this year's, last year's if that lands in the future (a nap across New Year).
+  year=$(date -d "@$now" +%Y)
+  start=$(date -d "$year-$stamp" +%s)
+  ((start <= now)) || start=$(date -d "$((year - 1))-$stamp" +%s)
+  ((end > start)) || { echo "FAIL: nap until $end is not after its log line ($stamp)" >&2; exit 2; }
+  echo "nap $(fmt "$start") .. $(fmt "$end")"
+else
+  from=${NIGHT_FROM:-21:00} to=${NIGHT_TO:-09:00}
+  day=${1:-$(if [[ $(date +%H:%M) < $from ]]; then date -d yesterday +%F; else date +%F; fi)}
+  start=$(date -d "$day $from" +%s) || { echo "FAIL: bad date or NIGHT_FROM: $day $from" >&2; exit 2; }
+  # A window past midnight ends on the next calendar day (not start + 24 h: a DST night is 23 or 25 h long).
+  end_day=$day
+  [[ $to > $from ]] || end_day=$(date -d "$day +1 day" +%F)
+  end=$(date -d "$end_day $to" +%s) || { echo "FAIL: bad NIGHT_TO: $to" >&2; exit 2; }
+  echo "night $(fmt "$start") .. $(fmt "$end")"
+fi
 
 # Log stamps are "MM-DD HH:MM:SS.mmm" with no year: awk compares them as strings; a January line after a December
 # start (a New Year night) is shifted to month 13. ssh joins the remote args into one string, hence the inner quotes.
