@@ -5,19 +5,26 @@ Subject: [PATCH] silent-start
 
 vic-engine: while /data/myvector/silent-start holds an expiry epoch (s, robot clock) still ahead and at most 15 min
 ahead, an AnimSequence holding the InitialWakeUp trigger (NormalWakeUp, the power-on anim after each engine start) ends
-on activation without playing it; ending rather than refusing to activate starts InitNormalOperation's run-once
-cooldown, so it never replays later. A missing, empty, garbage, expired or over-cap file plays the anim.
+without playing it, a tick after activation via a 0 s wait (as a played anim ends): a CancelSelf() inside activation
+left InitNormalOperation, the always-delegating stack base, with no delegate that tick, so it cancelled itself and
+emptied the behavior stack. Ending rather than refusing to activate starts InitNormalOperation's run-once cooldown,
+so it never replays later. A missing, empty, garbage, expired or over-cap file plays the anim.
 restarts.sh -s / catch.sh -s write now + 300 s (600 s with -d) before each restart; ship.sh writes now + 600 s
 while the robot sound lock holds. Logs my-vector.SilentStart. Host test: robot/firmware/tests/silent-start.sh.
 ---
- .../behaviorAnimSequence.cpp                  | 63 +++++++++++++++++++
- 1 file changed, 63 insertions(+)
+ .../behaviorAnimSequence.cpp                  | 67 +++++++++++++++++++
+ 1 file changed, 67 insertions(+)
 
 diff --git a/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorAnimSequence.cpp b/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorAnimSequence.cpp
-index 87c8eef2..a5cbc1a1 100644
+index 87c8eef2..cb101b7b 100644
 --- a/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorAnimSequence.cpp
 +++ b/engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorAnimSequence.cpp
-@@ -17,6 +17,13 @@
+@@ -13,10 +13,18 @@
+ #include "engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorAnimSequence.h"
+ 
+ #include "engine/actions/animActions.h"
++#include "engine/actions/basicActions.h"
+ #include "engine/aiComponent/behaviorComponent/behaviorExternalInterface/behaviorExternalInterface.h"
  #include "engine/aiComponent/behaviorComponent/behaviorExternalInterface/beiRobotInfo.h"
  #include "util/cladHelpers/cladFromJSONHelpers.h"
  
@@ -31,7 +38,7 @@ index 87c8eef2..a5cbc1a1 100644
  namespace Anki {
  namespace Vector {
    
-@@ -30,6 +37,47 @@ const char* kTracksToLock   = "tracksToLock";
+@@ -30,6 +38,47 @@ const char* kTracksToLock   = "tracksToLock";
  const char* kRenderInEyeHue = "renderInEyeHue";
  }
  
@@ -79,7 +86,7 @@ index 87c8eef2..a5cbc1a1 100644
  
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  BehaviorAnimSequence::InstanceConfig::InstanceConfig() :
-@@ -121,6 +169,21 @@ bool BehaviorAnimSequence::WantsToBeActivatedBehavior() const
+@@ -121,6 +170,24 @@ bool BehaviorAnimSequence::WantsToBeActivatedBehavior() const
  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
  void BehaviorAnimSequence::OnBehaviorActivated()
  {
@@ -88,10 +95,13 @@ index 87c8eef2..a5cbc1a1 100644
 +  const long long now_s = time(nullptr);
 +  long long until_s = -1;
 +  if (MyVectorSilentStart(hasInitialWakeUp, now_s, until_s)) {
-+    // Ending here (not refusing WantsToBeActivated) lets InitNormalOperation start the -1 cooldown, so it never replays.
++    // Ending (not refusing WantsToBeActivated) lets InitNormalOperation start the -1 cooldown, so it never replays.
++    // End on a later tick, through a 0 s wait's callback, as a played anim ends: a CancelSelf() here runs inside the
++    // dispatcher's DelegateNow, so InitNormalOperation (always delegates, bottom of the stack) finds no delegate that
++    // same tick and cancels itself, leaving vic-engine with an empty behavior stack (NoStackInitialized, 2026-11-09).
 +    LOG_CH_INFO("Behaviors", "my-vector.SilentStart", "%s: %s holds %lld (%lld s ahead), InitialWakeUp skipped",
 +                GetDebugLabel().c_str(), kMyVectorSilentStartFile, until_s, until_s - now_s);
-+    CancelSelf();
++    DelegateIfInControl(new WaitAction(0.f), [this]() { CancelSelf(); });
 +    return;
 +  }
 +  if (until_s != -1) {
