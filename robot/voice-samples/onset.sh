@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Time-to-first-sound of a robot-internal (T2) line per arm: engine console SayText → output capture → onset.
 # Arms: stock · cori · af_bella · mari/albert/kalev (et-EE) (PC up) · refused (PC port closed) · blackhole (PC host gone). Restores the voice file.
-# Usage: [RUNS=3] [WORD=bla-bla-…] onset.sh [arm…] — V2 of 2026-11-05-vector-voice-verify.md (docs/plans/).
+# Usage: [RUNS=3] [WORD=bla-bla-…] [OUT=dir] onset.sh [arm…] — V2 of 2026-11-05-vector-voice-verify.md (docs/plans/).
 set -uo pipefail
 self=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/volume-probe/lib.sh
 . "$self/../volume-probe/lib.sh"
 RUNS=${RUNS:-3}
 WORD=${WORD:-bla-bla-bla-bla-bla-bla-bla-bla-bla-bla} # console args split on spaces: one word only
-OUT=$main/robot/work/voice-samples/onset; mkdir -p "$OUT"; rm -f "$OUT"/*.wav
+OUT=${OUT:-$main/robot/work/voice-samples/onset}; mkdir -p "$OUT"; rm -f "$OUT"/*.wav
 F=/data/data/myvector-voice.json
 arms=("$@"); ((${#arms[@]})) || arms=(stock cori af_bella mari refused blackhole)
 # Unpinned Kokoro cold-loads per request and misses the 1.5 s cut: ask the server's own kokoro_selected (tts/server.py).
@@ -29,6 +29,7 @@ for arm in "${arms[@]}"; do
   esac
   r "printf '{\"url\":\"%s\",\"voice\":\"%s\",\"slow\":%s%s}' '$u' '$v' '$slow' '$l' > $F"
   for i in $(seq "$RUNS"); do
+    quiet_guard # G3: a lock set mid-run stops the next line
     cap_on
     curl -s -o /dev/null -m 5 "http://$ip:8888/consolefunccall?func=SayText&args=$WORD"
     sleep 6

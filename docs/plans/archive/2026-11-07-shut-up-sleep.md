@@ -1,6 +1,6 @@
 # Shut up → sound lock + nap
 
-Status: Stages 2–4.5 + review fixes done (main); next Stage 4.6 USER `make ship`, then Stage 6. "Shut up" / "turn off" (en + et, whole phrase) → 2 h lock on every robot
+Status: ✅ SHIPPED (code; 6.1–6.3 done 2026-11-09) — 6.4 live + Stage 1 verdict → `docs/backlog.md` §OWED[USER]; Stage 5 re-cut by the verdict (open-mic never locks). "Shut up" / "turn off" (en + et, whole phrase) → 2 h lock on every robot
 sound test Claude starts + volume 1 + the night-window deep sleep for 2 h. Stage 1 verdict (user-owed) gates Stage 5 only.
 
 ## Rulings
@@ -8,7 +8,7 @@ sound test Claude starts + volume 1 + the night-window deep sleep for 2 h. Stage
 | id | ruling | edit site |
 |---|---|---|
 | RF | Refactor-first: one, inside patch 0011 — its three `kSleepCycle_NightWindow && IsNightTime()` copies become one helper `MyVectorNight()` before the nap joins it (Stage 4.1, behavior-neutral). Go/bash side: skip test fired — the seam is one call in an already-listed upstream function, no existing code to restructure. | `0011-night-window.patch` |
-| M1 | Whole-phrase match: lowercase, strip punctuation, drop filler tokens, the remaining token sequence must EQUAL a phrase. Both lists match in every saved language. | `quiet.Match` |
+| M1 | Whole-phrase match: lowercase, strip punctuation, drop filler tokens, map `quiet.Misheard` (`vaid`→`vait`), then the tokens joined with spaces removed must EQUAL a phrase with its spaces removed (ruled 2026-11-09: STT glues `jäävait`; MatchAny stays exact). Open-mic `Hearer` never locks (ruled 2026-11-09: only "hey Vector, <phrase>" via the wake path); a `quiet.MatchExact` hit only ends its window. Both lists match in every saved language. | `quiet.Match` |
 | M2 | Phrases (tunable, source is the home): en `shut up` `shutup` `turn off`; et `ole vait` `jää vait` `vait` `lülita välja` `lülitu välja`. Fillers: `hey` `hei` `vector` `victor` `vektor` `please` `palun` `now` `nüüd`. | `quiet.Phrases` `quiet.Fillers` |
 | M3 | Seam: first statement after `ForkNormalizeText` in `ProcessTextAll` — `if forkQuiet(req, voiceText, botSerial) { return true }` — ahead of plugins (HA), custom intents, built-ins and the LLM; covers `intent.go`, `intent_graph.go`, `routeprobe`. `intent_imperative_shutup` is already outside `forkAllowedIntents`, so nothing built-in to disable. | `matchIntentSend.go` (listed; extend its drift comment); `ttr/fork_quiet.go` |
 | M4 | On a match: lock until max(current, now+`LockFor`), source `voice:<phrase>`; async nap of the requesting robot (`vars.BotInfo.Robots` by ESN → `IPAddress`; no IP → log + skip); reply `IntentPass(req, "intent_system_sleep", …)`. ⚠ hedge: that the robot plays go-to-sleep for it is unverified (Stage 6 user step). | `forkQuiet` |
@@ -23,9 +23,9 @@ sound test Claude starts + volume 1 + the night-window deep sleep for 2 h. Stage
 | C1 | Repo `CLAUDE.md` gains `## Robot sound lock` (≤5 lines): no sound-producing robot command of any kind while `robot/quiet/quiet.sh status` exits 3 — scripts, ad-hoc curl to `:8080/api-sdk`, `:8888`/`:8889`, ssh playback; check before EVERY such command, not once per session. Ask before any robot sound test. After each sound test run `robot/quiet/scan.sh <start>`; a hit → stop all sound tests, `make quiet`, tell the user. | `CLAUDE.md` |
 | S1 | `robot/quiet/scan.sh <since>`: `journalctl -u wire-pod --since` "Transcribed text" lines (+ open-mic transcripts if Stage 5 ships) piped through `quietmatch`; exit 1 + the line on a hit. Phrase table has one home (Go). | `robot/quiet/scan.sh`; `pkg/myvector/quiet/quietmatch` |
 | N1 | Firmware nap: console var `kSleepCycle_NapUntil_s` (int64, epoch s, 0 = off; set to 0 logs `nap off`); `MyVectorNight()` = `kSleepCycle_NightWindow && (IsNightTime() \|\| MyVectorNapStep(latch, kSleepCycle_NapUntil_s, time(nullptr)))` (`MyVectorNapActive` behind N2's refusal latch). Set via vic-engine `:8888/consolevarset?key=SleepCycle_NapUntil_s&value=<epoch>`. ⚠ hedge: nap gets the patch's three night rules, not every stock `IsNightTime()` consumer; resets on engine restart (a ship, reboot or epod trust rewrite ends the nap, the lock file stays). | `0011-night-window.patch`; `quiet.Nap` |
-| N3 | (ruled 2026-11-08) `settings.sh`, while `quiet_locked`, re-arms the nap, last (after epod/netguard), polling ≤~90 s: `:8888/consolevarset?key=SleepCycle_NapUntil_s&value=<until, capped at now+4 h>` (a ship/epod restart zeroed it); only a body echoing the value is ok. | `robot/firmware/settings.sh` |
+| N3 | (ruled 2026-11-08) `settings.sh`, while `quiet_locked`, re-arms the nap, last (after epod/netguard), polling ≤~90 s: `:8888/consolevarset?key=SleepCycle_NapUntil_s&value=<until, capped at now+4 h−5 min>` (a ship/epod restart zeroed it); only a body echoing the value is ok. | `robot/firmware/settings.sh` |
 | Q1 | (ruled 2026-11-08) Silent start: vic-engine skips the InitialWakeUp anim after start while `/data/myvector/silent-start` holds an expiry epoch ahead (robot clock, ≤ 15 min ahead; missing/empty/garbage/expired → plays; logs `my-vector.SilentStart`); `restarts.sh -s` / `catch.sh -s` write now + 300 s (600 s with `-d`) before each restart, `ship.sh` now + 600 s while the sound lock holds; rm at exit is best effort, the expiry is the safety net; `smoke.sh` notes/WARNs a live flag. | new firmware patch; `crash-review/restarts.sh`; `seassert/catch.sh` |
-| N2 | `MyVectorNapActive(until, now)` = `until > now && until - now <= NapMax`; a ms-epoch or garbage value is refused (logs `my-vector.NightWindow` `nap refused`) and stays refused until the var changes; callers (`quiet.Nap`, `settings.sh`) cap the nap at now+`quiet.NapMax` (4 h), the lock can run longer. | patch block `// my-vector nap` |
+| N2 | `MyVectorNapActive(until, now)` = `until > now && until - now <= NapMax`; a ms-epoch or garbage value is refused (logs `my-vector.NightWindow` `nap refused`) and stays refused until the var changes; callers (`quiet.Nap`, `settings.sh`) cap the nap at now+`quiet.NapMax`−`quiet.NapMargin` (robot clock may lag the PC), the lock can run longer. | patch block `// my-vector nap` |
 
 ## Constants (source is the home; defaults below)
 
@@ -33,6 +33,7 @@ sound test Claude starts + volume 1 + the night-window deep sleep for 2 h. Stage
 |---|---|---|
 | `quiet.LockFor` (the nap runs to the lock's actual end; `NapFor` dropped) | 2 h | `TestSetExtendsNeverShortens`, `TestQuietNapRunsToLockEnd` |
 | `NapMax` (patch) | 4 h | `tests/nap.sh` |
+| `quiet.NapMargin` (callers cap at NapMax − it) | 5 min | `TestNapCapsAtNapMax`, `robot/firmware/tests/pc-voice.sh` |
 | `quiet.NapTimeout` | 5 s | `TestNapTimeout` |
 | guard exit code | 3 (2 stays SETUP) | `robot/quiet/tests/guard.sh` |
 
@@ -101,6 +102,6 @@ Status: blocked on §Stage 1 verdict. Shape if PASS (re-cut by the verdict's cap
 | slice | work | verify |
 |---|---|---|
 | Stage 6.1 | full gate | `make check` |
-| Stage 6.2 | no-voice e2e: routeprobe M2 table; `robot/work/live-check/fakebot -esn 000fake -lang <saved> -say "vector, shut up please" -want intent_system_sleep` → lock file set, log `nap skipped`; `robot/voice-samples/play.sh <set>` → exit 3 `QUIET:`; G5 `say_text` → 423; `make unquiet` → play.sh passes the guard (Ctrl-C before audio) | each command's exit code |
+| Stage 6.2 | no-voice e2e: routeprobe M2 table; `robot/work/live-check/fakebot -esn 000fake -lang <saved> -say "vector, shut up please" -want intent_system_sleep` → lock file set, log `nap skipped`; `robot/voice-samples/play.sh <set>` → exit 3 `QUIET:`; G5 `say_text` → 423; `make unquiet` → `quiet.sh status` 0, `quiet_guard` 0, `robot/quiet/tests/guard.sh` PASS (ruled 2026-11-09: no-sound proof, play.sh not run) | each command's exit code |
 | Stage 6.3 | `code-reviewer` dispatch over the whole diff | findings fixed or answered |
 | Stage 6.4 | user-owed (after ship, ask first, volume 1): real "Hey Vector, shut up" and "Hey Vector, ole vait" → he goes to sleep, stays down through a sound and a wave; `robot/firmware/night-check.sh --nap` PASS; only then (after that window, or after `make unquiet`) check he wakes on touch and wake word and answers at volume 1 — a touch inside the nap is a hit for `--nap` and gives only a brief wake, then deep sleep again (it doesn't end the nap); `make unquiet` → `SleepCycle_NapUntil_s` 0 (log `nap off`) + volume back; `restarts.sh -s 1` → no power-on sound | `docs/backlog.md` §OWED[USER] one line at archive |

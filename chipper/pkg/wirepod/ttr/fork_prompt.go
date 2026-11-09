@@ -42,7 +42,11 @@ func forkBotZone(esn string) *time.Location {
 // forkAIReq: the llm.Resolve target sets the model (E25), then llm.SamplingFor sets that model's sampling;
 // then the brain's rendered template replaces the system prompt and its ReplyCap (LongReplyCap for isKG or a ForkLongAsk) caps the reply.
 // Ollama gets llm.Config.Thinking for PathChat: reasoning_effort, the reply cap + its budget, its sampling (none by default).
+// Without SaveChat the remembered chat still follows the system message (F3; upstream splices it with SaveChat).
 func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.ChatCompletionRequest {
+	if h := GetChat(esn).Chats; !vars.APIConfig.Knowledge.SaveChat && len(h) > 0 && len(r.Messages) > 0 && r.Messages[0].Role == openai.ChatMessageRoleSystem {
+		r.Messages = append(append([]openai.ChatCompletionMessage{r.Messages[0]}, h...), r.Messages[1:]...)
+	}
 	l := lang.Current()
 	kg := forkKG()
 	ollama := llm.IsOllama(kg)
@@ -79,7 +83,7 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 			Diary:    diary,
 			Search:   forkSearch(last, l, brain, forkBotZone(esn)),
 			Speech:   prompt.SpeechBlock(),
-			Commands: forkCommands(isKG),
+			Commands: forkCommands(),
 		})
 		if os.Getenv("DEBUG_PRINT_PROMPT") == "true" {
 			logger.Println(r.Messages[0].Content)
@@ -108,8 +112,8 @@ func forkBrain(ollama bool) string {
 	return prompt.Claude
 }
 
-// forkCommands is the {commands} block: empty unless CommandsEnable; newVoiceRequest only on the KG path with SaveChat.
-func forkCommands(isKG bool) string {
+// forkCommands is the {commands} block: empty unless CommandsEnable.
+func forkCommands() string {
 	k := vars.APIConfig.Knowledge
 	if !k.CommandsEnable {
 		return ""
@@ -120,7 +124,7 @@ func forkCommands(isKG bool) string {
 			emotions = c.ParamChoices
 		}
 	}
-	return prompt.Commands(emotions, isKG && k.SaveChat)
+	return prompt.Commands(emotions)
 }
 
 // forkCameraReq readies the getImage follow-up on forkVision's target and swaps *cl to it; defer the returned
@@ -151,7 +155,7 @@ func forkCameraReq(r *openai.ChatCompletionRequest, cl **openai.Client) func() {
 		r.ReasoningEffort = "none"
 	}
 	llm.SamplingFor(v.Provider, v.Model).Apply(r)
-	if !t.Ollama() || l != lang.Estonian {
+	if !t.Ollama() || l != lang.Estonian || v.Model == t.Model { // same model: unloading it only forces a cold reload
 		return func() {}
 	}
 	base := t.OllamaBase()

@@ -48,12 +48,12 @@ func TestRenderDropsEmptyBlocks(t *testing.T) {
 }
 
 func TestCommandsBlockBudget(t *testing.T) {
-	c := Commands(SampleEmotions, true)
+	c := Commands(SampleEmotions)
 	if n := Estimate(c); n > 170 {
 		t.Errorf("commands block is %d tokens, cap 170", n)
 	}
-	if strings.Contains(Commands(SampleEmotions, false), "newVoiceRequest") {
-		t.Error("newVoiceRequest offered without follow-up")
+	if strings.Contains(c, "newVoiceRequest") {
+		t.Error("commands block offers newVoiceRequest (F5: forkFollowUp listens again)")
 	}
 	if strings.Contains(c, "lookingUp") {
 		t.Error("getImage offers lookingUp")

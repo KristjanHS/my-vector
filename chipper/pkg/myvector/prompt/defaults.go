@@ -58,16 +58,12 @@ func SpeechBlock() string {
 		"and no markdown, emoji or lists."
 }
 
-// Commands is the {commands} block; emotions = playAnimationWI's ParamChoices, followUp offers newVoiceRequest.
-func Commands(emotions string, followUp bool) string {
-	s := "Act by writing {{command||parameter}} in your reply, e.g. \"{{playAnimationWI||happy}} Hello!\". Only these:\n" +
+// Commands is the {commands} block; emotions = playAnimationWI's ParamChoices. No newVoiceRequest: forkFollowUp listens again (F5).
+func Commands(emotions string) string {
+	return "Act by writing {{command||parameter}} in your reply, e.g. \"{{playAnimationWI||happy}} Hello!\". Only these:\n" +
 		"{{playAnimationWI||emotion}} while you talk; emotions: " + emotions + ".\n" +
 		"{{playAnimation||emotion}} pauses your speech; only when asked to animate.\n" +
 		"{{getImage||front}} takes a photo; say so first, end the sentence with it."
-	if followUp {
-		s += "\n{{newVoiceRequest||now}} listens again; put it last, only after a question."
-	}
-	return s
 }
 
 // SampleEmotions mirrors ValidLLMCommands playAnimationWI ParamChoices (TestForkCommandsSample guards it).
@@ -80,6 +76,6 @@ func Sample(l string) Vars {
 		Lang:     LangLine(l),
 		User:     UserBlock("Mari lives in Tartu and loves football."),
 		Speech:   SpeechBlock(),
-		Commands: Commands(SampleEmotions, true),
+		Commands: Commands(SampleEmotions),
 	}
 }

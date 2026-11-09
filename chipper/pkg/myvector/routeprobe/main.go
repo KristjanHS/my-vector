@@ -81,6 +81,7 @@ func main() {
 	budget := flag.Int("think-budget", 0, "-set: thinking budget for every arm but none (0 = the table's)")
 	promptArg := flag.String("prompt", "", "-set: prompt arms, e.g. 0,P,R (default the saved prompt alone)")
 	reps := flag.Int("reps", 1, "-set: calls per ask per arm")
+	dump := flag.String("think-dump", "", "-set: append one JSON line per call to this file (probekit.Dump)")
 	limit := flag.Int("n", 0, "-set: asks per language (0 = all)")
 	judgeModel := flag.String("judge", "claude-haiku-5-5", "-set: Claude judge model; none skips judging")
 	flag.Parse()
@@ -91,7 +92,7 @@ func main() {
 		}
 		logger.Init()
 		defer cleanup()
-		runSet(setRun{set: *set, lang: *l, brain: *brain, think: *think, prompt: *promptArg, budget: *budget, reps: *reps, n: *limit, judge: *judgeModel})
+		runSet(setRun{set: *set, lang: *l, brain: *brain, think: *think, prompt: *promptArg, budget: *budget, reps: *reps, n: *limit, judge: *judgeModel, dump: *dump})
 		return
 	}
 	if flag.NArg() != 1 {
@@ -172,8 +173,8 @@ func main() {
 }
 
 type setRun struct {
-	set, lang, brain, think, prompt, judge string
-	budget, reps, n                        int
+	set, lang, brain, think, prompt, judge, dump string
+	budget, reps, n                              int
 }
 
 // armRun is one arm's calls and judge scores in one language.
@@ -344,6 +345,9 @@ func runSet(r setRun) {
 			baseSum = probekit.Summarize(runs[base].calls)
 		}
 		for _, ar := range runs {
+			if err := probekit.Dump(r.dump, "chat "+l+" "+model+" "+ar.arm.Label(model), ar.calls); err != nil {
+				die(1, "-think-dump: %v", err)
+			}
 			s := probekit.Summarize(ar.calls)
 			mean, dj, dp := "-", "-", "-"
 			m, ok := meanOf(ar.scores)

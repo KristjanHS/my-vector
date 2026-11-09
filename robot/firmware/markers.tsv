@@ -56,3 +56,10 @@
 0016-mic-stream.patch	bin	bin/vic-anim	kMyVector_MicStreamPort
 0017-silent-start.patch	src	engine/aiComponent/behaviorComponent/behaviors/animationWrappers/behaviorAnimSequence.cpp	my-vector.SilentStart
 0017-silent-start.patch	bin	lib/libcozmo_engine.so	my-vector.SilentStart
+0018-dark-off.patch	src	resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/reactions/optionalReactions.json	my-vector dark-off: no ReactToDarkness
+0018-dark-off.patch	bin	data/assets/cozmo_resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/reactions/optionalReactions.json	my-vector dark-off: no ReactToDarkness
+0019-sdk-audio-orphan.patch	src	animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp	my-vector.SdkAudioOrphan
+0019-sdk-audio-orphan.patch	src	animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp	StopAllAudioEvents(static_cast<AudioEngine::AudioGameObject>(kSdkGameObject))
+0019-sdk-audio-orphan.patch	src	animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp	++sMyVectorSdkPlayback;
+0019-sdk-audio-orphan.patch	src	animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp	my-vector sdk-audio-orphan: IsPlayingStream() is never true
+0019-sdk-audio-orphan.patch	bin	bin/vic-anim	my-vector.SdkAudioOrphan

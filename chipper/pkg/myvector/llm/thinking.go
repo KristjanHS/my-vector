@@ -61,7 +61,7 @@ type thinkRow struct {
 	family  string
 	native  bool
 	on      Sampling        // sampling with thinking on (T12)
-	budget  map[Path][3]int // low, medium, high; 0 = unmeasured (Stage 2.2)
+	budget  map[Path][3]int // low, medium, high = p25/p50/p90 thinking tokens, ×16 up (T5); 0 = unmeasured or p25 0
 	ceiling map[Path]Level  // highest level that passed Stage 3
 }
 
@@ -69,8 +69,8 @@ var thinkRows = []thinkRow{
 	{family: "qwen3.5", on: Sampling{"qwen3.5", 1, 0.95, 1.5},
 		budget:  map[Path][3]int{},
 		ceiling: map[Path]Level{PathChat: None, PathListen: None, PathFollowUp: None}},
-	{family: "gemma4", on: Sampling{"gemma4", 1, 0.95, 0},
-		budget:  map[Path][3]int{},
+	{family: "gemma4", on: Sampling{"gemma4", 1, 0.95, 0}, // budgets: Stage 2.2, 2026-11-09, uncapped dev runs
+		budget:  map[Path][3]int{PathChat: {384, 448, 768}, PathListen: {0, 224, 384}, PathFollowUp: {0, 144, 224}},
 		ceiling: map[Path]Level{PathChat: None, PathListen: None, PathFollowUp: None}},
 }
 

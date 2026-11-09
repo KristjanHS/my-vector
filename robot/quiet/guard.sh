@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Robot sound lock (shut-up-sleep L1/G1): quiet_locked is true while <main>/robot/work/quiet-until ($MYVECTOR_QUIET_FILE)
-# holds a future epoch; quiet_guard then prints the QUIET line and exits 3. env.sh calls quiet_guard unless silent=1.
+# holds a future epoch; quiet_guard then prints the QUIET line and exits 3. env.sh calls quiet_guard unless an unexported silent=1.
 quiet_file() {
   if [[ -n ${MYVECTOR_QUIET_FILE:-} ]]; then printf '%s\n' "$MYVECTOR_QUIET_FILE"; return; fi
   local d common
@@ -28,8 +28,18 @@ quiet_locked() { quiet_read && ((quiet_until > $(date +%s))); }
 quiet_line() { echo "QUIET: robot sound locked until $(date -d "@$quiet_until" +%H:%M) ($quiet_source); make unquiet lifts it"; }
 
 quiet_guard() {
-  [[ ${silent:-} == 1 ]] && return 0
+  [[ ${silent:-} == 1 && ${silent@a} != *x* ]] && return 0 # N3: an exported silent (env silent=1 play.sh) is no opt-out
   quiet_locked || return 0
   quiet_line >&2
   exit 3
+}
+
+# quiet_silent_start <secs>: while locked, write Q1's flag (robot clock + secs) over env.sh's ssh before a restart, as ship.sh
+# does; 1 + WARN when the write fails, so the caller skips that restart.
+quiet_silent_start() {
+  quiet_locked || return 0
+  # shellcheck disable=SC2029,SC2154 # $1 expands on the client; ssh_opts and ip come from env.sh
+  ssh "${ssh_opts[@]}" "root@$ip" "mkdir -p /data/myvector && echo \$((\$(date +%s) + $1)) >/data/myvector/silent-start" && return 0
+  echo "WARN sound lock: could not write /data/myvector/silent-start, skipping the anki-robot.target restart" >&2
+  return 1
 }

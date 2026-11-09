@@ -3,11 +3,13 @@ package voice
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +30,9 @@ type robot struct {
 	needControl, controlled          bool                                       // the gateway's SayText needs behavior control
 	grant                            bool                                       // BehaviorControl grants a ControlRequest
 	released                         int
+	mu                               sync.Mutex // sent, at, open, overlaps: streams may run concurrently
+	open, overlaps                   int        // streams between Prepare and Complete/Cancel; Prepares while one was open
+	failChunk                        bool       // Send fails on a chunk
 }
 
 func (r *robot) SayText(_ context.Context, in *vectorpb.SayTextRequest, _ ...grpc.CallOption) (*vectorpb.SayTextResponse, error) {
@@ -84,8 +89,25 @@ type audio struct {
 }
 
 func (a *audio) Send(m *vectorpb.ExternalAudioStreamRequest) error {
+	if err := a.ctx.Err(); err != nil {
+		return err // grpc: a cancelled stream reaches the robot no more
+	}
+	a.r.mu.Lock()
 	a.r.sent = append(a.r.sent, m)
 	a.r.at = append(a.r.at, time.Now())
+	switch {
+	case m.GetAudioStreamPrepare() != nil:
+		if a.r.open > 0 {
+			a.r.overlaps++
+		}
+		a.r.open++
+	case m.GetAudioStreamComplete() != nil, m.GetAudioStreamCancel() != nil:
+		a.r.open--
+	}
+	a.r.mu.Unlock()
+	if a.r.failChunk && m.GetAudioStreamChunk() != nil {
+		return errors.New("transport is closing")
+	}
 	if a.r.completeOnEnd && m.GetAudioStreamComplete() != nil {
 		a.r.verdict <- &vectorpb.ExternalAudioStreamResponse{AudioResponseType: &vectorpb.ExternalAudioStreamResponse_AudioStreamPlaybackComplete{
 			AudioStreamPlaybackComplete: &vectorpb.ExternalAudioStreamPlaybackComplete{}}}
@@ -334,4 +356,64 @@ func TestSayStallEndsStream(t *testing.T) {
 	if d := time.Since(start); d > 2*time.Second {
 		t.Errorf("Say returned after %s, want ~Stall", d)
 	}
+}
+
+func TestStreamOneAtATimePerRobot(t *testing.T) {
+	service(t, func(w http.ResponseWriter, r *http.Request) { w.Write(make([]byte, 2*16000/4)) })
+	r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 2), completeOnEnd: true}
+	v := &vector.Vector{Conn: r}
+	v.Cfg.SerialNo = "00e20145"
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := Say(context.Background(), v, "twice", "cori", 1); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if r.overlaps != 0 {
+		t.Errorf("%d Prepare(s) while another stream was open on the robot, want 0 (the second waits)", r.overlaps)
+	}
+}
+
+func TestStreamCancelsOnEarlyExit(t *testing.T) {
+	for name, c := range map[string]struct {
+		h       http.HandlerFunc
+		r       *robot
+		timeout time.Duration
+	}{
+		"verdict": {oneSecond, &robot{verdict: overrun()}, 5 * time.Second},
+		"send":    {oneSecond, &robot{failChunk: true}, 5 * time.Second},
+		"ctx":     {oneSecond, &robot{}, 400 * time.Millisecond},
+		"body": {func(w http.ResponseWriter, r *http.Request) {
+			w.Write(make([]byte, 2048))
+			w.(http.Flusher).Flush()
+			panic(http.ErrAbortHandler)
+		}, &robot{}, 5 * time.Second},
+	} {
+		t.Run(name, func(t *testing.T) {
+			service(t, c.h)
+			if c.r.verdict == nil {
+				c.r.verdict = make(chan *vectorpb.ExternalAudioStreamResponse, 1)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+			defer cancel()
+			if _, err := Say(ctx, &vector.Vector{Conn: c.r}, "smoke test", "cori", 1); err == nil {
+				t.Fatal("Say = nil, want the early exit's error")
+			}
+			if last := c.r.sent[len(c.r.sent)-1]; last.GetAudioStreamCancel() == nil {
+				t.Errorf("last message = %T, want cancel (the robot would hold a prepared stream)", last.AudioRequestType)
+			}
+		})
+	}
+}
+
+func overrun() chan *vectorpb.ExternalAudioStreamResponse {
+	c := make(chan *vectorpb.ExternalAudioStreamResponse, 1)
+	c <- &vectorpb.ExternalAudioStreamResponse{AudioResponseType: &vectorpb.ExternalAudioStreamResponse_AudioStreamBufferOverrun{
+		AudioStreamBufferOverrun: &vectorpb.ExternalAudioStreamBufferOverrun{}}}
+	return c
 }

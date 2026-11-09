@@ -3,14 +3,16 @@
 # T1 = wire-pod demo endpoint (LLM-answer path: SDK stream, or SayText for stock);
 # T2 = engine console SayText with the robot voice file set (robot-internal path). Restores the voice file.
 # Pass = a PC voice's active level within $BAR dB of the same track's stock line.
-# Usage: [RUNS=2] [BAR=3] [WORDS=a-b-c] pcvoice.sh [voice…] — default voices: af_bella cori; mari/albert/kalev speak T1 as et-EE, the rest en-US.
+# Usage: [RUNS=2] [BAR=3] [WORDS=a-b-c] [OUT=dir] pcvoice.sh [voice…] — default voices: af_bella cori; mari/albert/kalev speak T1 as et-EE, the rest en-US.
 set -uo pipefail
 self=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/volume-probe/lib.sh
 . "$self/lib.sh"
+# shellcheck source=robot/lib/logmark.sh
+. "$self/../lib/logmark.sh"
 RUNS=${RUNS:-2} BAR=${BAR:-3}
 WORDS=${WORDS:-The-time-is-ten-past-two-and-it-is-sunny-outside} # console args split on spaces: one word only
-OUT=$main/robot/work/volume-probe/pcvoice; mkdir -p "$OUT"; rm -f "$OUT"/t[12]-*
+OUT=${OUT:-$main/robot/work/volume-probe/pcvoice}; mkdir -p "$OUT"; rm -f "$OUT"/t[12]-*
 F=/data/data/myvector-voice.json
 # shellcheck disable=SC2029 # expanding on the client is the point
 r() { ssh "${so[@]}" "root@$ip" "$@"; }
@@ -26,6 +28,7 @@ for v in "${voices[@]}"; do
   *) pick="\"lang\":\"en-US\",\"t1\":\"$v\"" ;;
   esac
   for i in $(seq "$RUNS"); do # T1: the call returns once the line has played
+    quiet_guard # G3: a lock set mid-run stops the next line
     cap_on
     code=$(curl -s -o "$OUT/t1-$v-$i.json" -w '%{http_code}' -m 60 -H 'Content-Type: application/json' \
       -d "{$pick,\"slow\":$slow,\"text\":\"${WORDS//-/ }\"}" "$server/myvector/api/voice/test?serial=$serial")
@@ -36,12 +39,13 @@ for v in "${voices[@]}"; do
   done
   r "printf '{\"url\":\"%s\",\"voice\":\"%s\",\"slow\":%s}' '$url' '$v' '$slow' > $F" || { echo "FAIL: voice file write" >&2; exit 1; }
   for i in $(seq "$RUNS"); do
-    n0=$(r "wc -l < /var/log/messages")
+    quiet_guard
+    tag=$(r "$(log_mark pcvoice)") || tag=
     cap_on
     curl -s -o /dev/null -m 5 "http://$ip:8888/consolefunccall?func=SayText&args=$WORDS"
     sleep 8
     cap_off "$OUT/t2-${v}-$i.wav"
-    log=$(r "tail -n +$((n0 + 1)) /var/log/messages | grep 'my-vector.Voice'")
+    log=$(r "$(log_since "$tag" my-vector.Voice)") || log="log tag ${tag:-unset} not in /var/log/messages*"
     [[ $v == stock ]] || { grep -q "pc voice=$v" <<<"$log" && ! grep -q acapela <<<"$log"; } ||
       drop "$OUT/t2-$v-$i.wav" "T2 $v run $i: not spoken by the PC voice (${log:-no my-vector.Voice log})"
   done

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -29,9 +30,11 @@ const (
 	LockVolume = 1
 	// MaxVolume is vectorpb Volume_HIGH.
 	MaxVolume = 5
-	// NapMax caps the nap's until at now+NapMax; it mirrors patch 0011's kMyVectorNapMax_s, which refuses a longer one
+	// NapMax mirrors patch 0011's kMyVectorNapMax_s, which refuses a longer nap; Nap caps at now+NapMax-NapMargin
 	// (the lock itself can run longer; only the nap ends sooner).
 	NapMax = 4 * time.Hour
+	// NapMargin: callers cap at now+NapMax-NapMargin; patch 0011 checks NapMax on the robot clock (a PC ahead by 1 s = refused).
+	NapMargin = 5 * time.Minute
 )
 
 // Tokens lowercases text, splits on non-letters/digits and drops Fillers (listen matches on it too).
@@ -51,11 +54,31 @@ func Tokens(text string) []string {
 	return out
 }
 
-// Match reports the phrase text equals once lowercased, de-punctuated and stripped of fillers.
-func Match(text string) (string, bool) {
+// Misheard maps an STT spelling to the phrase word it stands for; Match only ("vaid" = "but" in overheard talk).
+var Misheard = map[string]string{"vaid": "vait"}
+
+// MatchExact reports the phrase the filler-stripped token sequence equals; overheard speech (listen) uses it.
+func MatchExact(text string) (string, bool) {
 	got := strings.Join(Tokens(text), " ")
 	for _, p := range Phrases {
 		if got == p {
+			return p, true
+		}
+	}
+	return "", false
+}
+
+// Match is the wake-word path's MatchExact, Misheard-mapped and spaces ignored (STT glues "jäävait").
+func Match(text string) (string, bool) {
+	toks := Tokens(text)
+	for i, t := range toks {
+		if w, ok := Misheard[t]; ok {
+			toks[i] = w
+		}
+	}
+	got := strings.Join(toks, "")
+	for _, p := range Phrases {
+		if got == strings.ReplaceAll(p, " ", "") {
 			return p, true
 		}
 	}
@@ -158,6 +181,9 @@ func Refuse(w http.ResponseWriter) bool {
 	return locked
 }
 
+// mu serialises this process's read-modify-writes of the lock file (other processes: tmp+rename only).
+var mu sync.Mutex
+
 // Set locks until max(current, until) with no volume to save (SetVol NoVolume).
 func Set(until time.Time, source string) error { return SetVol(until, NoVolume, source) }
 
@@ -171,6 +197,8 @@ func SetVol(until time.Time, vol int, source string) error {
 	if vol < NoVolume || vol > MaxVolume {
 		return fmt.Errorf("quiet: volume %d not in 0..%d", vol, MaxVolume)
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if cur, err := Read(); err == nil && !cur.Until.IsZero() {
 		if cur.Vol != NoVolume {
 			vol = cur.Vol
@@ -187,6 +215,12 @@ func SetVol(until time.Time, vol int, source string) error {
 
 // Hold writes l as is (no max): a failed volume restore leaves an expired file keeping l.Vol, which reads as unlocked.
 func Hold(l Lock) error {
+	mu.Lock()
+	defer mu.Unlock()
+	return hold(l)
+}
+
+func hold(l Lock) error {
 	p := Path()
 	if p == "" {
 		return fmt.Errorf("quiet: no robot/work dir and no $MYVECTOR_QUIET_FILE")
@@ -195,6 +229,35 @@ func Hold(l Lock) error {
 		return fmt.Errorf("quiet: volume %d not in 0..%d", l.Vol, MaxVolume)
 	}
 	return write(p, l)
+}
+
+// HoldIf is Hold(l) only while the file still reads as was; false = it changed (a newer lock, or removed/expired), left as is.
+func HoldIf(was, l Lock) (bool, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	if !still(was) {
+		return false, nil
+	}
+	return true, hold(l)
+}
+
+// ClearIf is Clear only while the file still reads as was; false = it changed (a newer lock, or removed/expired), left as is.
+func ClearIf(was Lock) (bool, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	if !still(was) {
+		return false, nil
+	}
+	return true, removeFile()
+}
+
+// still (mu held): the file reads as was; an unreadable file reads as the zero Lock.
+func still(was Lock) bool {
+	cur, err := Read()
+	if err != nil {
+		cur = Lock{Vol: NoVolume}
+	}
+	return cur.Until.Equal(was.Until) && cur.Vol == was.Vol && cur.Source == was.Source
 }
 
 func write(p string, l Lock) error {
@@ -211,6 +274,12 @@ func write(p string, l Lock) error {
 
 // Clear removes the lock file; a missing one is no error.
 func Clear() error {
+	mu.Lock()
+	defer mu.Unlock()
+	return removeFile()
+}
+
+func removeFile() error {
 	p := Path()
 	if p == "" {
 		return nil
@@ -233,35 +302,38 @@ var ErrNapOff = errors.New("quiet: nap off ($MYVECTOR_NAP=off)")
 // RobotOff is $MYVECTOR_NAP=off: callers return ErrNapOff instead of touching the robot.
 func RobotOff() bool { return os.Getenv("MYVECTOR_NAP") == "off" }
 
-// Nap sets the firmware's SleepCycle_NapUntil_s to until, capped at now+NapMax (0 ends the nap); patch 0011 holds the
-// night rules until then. vic-engine answers 200 even for an unknown var or a bad value: only a body echoing the value is a set.
-func Nap(ip string, until time.Time) error {
+// Nap sets the firmware's SleepCycle_NapUntil_s to until, capped at now+NapMax-NapMargin (0 ends the nap), and returns
+// the value sent; patch 0011 holds the night rules until then. vic-engine answers 200 even for an unknown var or a bad
+// value: only a body echoing the value is a set.
+func Nap(ip string, until time.Time) (time.Time, error) {
 	if RobotOff() {
-		return ErrNapOff
+		return time.Time{}, ErrNapOff
 	}
+	sent := time.Time{}
 	sec := int64(0)
 	if !until.IsZero() {
 		sec = until.Unix()
-		if max := time.Now().Add(NapMax).Unix(); sec > max {
+		if max := time.Now().Add(NapMax - NapMargin).Unix(); sec > max {
 			sec = max
 		}
+		sent = time.Unix(sec, 0)
 	}
 	val := strconv.FormatInt(sec, 10)
 	c := http.Client{Timeout: NapTimeout}
 	r, err := c.Get(NapURL(ip) + "/consolevarset?key=SleepCycle_NapUntil_s&value=" + val)
 	if err != nil {
-		return err
+		return sent, err
 	}
 	defer r.Body.Close()
 	if r.StatusCode != http.StatusOK {
-		return fmt.Errorf("quiet: nap: vic-engine %s", r.Status)
+		return sent, fmt.Errorf("quiet: nap: vic-engine %s", r.Status)
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 512))
 	if err != nil {
-		return fmt.Errorf("quiet: nap: %w", err)
+		return sent, fmt.Errorf("quiet: nap: %w", err)
 	}
 	if !strings.HasPrefix(string(body), val+"<br>") {
-		return fmt.Errorf("quiet: nap: vic-engine did not set SleepCycle_NapUntil_s=%s: %q", val, strings.TrimSpace(string(body)))
+		return sent, fmt.Errorf("quiet: nap: vic-engine did not set SleepCycle_NapUntil_s=%s: %q", val, strings.TrimSpace(string(body)))
 	}
-	return nil
+	return sent, nil
 }

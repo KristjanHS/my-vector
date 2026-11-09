@@ -22,7 +22,9 @@ case ${1:-} in
     fi
     quiet_locked && quiet_line ;;
   off)
-    if ! curl -fsS -m 10 -X POST "$url?off=1" >/dev/null 2>&1; then
+    # 409: wire-pod kept a newer lock (the QUIET line below); anything but 200/409 is "unreachable".
+    code=$(curl -sS -m 10 -o /dev/null -w '%{http_code}' -X POST "$url?off=1" 2>/dev/null) || code=000
+    if [[ $code != 200 && $code != 409 ]]; then
       if quiet_read && [[ $quiet_vol != - ]]; then
         echo "WARN: wire-pod unreachable — lock ended; nap and volume left as they are: set the robot's volume back to $quiet_vol by hand (an expired lock file keeps it for wire-pod's restore)" >&2
         tmp=$(mktemp "$(dirname "$f")/.quiet-until-XXXXXX")
@@ -32,7 +34,7 @@ case ${1:-} in
         rm -f "$f"
       fi
     fi
-    echo "robot sound unlocked" ;;
+    quiet_locked && quiet_line || echo "robot sound unlocked" ;;
   status)
     if quiet_locked; then quiet_line; exit 3; fi
     echo "robot sound unlocked" ;;

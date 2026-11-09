@@ -202,7 +202,7 @@ func TestForkActionsNoParam(t *testing.T) {
 // Every {{command||param}} the block offers must parse: the command exists and lists the param.
 func TestForkCommandsSample(t *testing.T) {
 	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
-	vars.APIConfig.Knowledge.CommandsEnable, vars.APIConfig.Knowledge.SaveChat = true, true
+	vars.APIConfig.Knowledge.CommandsEnable = true
 	byName := map[string]LLMCommand{}
 	for _, c := range ValidLLMCommands {
 		byName[c.Command] = c
@@ -210,7 +210,7 @@ func TestForkCommandsSample(t *testing.T) {
 	if byName["playAnimationWI"].ParamChoices != prompt.SampleEmotions {
 		t.Errorf("prompt.SampleEmotions drifted from playAnimationWI ParamChoices %q", byName["playAnimationWI"].ParamChoices)
 	}
-	block := forkCommands(true)
+	block := forkCommands()
 	offered := map[string]bool{}
 	for _, m := range regexp.MustCompile(`\{\{(\w+)\|\|(\w+)\}\}`).FindAllStringSubmatch(block, -1) {
 		name, param := m[1], m[2]
@@ -229,20 +229,19 @@ func TestForkCommandsSample(t *testing.T) {
 			t.Errorf("block offers {{%s||%s}}; the parser returns %+v", m[1], m[2], a)
 		}
 	}
-	for _, name := range []string{"playAnimationWI", "playAnimation", "getImage", "newVoiceRequest"} {
+	for _, name := range []string{"playAnimationWI", "playAnimation", "getImage"} {
 		if !offered[name] {
 			t.Errorf("block lacks {{%s||…}}", name)
 		}
 	}
-	if strings.Contains(forkCommands(false), "newVoiceRequest") {
-		t.Error("intent-graph path offers newVoiceRequest")
-	}
-	vars.APIConfig.Knowledge.SaveChat = false
-	if strings.Contains(forkCommands(true), "newVoiceRequest") {
-		t.Error("newVoiceRequest offered without SaveChat")
+	for _, save := range []bool{true, false} {
+		vars.APIConfig.Knowledge.SaveChat = save
+		if offered["newVoiceRequest"] || strings.Contains(forkCommands(), "newVoiceRequest") {
+			t.Errorf("save_chat %v: block offers newVoiceRequest (F5: forkFollowUp listens again)", save)
+		}
 	}
 	vars.APIConfig.Knowledge.CommandsEnable = false
-	if forkCommands(true) != "" {
+	if forkCommands() != "" {
 		t.Error("commands block rendered with CommandsEnable off")
 	}
 }

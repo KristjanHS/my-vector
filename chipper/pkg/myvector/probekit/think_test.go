@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -208,5 +209,45 @@ func TestChat(t *testing.T) {
 	}
 	if _, err := Chat(srv.URL, openai.ChatCompletionRequest{}); err == nil || !strings.Contains(err.Error(), "404") {
 		t.Errorf("wrong path err = %v; want HTTP 404", err)
+	}
+}
+
+func TestDump(t *testing.T) {
+	if err := Dump("", "x", []Call{{}}); err != nil {
+		t.Fatalf(`Dump(""): %v`, err)
+	}
+	path := t.TempDir() + "/d.jsonl"
+	calls := []Call{
+		{Finish: "stop", Prompt: 30, Completion: 120, ReplyTok: 20, Counted: true, Reasoning: "hm", Dur: 1500 * time.Millisecond},
+		{Finish: "length", Prompt: 31, Completion: 5, ReplyTok: 9, Counted: true},
+		{Finish: "stop", Prompt: 32, Completion: 40},
+	}
+	for _, tag := range []string{"run1", "run2"} { // a second run appends
+		if err := Dump(path, tag, calls); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []DumpRow
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		var r DumpRow
+		if err := json.Unmarshal([]byte(line), &r); err != nil {
+			t.Fatalf("line %q: %v", line, err)
+		}
+		got = append(got, r)
+	}
+	want := []DumpRow{
+		{"run1", "stop", 30, 120, 100, true, 1500},
+		{"run1", "length", 31, 5, 0, false, 0},
+		{"run1", "stop", 32, 40, -1, false, 0},
+		{"run2", "stop", 30, 120, 100, true, 1500},
+		{"run2", "length", 31, 5, 0, false, 0},
+		{"run2", "stop", 32, 40, -1, false, 0},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("rows:\n got %+v\nwant %+v", got, want)
 	}
 }

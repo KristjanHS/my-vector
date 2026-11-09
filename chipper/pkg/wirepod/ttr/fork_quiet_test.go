@@ -403,3 +403,118 @@ func TestQuietRearmAtStart(t *testing.T) {
 	wantSets(t, f, quietESN+"=3")
 	wantNoLock(t)
 }
+
+// TestQuietShutUpDuringRestore (I1): a "shut up" landing while the expiry restore's RPC is in flight survives the
+// restore (ok or failed): its lock keeps the saved 4, the robot goes back to 1 and the timer points at the new end.
+func TestQuietShutUpDuringRestore(t *testing.T) {
+	for name, setErr := range map[string]error{"restored": nil, "restore failed": os.ErrDeadlineExceeded} {
+		t.Run(name, func(t *testing.T) { quietShutUpDuringRestore(t, setErr) })
+	}
+}
+
+func quietShutUpDuringRestore(t *testing.T, setErr error) {
+	_, _, _, f := quietRigFake(t, "10.0.0.9")
+	if err := quiet.SetVol(f.now.Add(time.Hour), 4, "voice:shut up"); err != nil {
+		t.Fatal(err)
+	}
+	ForkQuietRearm()
+	f.setErr = setErr
+	entered, release := make(chan struct{}), make(chan struct{})
+	inner := forkVolumeSet
+	forkVolumeSet = func(esn string, v int) error {
+		if v == 4 {
+			close(entered)
+			<-release
+		}
+		return inner(esn, v)
+	}
+	f.now = f.now.Add(time.Hour)
+	done := make(chan struct{})
+	go func(fire func()) { defer close(done); fire() }(f.fire)
+	waitOrFatal(t, entered, "the restore's volume set")
+	forkQuietLock(quietESN, "shut up", f.now)
+	close(release)
+	waitOrFatal(t, done, "the restore")
+	forkNaps.Wait()
+	wantLock(t, f.now.Add(quiet.LockFor), 4, "voice:shut up")
+	wantSets(t, f, quietESN+"=4", quietESN+"=1")
+	if n := len(f.armed); n < 2 || f.armed[n-1] != quiet.LockFor {
+		t.Fatalf("armed %v, want the last at the new lock's LockFor", f.armed)
+	}
+}
+
+// waitOrFatal fails the test instead of hanging when ch stays open 5 s.
+func waitOrFatal(t *testing.T, ch chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for " + what)
+	}
+}
+
+// TestQuietOffDuringRestore (I-a/I-b): ?off=1 whose restore RPC sees the file change: a newer lock is kept (409, the
+// QUIET line, no nap 0); a removed or expired file (quiet.sh off's fallback) is no lock (200, nap 0).
+func TestQuietOffDuringRestore(t *testing.T) {
+	for name, c := range map[string]struct {
+		change func(t *testing.T, f *quietFakes)
+		ended  bool
+	}{
+		"newer lock": {func(t *testing.T, f *quietFakes) { forkQuietLock(quietESN, "shut up", f.now) }, false},
+		"removed":    {func(t *testing.T, f *quietFakes) { quietNoErr(t, quiet.Clear()) }, true},
+		"expired": {func(t *testing.T, f *quietFakes) {
+			quietNoErr(t, quiet.Hold(quiet.Lock{Until: f.now.Add(-time.Second), Vol: 4, Source: "voice:shut up"}))
+		}, true},
+	} {
+		t.Run(name, func(t *testing.T) { quietOffDuringRestore(t, c.change, c.ended) })
+	}
+}
+
+func quietNoErr(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func quietOffDuringRestore(t *testing.T, change func(*testing.T, *quietFakes), ended bool) {
+	_, _, naps, f := quietRigFake(t, "10.0.0.9")
+	quietNoErr(t, quiet.SetVol(f.now.Add(time.Hour), 4, "voice:shut up"))
+	ForkQuietRearm()
+	entered, release := make(chan struct{}), make(chan struct{})
+	inner := forkVolumeSet
+	forkVolumeSet = func(esn string, v int) error {
+		if v == 4 {
+			close(entered)
+			<-release
+		}
+		return inner(esn, v)
+	}
+	w, done := httptest.NewRecorder(), make(chan struct{})
+	go func() {
+		defer close(done)
+		http.DefaultServeMux.ServeHTTP(w, httptest.NewRequest(http.MethodPost, ForkQuietAPI+"?off=1", nil))
+	}()
+	waitOrFatal(t, entered, "off's volume restore")
+	change(t, f)
+	close(release)
+	waitOrFatal(t, done, "off")
+	forkNaps.Wait()
+	nap0 := false
+	for len(naps) > 0 {
+		if v, _ := url.ParseQuery(<-naps); v.Get("value") == "0" {
+			nap0 = true
+		}
+	}
+	body := w.Body.String()
+	if ended {
+		if w.Code != http.StatusOK || body != "robot sound unlocked\n" || !nap0 {
+			t.Fatalf("off over a removed/expired file: %d %q nap0=%v, want 200 unlocked and a nap 0", w.Code, body, nap0)
+		}
+		return
+	}
+	if w.Code != http.StatusConflict || !strings.HasPrefix(body, "QUIET: ") || nap0 {
+		t.Fatalf("off under a newer lock: %d %q nap0=%v, want 409 QUIET and no nap 0", w.Code, body, nap0)
+	}
+	wantLock(t, f.now.Add(quiet.LockFor), 4, "voice:shut up")
+}

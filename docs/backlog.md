@@ -4,7 +4,6 @@
 
 - WiFi baseline live (`2026-11-07-wifi-baseline-hardening.md` (docs/plans/) 4.4 row, 6.1): restart vic-cloud → `make server-pin` → `mv secrets/epod-new secrets/epod && make start` → `make syncwt` → `make ship` → `robot/netguard/apply.sh --selftest` → the 6.1 ranked e2e.
 - WiFi baseline keys + leftovers (same plan, 4.1/1.2/2.1): `ca.key` + `secrets/myvector_ed25519` to the password manager, then `rm` `ca.key`; `make server-pin` nft 8084 check; live `robot/diskguard/apply.sh`.
-- Thinking levels 2.1 gate (`2026-11-08-local-thinking-levels.md` (docs/plans/) R9): gemma4 × chat et exact 15/16 < 95% (n 16 needs 16/16), err +0/+1 — loosen to `err` within ±1, or debug first.
 - et active listening: no Ollama model reached the `listenprobe` bar (`2026-11-07-et-listen-model.md` (docs/plans/) W1) — next lever owed.
 - LLM picker page by eye (`2026-11-06-llm-picker-page.md` (docs/plans/) Stage 5 §2 items 3+5): Ollama-down warning, cleared key → Claude disabled + 400, upstream Knowledge save keeps the fork profile.
 - PC voice loudness (V1): T1 `af_bella`/`cori` quieter than stock beyond 3 dB — rule.
@@ -15,7 +14,10 @@
 - SeAssert fix live (`2026-11-07-vic-anim-seassert.md` (docs/plans/archive/), patch 0012): `make ship`; its smoke must not show `nrgainv.c:191` — a recurrence after 0012 is a new bug.
 - Active listening live (`2026-11-07-active-listening.md` (docs/plans/) 5.2, volume 1, after `make ship`): its 5.2 run; wake word mid-clip (3.3); `journalctl -u wire-pod | grep 'clip gap'` (C2); G5 curl 423 (1.3); en-US phrase STT round trip (1.1).
 - Hey Vector while listening live (`2026-11-08-hey-vector-while-listening.md` (docs/plans/) 2.1, volume 1, after `make ship`): on/off by voice both languages in the PC voice; clock, name, one LLM ask → each answered once, no listen SPEAK.
+- Memory M2 live (`2026-11-08-memory-m2.md` (docs/plans/) 6.1, volume 1, after `make ship`): chat turn → line in `chipper/myvectorMemory/<esn>/`; tell a fact, "Run pass now" → `active` + evidence + diary; ask it back; `journalctl -u wire-pod | grep 'memory pass'` shows `guard=ok`.
 - Listen-switch prompt line (same plan, H6): "never claim you switched active listening" breaks `TestPromptArmsLongAbout` (arm X 611 > `prompt.Budget` 600) — raise the budget, drop arm X, trim a line, or skip it.
+- syncwt speed live (`2026-11-09-syncwt-speed.md` (docs/plans/) stop rule): next `make syncwt` report — no-rebase ≤ 3 s, rebased gate ≤ 20 s; a re-gate seen in practice → re-pick S3/S4.
+- Shut-up-sleep live (`2026-11-07-shut-up-sleep.md` (docs/plans/) 6.4, volume 1, after `make ship`): its 6.4 row; then `robot/openmic/probe.sh -m` et-EE + en-US → Stage 1 verdict, which re-cuts Stage 5.
 
 ## Assistant-owed
 

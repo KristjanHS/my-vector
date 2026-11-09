@@ -191,6 +191,10 @@ func CreateAIReq(transcribedText, esn string, gpt3tryagain, isKG bool) openai.Ch
 }
 
 func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bool) (string, error) {
+	turn, skip := forkBegin(esn, isKG, transcribedText) // my-vector: follow-up chain count; a blank follow-up ends it (fork_followup.go)
+	if skip {
+		return "", nil
+	}
 	start := make(chan bool)
 	stop := make(chan bool)
 	stopStop := make(chan bool)
@@ -221,7 +225,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 		return "", err
 	}
 	if isKG {
-		BControl(robot, ctx, start, stop)
+		defer forkBControl(robot, ctx, start, stop, esn)() // my-vector: one answer per robot, a second waits (fork_answer.go)
 		go func() {
 			for {
 				if kgStopLooping {
@@ -351,6 +355,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 						},
 						esn)
 				}
+				forkAfterReply(turn, esn, isKG, transcribedText, newStr) // my-vector: history without SaveChat + follow-up (fork_followup.go)
 				logger.LogUI("LLM response for " + esn + ": " + newStr)
 				logger.Println("LLM stream finished")
 				return
@@ -395,7 +400,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 	}
 	time.Sleep(time.Millisecond * 200)
 	if !isKG {
-		BControl(robot, ctx, start, stop)
+		defer forkBControl(robot, ctx, start, stop, esn)() // my-vector: one answer per robot, a second waits (fork_answer.go)
 	}
 	interrupted := false
 	go func() {
@@ -500,6 +505,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 			stopStop <- true
 			stop <- true
 		}
+		forkFollowUp(robot, turn, esn, interrupted || disconnect) // my-vector: listen again on the decider's YES (fork_followup.go)
 	}
 	return "", nil
 }

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -98,7 +99,7 @@ func Speak(ctx context.Context, v *vector.Vector, text string, s Settings) (stri
 var ControlWait = 10 * time.Second
 
 // Control takes SDK behavior control and returns its release. SayText (Stock and the R9 fallback) fails
-// "Failed to say text" without it; LLM answers already speak inside kgsim's BControl, so only callers outside it need this.
+// "Failed to say text" without it; LLM answers already speak inside kgsim's forkBControl (ttr fork_answer.go), so only callers outside it need this.
 // The engine has one control slot with no owner check (sdkComponent.cpp): a second holder's request is granted at once
 // and either holder's release ends control for both, so a demo overlapping an LLM answer can fail the other's SayText.
 func Control(ctx context.Context, v *vector.Vector) (func(), error) {
@@ -212,9 +213,14 @@ func fallback(ctx context.Context, v *vector.Vector, text string, why error) (st
 // stream plays first + the rest of body through K2's audio stream, paced to real time with lead queued ahead,
 // and returns once the audio has played out (or the robot reports completion or failure).
 func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader) error {
-	ctx, cancel := context.WithCancel(ctx)
+	free, err := turn(ctx, v.Cfg.SerialNo)
+	if err != nil {
+		return err
+	}
+	defer free()
+	sctx, cancel := context.WithCancel(context.WithoutCancel(ctx)) // the stream outlives ctx by its Cancel
 	defer cancel()
-	c, err := v.Conn.ExternalAudioStreamPlayback(ctx)
+	c, err := v.Conn.ExternalAudioStreamPlayback(sctx)
 	if err != nil {
 		return err
 	}
@@ -240,6 +246,15 @@ func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader)
 	}()
 	err = c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamPrepare{
 		AudioStreamPrepare: &vectorpb.ExternalAudioStreamPrepare{AudioFrameRate: rate, AudioVolume: volume}}})
+	completed := false
+	if err == nil {
+		defer func() { // a prepared stream left open starves vic-anim (sdk-audio-orphan.md (docs/plans/))
+			if !completed {
+				c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamCancel{
+					AudioStreamCancel: &vectorpb.ExternalAudioStreamCancel{}}})
+			}
+		}()
+	}
 	end := time.Now() // when the audio queued so far finishes playing
 	for b := first; err == nil && len(b) > 0; {
 		if now := time.Now(); end.Before(now) {
@@ -257,14 +272,17 @@ func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader)
 		}
 		if err == nil {
 			sleep(ctx, time.Until(end)-lead)
-			if b, err = readFrame(body); err == io.EOF {
-				err = nil
+			if err = ctx.Err(); err == nil {
+				if b, err = readFrame(body); err == io.EOF {
+					err = nil
+				}
 			}
 		}
 	}
 	if err == nil {
 		err = c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamComplete{
 			AudioStreamComplete: &vectorpb.ExternalAudioStreamComplete{}}})
+		completed = err == nil
 	}
 	if err != nil {
 		return err
@@ -274,6 +292,28 @@ func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader)
 		return err
 	case <-time.After(time.Until(end) + tail):
 		return ctx.Err()
+	}
+}
+
+var streams = struct {
+	sync.Mutex
+	slot map[string]chan struct{}
+}{slot: map[string]chan struct{}{}}
+
+// turn waits for serial's one audio stream slot: a Prepare onto a playing stream orphans it (sdk-audio-orphan.md (docs/plans/)).
+func turn(ctx context.Context, serial string) (func(), error) {
+	streams.Lock()
+	c := streams.slot[serial]
+	if c == nil {
+		c = make(chan struct{}, 1)
+		streams.slot[serial] = c
+	}
+	streams.Unlock()
+	select {
+	case c <- struct{}{}:
+		return func() { <-c }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 }
 

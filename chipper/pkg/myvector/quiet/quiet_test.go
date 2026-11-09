@@ -15,9 +15,11 @@ import (
 
 func TestMatchTable(t *testing.T) {
 	hits := []string{"shut up", "Shut up!", "turn off", "vector, shut up please", "hey vector turn off",
-		"ole vait", "Jää vait.", "palun lülita välja", "Hei Vektor, lülitu välja!", "shutup"}
+		"ole vait", "Jää vait.", "palun lülita välja", "Hei Vektor, lülitu välja!", "shutup",
+		"Jäävait.", "Lülituvälja.", "Vektor, ole vaid palun.", "vaid."} // TTS→STT round-trip spellings
 	misses := []string{"turn off the kitchen light", "don't turn off the music", "shut up and dance",
-		"lülita tuled välja", "ära ole vait", "vaikselt", "vector", "", "what time is it"}
+		"lülita tuled välja", "ära ole vait", "vaikselt", "vector", "", "what time is it",
+		"mitte tema, vaid sina"}
 	for _, s := range hits {
 		if _, ok := Match(s); !ok {
 			t.Errorf("Match(%q) = miss, want hit", s)
@@ -30,11 +32,22 @@ func TestMatchTable(t *testing.T) {
 	}
 }
 
+func TestMatchExact(t *testing.T) {
+	if _, ok := MatchExact("Vektor, ole vait!"); !ok {
+		t.Error("MatchExact(ole vait) = miss, want hit")
+	}
+	for _, s := range []string{"Jäävait.", "Vaid?", "ole vaid", "Turnoff."} {
+		if p, ok := MatchExact(s); ok {
+			t.Errorf("MatchExact(%q) = hit %q, want miss (Match-only spelling)", s, p)
+		}
+	}
+}
+
 func TestMatchAny(t *testing.T) {
 	if p, ok := MatchAny("the forecast says rain, shut up vector, and wind"); !ok || p != "shut up" {
 		t.Errorf("MatchAny mid-sentence = %q %v, want shut up", p, ok)
 	}
-	for _, s := range []string{"shutters upstairs", "the turnoff is left", "vaikselt räägib"} {
+	for _, s := range []string{"shutters upstairs", "the turnoff is left", "vaikselt räägib", "mitte tema, vaid sina"} {
 		if p, ok := MatchAny(s); ok {
 			t.Errorf("MatchAny(%q) = hit %q, want miss (word boundary)", s, p)
 		}
@@ -121,7 +134,7 @@ func TestNapTimeout(t *testing.T) {
 	NapURL, NapTimeout = func(string) string { return srv.URL }, 50*time.Millisecond
 	t.Cleanup(func() { NapURL, NapTimeout = oldURL, oldT })
 	done := make(chan error, 1)
-	go func() { done <- Nap("x", time.Now().Add(time.Hour)) }()
+	go func() { _, err := Nap("x", time.Now().Add(time.Hour)); done <- err }()
 	select {
 	case err := <-done:
 		if err == nil {
@@ -131,7 +144,7 @@ func TestNapTimeout(t *testing.T) {
 		t.Fatal("Nap ignored NapTimeout")
 	}
 	t.Setenv("MYVECTOR_NAP", "off")
-	if err := Nap("x", time.Time{}); !errors.Is(err, ErrNapOff) {
+	if _, err := Nap("x", time.Time{}); !errors.Is(err, ErrNapOff) {
 		t.Errorf("MYVECTOR_NAP=off: Nap = %v, want ErrNapOff", err)
 	}
 }
@@ -150,11 +163,11 @@ func TestNapValueAndStatus(t *testing.T) {
 	old := NapURL
 	NapURL = func(string) string { return srv.URL }
 	t.Cleanup(func() { NapURL = old })
-	if err := Nap("x", time.Time{}); err != nil || len(got) != 1 || got[0] != "0" {
+	if _, err := Nap("x", time.Time{}); err != nil || len(got) != 1 || got[0] != "0" {
 		t.Errorf("Nap(zero) = %v, sent %v; want value=0 (nap off)", err, got)
 	}
 	code = http.StatusInternalServerError
-	if err := Nap("x", time.Unix(1700000000, 0)); err == nil || got[1] != "1700000000" {
+	if _, err := Nap("x", time.Unix(1700000000, 0)); err == nil || got[1] != "1700000000" {
 		t.Errorf("Nap on a 500 = %v, sent %v; want an error and value in epoch seconds", err, got)
 	}
 }
@@ -168,16 +181,16 @@ func TestNapBodyNotSet(t *testing.T) {
 	old := NapURL
 	NapURL = func(string) string { return srv.URL }
 	t.Cleanup(func() { NapURL = old })
-	if err := Nap("x", time.Now().Add(time.Hour)); err == nil {
+	if _, err := Nap("x", time.Now().Add(time.Hour)); err == nil {
 		t.Errorf("Nap on a 200 %q = nil, want an error", body)
 	}
 	body = "Error setting variable SleepCycle_NapUntil_s=0<br>\n"
-	if err := Nap("x", time.Time{}); err == nil {
+	if _, err := Nap("x", time.Time{}); err == nil {
 		t.Errorf("Nap on a 200 %q = nil, want an error", body)
 	}
 }
 
-// A lock past NapMax: the nap is capped at now+NapMax (patch 0011 would refuse the whole value).
+// A lock past NapMax: the nap is capped at now+NapMax-NapMargin (patch 0011 refuses past NapMax on the robot clock).
 func TestNapCapsAtNapMax(t *testing.T) {
 	t.Setenv("MYVECTOR_NAP", "")
 	var got string
@@ -190,12 +203,16 @@ func TestNapCapsAtNapMax(t *testing.T) {
 	NapURL = func(string) string { return srv.URL }
 	t.Cleanup(func() { NapURL = old })
 	before := time.Now()
-	if err := Nap("x", before.Add(6*time.Hour)); err != nil {
+	sent, err := Nap("x", before.Add(6*time.Hour))
+	if err != nil {
 		t.Fatal(err)
 	}
 	sec, _ := strconv.ParseInt(got, 10, 64)
-	if want := before.Add(NapMax).Unix(); sec < want || sec > want+2 {
-		t.Errorf("Nap(now+6h) sent value=%s, want now+NapMax (%d)", got, want)
+	if want := before.Add(NapMax - NapMargin).Unix(); sec < want || sec > want+2 {
+		t.Errorf("Nap(now+6h) sent value=%s, want now+NapMax-NapMargin (%d)", got, want)
+	}
+	if sent.Unix() != sec {
+		t.Errorf("Nap returned %d, sent %d: want the value sent", sent.Unix(), sec)
 	}
 }
 
@@ -306,5 +323,65 @@ func TestHoldWritesAsIs(t *testing.T) {
 	}
 	if err := Hold(Lock{Until: now, Vol: MaxVolume + 1}); err == nil {
 		t.Error("Hold accepted a volume above MaxVolume")
+	}
+}
+
+// TestSetVolRace: Sets racing a SetVol never write the saved volume back to `-` (I2: the next read would save LockVolume).
+func TestSetVolRace(t *testing.T) {
+	lockFile(t)
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 200; i++ {
+		if err := Clear(); err != nil {
+			t.Fatal(err)
+		}
+		if err := Set(now.Add(time.Hour), "voice:shut up"); err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		wg.Add(4)
+		go func() { defer wg.Done(); _ = SetVol(now.Add(time.Hour), 4, "voice:shut up") }()
+		for j := 1; j <= 3; j++ {
+			go func(j int) {
+				defer wg.Done()
+				_ = Set(now.Add(time.Hour+time.Duration(j)*time.Minute), "voice:shut up")
+			}(j)
+		}
+		wg.Wait()
+		if l, err := Read(); err != nil || l.Vol != 4 || !l.Until.Equal(now.Add(time.Hour+3*time.Minute)) {
+			t.Fatalf("round %d: %+v %v, want until +1h3m vol 4", i, l, err)
+		}
+	}
+}
+
+// TestClearIfHoldIf: a lock that changed since it was read is left as is; an unchanged one is cleared/held.
+func TestClearIfHoldIf(t *testing.T) {
+	lockFile(t)
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	if err := SetVol(now, 4, "voice:shut up"); err != nil {
+		t.Fatal(err)
+	}
+	was, _ := Read()
+	if err := Set(now.Add(2*time.Hour), "voice:shut up"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := ClearIf(was); ok || err != nil {
+		t.Fatalf("ClearIf over a newer lock = %v %v, want false", ok, err)
+	}
+	if ok, err := HoldIf(was, Lock{Until: now, Vol: 4, Source: "voice:shut up"}); ok || err != nil {
+		t.Fatalf("HoldIf over a newer lock = %v %v, want false", ok, err)
+	}
+	if l, _ := Read(); !l.Until.Equal(now.Add(2*time.Hour)) || l.Vol != 4 {
+		t.Fatalf("newer lock %+v, want until +2h vol 4 untouched", l)
+	}
+	cur, _ := Read()
+	if ok, err := HoldIf(cur, Lock{Until: now, Vol: 4, Source: "voice:shut up"}); !ok || err != nil {
+		t.Fatalf("HoldIf unchanged = %v %v, want true", ok, err)
+	}
+	cur, _ = Read()
+	if ok, err := ClearIf(cur); !ok || err != nil {
+		t.Fatalf("ClearIf unchanged = %v %v, want true", ok, err)
+	}
+	if l, _ := Read(); !l.Until.IsZero() {
+		t.Fatalf("after ClearIf: %+v, want the file gone", l)
 	}
 }

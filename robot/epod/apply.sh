@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Make the robot trust our server CA (T5): ROBOT_TRUST = ca.crt + its current certs while vic-cloud lacks the
-# my-vector.PodTrust marker in /anki/etc/vic-cloud.env (dual trust; the vic-cloud binary is UPX-packed), ca.crt alone once it has it. A rewrite restarts anki-robot.target.
+# my-vector.PodTrust marker in /anki/etc/vic-cloud.env (dual trust; the vic-cloud binary is UPX-packed), ca.crt alone once it has it. A rewrite restarts anki-robot.target (silent start while the sound lock holds).
 # Usage: robot/epod/apply.sh   idempotent; settings.sh runs it. ca.crt: $epod_dir/ (robot/env.sh), else <main>/secrets/epod-new/ (pre-4.4).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -12,6 +12,7 @@ ca=$epod_dir/ca.crt
 [[ -f $ca ]] || ca=${robot_dir%/robot}/secrets/epod-new/ca.crt
 [[ -f $ca ]] || { echo "epod: not applied — no ca.crt (run robot/epod/mkcert.sh)"; exit 0; }
 CA=$(base64 -w0 "$ca")
+quiet_silent_start 300 || exit 1
 # shellcheck disable=SC2029 # CA expands on the client: the point
 cat "$here/../lib/etc.sh" - <<'EOF' | ssh "${ssh_opts[@]}" "root@$ip" "CA=$CA sh -s"
 set -e
