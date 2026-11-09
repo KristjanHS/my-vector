@@ -1,0 +1,57 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Mon, 9 Nov 2026 21:00:00 +0200
+Subject: [PATCH] followup-no-ready
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+vic-engine (plan 2026-11-07-follow-up-listening 7.4, G1/P4): BehaviorKnowledgeGraphQuestion speaks no "Ready"
+(readyStringID TTS) on any entry, follow-up opens and "I have a question" alike, while console var
+BehaviorKnowledgeGraphQuestion.kMuteKnowledgeReady (default true) holds: the spoken Ready at follow-up open was
+heard by STT as "Tere."/"aitäh." phantoms. Muted, the entry resets the ready wrapper (Invalid, like the bypass path
+generates none) and WaitingToStream begins streaming at once after the get-in, instead of waiting for the TTS
+to finish or ending as a failed one (NoResponse). Unmuted keeps upstream behavior; the Wake_Word_* earcons
+(earConAudioEventEnd) still play. Logs my-vector.FollowUpReady MuteKnowledgeReady=0|1 once per entry.
+---
+ .../behaviorKnowledgeGraphQuestion.cpp              | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp b/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp
+index c534a9a8..2624136e 100644
+--- a/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp
++++ b/engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp
+@@ -51,6 +51,9 @@ namespace Anki
+ 
+       const double kDefaultDuration = 10.0;
+       const char *kDefaultReadyStringID = "BehaviorKnowledgeGraphQuestion.Ready";
++
++      // my-vector followup-no-ready: no spoken "Ready" on any entry; the Wake_Word_* earcons still play
++      CONSOLE_VAR(bool, kMuteKnowledgeReady, "BehaviorKnowledgeGraphQuestion", true);
+     }
+ 
+     // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+@@ -140,8 +143,12 @@ namespace Anki
+       UserIntentComponent &uic = GetBehaviorComp<UserIntentComponent>();
+       UserIntentPtr intentDataPtr = uic.GetUserIntentIfActive(USER_INTENT(knowledge_response_bypass));
+ 
+-      // Don't generate ready text for intent graph responses
+-      if (intentDataPtr == nullptr) {
++      PRINT_NAMED_WARNING("my-vector.FollowUpReady", "MuteKnowledgeReady=%d", kMuteKnowledgeReady ? 1 : 0);
++      if (kMuteKnowledgeReady) {
++        // muted: clear the last entry's utterance state (Invalid), like the bypass path speaks none
++        _readyTTSWrapper.Reset();
++      } else if (intentDataPtr == nullptr) {
++        // Don't generate ready text for intent graph responses
+         // start generating our ready text; if we fail, then we'll simply exit the behavior, and cry :(
+         if (!_readyTTSWrapper.SetUtteranceText(readyText, {})) {
+           PRINT_NAMED_WARNING("BehaviorKnowledgeGraphQuestion", "Failed to generate Ready TTS (%s)", readyText.c_str());
+@@ -221,7 +228,7 @@ namespace Anki
+           } else {
+             // once we've finished speaking our ready text, we can start streaming
+             // hopefully the ready text is already finished by the time we even get into this state
+-            if (_readyTTSWrapper.IsFinished())
++            if (_readyTTSWrapper.IsFinished() || (kMuteKnowledgeReady && !_readyTTSWrapper.IsValid()))
+             {
+               BeginStreamingQuestion();
+             }

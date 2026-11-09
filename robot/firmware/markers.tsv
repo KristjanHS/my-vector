@@ -73,3 +73,7 @@
 0019-sdk-audio-orphan.patch	src	animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp	Complete on an unposted stream: posted its
 0019-sdk-audio-orphan.patch	bin	bin/vic-anim	Complete on an unposted stream: posted its
 0019-sdk-audio-orphan.patch	bin	bin/vic-anim	Complete on an empty unposted stream
+0020-followup-no-ready.patch	src	engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp	CONSOLE_VAR(bool, kMuteKnowledgeReady, "BehaviorKnowledgeGraphQuestion", true);
+0020-followup-no-ready.patch	src	engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp	(kMuteKnowledgeReady && !_readyTTSWrapper.IsValid())
+0020-followup-no-ready.patch	src	engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp	my-vector.FollowUpReady
+0020-followup-no-ready.patch	bin	lib/libcozmo_engine.so	my-vector.FollowUpReady
