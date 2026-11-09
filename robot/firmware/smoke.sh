@@ -106,6 +106,13 @@ use=$(ssh_ "df -P /data | awk 'NR == 2 { sub(\"%\", \"\", \$5); print \$5 }'") |
 [[ $use =~ ^[0-9]+$ ]] || setup "df /data on $ip gave '$use', not a percentage"
 ((use < 90)) || die "/data ${use}% full; biggest (KB): $(ssh_ 'find /data -xdev -type f -exec du -k {} + 2>/dev/null | sort -n | tail -3' | tr '\n' ' ')"
 ok "/data ${use}% used"
+# Patch 0017's silent start flag still honoured (expiry ahead, within its 15 min cap): the next engine start skips the power-on
+# anim. Expected after restarts.sh/catch.sh -s or a ship under the sound lock (note), a leftover otherwise (WARN).
+# shellcheck disable=SC2016 # expands on the robot
+ssf=$(ssh_ 'f=/data/myvector/silent-start; [ ! -f $f ] || echo "$(date +%s) $(head -c 32 $f)"' 2>/dev/null) || ssf=
+if [[ $ssf =~ ^([0-9]+)\ ([0-9]+)$ ]] && ((BASH_REMATCH[2] > BASH_REMATCH[1] && BASH_REMATCH[2] - BASH_REMATCH[1] <= 900)); then
+  echo "$(quiet_locked && echo note || echo WARN): /data/myvector/silent-start holds $((BASH_REMATCH[2] - BASH_REMATCH[1])) s more: the next engine start skips its power-on anim"
+fi
 
 # P1: since the running vic-robot's last Startup lift calibration: no crash lines, no recalibration loop (3 within 60 s).
 logcheck() {

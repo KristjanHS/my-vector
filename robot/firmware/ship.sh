@@ -196,6 +196,13 @@ else
   step "server: wire-pod already runs $running, ${srv[*]} unchanged — no restart"
 fi
 
+# Q1: while the sound lock holds, patch 0017's flag (expiry = robot clock + 600 s) silences the power-on anim of the
+# deploy's and settings.sh's engine starts; it expires on its own.
+if declare -F quiet_locked >/dev/null && quiet_locked; then
+  ssh "${ssh_opts[@]}" "root@$ip" 'mkdir -p /data/myvector && echo $(($(date +%s) + 600)) >/data/myvector/silent-start' ||
+    add_warns "WARN sound lock: could not write /data/myvector/silent-start, the engine start may play the power-on sound"
+fi
+
 if ((fw)); then
   step "deploy: ./build/deploy-v.sh to $ip"
   # Cleared first: a deploy that dies half-way must not leave the old tree's marker (a later ship of that tree would skip).
