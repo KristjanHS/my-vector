@@ -1,7 +1,7 @@
 # Backlog
 
 ## OWED[USER]
-- G3 et self-dialogue reproduces 4/20 and the prompt line does not fix it (`2026-11-07-follow-up-listening.md` (docs/plans/) P7): pick the next lever — EstLLM brain arm, a decider rule, or accept.
+- G3 et self-dialogue reproduces 4/20 and the prompt line does not fix it (`2026-11-07-follow-up-listening.md` (docs/plans/) P7): pick the next lever or accept (brain swap and decider-NO on filler asks ruled out, G3).
 
 - Follow-up "jah" by voice (`2026-11-07-follow-up-listening.md` (docs/plans/) 7.5, after 7.3's ship): `mkdir robot/work/et-stt/mic` (capture is on only while it exists), answer a follow-up with "jah", then `robot/work/et-stt/venv/bin/python et-stt/nospeech.py --max 0.6 <newest robot/work/et-stt/mic/*.ogg>` must exit 0.
 - SDK audio orphan live (`2026-11-09-sdk-audio-orphan.md` (docs/plans/)): `make ship` (patch 0019 + vic-cloud gateway), then `voiceprobe overlap` — B refused (ResourceExhausted), A/C/D/F hear PlaybackComplete, no `starved` / `VERIFY(_audioPrepared)` line.
