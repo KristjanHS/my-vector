@@ -121,4 +121,12 @@ settings_run true false '{"lang": "en-US"}'
 [[ $(cat "$vp/curl.log") == *"/api-sdk/timezone?serial=0&timezone=Europe/Tallinn"* && $rc == 1 &&
   $out == *"WARN: time_zone: set to Europe/Tallinn sent, robot still has America/Los_Angeles after 15 s"* ]] ||
   die "settings.sh, robot on America/Los_Angeles: exit $rc, curl $(cat "$vp/curl.log"): $out"
+# N3 (shut-up-sleep): an active sound lock re-arms the firmware nap to its end, once (the no-lock case: "all in place" above).
+robot_jdoc Europe/Tallinn
+mkdir -p "$vp/robot/work" && until_s=$(($(date +%s) + 3600)) && echo "$until_s 5 voice:shut up" >"$vp/robot/work/quiet-until"
+settings_run true false '{"lang": "en-US"}'
+rm -f "$vp/robot/work/quiet-until"
+[[ $(grep -c consolevarset "$vp/curl.log") == 1 && $rc == 0 && $out == *"ok: nap re-armed until"* ]] &&
+  grep -qF "http://127.0.0.1:8888/consolevarset?key=SleepCycle_NapUntil_s&value=$until_s" "$vp/curl.log" ||
+  die "settings.sh, sound lock held: want one nap re-arm to $until_s, exit $rc, curl $(cat "$vp/curl.log"): $out"
 echo "pc-voice host test OK (${touch[0]##*/}; voice-push.sh agrees on $n tts-urls.txt rows; voice-push.sh lang + settings.sh T2/jdoc stubs)"
