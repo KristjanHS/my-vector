@@ -3,7 +3,7 @@
 Goal: cut the wall-clock time of `make syncwt` (rebase the worktree onto `main` → gate → ff-land).
 Builds on [2026-11-08-ship-speed.md](2026-11-08-ship-speed.md): its B1, E2–E4, R6 and R7 are the same
 levers seen from the syncwt side; its Rung 1 A3 (check pass stamp) is already in `scripts/check.sh`.
-Plan only; nothing implemented.
+Rung 1 (S1, S2, S6a) is on `worktree-sec`; next is R3 below, then re-pick S3–S5.
 
 ## 1. Where the time goes (measured 2026-11-09, worktree `sec`, 10 cores, 49 GB)
 
@@ -136,6 +136,7 @@ re-picked after the rung is measured. S3c and S3b are the cheapest of them (env 
 |---|---|---|
 | R1 | S2's runner is a sourceable lib with its own fake-job test (pass/fail/slow → rc, log, kill, order) | `scripts/lib/check-runner.sh`, `scripts/tests/check-runner.sh` |
 | R2 | S6a lands from this session, dotfiles commit pathspec'd to the one file | dotfiles `bin/bin/syncwt` `run_gate` + report |
+| R3 | OPEN: hostkey flakes in the parallel gate (3/8 red under extra load, `mv: cannot stat …ssh_host_ecdsa_key.new`); suspect `ETC_ARM_SCALE=3` window firing mid-install — reproduce first (CPU-only load: 0/3) | `robot/hostkey/tests/apply.sh` `run()`, `robot/lib/etc.sh` `arm()` |
 
 ### Pre-registered check
 - S1: the falsifier in §S1 (second `make check` on a clean committed tree prints `check skipped`; a
