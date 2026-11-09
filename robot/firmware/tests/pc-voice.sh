@@ -127,7 +127,10 @@ settings_run() {
   rc=0; out=$(vp_run settings.sh) || rc=$?
 }
 settings_run true false '{"lang": "et-EE", "t2": "af_heart", "t2_et": "mari", "slow": 1.1}'
-[[ $rc == 0 && ! -s $vp/curl.log ]] || die "settings.sh, all in place: exit $rc, curl $(cat "$vp/curl.log"): $out"
+[[ $rc == 0 && ! -s $vp/curl.log && $out == *"hostkey stub"*"sshkey stub"* ]] || die "settings.sh, all in place: exit $rc, curl $(cat "$vp/curl.log"): $out"
+# C6 (ship-speed): make ship's settings step passes SKIP_KEYS=1 — its own keys step already applied both.
+SKIP_KEYS=1 settings_run true false '{"lang": "et-EE", "t2": "af_heart", "t2_et": "mari", "slow": 1.1}'
+[[ $rc == 0 && $out != *"hostkey stub"* && $out != *"sshkey stub"* ]] || die "settings.sh SKIP_KEYS=1: want no hostkey/sshkey apply, exit $rc: $out"
 [[ $(cat "$vp/voice.json") == '{"url":"http://10.0.0.1:8091","voice":"mari","slow":1.1,"lang":"et-EE"}' ]] ||
   die "settings.sh et-EE pushed $(cat "$vp/voice.json")"
 settings_run true true '{"lang": "en-US", "t2": "af_heart", "t2_et": "mari", "slow": 1.1}'
