@@ -13,6 +13,8 @@ const (
 	Prompt = "A voice robot just answered a person. Reply YES if the robot's reply asks the person a question or invites them to answer; otherwise reply NO. Reply with one word: YES or NO."
 	// Max is the most follow-ups in a row per robot.
 	Max = 10
+	// MaxListening caps the chain while active listening is on: room talk gets at most 3 answers in a row (G1).
+	MaxListening = 3
 	// Window is how long an armed follow-up waits for its request: the 1/3 s DoNewRequest delay + the robot's 10 s streamingTimeout + margin.
 	Window = 15 * time.Second
 	// Timeout bounds one decider call; a later answer counts as NO.
@@ -80,8 +82,8 @@ func (c *Chain) Arm(esn string, now time.Time) {
 	c.m[esn] = s
 }
 
-// Allow is true while esn has fewer than Max follow-ups in a row.
-func (c *Chain) Allow(esn string) bool { return c.Count(esn) < Max }
+// Allow is true while esn has fewer than max follow-ups in a row.
+func (c *Chain) Allow(esn string, max int) bool { return c.Count(esn) < max }
 
 // Count is esn's follow-ups in a row.
 func (c *Chain) Count(esn string) int {
