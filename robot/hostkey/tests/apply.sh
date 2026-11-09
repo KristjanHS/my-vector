@@ -53,6 +53,8 @@ echo "setsid" >>"$ETC_ROOT/calls"
 exec "$@"
 EOF
 chmod +x "$tmp/bin/"*
+# shellcheck source=robot/lib/tests/fakeclock.sh
+. "$robot/lib/tests/fakeclock.sh"; fakeclock_install "$tmp/bin" # arm timers park until fakeclock_fire
 printf '%s\n' ROBOT_ESN=0 "ROBOT_IP=$ip" ROBOT_SERVER=x "ROBOT_KEY=$k/new" "ROBOT_KEY_OLD=$k/old" >"$tmp/robot.env"
 others() { ssh-keygen -F other.example -f "$1" | grep -v '^#' || true; }
 ipn() { ssh-keygen -F $ip -f "$1" | grep -vc '^#' || true; }
@@ -141,7 +143,7 @@ out=$(run "$r4") || die "hashed known_hosts: $out"
 pubs_in "$r4" "$r4/kh" && ! grep -q "^$ip " "$r4/kh" || die "hashed known_hosts: new lines missing or unhashed: $(cat "$r4/kh")"
 kept "$r4" && [[ $(ipn "$r4/kh") == 2 ]] || die "hashed known_hosts: other.example, mode/inode or entry count wrong: $(cat "$r4/kh")"
 
-sleep 4 # the 3 s windows pass: the confirmed timers must not fire, the unconfirmed one must
+fakeclock_fire # the windows end: the confirmed timers must not fire, the unconfirmed one must
 is_store "$r4" && is_store "$r" || die "the confirmed rollback still fired"
 is_image "$r5" || die "kh rewrite fails: the rollback did not restore the image keys"
 rc=0; out=$(run "$r5") || rc=$?

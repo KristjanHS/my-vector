@@ -24,6 +24,8 @@ mkdir -p "$ETC_ROOT/etc/systemd/system/timers.target.wants"
 ln -sf "/etc/systemd/system/$2" "$ETC_ROOT/etc/systemd/system/timers.target.wants/$2"
 EOF
 chmod +x "$tmp/bin/"*
+# shellcheck source=robot/lib/tests/fakeclock.sh
+. "$here/fakeclock.sh"; fakeclock_install "$tmp/bin" # arm timers park until fakeclock_fire
 # fresh <name>: a new fake root with / mounted ro; prints its path
 fresh() { mkdir -p "$tmp/$1/proc"; echo "/dev/root / ext4 ro 0 0" >"$tmp/$1/proc/mounts"; echo "$tmp/$1"; }
 # run <root> <script>: the lib then the script, under sh -e with the fakes first on PATH
@@ -39,7 +41,7 @@ grep -q ' ro ' "$r/proc/mounts" || die "a failed write left / $(cat "$r/proc/mou
 
 r=$(fresh arm)
 run "$r" "arm late 1 'touch $r/restored'; arm ok 1 'touch $r/restored-ok'; confirm ok"
-sleep 2
+fakeclock_fire
 [[ -e $r/restored ]] || die "arm without confirm: restore did not run"
 [[ ! -e $r/restored-ok ]] || die "confirm within the window: restore still ran"
 
