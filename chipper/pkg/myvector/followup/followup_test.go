@@ -20,7 +20,7 @@ func TestChain(t *testing.T) {
 		t.Fatal("Begin with no armed follow-up consumed one")
 	}
 	for i := 1; i <= Max; i++ {
-		if !c.Allow("a") {
+		if !c.Allow("a", Max) {
 			t.Fatalf("Allow false after %d follow-ups", i-1)
 		}
 		now := t0.Add(time.Duration(i) * time.Minute)
@@ -29,8 +29,8 @@ func TestChain(t *testing.T) {
 			t.Fatalf("round %d: Begin at Window did not consume", i)
 		}
 	}
-	if c.Count("a") != Max || c.Allow("a") {
-		t.Fatalf("after %d rounds: count %d, Allow %v", Max, c.Count("a"), c.Allow("a"))
+	if c.Count("a") != Max || c.Allow("a", Max) {
+		t.Fatalf("after %d rounds: count %d, Allow %v", Max, c.Count("a"), c.Allow("a", Max))
 	}
 	if c.Count("b") != 0 {
 		t.Fatal("chain leaks across ESNs")
