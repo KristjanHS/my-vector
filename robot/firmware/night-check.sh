@@ -3,7 +3,8 @@
 # Reads the robot's kept log (/data/log/keep, ~20 h deep) for the night that starts on DATE at NIGHT_FROM.
 # Usage: night-check.sh [YYYY-MM-DD]   default: the most recent night start (yesterday's if run before NIGHT_FROM).
 #        night-check.sh --nap   judges the last shut-up nap instead: from the last `my-vector.NightWindow ... nap until
-#          <epoch>` line to that epoch (shut-up-sleep N1; INCOMPLETE while the nap runs).
+#          <epoch>` line to that epoch, or to the next nap line after it if earlier (`nap off` on make unquiet, `nap refused`)
+#          (shut-up-sleep N1; INCOMPLETE while the nap runs).
 #   env NIGHT_FROM=21:00 NIGHT_TO=09:00 (the firmware's SleepTracker defaults); NIGHT_LOG_DIR=<dir> reads that local dir, no ssh,
 #   and NIGHT_NOW=<epoch> fixes the clock (host test).
 # Allowed: GoToSleep anims, the InitialWakeUp anim ≤30 s after a vic-engine start ≤60 s after a system-partition remount
@@ -25,21 +26,45 @@ on_logs() {
   if [[ -n ${NIGHT_LOG_DIR:-} ]]; then sh -s -- "$NIGHT_LOG_DIR" <<<"$1"
   else ssh "${ssh_opts[@]}" "root@$ip" sh -s <<<"$1"; fi
 }
+# ssh_failed <rc>: true when on_logs' ssh itself failed (exit 255), not the prog on the robot.
+ssh_failed() { [[ -z ${NIGHT_LOG_DIR:-} ]] && (($1 == 255)); }
+# stamp_epoch <MM-DD HH:MM:SS>: the stamp has no year: this year's, last year's if that lands in the future (across New Year).
+stamp_epoch() {
+  local e year
+  year=$(date -d "@$now" +%Y)
+  e=$(date -d "$year-$1" +%s)
+  ((e <= now)) || e=$(date -d "$((year - 1))-$1" +%s)
+  echo "$e"
+}
+stamp_re='^([0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9])'
 if [[ ${1:-} == --nap ]]; then
-  napline=$(on_logs 'cd "${1:-/data/log/keep}" || exit 2; cat $(ls -tr messages.* 2>/dev/null) messages | grep "my-vector\.NightWindow: .*nap until [0-9]" | tail -n 1') ||
-    { echo "FAIL: no ${NIGHT_LOG_DIR:-/data/log/keep} (robot/logkeep/apply.sh)" >&2; exit 2; }
-  [[ $napline =~ ^([0-9][0-9]-[0-9][0-9]\ [0-9][0-9]:[0-9][0-9]:[0-9][0-9]).*nap\ until\ ([0-9]+) ]] ||
+  # The last 'nap until' line, then the first nap line after it (a newer 'nap until' would be the last, so: off/refused).
+  rc=0
+  naplines=$(on_logs 'cd "${1:-/data/log/keep}" || exit 2; cat $(ls -tr messages.* 2>/dev/null) messages | awk "
+    /my-vector\\.NightWindow: .*nap until [0-9]/ { u = \$0; n = \"\"; next }
+    /my-vector\\.NightWindow: .*nap (off|refused)/ { if (u != \"\" && n == \"\") n = \$0 }
+    END { if (u != \"\") print u; if (n != \"\") print n }"') || rc=$?
+  if ((rc)); then
+    if ssh_failed "$rc"; then echo "FAIL: ssh to $ip failed" >&2; else echo "FAIL: no ${NIGHT_LOG_DIR:-/data/log/keep} (robot/logkeep/apply.sh)" >&2; fi
+    exit 2
+  fi
+  napline=${naplines%%$'\n'*} nextline=
+  [[ $naplines != *$'\n'* ]] || nextline=${naplines#*$'\n'}
+  [[ $napline =~ $stamp_re.*nap\ until\ ([0-9]+) ]] ||
     { echo "FAIL: no 'nap until' line in the kept log (no shut-up nap yet?)" >&2; exit 2; }
   stamp=${BASH_REMATCH[1]} end=${BASH_REMATCH[2]}
-  # The stamp has no year: take this year's, last year's if that lands in the future (a nap across New Year).
-  year=$(date -d "@$now" +%Y)
-  start=$(date -d "$year-$stamp" +%s)
-  ((start <= now)) || start=$(date -d "$((year - 1))-$stamp" +%s)
+  start=$(stamp_epoch "$stamp")
   ((end > start)) || { echo "FAIL: nap until $end is not after its log line ($stamp)" >&2; exit 2; }
-  echo "nap $(fmt "$start") .. $(fmt "$end")"
+  why=
+  if [[ $nextline =~ $stamp_re.*(nap\ (off|refused)) ]]; then
+    cut=$(stamp_epoch "${BASH_REMATCH[1]}") why=${BASH_REMATCH[2]}
+    if ((cut < end)); then end=$cut; else why=; fi
+  fi
+  echo "nap $(fmt "$start") .. $(fmt "$end")${why:+ ($why)}"
 else
   from=${NIGHT_FROM:-21:00} to=${NIGHT_TO:-09:00}
-  day=${1:-$(if [[ $(date +%H:%M) < $from ]]; then date -d yesterday +%F; else date +%F; fi)}
+  today=$(date -d "@$now" +%F)
+  day=${1:-$(if [[ $(date -d "@$now" +%H:%M) < $from ]]; then date -d "$today -1 day" +%F; else echo "$today"; fi)}
   start=$(date -d "$day $from" +%s) || { echo "FAIL: bad date or NIGHT_FROM: $day $from" >&2; exit 2; }
   # A window past midnight ends on the next calendar day (not start + 24 h: a DST night is 23 or 25 h long).
   end_day=$day
@@ -90,4 +115,8 @@ cat $(ls -tr messages.* 2>/dev/null) messages | awk -v s="$s" -v e="$e" -v over=
 EOF
 )
 if [[ -n ${NIGHT_LOG_DIR:-} ]]; then sh -s -- "$(fmt "$start")" "$(fmt "$end")" "$((now >= end))" "$NIGHT_LOG_DIR" <<<"$prog"
-else ssh "${ssh_opts[@]}" "root@$ip" sh -s -- "'$(fmt "$start")'" "'$(fmt "$end")'" "$((now >= end))" <<<"$prog"; fi
+else
+  rc=0; ssh "${ssh_opts[@]}" "root@$ip" sh -s -- "'$(fmt "$start")'" "'$(fmt "$end")'" "$((now >= end))" <<<"$prog" || rc=$?
+  ! ssh_failed "$rc" || { echo "FAIL: ssh to $ip failed" >&2; exit 2; }
+  exit "$rc"
+fi

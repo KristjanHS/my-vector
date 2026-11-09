@@ -4,6 +4,7 @@ package quiet
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,6 +29,9 @@ const (
 	LockVolume = 1
 	// MaxVolume is vectorpb Volume_HIGH.
 	MaxVolume = 5
+	// NapMax caps the nap's until at now+NapMax; it mirrors patch 0011's kMyVectorNapMax_s, which refuses a longer one
+	// (the lock itself can run longer; only the nap ends sooner).
+	NapMax = 4 * time.Hour
 )
 
 // Tokens lowercases text, splits on non-letters/digits and drops Fillers (listen matches on it too).
@@ -229,7 +233,8 @@ var ErrNapOff = errors.New("quiet: nap off ($MYVECTOR_NAP=off)")
 // RobotOff is $MYVECTOR_NAP=off: callers return ErrNapOff instead of touching the robot.
 func RobotOff() bool { return os.Getenv("MYVECTOR_NAP") == "off" }
 
-// Nap sets the firmware's SleepCycle_NapUntil_s to until (0 ends the nap); patch 0011 holds the night rules until then.
+// Nap sets the firmware's SleepCycle_NapUntil_s to until, capped at now+NapMax (0 ends the nap); patch 0011 holds the
+// night rules until then. vic-engine answers 200 even for an unknown var or a bad value: only a body echoing the value is a set.
 func Nap(ip string, until time.Time) error {
 	if RobotOff() {
 		return ErrNapOff
@@ -237,15 +242,26 @@ func Nap(ip string, until time.Time) error {
 	sec := int64(0)
 	if !until.IsZero() {
 		sec = until.Unix()
+		if max := time.Now().Add(NapMax).Unix(); sec > max {
+			sec = max
+		}
 	}
+	val := strconv.FormatInt(sec, 10)
 	c := http.Client{Timeout: NapTimeout}
-	r, err := c.Get(NapURL(ip) + "/consolevarset?key=SleepCycle_NapUntil_s&value=" + strconv.FormatInt(sec, 10))
+	r, err := c.Get(NapURL(ip) + "/consolevarset?key=SleepCycle_NapUntil_s&value=" + val)
 	if err != nil {
 		return err
 	}
-	r.Body.Close()
+	defer r.Body.Close()
 	if r.StatusCode != http.StatusOK {
 		return fmt.Errorf("quiet: nap: vic-engine %s", r.Status)
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 512))
+	if err != nil {
+		return fmt.Errorf("quiet: nap: %w", err)
+	}
+	if !strings.HasPrefix(string(body), val+"<br>") {
+		return fmt.Errorf("quiet: nap: vic-engine did not set SleepCycle_NapUntil_s=%s: %q", val, strings.TrimSpace(string(body)))
 	}
 	return nil
 }
