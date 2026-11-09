@@ -82,6 +82,15 @@ func TestReplay(t *testing.T) {
 	if d := replay(long, followup.RepeatMin); d[9][0] {
 		t.Error("a question 9 replies back must not count as a repeat")
 	}
+	// as spoken: reply 1's dropped q never enters history, so 8 replies later the q from reply 0 is gone
+	spoken := [][]string{{q}, {"Hea.", q}}
+	for i := 0; i < 7; i++ {
+		spoken = append(spoken, []string{"Hea."})
+	}
+	spoken = append(spoken, []string{q})
+	if d := replay(spoken, followup.RepeatMin); !d[1][1] || d[9][0] {
+		t.Errorf("as-spoken history: drop[1][1]=%v drop[9][0]=%v, want true false", d[1][1], d[9][0])
+	}
 	if !repeatPass(6, 0) || repeatPass(5, 0) || repeatPass(7, 1) {
 		t.Error("repeatPass rule")
 	}
