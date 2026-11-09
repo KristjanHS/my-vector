@@ -1,6 +1,6 @@
 # Continuous mic stream for active listening
 
-Status: 1.1 + 2.1 + 2.2 shipped 2026-11-08; 1.2 PASS; USER 3.1 live next. Replaces C2/C3 (clip capture) of `2026-11-07-active-listening.md`; Hearer, State, echo gate, backoff, phrases stay.
+Status: ✅ SHIPPED — 1.1 + 2.1 + 2.2 shipped 2026-11-08; 1.2 + 3.1 PASS; 3.2 committed 2026-11-09 (lands on the next `make ship`). Replaces C2/C3 (clip capture) of `2026-11-07-active-listening.md`; Hearer, State, echo gate, backoff, phrases stay.
 
 ## Rulings
 
@@ -30,5 +30,5 @@ Status: 1.1 + 2.1 + 2.2 shipped 2026-11-08; 1.2 PASS; USER 3.1 live next. Replac
 | 1.2 | PASS (USER 2026-11-08: per-thread cost rules): silent +0.19 %; audio in every window `SECS=180 gate.sh off on off` — MyVectorMicTx +0.33 %, MicProcTrigger tap +1.05–1.50 %, whole +2.13 %, 0 drops. Listening check PASS: stream up 0.3 s after "aktiivne kuulamine sees", 48 + 25 utterances heard, echo dropped, "Hey Vector" 4/4, off by voice. | numbers in this row |
 | 2.1 | M5 receiver on `:8093`, utterances logged only (`myvector listen: heard N words`); guard port. | `TestStreamCut` (gap → one utterance, `MaxUtter` → split, disconnect → flush); `scripts/tests/guard.sh`; `make check` |
 | 2.2 | M6 arm/re-arm, feed `Hearer.Heard`. | `TestStreamArm` (on → target set; off → cleared + closed; lost → re-arm → off); `make check` |
-| 3.1 | USER live (volume 1, ask first): 5 min talk, one "Hey Vector" ask mid-talk, off by voice. | `journalctl -u wire-pod \| grep 'myvector listen'` |
-| 3.2 | M7 deletions. | `make check`; `scripts/upstream-drift.sh` |
+| 3.1 | PASS (USER 2026-11-09): the 1.2 listening check counts — talk, "Hey Vector" mid-talk 4/4, off by voice. | 1.2 row |
+| 3.2 | M7 deletions; `STT` → `listen/stt.go`, `RestartWait` → `arm.go`; shut-up-sleep Stage 5 shape → the `:8093` stream (USER 2026-11-09). | `make check`; `scripts/upstream-drift.sh` |

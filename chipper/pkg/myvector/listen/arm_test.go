@@ -12,6 +12,16 @@ import (
 	"time"
 )
 
+func eventually(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		if ok() {
+			return
+		}
+	}
+	t.Fatal(what)
+}
+
 type armRig struct {
 	a    *Arm
 	addr string
