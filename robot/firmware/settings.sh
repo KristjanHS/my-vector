@@ -12,8 +12,8 @@ flag=/data/data/user-do-not-auto-update
 conf=$robot_dir/../secrets/server/myvectorConfig.json # voice.SettingsPath: beside apiConfig.json (vars/fork_paths.go)
 jdocs=$robot_dir/../secrets/server/jdocs/jdocs.json # vars.JdocsPath (vars/fork_paths.go)
 rc=0
-ok() { echo "ok: $*"; }
-warn() { echo "WARN: $*"; rc=1; }
+ok() { echo "ok: $* (+$SECONDS s)"; }
+warn() { echo "WARN: $* (+$SECONDS s)"; rc=1; }
 
 if [[ -z ${SKIP_KEYS:-} ]]; then
   # sshd host keys first (robot/hostkey): a reflash restores the image ones, which only hostkey's own login still trusts.
