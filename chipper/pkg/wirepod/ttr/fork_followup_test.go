@@ -198,6 +198,23 @@ func TestForkFollowUp(t *testing.T) {
 	if forkFollowUp(nil, decided(&yes), esn, false) {
 		t.Errorf("follow-up %d fired over the cap of %d", followup.Max+1, followup.Max)
 	}
+	// G1: active listening caps the chain at MaxListening; without it the same count still fires.
+	for _, active := range []bool{true, false} {
+		esn := "fu-cap-listening-" + map[bool]string{true: "on", false: "off"}[active]
+		forkChain.Reset(esn)
+		if active {
+			forkListening.Activate(esn, forkNow())
+			t.Cleanup(func() { forkListening.Deactivate(esn, "test") })
+		}
+		for i := 0; i < followup.MaxListening; i++ {
+			if !forkFollowUp(nil, decided(&yes), esn, false) || !forkChain.Begin(esn, forkNow()) {
+				t.Fatalf("active %v: follow-up %d did not fire", active, i+1)
+			}
+		}
+		if got := forkFollowUp(nil, decided(&yes), esn, false); got == active {
+			t.Errorf("active %v: follow-up %d fired %v", active, followup.MaxListening+1, got)
+		}
+	}
 }
 
 // TestForkBegin: F2/B1 — an armed knowledge request counts, any other request resets, a blank one resets and skips.

@@ -81,11 +81,12 @@ func forkFollowUp(robot *vector.Vector, turn forkTurn, esn string, skip bool) bo
 	if skip {
 		return false
 	}
-	if !forkChain.Allow(esn) {
-		logger.Println("myvector: follow-up " + strconv.Itoa(followup.Max) + "/" + strconv.Itoa(followup.Max) + " cap reached, chain ends")
+	max := forkMax(esn)
+	if !forkChain.Allow(esn, max) {
+		logger.Println("myvector: follow-up " + strconv.Itoa(max) + "/" + strconv.Itoa(max) + " cap reached, chain ends")
 		return false
 	}
-	n := strconv.Itoa(forkChain.Count(esn)+1) + "/" + strconv.Itoa(followup.Max)
+	n := strconv.Itoa(forkChain.Count(esn)+1) + "/" + strconv.Itoa(max)
 	verdict, yes := "timeout", false
 	deadline := time.After(forkFollowUpWait)
 	select {
@@ -106,6 +107,14 @@ func forkFollowUp(robot *vector.Vector, turn forkTurn, esn string, skip bool) bo
 		forkFire(robot)
 	}
 	return yes
+}
+
+// forkMax is esn's chain cap: MaxListening while active listening is on (G1), else Max.
+func forkMax(esn string) int {
+	if forkListening.Active(esn, forkNow()) {
+		return followup.MaxListening
+	}
+	return followup.Max
 }
 
 func forkDecideNow(t llm.Target, ask, reply string) bool {
