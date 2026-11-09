@@ -308,7 +308,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 		for {
 			response, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
-				forkDropCut(cut, fullRespSlice, &fullfullRespText, &fullRespText) // my-vector: drop the cut-off sentence (fork_split.go)
+				rep.dropCut(cut, fullRespSlice, &fullfullRespText, &fullRespText) // my-vector: drop the cut-off sentence (fork_followup.go)
 				var held string
 				fullRespSlice, fullRespText, held = forkFlushHeld(fullRespSlice, fullRespText) // my-vector: a sentence held at a digit '.' (fork_split.go)
 				forkSignalHeld(speakReady, held)

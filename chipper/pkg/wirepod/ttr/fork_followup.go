@@ -151,14 +151,14 @@ func (r *forkRepeats) only(turn forkTurn, chunks []string) bool {
 	return true
 }
 
-// wake runs at stream EOF after isDone is set and the last chunk appended: a dropped sentence sends no speakReady
-// wake, so a speak loop that spoke every kept chunk and waits for the next one would never see isDone. Bounded like
-// forkSignalHeld (forkHeldWait, in a goroutine), so it never blocks the stream goroutine; a loop still speaking finds
-// isDone by itself and the send times out.
+// dropCut is forkDropCut where a reply with only dropped repeats counts as spoken: its cut fragment is dropped too.
+func (r *forkRepeats) dropCut(cut bool, chunks []string, full, tail *string) {
+	forkDropCutIf(cut, len(chunks) == 0 && r.dropped == 0, chunks, full, tail)
+}
+
+// wake runs at every stream EOF after isDone is set and the last chunk appended: a dropped sentence, a lost
+// non-blocking send or an extraBit append leaves a waiting speak loop unwoken. Bounded like forkSignalHeld.
 func (r *forkRepeats) wake(speakReady chan string) {
-	if r.dropped == 0 {
-		return
-	}
 	timeout := time.After(forkHeldWait)
 	go func() {
 		select {
