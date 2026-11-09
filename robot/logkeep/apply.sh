@@ -29,9 +29,10 @@ printf '%s\n' "$new" >$t
 o=$(syslog-ng --syntax-only -f $t 2>&1) || { rm -f $t; echo "$o"; echo "FAIL: syntax of new $c; not written"; exit 1; }
 rm -f $t
 # stale <unit> <file>: the unit started before the file's last write (a run that died between write and restart).
+# +2 s: the start estimate floors three times (date, uptime, µs), up to ~2 s early.
 stale() {
   m=$(systemctl show -p ActiveEnterTimestampMonotonic "$1" | cut -d= -f2) up=$(cut -d' ' -f1 $R/proc/uptime)
-  [ "$(stat -c %Y $R$2)" -gt $(($(date +%s) - ${up%.*} + ${m:-0} / 1000000)) ]
+  [ "$(stat -c %Y $R$2)" -gt $(($(date +%s) - ${up%.*} + ${m:-0} / 1000000 + 2)) ]
 }
 [ -f $R$c.orig ] || { etc_rw; cp -p $R$c $R$c.orig; }
 etc_put $c "$new"; sl=$ETC_CHANGED ETC_CHANGED=
