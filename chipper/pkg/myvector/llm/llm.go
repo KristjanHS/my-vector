@@ -21,7 +21,7 @@ const (
 	Claude = "claude"
 	// DefaultETModel is the et-EE Ollama model when nothing else is saved (user ruling 2026-11-08: same model as listen.Model).
 	DefaultETModel   = "gemma4:e4b-it-qat"
-	DefaultENModel   = "qwen3.5:4b"
+	DefaultENModel   = DefaultETModel // en-US default too (user ruling 2026-11-09: qwen3.5 thinking unusable, gemma4 is the saved en model)
 	DefaultOllamaURL = "http://localhost:11434"
 	AnthropicVersion = "2023-06-01"
 	// ModelMax is the longest model name ValidModel takes, in characters.

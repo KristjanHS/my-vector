@@ -17,7 +17,8 @@ func TestThinkingFor(t *testing.T) {
 	}{
 		{"qwen none", Ollama, "qwen3.5:4b", None, Thinking{Effort: "none", Sampling: qwenOff}},
 		{"qwen medium", Ollama, "qwen3.5:4b", Medium, Thinking{Effort: "medium", Budget: 0, Sampling: Sampling{"qwen3.5", 1, 0.95, 1.5}}},
-		{"gemma4 high", Ollama, "gemma4:e4b-it-qat", High, Thinking{Effort: "high", Sampling: gemma}},
+		{"gemma4 high", Ollama, "gemma4:e4b-it-qat", High, Thinking{Effort: "high", Budget: 768, Sampling: gemma}},
+		{"gemma4 low", Ollama, "gemma4:e4b-it-qat", Low, Thinking{Effort: "low", Budget: 384, Sampling: gemma}},
 		{"claude provider", Claude, "haiku-latest", High, Thinking{}},
 		{"claude model", "", "anthropic/claude-haiku-5-5", Low, Thinking{}},
 		{"unknown model", Ollama, "cas/mistral-7b-instruct-v0.3:latest", High, Thinking{Effort: "none", Sampling: Sampling{"", 1, 1, 0}}},
@@ -25,6 +26,15 @@ func TestThinkingFor(t *testing.T) {
 	} {
 		if got := ThinkingFor(c.provider, c.model, PathChat, c.level); got != c.want {
 			t.Errorf("%s: ThinkingFor = %+v, want %+v", c.name, got, c.want)
+		}
+	}
+	for _, c := range []struct { // Stage 2.2 budgets off the chat path
+		path  Path
+		level Level
+		want  int
+	}{{PathListen, Medium, 224}, {PathListen, High, 384}, {PathListen, Low, 0}, {PathFollowUp, Medium, 144}, {PathFollowUp, High, 224}} {
+		if got := ThinkingFor(Ollama, "gemma4:e4b-it-qat", c.path, c.level).Budget; got != c.want {
+			t.Errorf("gemma4 %s %s: Budget %d, want %d", c.path, c.level, got, c.want)
 		}
 	}
 }
@@ -36,6 +46,13 @@ func TestThinkingCeiling(t *testing.T) {
 	}
 	if got := (Config{}).Thinking(Ollama, "gemma4:e4b-it-qat", PathListen); got.Effort != string(DefaultThink[PathListen]) {
 		t.Errorf("no saved level: Effort %q, want DefaultThink %q", got.Effort, DefaultThink[PathListen])
+	}
+	high := Config{Think: map[Path]Level{PathChat: High, PathListen: High, PathFollowUp: High}}
+	for _, p := range []Path{PathChat, PathListen, PathFollowUp} {
+		got, want := high.Thinking(Ollama, "gemma4:e4b-it-qat", p), ThinkingFor(Ollama, "gemma4:e4b-it-qat", p, None)
+		if got != want || got.Budget != 0 {
+			t.Errorf("gemma4 %s saved high over ceiling none: %+v, want %+v", p, got, want)
+		}
 	}
 }
 

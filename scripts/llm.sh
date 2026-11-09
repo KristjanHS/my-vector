@@ -43,7 +43,7 @@ for k,v in d.items(): print(f"  {k:26} {v}")'
 # preset -> provider, endpoint, key variable, default model
 preset() {
   case $1 in
-    ollama)   P=custom;   E=$OLLAMA/v1;                                          K=;                 M=qwen3.5:4b ;;
+    ollama)   P=custom;   E=$OLLAMA/v1;                                          K=;                 M=gemma4:e4b-it-qat ;;
     claude)   P=custom;   E=https://api.anthropic.com/v1;                        K=ANTHROPIC_API_KEY; M=claude-haiku-5-5 ;;
     openai)   P=openai;   E=;                                                    K=OPENAI_API_KEY;    M=gpt-4o-mini ;;
     together) P=together; E=;                                                    K=TOGETHER_API_KEY;  M=meta-llama/Llama-3.3-70B-Instruct-Turbo ;;
@@ -155,7 +155,7 @@ print({"openai":"openai","together":"together"}.get(c["provider"]) or ("claude" 
 }
 
 warm() {
-  local m=${1:-qwen3.5:4b}
+  local m=${1:-gemma4:e4b-it-qat}
   echo "loading $m into Ollama (first time ~1 min)..."
   curl -fsS -m 300 "$OLLAMA/api/generate" -d "{\"model\":\"$m\",\"keep_alive\":-1}" >/dev/null
   curl -fsS "$OLLAMA/api/ps" | python3 -I -c 'import json,sys;[print(" loaded:",m["name"],"until",m["expires_at"][:10]) for m in json.load(sys.stdin)["models"]]'

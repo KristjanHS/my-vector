@@ -35,7 +35,6 @@ var forkHearer = &listen.Hearer{
 	},
 	Say:      forkListenSay,
 	Locked:   func(now time.Time) bool { _, l := quiet.Line(now); return l },
-	Quiet:    func(esn, phrase string) { forkQuietLock(esn, phrase, time.Now()) },
 	Estonian: func() bool { return lang.Current() == lang.Estonian },
 	LogDir:   os.Getenv("MYVECTOR_LISTEN_LOG"),
 }

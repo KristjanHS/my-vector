@@ -87,14 +87,14 @@ func forkNap(ip, esn string, until time.Time) {
 		logger.Println("my-vector quiet: nap skipped: no IP for " + esn)
 		return
 	}
-	if err := quiet.Nap(ip, until); errors.Is(err, quiet.ErrNapOff) {
+	if sent, err := quiet.Nap(ip, until); errors.Is(err, quiet.ErrNapOff) {
 		logger.Println("my-vector quiet: nap skipped: " + err.Error())
 	} else if err != nil {
 		logger.Println("my-vector quiet: nap: " + err.Error())
-	} else if until.IsZero() {
+	} else if sent.IsZero() {
 		logger.Println("my-vector quiet: nap off on " + esn)
 	} else {
-		logger.Println("my-vector quiet: nap until " + until.Format(time.RFC3339) + " on " + esn)
+		logger.Println("my-vector quiet: nap until " + sent.Format(time.RFC3339) + " on " + esn)
 	}
 }
 
@@ -185,24 +185,43 @@ func forkQuietExpire() {
 var forkQuietRetry = 5 * time.Minute
 
 // forkQuietRestore (forkQuietMu held) sets l.Vol on every paired robot, then removes the lock; on a failure (or no robot
-// known) it keeps l.Vol in a lock file expired at min(l.Until, now) and arms forkQuietRetry.
-func forkQuietRestore(l quiet.Lock) {
+// known) it keeps l.Vol in a lock file expired at min(l.Until, now) and arms forkQuietRetry. A file changed meanwhile is
+// kept and re-armed on instead; false = it now holds a live lock (a "shut up" during the RPCs).
+func forkQuietRestore(l quiet.Lock) bool {
+	was := l
 	if l.Vol == quiet.NoVolume {
 		logger.Println("my-vector quiet: lock ended, no saved volume")
 	} else if !forkQuietSetAll(l.Vol) {
 		if now := forkQuietNow(); l.Until.After(now) {
 			l.Until = now
 		}
-		if err := quiet.Hold(l); err != nil {
+		if ok, err := quiet.HoldIf(was, l); err != nil {
 			logger.Println("my-vector quiet: volume keep: " + err.Error())
+		} else if !ok {
+			return forkQuietSuperseded()
 		}
 		logger.Println("my-vector quiet: volume " + strconv.Itoa(l.Vol) + " kept for a retry in " + forkQuietRetry.String())
 		forkQuietStop = forkQuietAfter(forkQuietRetry, forkQuietExpire)
-		return
+		return true
 	}
-	if err := quiet.Clear(); err != nil {
+	if ok, err := quiet.ClearIf(was); err != nil {
 		logger.Println("my-vector quiet: unlock: " + err.Error())
+	} else if !ok {
+		return forkQuietSuperseded()
 	}
+	return true
+}
+
+// forkQuietSuperseded (forkQuietMu held): the file changed during the restore; re-arm on it, leave it be. Ended unless
+// it now holds a live lock: a removed or expired file (quiet.sh off's fallback) is no lock.
+func forkQuietSuperseded() bool {
+	forkQuietArm()
+	if l, err := quiet.Read(); err == nil && forkQuietNow().Before(l.Until) {
+		logger.Println("my-vector quiet: a newer lock landed during the restore; kept")
+		return false
+	}
+	logger.Println("my-vector quiet: the lock file changed during the restore (removed or expired); re-armed on it")
+	return true
 }
 
 // forkQuietSetAll sets v on every paired robot; false when one fails or none is known.
@@ -231,8 +250,9 @@ func ForkQuietRearm() {
 	forkQuietArm()
 }
 
-// forkQuietOff ends the lock now: stop the timer, restore the volume, remove the file, nap 0 on every robot.
-func forkQuietOff() {
+// forkQuietOff ends the lock now: stop the timer, restore the volume, remove the file, nap 0 on every robot; false = a
+// newer lock landed meanwhile and was kept (no nap 0).
+func forkQuietOff() bool {
 	forkQuietMu.Lock()
 	if forkQuietStop != nil {
 		forkQuietStop()
@@ -243,16 +263,21 @@ func forkQuietOff() {
 		logger.Println("my-vector quiet: off: " + err.Error())
 		l = quiet.Lock{Vol: quiet.NoVolume}
 	}
-	forkQuietRestore(l)
+	ended := forkQuietRestore(l)
 	forkQuietMu.Unlock()
+	if !ended {
+		return false
+	}
 	for _, esn := range forkRobotESNs() {
 		ip := forkRobotIP(esn)
 		forkNaps.Add(1)
 		go func(esn string) { defer forkNaps.Done(); forkNap(ip, esn, time.Time{}) }(esn)
 	}
+	return true
 }
 
-// forkQuietHandler serves ForkQuietAPI: ?on=<minutes> locks every paired robot as a voice "shut up" does; ?off=1 unlocks.
+// forkQuietHandler serves ForkQuietAPI: ?on=<minutes> locks every paired robot as a voice "shut up" does; ?off=1 unlocks (409 + the
+// QUIET line when a newer lock was kept).
 func forkQuietHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
@@ -276,7 +301,11 @@ func forkQuietHandler(w http.ResponseWriter, r *http.Request) {
 		line, _ := quiet.Line(now)
 		fmt.Fprintln(w, line)
 	case off == "1" && on == "":
-		forkQuietOff()
+		if !forkQuietOff() {
+			line, _ := quiet.Line(forkQuietNow())
+			http.Error(w, line, http.StatusConflict)
+			return
+		}
 		fmt.Fprintln(w, "robot sound unlocked")
 	default:
 		http.Error(w, "usage: POST "+ForkQuietAPI+"?on=<minutes> | ?off=1", http.StatusBadRequest)

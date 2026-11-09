@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -278,6 +279,43 @@ func Summarize(calls []Call) Summary {
 		s.ExactPct = pct(exact, s.Counted)
 	}
 	return s
+}
+
+// DumpRow is one call as a -think-dump JSON line; T is thinking tokens (Completion − ReplyTok, floored at 0), −1 when not counted.
+type DumpRow struct {
+	Tag        string `json:"tag"`
+	Finish     string `json:"finish"`
+	Prompt     int    `json:"prompt"`
+	Completion int    `json:"completion"`
+	T          int    `json:"t"`
+	Think      bool   `json:"think"`
+	Ms         int64  `json:"ms"`
+}
+
+// Dump appends one DumpRow per call to path, tagged tag; "" does nothing. Separate runs append to one file, so their
+// reps pool into one T distribution.
+func Dump(path, tag string, calls []Call) error {
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(f)
+	for _, c := range calls {
+		t := -1
+		if c.Counted {
+			if t = c.Completion - c.ReplyTok; t < 0 {
+				t = 0
+			}
+		}
+		if err := enc.Encode(DumpRow{tag, c.Finish, c.Prompt, c.Completion, t, c.Reasoning != "", c.Dur.Milliseconds()}); err != nil {
+			f.Close()
+			return err
+		}
+	}
+	return f.Close()
 }
 
 // rank is the nearest-rank index of percentile p in n sorted values: ceil(p/100·n) − 1.

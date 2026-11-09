@@ -1,0 +1,99 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Mon, 9 Nov 2026 16:30:00 +0200
+Subject: [PATCH] sdk-audio-orphan
+
+vic-anim (plan 2026-11-09-sdk-audio-orphan B): an SDK audio Prepare arriving while a stream plays is refused
+(PrepareFailed, logs my-vector.SdkAudioOrphan) without clearing the playing stream's state, so its chunks and its
+Complete/Cancel still land. ClearOperationData ends the wave data whenever it holds one (SDK and TTS):
+IsPlayingStream() is never true, and the Wwise FX keeps its own ref, so a dropped stream starved forever ("No Data,
+plugin will be starved" ~60/s). Cancel's StopActiveAudio stops the kSdkGameObject game object (it passed the Stop
+event id as the game object: stopped nothing). Each ClearOperationData bumps a playback counter, so the end
+callback of a stopped playback no longer clears a later stream nor reports it Completed.
+Falsifier: voiceprobe overlap, A hears AudioStreamPlaybackComplete, no starved / VERIFY(_audioPrepared) line.
+---
+ .../src/cozmoAnim/audio/sdkAudioComponent.cpp | 23 +++++++++++++++----
+ .../textToSpeech/textToSpeechComponent.cpp    |  3 ++-
+ 2 files changed, 20 insertions(+), 6 deletions(-)
+
+diff --git a/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp b/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp
+index 8d6776c4..f5d2c335 100644
+--- a/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp
++++ b/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp
+@@ -36,6 +36,8 @@
+ namespace {
+   constexpr Anki::AudioMetaData::GameObjectType kSdkGameObject = Anki::AudioMetaData::GameObjectType::TextToSpeech;
+   constexpr Anki::AudioEngine::PlugIns::StreamingWavePortalPlugIn::PluginId_t kSdkPluginId = 100;
++  // my-vector sdk-audio-orphan: bumped by ClearOperationData; an older playback's end callback (after Cancel) is dropped
++  uint32_t sMyVectorSdkPlayback = 0;
+ }
+ 
+ namespace Anki {
+@@ -95,6 +97,12 @@ void SdkAudioComponent::HandleMessage(const RobotInterface::ExternalAudioPrepare
+   LOG_DEBUG("SdkAudioComponent.HandleMessage.ExternalAudioPrepare", 
+            "Sample rate %d, volume %d", msg.audio_volume, msg.audio_rate );
+ 
++  if (_audioPrepared) {
++    // my-vector sdk-audio-orphan: no ClearOperationData here, it would orphan the playing stream
++    LOG_WARNING("my-vector.SdkAudioOrphan", "Prepare refused: a stream is playing, it keeps playing");
++    SendAnimToEngine(SDKAudioStreamingState::PrepareFailed);
++    return;
++  }
+   if (!PrepareAudioEngine(msg)) {
+     LOG_DEBUG("SdkAudioComponent.HandleMessage.ExternalAudioPrepare", "Unable to prepare audio engine for streaming");
+     SendAnimToEngine(SDKAudioStreamingState::PrepareFailed);
+@@ -241,8 +249,12 @@ bool SdkAudioComponent::PostAudioEvent()
+   // Register callback for event
+   using namespace AudioEngine;
+   std::weak_ptr<AudioCallbackType> weakOnFinished = _audioPlaybackFinishedPtr;
+-  audioCallbackContext->SetEventCallbackFunc( [weakOnFinished]( const AudioCallbackContext* thisContext,
++  const uint32_t playback = sMyVectorSdkPlayback;
++  audioCallbackContext->SetEventCallbackFunc( [weakOnFinished, playback]( const AudioCallbackContext* thisContext,
+                                                                      const AudioCallbackInfo& callbackInfo ) {
++    if (playback != sMyVectorSdkPlayback) {
++      return;
++    }
+     // if the user logs out, this callback could fire after sdkAudioComponent is destroyed. check that here.
+     auto callback = weakOnFinished.lock();
+     if( callback && (*callback) ) {
+@@ -280,11 +292,13 @@ void SdkAudioComponent::CleanupAudioEngine()
+ void SdkAudioComponent::ClearOperationData()
+ {
+   LOG_DEBUG("SdkAudioComponent.ClearOperationData", "Clear Sdk Audio");
+-  if (_waveData && _waveData->IsPlayingStream()) {
++  // my-vector sdk-audio-orphan: IsPlayingStream() is never true; the Wwise FX keeps its own ref, so end it here
++  if (_waveData) {
+     //no more data coming
+     _waveData->DoneProducingData();
+   }
+ 
++  ++sMyVectorSdkPlayback;
+   _audioPrepared = false;
+   _audioPosted = false;
+   _waveData = NULL;
+@@ -296,9 +310,8 @@ void SdkAudioComponent::ClearOperationData()
+ void SdkAudioComponent::StopActiveAudio()
+ {
+   LOG_DEBUG("SdkAudioComponent.StopActiveAudio", "Stop active Sdk audio");
+-  using AudioEvent = AudioMetaData::GameEvent::GenericEvent;
+-  const auto eventID = AudioEngine::ToAudioEventId( AudioEvent::Stop__Robot_Vic__External_Sdk_Playback_01 );
+-  _audioController->StopAllAudioEvents(eventID);
++  // my-vector sdk-audio-orphan: StopAllAudioEvents takes a game object, not a Stop event id (stopped nothing)
++  _audioController->StopAllAudioEvents(static_cast<AudioEngine::AudioGameObject>(kSdkGameObject));
+ }
+ 
+ //
+diff --git a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
+index c595c34d..9b3b3aeb 100644
+--- a/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
++++ b/animProcess/src/cozmoAnim/textToSpeech/textToSpeechComponent.cpp
+@@ -331,7 +331,8 @@ void TextToSpeechComponent::ClearOperationData(const TTSID_t ttsID)
+   if (it != _bundleMap.end()) {
+     const auto & bundle = it->second;
+     const auto & waveData = bundle->waveData;
+-    if (waveData && waveData->IsPlayingStream()) {
++    // my-vector sdk-audio-orphan: IsPlayingStream() is never true; the Wwise FX keeps its own ref, so end it here
++    if (waveData) {
+       waveData->DoneProducingData();
+     }
+     _bundleMap.erase(it);

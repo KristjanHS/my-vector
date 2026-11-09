@@ -1,0 +1,27 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Mon, 9 Nov 2026 10:52:01 +0200
+Subject: [PATCH] dark-off
+
+vic-engine: ReactToDarkness leaves OptionalReactions, so a dim room never plays the light-to-dark startle anim.
+Woken in a dim room outside the night window, it looked around, startled and suggested sleep every 30 s (its cooldown),
+but BehaviorSleepCycle ignores sleep suggestions for 10 min after a wake (kSleepCycle_RecentSleepLength_s): 15 head
+jerks in 10 min on 11-09. Sleep still comes from sleepiness, the night window and the nap lock. The behavior stays
+defined (MeetVictor's suppression list still finds it by ID).
+---
+ .../victorBehaviorTree/reactions/optionalReactions.json         | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/reactions/optionalReactions.json b/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/reactions/optionalReactions.json
+index f1705722..d95b7417 100644
+--- a/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/reactions/optionalReactions.json
++++ b/resources/config/engine/behaviorComponent/behaviors/victorBehaviorTree/reactions/optionalReactions.json
+@@ -14,7 +14,7 @@
+   },
+   
+   "behaviors": [
+-    "ReactToDarkness",
++    // my-vector dark-off: no ReactToDarkness; woken in a dim room it head-jerked every 30 s for the 10 min wake grace
+     "GreetAfterLongTime",
+     "ReactToUncalibratedHeadAndLift",
+     "DanceToTheBeatCoordinator"

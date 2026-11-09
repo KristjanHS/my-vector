@@ -1,14 +1,14 @@
 # Local-model thinking levels: measure, then decide
 
-Status: T1–T16 ruled 2026-11-08 (T13, 2.1, 2.3 re-ruled same day: exact count, seeded check); Stages 0–1 done; 2.1 code done, its falsifier fails on gemma4 × chat et (R9) — USER DECISION owed (`docs/backlog.md` §OWED[USER]) before 2.2.
+Status: ✅ SHIPPED 2026-11-09 — verdict: keep off (3.1: low thinking lost quality and added cuts on every path; ceilings and `DefaultThink` stay none). 4.4 review done.
 
-Goal: let qwen3.5:4b and gemma4:e4b-it-qat think on the chat, listen and follow-up paths, with each model's own thinking controls, and a cap that has room for both the thinking and the reply. Turn it on only where the probes show it helps.
+Goal: let qwen3.5:4b (en chat) and gemma4:e4b-it-qat (en chat, listen, follow-up) think, with each model's own thinking controls, and a cap that has room for both the thinking and the reply. Turn it on only where the probes show it helps.
 
 ## Rulings
 
 | id | ruling | edit site |
 |---|---|---|
-| T1 | Scope: qwen3.5:4b (en default) and gemma4:e4b-it-qat (et chat / listen) × chat (`forkAIReq`), listen (`listen.Ask`), follow-up YES/NO decider. Pairing follows production (`llm.Resolve` / listen model per language). Vision is out (vision-setting plan owns it). Claude thinking is out: `ThinkingFor` returns zero for Claude. | — |
+| T1 | Scope (2026-11-09): chat (`forkAIReq`) en only, gemma4 + qwen3.5:4b; listen (`listen.Model`) and follow-up decider gemma4 only. A model without Ollama `thinking` capability is never tested (apertus-estllm:8b, EstLLM-8B-1125 answer "does not support thinking"), so et chat stays none. Vision and Claude out. | — |
 | T2 | Mechanism is cap-only over /v1: thinking on = `reasoning_effort` ≠ "none"; `max_tokens` = path reply cap + level budget (Ollama 0.40.14 ignores `max_completion_tokens`). No budget forcing, no native `/api/chat` in production. | `llm/thinking.go` |
 | T3 | Levels are per model. Each model row lists its native levels with the exact value it expects. A boolean-only model exposes `none\|on` natively, so our `low\|medium\|high` are emulated: on + budget, marked `emulated`. The level name is sent as `reasoning_effort` either way (Ollama maps a recognized effort to `think=true` on boolean-only models). | `llm/thinking.go` |
 | T4 | API: `llm.ThinkingFor(provider, model string, path Path, level Level) Thinking` (no ceiling; probes) and `Config.Thinking(provider, model, path)` (saved level or `DefaultThink`, ceiling-clamped; production), where `Thinking{Effort string; Budget int; Native bool; Sampling Sampling}`. `Thinking.Apply(r, replyCap)` sets `ReasoningEffort`, `MaxTokens = replyCap + Budget`, and the thinking-on sampling when level ≠ none. Level none gives effort "none", budget 0 and today's `SamplingFor` values, the same request as today. | `llm/thinking.go`, `sampling.go` |
@@ -50,32 +50,38 @@ Sources:
 | R5 | Runtime `context_length` 4096 for both (and for gemma4:e2b); three models resident at once | `curl -s localhost:11434/api/ps` |
 | R7 | Exact reply count: et think-off reply, prompt-token delta + 1 = completion_tokens (qwen 103/103, gemma4 74/74), repeat identical; runes/token 2.83 / 3.03, not 4.0 | `/v1` reply → `{user: reply}`, `max_tokens` 1, minus `{user: ""}` |
 | R8 | Seed 7, T 0, "Is 391 prime?": low vs high identical (qwen pt 20 ct 800, gemma4 pt 26 ct 342, same reasoning) — efforts are one request | `/v1` `seed`, `temperature` 0 |
-| R9 | 2.1 think-off dev (b074c03), exact % and signed err: chat qwen en 100 (+0/+0), gemma4 et **94** = 15/16 (+0/+1); listen and follow-up 100 on every prompt × model. Max prompt: chat 222, listen 290, follow-up 111 | `routeprobe -set dev -think none -judge none`; `listenprobe`/`followupprobe -think none` |
+| R9 | 2.1 think-off dev (b074c03), exact % and signed err: chat qwen en 100 (+0/+0), gemma4 en 100 (+0/+0, max prompt 292), gemma4 et 94 = 15/16 (+0/+1); listen and follow-up 100 on every prompt × model. Max prompt: chat 222, listen 290, follow-up 111 | `routeprobe -set dev -think none -judge none`; `listenprobe`/`followupprobe -think none` |
+| R10 | Decode slows with context (2026-11-09): qwen `think` precheck 85 tok/s at short context; user saw 18 tok/s at a 1731-token context; uncapped qwen chat calls ran ~80 s for ~3000 tokens. R6 holds for short thinks only | Ollama verbose; 2.2 qwen log |
+| R11 | 2.3 (2026-11-09): gemma4 low/medium/high byte-identical (reply + reasoning) on 5/5 listen prompts after each prompt's first call; that first think-on call may differ at any level (cache, not level); none ≠ high 5/5 → emulated stands | `robot/work/think/23/run2.py` |
 | R6 | Decode tok/s (thinking calls, model alone): qwen p50 74 (n=9), gemma4 p50 69 (n=5); prompt eval ~0.1–0.2 s | `robot/work/think/zz_switch_test.go` (Stage 0.2/0.3) |
 
 ## Budget table
 
-Filled by Stage 2.2. The code table in `llm/thinking.go` holds the values; this table holds what was measured.
+Filled by Stage 2.2 (2026-11-09, gemma4 at the T13 uncapped budgets 2700 / 2920 / 2992, 1 rep, dev; follow-up = prompt 1). No call hit the cap or timed out, so no row is censored. The code table in `llm/thinking.go` holds the values; this table holds what was measured. Listen and follow-up low = 0: p25 is 0 because 30–40% of calls don't think, so low leaves no room to think, and 3.1 should expect T6 cuts there.
 
 | model × path | n | think-rate | T p25 / p50 / p90 / max | reply cap | low / medium / high budget | clamped? |
 |---|---|---|---|---|---|---|
-| qwen × chat (en) | | | | 300 (long 1000) | | |
-| gemma4 × chat (et) | | | | 300 (long 1000) | | |
-| qwen × listen | | | | 80 | | |
-| gemma4 × listen | | | | 80 | | |
-| qwen × follow-up (en) | | | | 8 | | |
-| gemma4 × follow-up (et) | | | | 8 | | |
+| qwen × chat (en) | 4 | | 3 of 4 hit cap (≥ 2700) | 300 (long 1000) | off (T6) | |
+| gemma4 × chat (en) | 16 | 94% | 384 / 448 / 764 / 849 | 300 (long 1000) | 384 / 448 / 768 | no (max prompt 294) |
+| gemma4 × listen | 20 | 70% | 0 / 214 / 380 / 428 | 80 | 0 / 224 / 384 | no (max prompt 204) |
+| gemma4 × follow-up | 10 | 60% | 0 / 136 / 214 / 257 | 8 | 0 / 144 / 224 | no (max prompt 91) |
 
 ## Results table
 
-Filled by Stage 3.
+Stage 3.1, 2026-11-09, dev, 1 rep; ms = the probekit arm line's p50/p90 (logs `robot/work/think/31/`).
 
 | path × model | arm | set | quality (Δ vs none) | p50 / p90 ms (Δ p50) | cut % | verdict |
 |---|---|---|---|---|---|---|
+| chat × gemma4 (en) | none | dev | judge 74.8 | 475 / 903 | 0 | baseline |
+| chat × gemma4 (en) | low~ | dev | judge 62.5 (−12.2) | 7380 / 33179 (+6905) | 12 | off: T6 cut, T7 quality + latency |
+| listen × gemma4 | none | dev | 18/20 | 423 / 713 | 0 | baseline |
+| listen × gemma4 | low~ | dev | 13/20 (−5) | 2735 / 3311 (+2312) | 65 | off: T6 cut, T8 correct + latency |
+| follow-up × gemma4 | none | dev | 10/10 | 111 / 141 | 0 | baseline (prompt 1) |
+| follow-up × gemma4 | low~ | dev | 8/10 (−2) | 117 / 203 (+6) | 30 | off: T6 cut, T9 correct |
 
 ## Out of scope
 
-Vision / camera request (`forkCameraReq`), Claude thinking, native `/api/chat`, budget forcing, settings-page UI for `think`, raising Ollama `num_ctx`, editing `docs/model-prompt-formats.md`.
+Vision / camera request (`forkCameraReq`), Claude thinking, et chat and any non-thinking model, qwen × listen/follow-up, native `/api/chat`, budget forcing, settings-page UI for `think`, raising Ollama `num_ctx`, editing `docs/model-prompt-formats.md`.
 
 ## Stages
 
@@ -95,12 +101,12 @@ Probe runs read gitignored `secrets/server/`: in a worktree, `ln -s <main>/secre
 | 1.3 | `probekit` flags + stats: `-think none,low,medium,high` (a list sweeps arms in one run, interleaved per prompt), `-think-budget N` (overrides the table budget; marks the arm `budget=N`), one discarded warm-up call per model. Per-arm line: n, p50/p90 ms, cut %, think-rate, T p25/p50/p90, max(prompt+completion). Emulated levels print `low~`. A level a model doesn't support natively runs only as an emulated arm. Wire into listenprobe and followupprobe; followupprobe gains `-models`. Proof: `TestStats` (p50/p90 on fixed slices, cut counts "length" and empty), `TestParseThink` (bad level → error); `-think none` gives the same verdict lines as a pre-change run (diff = falsifier). | new `probekit/think.go` + `_test.go`, `listenprobe/main.go`, `followupprobe/main.go` |
 | 1.4 | T16 chat scorer: `ForkProbeLLMResult{Target, Answer, Finish, Usage, Dur}` behind `ForkProbeLLM` (which keeps its signature). In-file chat sets: dev 16 en + 16 et, holdout 12 en + 12 et, a mix of fact / chit-chat / how-to / long-ask, no search-dependent asks. Judge = `probekit.Claude` claude-haiku-5-5, rubric 0–100 (answers the ask, correct, 1–3 spoken sentences, language matches, no markdown), JSON `{"score"}`. `-think` sets `llm.ProbeThinking` per arm (a saved think.chat would be ceiling-clamped). Proof: `TestChatSets` (disjoint, sizes, both languages), `TestParseJudge` (fence/prose tolerant, out-of-range → error); `scripts/live-check.sh route` PASS (single-sentence contract unchanged). | `ttr/fork_probe.go`, new `routeprobe/chatset.go`, `routeprobe/judge.go` + `_test.go`, `routeprobe/main.go` |
 | 1.5 | `make check` green, `scripts/upstream-drift.sh` green (no upstream file touched), then commit 1.1–1.4. | — |
-| 2.1 | T13 exact count: `probekit.CountReply`, filled by `probekit.Chat` and routeprobe (`ForkProbeLLMResult.BaseURL`); `RunesPerToken` goes; the arm line adds `exact %` and `max prompt`; routeprobe `-judge none` skips the judge. Run `-think none` on each path's dev set per model × language. Falsifier: `exact` ≥ 95% on every think-off arm. Proof: `TestStats`, `TestCountReply`. | `probekit/think.go`, `ttr/fork_probe.go`, 3 probes |
-| 2.2 | Uncapped distributions (`-think high -think-budget` per T13) per path × model on dev sets: chat 16 per language × 2 reps, listen all dev snippets × 2 reps, follow-up 10 pairs × 3 reps. Fill §Budget table and the `llm/thinking.go` budgets; apply the T14 clamp. If > 2% of calls hit the uncapped cap, the distribution is censored: mark p90 as a lower bound. Proof: `TestThinkingFor` rows updated to the measured budgets. Commit. | `llm/thinking.go`, `_test.go`, this plan |
+| 2.1 | T13 exact count: `probekit.CountReply`, filled by `probekit.Chat` and routeprobe (`ForkProbeLLMResult.BaseURL`); `RunesPerToken` goes; the arm line adds `exact %` and `max prompt`; routeprobe `-judge none` skips the judge. Run `-think none` on each path's dev set per model × language. Run gemma4 × chat en too (`-lang en-US -brain ollama:gemma4:e4b-it-qat`). Falsifier: |err| ≤ 1 on ≥ 95% of calls of every think-off arm (`err` min/max inside ±1 suffices). Proof: `TestStats`, `TestCountReply`. | `probekit/think.go`, `ttr/fork_probe.go`, 3 probes |
+| 2.2 | Precheck: one qwen `think` call ≥ 50 tok/s (`/api/chat` eval_count ÷ eval_duration), else stop (routeprobe's 2-min call deadline times out). Uncapped distributions (`-think high -think-budget` per T13) per path × model on dev sets: chat 16 en per model × 2 reps, listen all dev snippets × 2 reps, follow-up 10 pairs × 3 reps. Fill §Budget table and the `llm/thinking.go` budgets; apply the T14 clamp. If > 2% of calls hit the uncapped cap, the distribution is censored: mark p90 as a lower bound. Any call timeout (deadline exceeded / no answer) stops that path: precheck again, then re-run the whole path (user ruling 2026-11-09). Reps from separate runs pool through `-think-dump <file>` (one JSON line per call, `probekit.Dump`); listen runs `-arm "prompt 2"`, follow-up counts prompt 1 only. **Cut (user ruling 2026-11-09):** qwen × chat dropped — off by T6 (3 of its first 4 uncapped calls hit the 2700 cap, so any budget ≤ 2700 cuts ≥ 3/32 = 9% > 5%); gemma4 runs at the plan budgets, 1 rep: chat 16, listen 20, follow-up 1 run (R10). Proof: `TestThinkingFor` rows updated to the measured budgets. Commit. | `llm/thinking.go`, `_test.go`, this plan |
 | 2.3 | Seeded identity check (R8) per model: 5 listen dev prompts × {none, low, medium, high}, seed 7, T 0, uncapped. Low/medium/high byte-identical (reply + reasoning) ⇒ rows stay emulated; any differ ⇒ `Native=true` + T5 per-level budgets. Control: none ≠ high on every prompt. | `robot/work/think/`, this plan |
-| 3.1 | Dev runs, per T10 order and stop rules. Chat: `routeprobe -set dev -think none,low,medium,high` per model on its language, 2 reps. Listen: `listenprobe -set dev -models qwen3.5:4b,gemma4:e4b-it-qat -think …`, 2 reps. Follow-up: `followupprobe -models … -think none,low`, 2 runs. Record each arm in the Results table. | this plan |
-| 3.2 | Judge-noise check: re-judge 10 dev replies. If mean \|Δ\| > 2 pt, repeat 3.1 chat at 3 reps and score the mean. | this plan |
-| 3.3 | Holdout runs (T10d): only arms that passed dev, same reps; listen uses `-set holdout`. | this plan |
+| 3.1 | Dev, none vs low only, 1 rep, quality Δ + latency per path (user ruling 2026-11-09): `routeprobe -set dev -lang en-US -brain ollama:gemma4:e4b-it-qat -think none,low` (haiku judge); `listenprobe -set dev -models gemma4:e4b-it-qat -arm "prompt 2" -think none,low`; `followupprobe -models gemma4:e4b-it-qat -think none,low`. Listen/follow-up low budget is 0: expect T6 cuts. | this plan |
+| 3.2 | Cut (user ruling 2026-11-09). | — |
+| 3.3 | Cut (user ruling 2026-11-09). | — |
 | 3.4 | Verdict row per path × model under T6–T9: the adopted level, or `off` with the failing bar named. Write the per-path ceilings into `llm/thinking.go` (still `DefaultThink` none). Commit. | this plan, `llm/thinking.go` |
 | 4.1 | Apply: set `DefaultThink` per path to the lowest passing level shared by that path's models (a model without a pass is clamped to none by its ceiling). If no path passed, leave `DefaultThink` none and set Status "verdict: keep off". If the follow-up decider has landed, route it through `ThinkingFor(followup)`; if not, add one row to the follow-up-listening plan saying its decider call goes through `ThinkingFor`. Before turning chat on, check `ttr/kgsim.go` + `fork_*.go` stream loops for a first-content deadline shorter than T p90 ÷ R6 tok/s (`grep -n 'time.After\|Timeout' pkg/wirepod/ttr/kgsim.go pkg/wirepod/ttr/fork_*.go`). Proof: `TestForkAIReqThink` (config absent → `DefaultThink`; config high on a model with ceiling none → none; MaxTokens = cap + budget). | `llm/thinking.go`, `ttr/fork_*_test.go` |
 | 4.2 | `make check` green; `scripts/upstream-drift.sh` green. | — |
@@ -108,6 +114,6 @@ Probe runs read gitignored `secrets/server/`: in a worktree, `ln -s <main>/secre
 | 4.4 | `code-reviewer` subagent over the 1.1–4.1 commit range. Then commit, and archive this plan at ship. | — |
 
 **Probe cost:**
-- Claude judge: roughly 128 dev + ≤ 96 holdout + 10 noise calls, up to ~450 if 3.2 triples reps. All haiku with thinking disabled, so a small API spend.
-- Ollama runs are local; the biggest is listen at ~62 snippets × ≤ 4 arms × 2 models × 2 reps.
+- Claude judge: 32 haiku calls (3.1 chat, thinking disabled).
+- Ollama runs are local: 3.1 is 32 chat + 40 listen + 20 follow-up calls.
 - Searchbench and Tavily quota: none (T16 sets search off).

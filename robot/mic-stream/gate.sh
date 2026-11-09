@@ -10,6 +10,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 silent=1 # robot sound lock: makes no robot sound (stream port console var + /proc reads only)
 # shellcheck source=robot/env.sh
 . "$here/../env.sh"
+# shellcheck source=robot/lib/logmark.sh
+. "$here/../lib/logmark.sh"
 SECS=${SECS:-300} PORT=${PORT:-8094} LIMIT=${LIMIT:-2.0}
 [[ $LIMIT =~ ^[0-9]+(\.[0-9]+)?$ && $SECS =~ ^[0-9]+$ ]] || { echo "SETUP: LIMIT and SECS must be numbers"; exit 2; }
 wins=("$@"); ((${#wins[@]})) || wins=(off on off)
@@ -39,7 +41,7 @@ sink=$!
 trap 'setport 0 || echo "WARN: robot left on :$PORT — set MyVector_MicStreamPort 0 by hand" >&2; kill "$sink" 2>/dev/null' EXIT
 sleep 1; kill -0 "$sink" 2>/dev/null || { echo "SETUP: sink on :$PORT did not start: $(cat "$log")"; exit 2; }
 setport 0 || { echo "SETUP: robot console :8889 unreachable"; exit 2; }
-n0=$(robot 'wc -l </var/log/messages') || { echo "SETUP: no ssh to the robot"; exit 2; }
+tag=$(robot "$(log_mark gate)") || { echo "SETUP: no ssh to the robot, or its log tag never reached /var/log/messages"; exit 2; }
 sample() { # one ssh: vic-anim utime+stime ticks over SECS → % of one core (USER_HZ 100)
   # shellcheck disable=SC2029 # SECS expands here on purpose
   robot "p=\$(pidof -s vic-anim) || exit 2
@@ -69,8 +71,7 @@ for w in "${wins[@]}"; do
 done
 ((${#offs[@]})) && [[ -n $worst ]] || { echo "INCOMPLETE: need an off and an on window"; exit 3; }
 off=$(printf '%s\n' "${offs[@]}" | awk 'NR == 1 || $1 < m { m = $1 } END { printf "%.2f", m }') # lowest off: a hot off window must not hide an on cost
-# shellcheck disable=SC2029 # n0 expands here on purpose
-drops=$(robot "tail -n +$((n0 + 1)) /var/log/messages") || { echo "SETUP: robot log unreadable"; exit 2; }
+drops=$(robot "$(log_since "$tag" my-vector.MicStream)") || { echo "SETUP: log tag $tag gone from /var/log/messages* (rotated out?)"; exit 2; }
 drops=$(grep 'my-vector.MicStream: .*ring dropped' <<<"$drops" | tail -1)
 echo "ring drops: ${drops:-none}"; [[ -z $drops ]] || rc=1
 d=$(awk "BEGIN { printf \"%.2f\", $worst - $off }"); echo "delta (worst on − lowest off): $d % (limit $LIMIT)"

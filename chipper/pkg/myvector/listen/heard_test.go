@@ -23,7 +23,6 @@ type rig struct {
 	calls  int
 	user   string // the last LLM user message
 	said   []string
-	quiet  []string
 	locked bool
 	onAsk  func() // runs inside the LLM call
 }
@@ -51,7 +50,6 @@ func newRig(t *testing.T) *rig {
 		Client: func() (*openai.Client, string, bool) { return c, Model, true },
 		Say:    func(_, text string) error { r.said = append(r.said, text); return nil },
 		Locked: func(time.Time) bool { return r.locked },
-		Quiet:  func(_, p string) { r.quiet = append(r.quiet, p) },
 		Now:    func() time.Time { return r.now },
 	}
 	r.h.State.Activate(esn, r.now)
@@ -126,8 +124,13 @@ func TestHeardPhrasesFirst(t *testing.T) {
 	}
 	r = newRig(t)
 	r.hear(time.Second, "vector, shut up")
-	if r.calls != 0 || r.h.State.Active(esn, r.now) || len(r.quiet) != 1 || r.quiet[0] != "shut up" || len(r.said) != 0 {
-		t.Fatalf("quiet phrase: calls %d quiet %v said %v", r.calls, r.quiet, r.said)
+	if r.calls != 0 || r.h.State.Active(esn, r.now) || len(r.said) != 0 {
+		t.Fatalf("quiet phrase: calls %d said %v", r.calls, r.said)
+	}
+	r = newRig(t)
+	r.hear(time.Second, "Ole vaid.") // wake-path spelling only: overheard, it is just talk
+	if r.calls != 1 || !r.h.State.Active(esn, r.now) {
+		t.Fatalf("glued quiet phrase: calls %d active %v", r.calls, r.h.State.Active(esn, r.now))
 	}
 }
 
@@ -179,7 +182,8 @@ func TestHeardWakeTurn(t *testing.T) {
 	}
 	r = newRig(t)
 	r.reply = "Kell on kaheksa."
-	for _, text := range []string{"Hey Vector, kui palju kell on?", "hei vektor mis kell on", "heivektor mis kell on"} {
+	for _, text := range []string{"Hey Vector, kui palju kell on?", "hei vektor mis kell on", "heivektor mis kell on",
+		"Pumpkin Hippo, kui palju kell on?", "pampkin hipo mis kell on", "hey pumkin hippo, what time is it?"} {
 		r.hear(time.Minute, text)
 	}
 	if r.calls != 0 || len(r.said) != 0 {
@@ -188,6 +192,24 @@ func TestHeardWakeTurn(t *testing.T) {
 	r.hear(time.Minute, "mis kell on, vektor?")
 	if r.calls != 1 || len(r.said) != 1 {
 		t.Fatalf("named, no wake word: calls %d said %v", r.calls, r.said)
+	}
+}
+
+func TestWakeLead(t *testing.T) {
+	hits := []string{"Hey Vector, mis kell on?", "heivektor mis kell on", "Pumpkin Hippo, what time is it?",
+		"pumpkin hippo", "pampkin hipo mis kell on", "pumkin ippo", "pämpkin hippo kell", "pumpkin hipot",
+		"hey pumpkin hippo, shut up", "ei pampkin hipo mis kell on", "  ...Pumpkin, hippo!"}
+	misses := []string{"hey vectors are fun", "attack vector analysis", "pumpkins and hippos at the zoo",
+		"we bought a pumpkin", "the hippo is big", "mis kell on, pumpkin hippo?", "pumpkin the hippo"}
+	for _, s := range hits {
+		if !wakeLead.MatchString(s) {
+			t.Errorf("wakeLead missed %q", s)
+		}
+	}
+	for _, s := range misses {
+		if wakeLead.MatchString(s) {
+			t.Errorf("wakeLead matched %q", s)
+		}
 	}
 }
 

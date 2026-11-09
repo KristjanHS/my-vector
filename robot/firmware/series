@@ -15,3 +15,5 @@
 0015-pod-trust.patch
 0016-mic-stream.patch
 0017-silent-start.patch
+0018-dark-off.patch
+0019-sdk-audio-orphan.patch

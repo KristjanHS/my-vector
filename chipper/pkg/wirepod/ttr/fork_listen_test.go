@@ -143,7 +143,7 @@ func TestForkStreamHeard(t *testing.T) {
 	}
 	select {
 	case <-naps:
-	case <-time.After(5 * time.Second):
-		t.Fatal("no nap: the streamed quiet phrase missed forkQuietLock")
+		t.Fatal("an overheard quiet phrase napped: only the wake path locks")
+	case <-time.After(time.Second):
 	}
 }
