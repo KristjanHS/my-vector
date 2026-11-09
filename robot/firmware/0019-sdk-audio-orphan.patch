@@ -20,10 +20,10 @@ or Cancel sends the engine Cancel; the slot frees only after it, so that Cancel 
 Falsifier: voiceprobe overlap, A hears AudioStreamPlaybackComplete, B ends ResourceExhausted, C/D/F hear
 AudioStreamPlaybackComplete, no starved / VERIFY(_audioPrepared) line.
 ---
- .../src/cozmoAnim/audio/sdkAudioComponent.cpp | 56 ++++++++++++++++---
+ .../src/cozmoAnim/audio/sdkAudioComponent.cpp | 56 +++++++++--
  .../textToSpeech/textToSpeechComponent.cpp    |  3 +-
- cloud/cloud/message_handler.go                | 30 ++++++++++
- 3 files changed, 79 insertions(+), 10 deletions(-)
+ cloud/cloud/message_handler.go                | 92 +++++++++++++++++--
+ 3 files changed, 135 insertions(+), 16 deletions(-)
 
 diff --git a/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp b/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp
 index 8d6776c4..eb1922e3 100644
@@ -154,10 +154,18 @@ index c595c34d..9b3b3aeb 100644
      }
      _bundleMap.erase(it);
 diff --git a/cloud/cloud/message_handler.go b/cloud/cloud/message_handler.go
-index 0d0ad73e..78200b0f 100644
+index 0d0ad73e..25deddcf 100644
 --- a/cloud/cloud/message_handler.go
 +++ b/cloud/cloud/message_handler.go
-@@ -35,6 +35,9 @@ var (
+@@ -12,6 +12,7 @@ import (
+ 	"strconv"
+ 	"strings"
+ 	"sync"
++	"sync/atomic"
+ 	"time"
+ 
+ 	cloud_clad "github.com/digital-dream-labs/vector-cloud/internal/clad/cloud"
+@@ -35,6 +36,9 @@ var (
  	statusStreamRunning bool
  	lastProgress        int64
  	lastExpected        int64
@@ -167,15 +175,26 @@ index 0d0ad73e..78200b0f 100644
  )
  
  // TODO: we should find a way to auto-generate the equivalent of this function as part of clad or protoc
-@@ -3606,6 +3609,21 @@ func (service *rpcService) ExternalAudioStreamRequestToGatewayWrapper(request *e
+@@ -3604,13 +3608,61 @@ func (service *rpcService) ExternalAudioStreamRequestToGatewayWrapper(request *e
+ 	return msg, nil
+ }
  
- func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalInterface_ExternalAudioStreamPlaybackServer, done chan struct{}) {
+-func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalInterface_ExternalAudioStreamPlaybackServer, done chan struct{}) {
++// my-vector sdk-audio-orphan: a client silent this long after Prepare is dead; its stream ends as an unfinished close
++const myVectorAudioIdleTimeout = 10 * time.Second
++
++type myVectorAudioStream struct {
++	verdict  atomic.Bool // the engine answered this stream (Complete/Overrun/Failure); a Cancel now would hit the next stream
++	timedOut bool        // written before done closes
++}
++
++func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalInterface_ExternalAudioStreamPlaybackServer, done chan struct{}, st *myVectorAudioStream) {
  	defer close(done)
 +	// my-vector sdk-audio-orphan: the slot frees only after the Cancel below, so that Cancel cannot hit the next stream
 +	defer func() { <-myVectorAudioStreamSlot }()
 +	prepared := false
 +	defer func() {
-+		if !prepared {
++		if !prepared || st.verdict.Load() {
 +			return
 +		}
 +		log.Println("my-vector.SdkAudioOrphan: stream closed after Prepare without Complete, sending Cancel")
@@ -186,10 +205,42 @@ index 0d0ad73e..78200b0f 100644
 +			log.Printf("Could not write GatewayWrapper_ExternalAudioStreamCancel\n")
 +		}
 +	}()
++	requests := make(chan *extint.ExternalAudioStreamRequest)
++	recvErr := make(chan error, 1)
++	go func() {
++		for {
++			request, err := in.Recv()
++			if err != nil {
++				recvErr <- err
++				return
++			}
++			select {
++			case requests <- request:
++			case <-done:
++				return
++			}
++		}
++	}()
++	idle := time.NewTimer(myVectorAudioIdleTimeout)
++	idle.Stop()
++	var idleC <-chan time.Time // nil (never fires) unless Prepare was sent and Complete/Cancel not yet
  	for {
- 		request, err := in.Recv()
- 		if err != nil {
-@@ -3619,6 +3637,12 @@ func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalI
+-		request, err := in.Recv()
+-		if err != nil {
++		var request *extint.ExternalAudioStreamRequest
++		select {
++		case err := <-recvErr:
+ 			log.Printf("AudioStreamRequestHandler.close: %s\n", err.Error())
+ 			return
++		case <-idleC:
++			log.Printf("my-vector.SdkAudioOrphan: no request for %s after Prepare, closing the stream\n", myVectorAudioIdleTimeout)
++			st.timedOut = true
++			return
++		case request = <-requests:
+ 		}
+ 		log.Println("External AudioStream playback incoming request") //not printing message, lengthy sample data too busy for logs
+ 
+@@ -3619,6 +3671,18 @@ func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalI
  			log.Println(err)
  			return
  		}
@@ -199,10 +250,43 @@ index 0d0ad73e..78200b0f 100644
 +		case *extint.ExternalAudioStreamRequest_AudioStreamComplete, *extint.ExternalAudioStreamRequest_AudioStreamCancel:
 +			prepared = false
 +		}
++		idle.Stop()
++		idleC = nil
++		if prepared {
++			idle.Reset(myVectorAudioIdleTimeout)
++			idleC = idle.C
++		}
  
  		numCommandsSentFromSDK++
  		_, _, err = engineProtoManager.Write(msg)
-@@ -3654,6 +3678,12 @@ func (service *rpcService) ExternalAudioStreamResponseHandler(out extint.Externa
+@@ -3628,16 +3692,25 @@ func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalI
+ 	}
+ }
+ 
+-func (service *rpcService) ExternalAudioStreamResponseHandler(out extint.ExternalInterface_ExternalAudioStreamPlaybackServer, responses chan extint.GatewayWrapper, done chan struct{}) error {
++func (service *rpcService) ExternalAudioStreamResponseHandler(out extint.ExternalInterface_ExternalAudioStreamPlaybackServer, responses chan extint.GatewayWrapper, done chan struct{}, st *myVectorAudioStream) error {
+ 	for {
+ 		select {
+ 		case <-done:
++			if st.timedOut {
++				return grpc.Errorf(codes.DeadlineExceeded, "my-vector.SdkAudioOrphan: no audio request for %s after Prepare", myVectorAudioIdleTimeout)
++			}
+ 			return nil
+ 		case response, ok := <-responses:
+ 			if !ok {
+ 				return grpc.Errorf(codes.Internal, "Failed to retrieve message")
+ 			}
+ 			msg := response.GetExternalAudioStreamResponse()
++			switch msg.GetAudioResponseType().(type) {
++			case *extint.ExternalAudioStreamResponse_AudioStreamPlaybackComplete,
++				*extint.ExternalAudioStreamResponse_AudioStreamBufferOverrun,
++				*extint.ExternalAudioStreamResponse_AudioStreamPlaybackFailyer:
++				st.verdict.Store(true)
++			}
+ 			if err := out.Send(msg); err != nil {
+ 				log.Println("Closing AudioStream (on send):", err)
+ 				return err
+@@ -3654,6 +3727,12 @@ func (service *rpcService) ExternalAudioStreamResponseHandler(out extint.Externa
  
  // Stream audio to the robot, stream audio playback status back
  func (service *rpcService) ExternalAudioStreamPlayback(bidirectionalStream extint.ExternalInterface_ExternalAudioStreamPlaybackServer) error {
@@ -215,3 +299,13 @@ index 0d0ad73e..78200b0f 100644
  	audioStartTime := time.Now()
  
  	log.Println("sdk.audiostream_started")
+@@ -3668,6 +3747,7 @@ func (service *rpcService) ExternalAudioStreamPlayback(bidirectionalStream extin
+ 	f, audioStreamStatus := engineProtoManager.CreateChannel(&extint.GatewayWrapper_ExternalAudioStreamResponse{}, 1)
+ 	defer f()
+ 
+-	go service.ExternalAudioStreamRequestHandler(bidirectionalStream, done)
+-	return service.ExternalAudioStreamResponseHandler(bidirectionalStream, audioStreamStatus, done)
++	st := &myVectorAudioStream{}
++	go service.ExternalAudioStreamRequestHandler(bidirectionalStream, done, st)
++	return service.ExternalAudioStreamResponseHandler(bidirectionalStream, audioStreamStatus, done, st)
+ }
