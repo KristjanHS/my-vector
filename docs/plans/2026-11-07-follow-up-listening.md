@@ -1,6 +1,6 @@
 # Follow-up listening
 
-Status: 2.1–4.3 done; G1 root-caused (P4); next 7.4 → 7.5 → 7.1 → 7.2 → 7.3, then 8.x, then the G3 round (`chainprobe` replays it; not reproduced 0/5 on 11-09). Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order item 3. Runs after `2026-11-07-reply-cap-by-ask.md (docs/plans/)`.
+Status: 2.1–4.3, 7.4, 7.5 done (7.4+7.5 reviewed 11-09; 7.3's review covers 7.2); next 7.1 → 7.2 → 7.3, then 8.x, then the G3 round (`chainprobe` replays it; not reproduced 0/5 on 11-09). Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order item 3. Runs after `2026-11-07-reply-cap-by-ask.md (docs/plans/)`.
 
 ## Rulings
 
