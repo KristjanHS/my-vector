@@ -1,6 +1,6 @@
 # Shut up → sound lock + nap
 
-Status: Stages 2–3 done (worktree-sec); next Stage 4.1. "Shut up" / "turn off" (en + et, whole phrase) → 2 h lock on every robot
+Status: Stages 2–4.5 + review fixes done (main); next Stage 4.6 USER `make ship`, then Stage 6. "Shut up" / "turn off" (en + et, whole phrase) → 2 h lock on every robot
 sound test Claude starts + volume 1 + the night-window deep sleep for 2 h. Stage 1 verdict (user-owed) gates Stage 5 only.
 
 ## Rulings
@@ -24,7 +24,7 @@ sound test Claude starts + volume 1 + the night-window deep sleep for 2 h. Stage
 | S1 | `robot/quiet/scan.sh <since>`: `journalctl -u wire-pod --since` "Transcribed text" lines (+ open-mic transcripts if Stage 5 ships) piped through `quietmatch`; exit 1 + the line on a hit. Phrase table has one home (Go). | `robot/quiet/scan.sh`; `pkg/myvector/quiet/quietmatch` |
 | N1 | Firmware nap: console var `kSleepCycle_NapUntil_s` (int64, epoch s, 0 = off; set to 0 logs `nap off`); `MyVectorNight()` = `kSleepCycle_NightWindow && (IsNightTime() \|\| MyVectorNapStep(latch, kSleepCycle_NapUntil_s, time(nullptr)))` (`MyVectorNapActive` behind N2's refusal latch). Set via vic-engine `:8888/consolevarset?key=SleepCycle_NapUntil_s&value=<epoch>`. ⚠ hedge: nap gets the patch's three night rules, not every stock `IsNightTime()` consumer; resets on engine restart (a ship, reboot or epod trust rewrite ends the nap, the lock file stays). | `0011-night-window.patch`; `quiet.Nap` |
 | N3 | (ruled 2026-11-08) `settings.sh`, while `quiet_locked`, re-arms the nap, last (after epod/netguard), polling ≤~90 s: `:8888/consolevarset?key=SleepCycle_NapUntil_s&value=<until, capped at now+4 h>` (a ship/epod restart zeroed it); only a body echoing the value is ok. | `robot/firmware/settings.sh` |
-| Q1 | (ruled 2026-11-08) Silent start: vic-engine skips the InitialWakeUp anim after start when `/data/my-vector/silent-start` exists (logs `my-vector.SilentStart`); `restarts.sh -s` / `catch.sh -s` touch it before each restart, rm after the anim window. | new firmware patch; `crash-review/restarts.sh`; `seassert/catch.sh` |
+| Q1 | (ruled 2026-11-08) Silent start: vic-engine skips the InitialWakeUp anim after start while `/data/myvector/silent-start` holds an expiry epoch ahead (robot clock, ≤ 15 min ahead; missing/empty/garbage/expired → plays; logs `my-vector.SilentStart`); `restarts.sh -s` / `catch.sh -s` write now + 300 s (600 s with `-d`) before each restart, `ship.sh` now + 600 s while the sound lock holds; rm at exit is best effort, the expiry is the safety net; `smoke.sh` notes/WARNs a live flag. | new firmware patch; `crash-review/restarts.sh`; `seassert/catch.sh` |
 | N2 | `MyVectorNapActive(until, now)` = `until > now && until - now <= NapMax`; a ms-epoch or garbage value is refused (logs `my-vector.NightWindow` `nap refused`) and stays refused until the var changes; callers (`quiet.Nap`, `settings.sh`) cap the nap at now+`quiet.NapMax` (4 h), the lock can run longer. | patch block `// my-vector nap` |
 
 ## Constants (source is the home; defaults below)

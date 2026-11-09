@@ -4,8 +4,8 @@
 # new vic-anim and breaks on NrGainLookupCore's line-191 failure branch, before the assert's fprintf clobbers the
 # registers. A hit dumps the operands (result s16, ratio s18, gain s4, 1-floor s2), the gain table at r4, the stack
 # (saved d8 = caller floor at sp+8, saved lr names the caller) and fpscr.
-# Every restart plays the power-on animation sound (volume stays as set) unless -s (patch 0017's flag file skips
-# vic-engine's InitialWakeUp anim; removed 60 s after each new vic-anim, past its ~30 s window).
+# Every restart plays the power-on animation sound (volume stays as set) unless -s (patch 0017's flag skips vic-engine's
+# InitialWakeUp anim: each round writes its expiry, robot clock + 300 s, 600 s with -d).
 # Usage: catch.sh [-d] [-s] [max_rounds=10]   stops at the first hit; exit 0 = hit, 1 = no hit, 2 = setup.
 # Output: robot/work/seassert/catch-<timestamp>/ (rounds.log, round-N.gdb.log, deploy-N.log).
 set -euo pipefail
@@ -17,9 +17,12 @@ silent=1 # robot sound lock: makes no robot sound (shut-up-sleep G2)
 . "$here/../crash-review/lib.sh"
 deploy=0 ss=
 while [[ ${1:-} == -[ds] ]]; do
-  case $1 in -d) deploy=1 ;; -s) ss='mkdir -p /data/my-vector && touch /data/my-vector/silent-start && ' ;; esac
+  case $1 in -d) deploy=1 ;; -s) ss=1 ;; esac
   shift
 done
+# -s: the remote prefix that writes patch 0017's flag = an expiry epoch on the robot's clock, past a slow (deploy +) engine start.
+flag=/data/myvector/silent-start
+[[ -z $ss ]] || ss="mkdir -p ${flag%/*} && echo \$((\$(date +%s) + $((deploy ? 600 : 300)))) >$flag && "
 max=${1:-10}
 window=30 # s attached per round; both crashes came ~13 s after vic-anim started
 src=$here/../work/wire-os-victor
@@ -51,14 +54,13 @@ gpid=
 heal='sleep 1; killall gdbserver 2>/dev/null; for p in $(pidof vic-anim); do f=/proc/$p/status
   [ "$(sed -n "s/^State:[[:space:]]*\(.\).*/\1/p" $f)" = T ] && [ "$(sed -n "s/^TracerPid:[[:space:]]*//p" $f)" = 0 ] &&
   kill -CONT $p && echo "CONTed $p"; done; true'
-# -s: ss_at = when the flag went up / the last new vic-anim showed; ss_off removes it once 60 s have passed since.
+# -s, at exit: remove the flag once the last finished restart (ss_at) is 60 s past (InitialWakeUp's ~30 s window); a restart
+# in flight (ss_at empty) or a newer one leaves it to its expiry.
 ss_at=
-ss_off() { [[ -n $ss_at ]] || return 0; local w=$((ss_at + 60 - SECONDS)); ((w <= 0)) || sleep "$w"; ssh_ 'rm -f /data/my-vector/silent-start' || true; ss_at=; }
 cleanup() {
   [[ -n $gpid ]] && kill "$gpid" 2>/dev/null
   ssh_ "$heal; systemctl start --no-block anki-robot.target" || true
-  [[ -z $ss_at ]] || ss_at=$SECONDS
-  ss_off
+  [[ -n $ss && -n $ss_at ]] && ((SECONDS - ss_at >= 60)) && ssh_ "rm -f $flag" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -68,7 +70,7 @@ for ((i = 1; i <= max; i++)); do
   for _ in $(seq 30); do ssh_ 'systemctl is-active -q fault-code.service' 2>/dev/null || break; sleep 2; done
   old=$(ssh_ 'pidof -s vic-anim' 2>/dev/null) || old=none
   t0=$(ssh_ "${ss}date +%s") || { log "round $i: ssh failed"; sleep 10; continue; }
-  [[ -z $ss ]] || ss_at=$SECONDS
+  ss_at=
   if ((deploy)); then
     # Same order as robot/firmware/ship.sh: deploy-v.sh (stop, rsync, start), then settings.sh.
     (
@@ -89,7 +91,7 @@ for ((i = 1; i <= max; i++)); do
     p=$(ssh_ 'pidof -s vic-anim' 2>/dev/null) && [[ $p != "$old" ]] && { pid=$p; break; }
     sleep 0.5
   done
-  [[ -z $ss_at ]] || ss_at=$SECONDS
+  ((deploy)) || [[ -z $pid ]] || ss_at=$SECONDS # -d: once the deploy + settings.sh are done, below
   # -d: the new vic-anim must be the clone's build before the clone's offset means anything.
   if [[ -n $pid ]] && ((deploy)) && [[ $(robot_md5) != "$want_md5" ]]; then
     log "round $i: robot vic-anim is not the clone build after the deploy — stop"
@@ -170,8 +172,8 @@ EOF
   if ((deploy)); then
     wait "$dpid" || true
     st+=" | $(grep '^== ' "$out/deploy-$i.log" | tr '\n' ' ')"
+    ss_at=$SECONDS
   fi
-  ss_off
   crash=$(ssh_ "journalctl -o short-iso --no-pager --since @$t0 | grep -E 'SeAssert|terminated by signal|Handle fault code|Failed with result' | head -4" || true)
   if grep -q 'mov[[:space:]]*r3, #191' "$g" && grep -q '^s16 ' "$g" && ((s >= window)); then
     attached=$((attached + 1))

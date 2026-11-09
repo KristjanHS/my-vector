@@ -21,9 +21,9 @@ sed -n "\\@$start@,\\@$end@p" "${touch[0]}" >"$tmp/raw"
 ! grep -qv '^+' "$tmp/raw" || die "silent start block in ${touch[0]##*/} is not one added hunk"
 block=$(sed 's/^+//' "$tmp/raw")
 # The flag path must appear exactly once, so the rewrite below is the only path the block can check.
-n=$(grep -cF -- '"/data/my-vector/silent-start"' <<<"$block" || true)
-((n == 1)) || die "'\"/data/my-vector/silent-start\"' is in the silent start block $n times, want 1"
-block=${block/'"/data/my-vector/silent-start"'/MV_TEST_SILENT_FILE}
+n=$(grep -cF -- '"/data/myvector/silent-start"' <<<"$block" || true)
+((n == 1)) || die "'\"/data/myvector/silent-start\"' is in the silent start block $n times, want 1"
+block=${block/'"/data/myvector/silent-start"'/MV_TEST_SILENT_FILE}
 printf '%s\n' "$block" >"$tmp/silent-start.inc"
 
 g++ -std=c++14 -O1 -Wall -Werror -I"$tmp" -DMV_TEST_SILENT_FILE="\"$tmp/silent-start\"" \
