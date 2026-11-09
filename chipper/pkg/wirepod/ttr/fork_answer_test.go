@@ -2,6 +2,7 @@ package wirepod_ttr
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -16,10 +17,21 @@ type controlBot struct {
 	vectorpb.ExternalInterfaceClient // nil: any other method panics
 	mu                               sync.Mutex
 	log                              []string
+	deny                             error // BehaviorControl fails at once
+	hang                             bool  // a ControlRequest is never granted
 }
 
 func (b *controlBot) BehaviorControl(ctx context.Context, _ ...grpc.CallOption) (vectorpb.ExternalInterface_BehaviorControlClient, error) {
+	if b.deny != nil {
+		return nil, b.deny
+	}
 	return &controlStream{b: b, ctx: ctx, granted: make(chan bool, 1)}, nil
+}
+
+func (b *controlBot) note(e string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.log = append(b.log, e)
 }
 
 func (b *controlBot) events() string {
@@ -40,7 +52,9 @@ func (c *controlStream) Send(m *vectorpb.BehaviorControlRequest) error {
 	defer c.b.mu.Unlock()
 	if m.GetControlRequest() != nil {
 		c.b.log = append(c.b.log, "request")
-		c.granted <- true
+		if !c.b.hang {
+			c.granted <- true
+		}
 	} else if m.GetControlRelease() != nil {
 		c.b.log = append(c.b.log, "release")
 	}
@@ -53,6 +67,7 @@ func (c *controlStream) Recv() (*vectorpb.BehaviorControlResponse, error) {
 		return &vectorpb.BehaviorControlResponse{ResponseType: &vectorpb.BehaviorControlResponse_ControlGrantedResponse{
 			ControlGrantedResponse: &vectorpb.ControlGrantedResponse{}}}, nil
 	case <-c.ctx.Done():
+		c.b.note("gone")
 		return nil, c.ctx.Err()
 	}
 }
@@ -95,5 +110,66 @@ func TestForkBControlQueuesAnswers(t *testing.T) {
 				t.Errorf("control = %s, want request,release,request (the first released before the second asked)", got)
 			}
 		})
+	}
+}
+
+func TestForkBControlStopBeforeStart(t *testing.T) {
+	for name, c := range map[string]struct {
+		hang bool
+		want string
+	}{
+		"pending": {true, "request,gone"},     // stop while the robot has not granted control
+		"granted": {false, "request,release"}, // stop before the speak loop took start
+	} {
+		t.Run(name, func(t *testing.T) {
+			b := &controlBot{hang: c.hang}
+			start, stop := make(chan bool), make(chan bool)
+			defer forkBControl(&vector.Vector{Conn: b}, context.Background(), start, stop, "00e3"+name)()
+			if !c.hang {
+				for deadline := time.Now().Add(time.Second); b.events() != "request" && time.Now().Before(deadline); {
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+			select {
+			case stop <- true: // kgsim's LLM-error path, before its speak loop
+			case <-time.After(time.Second):
+				t.Fatal("stop blocked while the answer waited to start")
+			}
+			waitStartEnds(t, start)
+			for deadline := time.Now().Add(time.Second); b.events() != c.want && time.Now().Before(deadline); {
+				time.Sleep(10 * time.Millisecond)
+			}
+			if got := b.events(); got != c.want {
+				t.Errorf("control = %s, want %s", got, c.want)
+			}
+		})
+	}
+}
+
+func TestForkBControlNeverStarts(t *testing.T) {
+	b := &controlBot{deny: errors.New("robot unreachable")}
+	start, stop := make(chan bool), make(chan bool)
+	defer forkBControl(&vector.Vector{Conn: b}, context.Background(), start, stop, "00e4")()
+	waitStartEnds(t, start)
+}
+
+// waitStartEnds fails unless start closes without a send, as StreamingKGSim's `for range start` needs.
+func waitStartEnds(t *testing.T, start chan bool) {
+	t.Helper()
+	ended := make(chan int, 1)
+	go func() {
+		n := 0
+		for range start {
+			n++
+		}
+		ended <- n
+	}()
+	select {
+	case n := <-ended:
+		if n != 0 {
+			t.Errorf("start sent %d time(s) without control, want 0", n)
+		}
+	case <-time.After(time.Second):
+		t.Error("start never closed: StreamingKGSim's speak loop waits forever")
 	}
 }

@@ -39,19 +39,29 @@ func forkBControl(robot *vector.Vector, ctx context.Context, start, stop chan bo
 	go func() {
 		defer func() { <-slot }()
 		defer forkDrain(stop, wait) // a late or second stop (interrupt + speak loop) must not block its sender
-		release, err := voice.Control(ctx, robot)
-		if err != nil {
-			logger.Println("myvector: answer behavior control: " + err.Error())
+		hold := time.NewTimer(wait)
+		defer hold.Stop()
+		started := false
+		defer func() {
+			if !started {
+				close(start) // ends StreamingKGSim's `for range start`
+			}
+		}()
+		release := forkControl(robot, ctx, stop, done, hold.C)
+		if release == nil {
 			return
 		}
 		defer release()
 		select {
 		case start <- true:
+			started = true
+		case <-stop:
 		case <-done:
+		case <-hold.C:
+		}
+		if !started {
 			return
 		}
-		hold := time.NewTimer(wait)
-		defer hold.Stop()
 		select {
 		case <-stop:
 		case <-done:
@@ -60,6 +70,35 @@ func forkBControl(robot *vector.Vector, ctx context.Context, start, stop chan bo
 		}
 	}()
 	return func() { once.Do(func() { close(done) }) }
+}
+
+// forkControl is voice.Control given up on stop, done or hold; nil = no control.
+func forkControl(robot *vector.Vector, ctx context.Context, stop chan bool, done chan struct{}, hold <-chan time.Time) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	granted := make(chan func(), 1)
+	go func() {
+		release, err := voice.Control(ctx, robot)
+		if err != nil {
+			logger.Println("myvector: answer behavior control: " + err.Error())
+		}
+		granted <- release
+	}()
+	select {
+	case release := <-granted:
+		if release == nil {
+			cancel()
+			return nil
+		}
+		return func() { release(); cancel() }
+	case <-stop:
+	case <-done:
+	case <-hold:
+	}
+	cancel()
+	if release := <-granted; release != nil { // granted as it was given up: the next answer must not share it
+		release()
+	}
+	return nil
 }
 
 func forkDrain(stop chan bool, wait time.Duration) {
