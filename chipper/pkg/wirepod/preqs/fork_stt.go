@@ -13,11 +13,12 @@ import (
 	"unicode"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/followup"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	sr "github.com/kercre123/wire-pod/chipper/pkg/wirepod/speechrequest"
 )
 
-// forkSTTURL is the myvector-stt service (et-stt/server.py): 16 kHz s16le mono PCM in, {"text"} out; ?lang= picks the model.
+// forkSTTURL is the myvector-stt service (et-stt/server.py): 16 kHz s16le mono PCM in, {"text", "no_speech"} out; ?lang= picks the model.
 var forkSTTURL = "http://127.0.0.1:8092/stt"
 
 // 60 s covers a request that waits for the model load (plan E21).
@@ -100,8 +101,9 @@ func forkServiceSTT(req sr.SpeechRequest, l string) (string, error) {
 		return "", fmt.Errorf("%s STT read: %w", l, err)
 	}
 	var out struct {
-		Text  string `json:"text"`
-		Error string `json:"error"`
+		Text     string  `json:"text"`
+		NoSpeech float64 `json:"no_speech"`
+		Error    string  `json:"error"`
 	}
 	jerr := json.Unmarshal(body, &out)
 	if resp.StatusCode != http.StatusOK {
@@ -115,6 +117,7 @@ func forkServiceSTT(req sr.SpeechRequest, l string) (string, error) {
 		text = forkVoskShape(text)
 	}
 	logger.Println("Bot " + req.Device + " Transcribed text (" + l + "): " + text)
+	followup.SetNoSpeech(req.Device, out.NoSpeech)
 	return text, nil
 }
 

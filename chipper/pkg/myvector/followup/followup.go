@@ -21,7 +21,21 @@ const (
 	MaxTokens = 8
 	// ClaudeModel decides on the Claude brain.
 	ClaudeModel = "claude-haiku-5-5"
+	// NoSpeech: an armed follow-up whose clip's STT no_speech (max segment) reaches this is blank (G1, P4).
+	NoSpeech = 0.6
 )
+
+var noSpeech sync.Map // ESN -> its last transcript's no_speech
+
+// SetNoSpeech records esn's last transcript score (et-stt "no_speech").
+func SetNoSpeech(esn string, p float64) { noSpeech.Store(esn, p) }
+
+// TakeNoSpeech returns and clears esn's last score; 0 when none was recorded.
+func TakeNoSpeech(esn string) float64 {
+	v, _ := noSpeech.LoadAndDelete(esn)
+	p, _ := v.(float64)
+	return p
+}
 
 // User is the decider's user message for one exchange.
 func User(ask, reply string) string { return "Person: " + ask + "\nRobot: " + reply }
