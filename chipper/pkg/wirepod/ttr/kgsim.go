@@ -197,7 +197,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 	}
 	start := make(chan bool)
 	stop := make(chan bool)
-	stopStop := make(chan bool)
+	stopStop := make(chan bool, 1) // my-vector: its one send never blocks when no interrupter/actions listen (fork_interrupt.go)
 	kgReadyToAnswer := make(chan bool)
 	kgStopLooping := false
 	ctx := context.Background()
@@ -403,8 +403,11 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 		defer forkBControl(robot, ctx, start, stop, esn)() // my-vector: one answer per robot, a second waits (fork_answer.go)
 	}
 	interrupted := false
+	ibot, endInterrupt := forkInterruptBot(robot) // my-vector: the interrupter's stream and stopStop rangers end with the answer (fork_interrupt.go)
+	defer close(stopStop)
+	defer endInterrupt()
 	go func() {
-		interrupted = InterruptKGSimWhenTouchedOrWaked(robot, stop, stopStop)
+		interrupted = InterruptKGSimWhenTouchedOrWaked(ibot, stop, stopStop)
 	}()
 	var TTSLoopAnimation string
 	var TTSGetinAnimation string
