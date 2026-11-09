@@ -1,11 +1,12 @@
 // Command chainprobe replays a follow-up chain through the real chat request path (CreateAIReq → forkAIReq splices
 // the per-ESN remembered chat) without the robot, per arm × rep, one JSON line per call.
 //
-//	go run ./pkg/myvector/chainprobe -chain c.json [-chained] [-arms 0,S,Q,E] [-reps 5] [-brain ollama:model] -out o.jsonl   # from chipper/
+//	go run ./pkg/myvector/chainprobe -chain c.json [-chained] [-arms 0,S,Q,P,E] [-reps 5] [-brain ollama:model] -out o.jsonl   # from chipper/
 //
 // c.json: {"lang":"et-EE","history":[{"user":…,"assistant":…}],"turns":["ja.","mida?"]}. Each rep starts from the
 // history alone; -chained remembers each turn's own reply before the next turn. Arms: 0 = as saved; S = temperature
 // 0.4, top_p 0.9 (routeprobe's S); Q = the saved ollama template without "Now and then ask a question back.";
+// P = the saved ollama template with lineP (no speaking as the person, no invented past) right after that line;
 // E = the et EstLLM brain. Like routeprobe, nothing under secrets/server/ is written (temp copies), web search is off.
 package main
 
@@ -33,6 +34,7 @@ import (
 
 const (
 	lineQ  = "Now and then ask a question back. "
+	lineP  = "Never speak as the person or put words in their mouth, and never invent past events or conversations. "
 	brainE = "ollama:hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M"
 )
 
@@ -65,7 +67,7 @@ var tmp string
 func main() {
 	chainFile := flag.String("chain", "", "chain JSON file")
 	chained := flag.Bool("chained", false, "remember each turn's own reply before the next turn")
-	armList := flag.String("arms", "0", "comma list of 0, S, Q, E")
+	armList := flag.String("arms", "0", "comma list of 0, S, Q, P, E")
 	reps := flag.Int("reps", 1, "reps per arm")
 	brain := flag.String("brain", "", "provider:model for the chain language's profile (not arm E)")
 	out := flag.String("out", "", "JSONL output file (appended)")
@@ -84,8 +86,8 @@ func main() {
 	}
 	arms := strings.Split(*armList, ",")
 	for _, a := range arms {
-		if a != "0" && a != "S" && a != "Q" && a != "E" {
-			die("arms: 0, S, Q, E")
+		if a != "0" && a != "S" && a != "Q" && a != "P" && a != "E" {
+			die("arms: 0, S, Q, P, E")
 		}
 	}
 	f, err := os.OpenFile(*out, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
@@ -139,6 +141,14 @@ func main() {
 			}
 			if strings.Contains(prompt.Load().Live(prompt.Ollama), lineQ) {
 				die("arm Q: the saved template still has the line")
+			}
+		case "P":
+			t := strings.Replace(baseTmpl, lineQ, lineQ+lineP, 1)
+			if err := prompt.Save(prompt.Ollama, &t, nil); err != nil {
+				die("arm P: %v", err)
+			}
+			if !strings.Contains(prompt.Load().Live(prompt.Ollama), lineP) {
+				die("arm P: the saved template lacks the line")
 			}
 		case "E":
 			lang.Path = func() string { return ePath }
