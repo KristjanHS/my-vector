@@ -160,7 +160,7 @@ func TestForkBeginSwitch(t *testing.T) {
 	var cuts int
 	oldSay, oldCut := forkConfirmSay, forkKGCut
 	forkConfirmSay = func(_, text string) error { said = append(said, text); return nil }
-	forkKGCut = func(string) error { cuts++; return nil }
+	forkKGCut = func(_ string, hold func()) error { cuts++; hold(); return nil }
 	t.Cleanup(func() { forkConfirmSay, forkKGCut = oldSay, oldCut })
 	follow := func(text string) bool {
 		forkChain.Reset(esn)
@@ -176,8 +176,8 @@ func TestForkBeginSwitch(t *testing.T) {
 		{"aktiivne kuulamine välja", "Aktiivne kuulamine väljas.", false},
 	} {
 		said = nil
-		if !follow(c.say) || forkChain.Count(esn) != 0 {
-			t.Fatalf("%q: want skip and the chain ended, count %d", c.say, forkChain.Count(esn))
+		if !follow(c.say) || forkChain.Begin(esn, forkNow()) {
+			t.Fatalf("%q: want skip and the armed follow-up gone", c.say)
 		}
 		if len(said) != 1 || said[0] != c.want || forkListening.Any(forkNow()) != c.on {
 			t.Errorf("%q: said %v listening %v, want %q and %v", c.say, said, forkListening.Any(forkNow()), c.want, c.on)
@@ -187,17 +187,19 @@ func TestForkBeginSwitch(t *testing.T) {
 	if follow("aktiivne kuulamine") || forkChain.Count(esn) != 1 || len(said) != 0 {
 		t.Errorf("a non-phrase follow-up: want the LLM call (no skip, chain counted), said %v", said)
 	}
+	if follow("Jäävait.") || cuts != 0 {
+		t.Fatal("a glued quiet phrase in a follow-up must not lock (exact match, no wake word)")
+	}
 	forkListening.Activate(esn, forkNow())
-	if !follow("ole vait") || cuts != 1 || forkListening.Any(forkNow()) {
-		t.Fatalf("quiet follow-up: want skip, one placeholder cut, listening off; cuts %d", cuts)
+	if !follow("ole vait") || cuts != 1 || forkListening.Any(forkNow()) || forkChain.Begin(esn, forkNow()) {
+		t.Fatalf("quiet follow-up: want skip, one placeholder cut, listening off, chain ended; cuts %d", cuts)
 	}
 	if _, src, _ := quiet.Until(); src != "voice:ole vait" {
 		t.Errorf("lock source %q, want voice:ole vait", src)
 	}
-	select {
-	case <-naps:
-	case <-time.After(2 * time.Second):
-		t.Error("quiet follow-up sent no nap")
+	forkNaps.Wait()
+	if len(naps) != 2 {
+		t.Errorf("naps %d, want 2: forkQuietLock's async one + the one held under control", len(naps))
 	}
 	if _, skip := forkBegin(esn, false, "ole vait"); skip {
 		t.Error("an intent request must not run the switch (ProcessTextAll already did)")

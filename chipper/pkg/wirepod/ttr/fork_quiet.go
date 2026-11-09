@@ -36,7 +36,7 @@ func forkQuiet(req interface{}, voiceText, botSerial string) bool {
 	return true
 }
 
-// forkQuietLock is a "shut up" match's lock + listen off + nap + volume (wake-word and overheard alike).
+// forkQuietLock is a "shut up" match's lock + listen off + nap + volume (wake-word and knowledge-graph turns).
 func forkQuietLock(esn, phrase string, now time.Time) {
 	_ = forkQuietStart([]string{esn}, now.Add(quiet.LockFor), "voice:"+phrase)
 }

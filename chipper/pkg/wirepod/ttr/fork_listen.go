@@ -74,12 +74,19 @@ func forkListen(req interface{}, voiceText, botSerial string) bool {
 	return true
 }
 
-// forkKGSwitch is forkQuiet + forkListen for a knowledge-graph turn (a follow-up without the wake word), which never
-// reaches ProcessTextAll: a match is handled here and the LLM call is skipped.
+// forkKGSwitch is forkQuiet + forkListen for any knowledge-graph turn (follow-up, "I have a question",
+// {{newVoiceRequest}}), which never reaches ProcessTextAll: a match is handled here and the LLM call is skipped.
+// No wake word leads the turn, so "shut up" must match exactly, as overheard speech does (4b91012 ruling).
 func forkKGSwitch(esn, text string) bool {
-	if phrase, ok := quiet.Match(text); ok {
-		forkQuietLock(esn, phrase, time.Now())
-		if err := forkKGCut(esn); err != nil {
+	if phrase, ok := quiet.MatchExact(text); ok {
+		now := time.Now()
+		forkQuietLock(esn, phrase, now)
+		until := now.Add(quiet.LockFor)
+		if l, err := quiet.Read(); err == nil && l.Until.After(until) {
+			until = l.Until
+		}
+		// The nap lands under control, so the behavior tree re-selects sleep on release (no sleep intent on this path).
+		if err := forkKGCut(esn, func() { forkNap(forkRobotIP(esn), esn, until) }); err != nil {
 			logger.Println("my-vector quiet: kg cut: " + err.Error())
 		}
 		return true
@@ -92,9 +99,9 @@ func forkKGSwitch(esn, text string) bool {
 	return true
 }
 
-// forkKGCut takes and drops behavior control, cutting streamingKG's placeholder answer as StreamingKGSim's
-// BControl does (tests swap it).
-var forkKGCut = func(esn string) error {
+// forkKGCut takes behavior control, runs hold, and drops it, cutting streamingKG's placeholder answer as
+// StreamingKGSim's BControl does (tests swap it).
+var forkKGCut = func(esn string, hold func()) error {
 	robot, err := vars.GetRobot(esn)
 	if err != nil {
 		return err
@@ -105,6 +112,7 @@ var forkKGCut = func(esn string) error {
 	if err != nil {
 		return err
 	}
+	hold()
 	release()
 	return nil
 }
