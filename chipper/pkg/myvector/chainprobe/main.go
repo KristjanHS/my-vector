@@ -94,7 +94,7 @@ func main() {
 	}
 	defer f.Close()
 	logger.Init()
-	defer os.RemoveAll(tmp)
+	defer func() { os.RemoveAll(tmp) }() // reads tmp at exit: isolate() sets it below
 	isolate()
 	sc := search.LoadConfig()
 	sc.Provider = "off"
