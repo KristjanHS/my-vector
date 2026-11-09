@@ -58,6 +58,10 @@ grep -q 'restart systemd-journald' "$r/calls" && grep -q 'restart syslog-ng@defa
 out=$(run "$r") || die "idle run: $out"
 [[ ! -s $r/calls && $out == *"journald: already capped"*"syslog-ng: already capped"*PASS:* ]] || die "idle run wrote or restarted: [$out] calls=[$(cat "$r/calls")]"
 
+touch "$r$c" "$r$jd/99-myvector.conf"
+out=$(FAKE_MONO=999700000 run "$r") || die "just-restarted run: $out"
+[[ ! -s $r/calls ]] || die "daemons restarted 0.3 s after the conf write were restarted again: $(cat "$r/calls")"
+
 out=$(FAKE_MONO=1 run "$r") || die "stale run: $out"
 [[ $(grep -c restart "$r/calls") == 2 ]] && ! grep -q mount "$r/calls" || die "daemons started before the conf write not restarted: $(cat "$r/calls")"
 
