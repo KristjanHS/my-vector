@@ -26,9 +26,10 @@ cat >"$tmp/bin/syslog-ng" <<'EOF'
 EOF
 cat >"$tmp/bin/logger" <<'EOF'
 #!/bin/sh
+[ -z "$FAKE_LOGGER_DEAD" ] || exit 0
 echo "11-09 12:00:00.000 notice root 1 $*" | tee -a "$ETC_ROOT/var/log/messages" >>"$ETC_ROOT/data/log/keep/messages"
 EOF
-printf '#!/bin/sh\n' >"$tmp/bin/sleep"
+printf '#!/bin/sh\necho "sleep $*" >>"$ETC_ROOT/sleeps"\n' >"$tmp/bin/sleep"
 chmod +x "$tmp/bin/"*
 body=$(sed -n "/<<'EOF' |/,/^EOF\$/{/<<'EOF' |/d;/^EOF\$/d;p}" "$robot/logkeep/apply.sh")
 vendor='destination d_messages { file("/var/log/messages" template(t_common)); };'
@@ -53,6 +54,7 @@ grep -qx 'Storage=volatile' "$r$jd/99-myvector.conf" && [[ ! -e $r$jd/myvector.c
 grep -q 'restart systemd-journald' "$r/calls" && grep -q 'restart syslog-ng@default' "$r/calls" && grep -q ' ro ' "$r/proc/mounts" ||
   die "vendor run restarts/mount: $(cat "$r/calls")"
 [[ $out == *PASS:* && ! -e $r/run/myvector/syslog-ng.conf.new ]] || die "vendor run output or temp conf left: $out"
+[[ ! -e $r/sleeps ]] || die "tag already in both files, yet slept: $(cat "$r/sleeps")"
 
 : >"$r/calls"
 out=$(run "$r") || die "idle run: $out"
@@ -78,4 +80,8 @@ if out=$(FAKE_SYNTAX_BAD=1 run "$r"); then die "a syntax failure passed: $out"; 
 r=$(fresh nojournal "$vendor"); rmdir "$r/run/log/journal"
 if out=$(run "$r"); then die "no /run/log/journal passed: $out"; fi
 [[ $out == *"FAIL: no /run/log/journal"* ]] || die "no /run/log/journal: $out"
+r=$(fresh deadlog "$vendor"); : >"$r/var/log/messages"
+if out=$(FAKE_LOGGER_DEAD=1 run "$r"); then die "a tag never logged passed: $out"; fi
+[[ $out == *"FAIL: my-vector logkeep "*" not in /var/log/messages"* && $(grep -c 'sleep 1' "$r/sleeps") == 3 ]] ||
+  die "tag never logged: want 3 x sleep 1 then FAIL not in, got [$out] sleeps=[$(cat "$r/sleeps" 2>/dev/null)]"
 echo "logkeep host test OK"
