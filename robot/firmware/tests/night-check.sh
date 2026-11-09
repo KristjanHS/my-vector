@@ -58,6 +58,20 @@ grep -q '^nap 11-01 14:00:00 .. 11-01 16:00:00$' <<<"$out" || die "napout: want 
 nap napny '2027-01-01 02:00' '12-31 22:00:00.000' '12-31 23:00:00.000' '2027-01-01 01:00' '12-31 23:30:00.000' '01-01 01:30:00.000'
 out=$(runnap napny '2027-01-01 02:00') && die "--nap across New Year: power-on anim inside: want FAIL, got: $out"
 grep -q '^nap 12-31 23:00:00 .. 01-01 01:00:00$' <<<"$out" && grep -q 'hits 1,' <<<"$out" || die "napny: want the 12-31 window and 1 hit in: $out"
+# make unquiet mid-nap: the firmware logs 'nap off' at 15:00, so the window (and "over") ends there, not at 16:00.
+mkdir -p "$tmp/napoff" && {
+  echo "11-01 13:00:00.000 info vic-engine 100 @behavior.feature.start${u}Sleeping${u}AI"
+  echo "11-01 14:00:00.000 info vic-engine 100 [@Behaviors] my-vector.NightWindow: (tc2) nap until $(date -d '2026-11-01 16:00' +%s)"
+  echo "11-01 14:00:00.000 info vic-engine 100 @action.play_animation${u}anim_sleeping_01${u}ag${u}GoToSleepSleeping${u}x"
+  echo "11-01 15:00:00.000 info vic-engine 100 [@Behaviors] my-vector.NightWindow: (tc2) nap off"
+  echo "11-01 15:30:00.000 info vic-engine 200 @action.play_animation${u}anim_power_offon_02${u}ag_power_offon_01${u}InitialWakeUp${u}LowStim${u}-22"
+  echo "11-01 15:40:00.000 info vic-engine 200 @behavior.feature.start${u}Sleeping${u}AI"
+} >"$tmp/napoff/messages"
+out=$(runnap napoff '2026-11-01 15:45') || die "--nap: power-on anim after 'nap off', clock before the nap's epoch: want PASS, got: $out"
+grep -q '^nap 11-01 14:00:00 .. 11-01 15:00:00 (nap off)$' <<<"$out" || die "napoff: want the window cut at 'nap off' in: $out"
+# No DATE: the default night comes from NIGHT_NOW's clock (10:00 on 11-02 -> the night that started 11-01).
+out=$(NIGHT_NOW=$(date -d '2026-11-02 10:00' +%s) NIGHT_LOG_DIR=$tmp/ship "$fw/night-check.sh" 2>&1) || die "default day at NIGHT_NOW 11-02 10:00: want PASS, got: $out"
+grep -q '^night 11-01 21:00:00 .. 11-02 09:00:00$' <<<"$out" || die "default day: want the 11-01 night from NIGHT_NOW in: $out"
 mkdir -p "$tmp/nonap" && echo "11-01 20:00:00.000 info vic-engine 100 @behavior.feature.start${u}Sleeping${u}AI" >"$tmp/nonap/messages"
 rc=0; out=$(NIGHT_LOG_DIR=$tmp/nonap "$fw/night-check.sh" --nap 2>&1) || rc=$?
 ((rc == 2)) || die "--nap with no nap line: want exit 2, got $rc: $out"

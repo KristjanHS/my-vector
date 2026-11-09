@@ -51,8 +51,8 @@ cp "$fw/voice-push.sh" "$fw/settings.sh" "$vp/robot/firmware/"
 printf '#!/bin/sh\necho diskguard stub\n' >"$vp/robot/diskguard/apply.sh"
 printf '#!/bin/sh\necho sshkey stub\n' >"$vp/robot/sshkey/apply.sh"
 printf '#!/bin/sh\necho hostkey stub\n' >"$vp/robot/hostkey/apply.sh"
-printf '#!/bin/sh\necho epod stub\n' >"$vp/robot/epod/apply.sh"
-printf '#!/bin/sh\necho netguard stub\n' >"$vp/robot/netguard/apply.sh"
+printf '#!/bin/sh\necho epod >>"$(dirname "$0")/../../order.log"; echo epod stub\n' >"$vp/robot/epod/apply.sh"
+printf '#!/bin/sh\necho netguard >>"$(dirname "$0")/../../order.log"; echo netguard stub\n' >"$vp/robot/netguard/apply.sh"
 : >"$vp/robot/key"
 cat >"$vp/bin/ssh" <<'STUB'
 #!/usr/bin/env bash
@@ -62,9 +62,20 @@ case $* in
   *user-do-not-auto-update*) echo present ;;
 esac
 STUB
+# curl stub: vic-engine's consolevarset body echoes the value set; $vp/nap-mode "notfound" answers its unknown-var body
+# (HTTP 200 too), "down" fails like a closed port. Each nap call also lands in $vp/order.log (after epod/netguard?).
 cat >"$vp/bin/curl" <<'STUB'
 #!/bin/sh
-echo "$*" >>"${0%/bin/curl}/curl.log"
+vp=${0%/bin/curl} u=$*
+echo "$u" >>"$vp/curl.log"
+case $u in *consolevarset*)
+  echo nap >>"$vp/order.log"
+  case $(cat "$vp/nap-mode" 2>/dev/null) in
+    notfound) echo 'Variable not found SleepCycle_NapUntil_s<br>' ;;
+    down) exit 7 ;;
+    *) echo "${u##*value=}<br>" ;;
+  esac ;;
+esac
 STUB
 printf '#!/bin/sh\n' >"$vp/bin/sleep"
 chmod +x "$vp/bin/ssh" "$vp/bin/curl" "$vp/bin/sleep"
@@ -103,7 +114,7 @@ settings_run() {
   jq -n --arg d "{\"clock_24_hour\" : $1, \"temp_is_fahrenheit\" : $2}" \
     '[{thing: "vic:0", name: "vic.RobotSettings", jdoc: {json_doc: $d}}]' >"$vp/secrets/server/jdocs/jdocs.json"
   printf '%s\n' "$3" >"$vp/secrets/server/myvectorConfig.json"
-  : >"$vp/curl.log" && : >"$vp/voice.json"
+  : >"$vp/curl.log" && : >"$vp/voice.json" && : >"$vp/order.log"
   rc=0; out=$(vp_run settings.sh) || rc=$?
 }
 settings_run true false '{"lang": "et-EE", "t2": "af_heart", "t2_et": "mari", "slow": 1.1}'
@@ -121,12 +132,32 @@ settings_run true false '{"lang": "en-US"}'
 [[ $(cat "$vp/curl.log") == *"/api-sdk/timezone?serial=0&timezone=Europe/Tallinn"* && $rc == 1 &&
   $out == *"WARN: time_zone: set to Europe/Tallinn sent, robot still has America/Los_Angeles after 15 s"* ]] ||
   die "settings.sh, robot on America/Los_Angeles: exit $rc, curl $(cat "$vp/curl.log"): $out"
-# N3 (shut-up-sleep): an active sound lock re-arms the firmware nap to its end, once (the no-lock case: "all in place" above).
+# N3 (shut-up-sleep): an active sound lock re-arms the firmware nap to its end, once, after epod + netguard (they restart
+# vic-engine); the no-lock case: "all in place" above.
 robot_jdoc Europe/Tallinn
 mkdir -p "$vp/robot/work" && until_s=$(($(date +%s) + 3600)) && echo "$until_s 5 voice:shut up" >"$vp/robot/work/quiet-until"
 settings_run true false '{"lang": "en-US"}'
-rm -f "$vp/robot/work/quiet-until"
 [[ $(grep -c consolevarset "$vp/curl.log") == 1 && $rc == 0 && $out == *"ok: nap re-armed until"* ]] &&
   grep -qF "http://127.0.0.1:8888/consolevarset?key=SleepCycle_NapUntil_s&value=$until_s" "$vp/curl.log" ||
   die "settings.sh, sound lock held: want one nap re-arm to $until_s, exit $rc, curl $(cat "$vp/curl.log"): $out"
+[[ $(tr '\n' ' ' <"$vp/order.log") == "epod netguard nap " ]] || die "settings.sh: nap re-arm must come last, got order: $(cat "$vp/order.log")"
+# A firmware without the var answers 200 "Variable not found": WARN, not ok.
+echo notfound >"$vp/nap-mode"
+settings_run true false '{"lang": "en-US"}'
+[[ $rc == 1 && $out == *"WARN: nap: vic-engine did not set SleepCycle_NapUntil_s=$until_s: Variable not found"* && $out != *"nap re-armed"* ]] ||
+  die "settings.sh, console says Variable not found: want exit 1 + WARN, exit $rc: $out"
+# vic-engine still restarting: 18 tries (sleep stubbed), then WARN.
+echo down >"$vp/nap-mode"
+settings_run true false '{"lang": "en-US"}'
+[[ $(grep -c consolevarset "$vp/curl.log") == 18 && $rc == 1 && $out == *"WARN: nap: re-arm to $until_s failed at 127.0.0.1:8888 for ~90 s"* ]] ||
+  die "settings.sh, console down: want 18 tries + WARN, got $(grep -c consolevarset "$vp/curl.log"), exit $rc: $out"
+rm -f "$vp/nap-mode"
+# A lock past the firmware's 4 h NapMax: the nap is capped at now + 4 h (the lock file keeps its end).
+now_s=$(date +%s) && echo "$((now_s + 6 * 3600)) 5 make quiet" >"$vp/robot/work/quiet-until"
+settings_run true false '{"lang": "en-US"}'
+rm -f "$vp/robot/work/quiet-until"
+sent=$(sed -n 's/.*SleepCycle_NapUntil_s&value=\([0-9]*\)$/\1/p' "$vp/curl.log")
+if ! [[ -n $sent && $rc == 0 ]] || ((sent < now_s + 4 * 3600 || sent > now_s + 4 * 3600 + 5)); then
+  die "settings.sh, 6 h lock: want the nap capped at now+4 h ($((now_s + 4 * 3600))), sent '${sent}', exit $rc: $out"
+fi
 echo "pc-voice host test OK (${touch[0]##*/}; voice-push.sh agrees on $n tts-urls.txt rows; voice-push.sh lang + settings.sh T2/jdoc stubs)"

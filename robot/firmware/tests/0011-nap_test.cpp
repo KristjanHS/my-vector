@@ -15,6 +15,23 @@ int main()
   CHECK(!MyVectorNapActive(now - 1, now));             // past
   CHECK(!MyVectorNapActive(now + 5 * 60 * 60, now));   // over NapMax: refused
   CHECK(!MyVectorNapActive(now * 1000 + 3600000, now)); // ms epoch: refused
+
+  // MyVectorNapStep: the latch over the var's changes, and the log line each change owes.
+  MyVectorNapLatch latch;
+  MyVectorNapLog log = kMyVectorNapUntil;
+  CHECK(!MyVectorNapStep(latch, 0, now, log) && log == kMyVectorNapQuiet); // boot: var 0, nothing to log
+  const long long far = now + 5 * 60 * 60;
+  CHECK(!MyVectorNapStep(latch, far, now, log) && log == kMyVectorNapRefused);
+  CHECK(!MyVectorNapStep(latch, far, now + 1, log) && log == kMyVectorNapQuiet); // same value: logged once
+  CHECK(!MyVectorNapStep(latch, far, now + 2 * 60 * 60, log));               // refused, then within NapMax: stays refused
+  const long long soon = now + 2 * 60 * 60 + 60 * 60;
+  CHECK(MyVectorNapStep(latch, soon, now + 2 * 60 * 60, log) && log == kMyVectorNapUntil); // a new value is judged anew
+  CHECK(MyVectorNapStep(latch, soon, now + 2 * 60 * 60 + 1, log) && log == kMyVectorNapQuiet);
+  CHECK(!MyVectorNapStep(latch, soon, soon, log) && log == kMyVectorNapQuiet); // ends at its epoch, no line
+  CHECK(!MyVectorNapStep(latch, 0, soon + 1, log) && log == kMyVectorNapOff);   // set to 0 (make unquiet): nap off
+  CHECK(MyVectorNapStep(latch, soon + 60, soon + 1, log) && log == kMyVectorNapUntil);
+  CHECK(!MyVectorNapStep(latch, 0, soon + 2, log) && log == kMyVectorNapOff);   // ended early: nap off
+  CHECK(!MyVectorNapStep(latch, now - 1, soon + 3, log) && log == kMyVectorNapQuiet); // a past epoch: no line
   printf("nap host test: %d/%d checks pass\n", checks - fails, checks);
   return fails ? 1 : 0;
 }

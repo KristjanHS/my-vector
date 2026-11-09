@@ -9,13 +9,14 @@ intent goes straight back to deep sleep without a get-in anim (SleepReason Night
 morning and are kept 15 min out, so he wakes soon after 09:00. Voice (trigger word), timers, SDK, touch and pick-up
 still wake him. Kill switch: console var kSleepCycle_NightWindow (resets on engine restart; morning hour stays 9).
 Logs my-vector.NightWindow.
-Nap: console var kSleepCycle_NapUntil_s (epoch s, 0 = off; set by wire-pod's shut-up lock) counts as night until
-then; one more than 4 h ahead (a ms epoch, garbage) is refused. Logs my-vector.NightWindow nap until / nap refused.
+Nap: console var kSleepCycle_NapUntil_s (int64, epoch s, 0 = off; set by wire-pod's shut-up lock) counts as night
+until then; one more than 4 h ahead (a ms epoch, garbage) is refused, and stays refused until the var changes.
+Logs my-vector.NightWindow nap until / nap refused / nap off (set to 0).
 ---
  .../behaviorComponent/sleepingTypes.clad      |  3 +
- .../behaviors/sleeping/behaviorSleepCycle.cpp | 81 ++++++++++++++++++-
+ .../behaviors/sleeping/behaviorSleepCycle.cpp | 97 ++++++++++++++++++-
  .../behaviorComponent/sleepTracker.cpp        |  3 +-
- 3 files changed, 84 insertions(+), 3 deletions(-)
+ 3 files changed, 100 insertions(+), 3 deletions(-)
 
 diff --git a/clad/src/clad/types/behaviorComponent/sleepingTypes.clad b/clad/src/clad/types/behaviorComponent/sleepingTypes.clad
 index f641e04e..18575392 100644
@@ -32,10 +33,10 @@ index f641e04e..18575392 100644
  
  enum uint_8 SleepReactionType {
 diff --git a/engine/aiComponent/behaviorComponent/behaviors/sleeping/behaviorSleepCycle.cpp b/engine/aiComponent/behaviorComponent/behaviors/sleeping/behaviorSleepCycle.cpp
-index cad706ae..69520a4a 100644
+index cad706ae..0dc3f1fe 100644
 --- a/engine/aiComponent/behaviorComponent/behaviors/sleeping/behaviorSleepCycle.cpp
 +++ b/engine/aiComponent/behaviorComponent/behaviors/sleeping/behaviorSleepCycle.cpp
-@@ -42,6 +42,17 @@
+@@ -42,6 +42,33 @@
  #include "webServerProcess/src/webService.h"
  #include "webServerProcess/src/webVizSender.h"
  
@@ -48,12 +49,28 @@ index cad706ae..69520a4a 100644
 +{
 +  return until_s > now_s && until_s - now_s <= kMyVectorNapMax_s;
 +}
++// The log line a change of the var owes (kMyVectorNapQuiet: unchanged, or an epoch already past).
++enum MyVectorNapLog { kMyVectorNapQuiet, kMyVectorNapUntil, kMyVectorNapRefused, kMyVectorNapOff };
++// The var's last value, and whether it was refused when it was set: a refused value stays refused until the var changes,
++// so a far-off one can't start a nap, unlogged, once it comes within kMyVectorNapMax_s.
++struct MyVectorNapLatch { long long until_s = 0; bool refused = false; };
++bool MyVectorNapStep(MyVectorNapLatch& latch, long long until_s, long long now_s, MyVectorNapLog& log)
++{
++  log = kMyVectorNapQuiet;
++  if( until_s != latch.until_s ) {
++    latch.until_s = until_s;
++    latch.refused = until_s > now_s && !MyVectorNapActive(until_s, now_s);
++    log = until_s == 0 ? kMyVectorNapOff : latch.refused ? kMyVectorNapRefused
++        : until_s > now_s ? kMyVectorNapUntil : kMyVectorNapQuiet;
++  }
++  return !latch.refused && MyVectorNapActive(until_s, now_s);
++}
 +} // namespace (my-vector nap)
 +
  
  namespace Anki {
  namespace Vector {
-@@ -88,6 +99,36 @@ CONSOLE_VAR(bool, kSleepCycle_EnableWiggleWhileSleeping, CONSOLE_GROUP, true);
+@@ -88,6 +115,36 @@ CONSOLE_VAR(bool, kSleepCycle_EnableWiggleWhileSleeping, CONSOLE_GROUP, true);
  CONSOLE_VAR(bool, kSleepCycleForceSleep, CONSOLE_GROUP, false);
  
  CONSOLE_VAR(bool, kSleepCycleForceLightSleep, CONSOLE_GROUP, false);
@@ -66,7 +83,7 @@ index cad706ae..69520a4a 100644
 +// ends (a 4 h deep-sleep interval set at 08:30 would keep him asleep until 12:30).
 +CONSOLE_VAR(f32, kSleepCycle_NightPersonCheckDelay_s, CONSOLE_GROUP, 15 * 60.0f);
 +// my-vector nap: epoch seconds the night rules hold until (0 = off), set by wire-pod's shut-up lock. Resets on engine restart.
-+CONSOLE_VAR(int, kSleepCycle_NapUntil_s, CONSOLE_GROUP, 0);
++CONSOLE_VAR(int64_t, kSleepCycle_NapUntil_s, CONSOLE_GROUP, 0);
 +// my-vector night window: the one test its three rules share; a nap counts as night
 +static bool MyVectorNight(const SleepTracker& sleepTracker)
 +{
@@ -75,22 +92,22 @@ index cad706ae..69520a4a 100644
 +  }
 +  const long long until_s = kSleepCycle_NapUntil_s;
 +  const long long now_s = time(nullptr);
-+  const bool nap = MyVectorNapActive(until_s, now_s);
-+  static long long sLoggedUntil_s = 0;
-+  if( until_s != sLoggedUntil_s ) {
-+    sLoggedUntil_s = until_s;
-+    if( nap ) {
-+      LOG_INFO("my-vector.NightWindow", "nap until %lld", until_s);
-+    } else if( until_s > now_s ) {
-+      LOG_INFO("my-vector.NightWindow", "nap refused %lld (more than %lld s ahead)", until_s, kMyVectorNapMax_s);
-+    }
++  static MyVectorNapLatch sNap;
++  MyVectorNapLog log = kMyVectorNapQuiet;
++  const bool nap = MyVectorNapStep(sNap, until_s, now_s, log);
++  if( log == kMyVectorNapUntil ) {
++    LOG_INFO("my-vector.NightWindow", "nap until %lld", until_s);
++  } else if( log == kMyVectorNapRefused ) {
++    LOG_INFO("my-vector.NightWindow", "nap refused %lld (more than %lld s ahead)", until_s, kMyVectorNapMax_s);
++  } else if( log == kMyVectorNapOff ) {
++    LOG_INFO("my-vector.NightWindow", "nap off");
 +  }
 +  return nap || sleepTracker.IsNightTime();
 +}
  // The amount of time that the robot must be on the charger but not actually charging
  // because of overheating battery before he is forced to go to sleep.
  CONSOLE_VAR(f32, kSleepCycle_TooLongOnChargerNotChargingDuration_sec, CONSOLE_GROUP, 5 * 60.f);
-@@ -580,10 +621,25 @@ void BehaviorSleepCycle::BehaviorUpdate()
+@@ -580,10 +637,25 @@ void BehaviorSleepCycle::BehaviorUpdate()
        }
      }
  
@@ -117,7 +134,7 @@ index cad706ae..69520a4a 100644
            currTime_s >= _dVars.nextPersonCheckTime_s ) {
          LOG_INFO("BehaviorSleepCycle.TimeForPersonCheck",
                   "In state '%s', reached t=%f (>= %f), time to do a person check",
-@@ -703,6 +759,24 @@ bool BehaviorSleepCycle::GoToSleepIfNeeded()
+@@ -703,6 +775,24 @@ bool BehaviorSleepCycle::GoToSleepIfNeeded()
      return true;
    }
  
@@ -142,7 +159,7 @@ index cad706ae..69520a4a 100644
    const float currTime_s = BaseStationTimer::getInstance()->GetCurrentTimeInSeconds();
    const bool wokeRecently = _dVars.lastWakeUpTime_s > 0.0f &&
      ( currTime_s - _dVars.lastWakeUpTime_s ) <= kSleepCycle_RecentSleepLength_s;
-@@ -996,8 +1070,11 @@ void BehaviorSleepCycle::TransitionToDeepSleep()
+@@ -996,8 +1086,11 @@ void BehaviorSleepCycle::TransitionToDeepSleep()
  {
    SleepTransitionHelper(SleepStateID::DeepSleep);
  
