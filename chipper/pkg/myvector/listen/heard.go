@@ -71,8 +71,13 @@ const ReplyCap = 80
 
 // Ask is one Prompt call, thinking per llm.Config.Thinking for PathListen.
 func Ask(ctx context.Context, c *openai.Client, model, user string) (string, error) {
+	return AskWith(ctx, c, model, Prompt, user)
+}
+
+// AskWith is Ask with system prompt sys.
+func AskWith(ctx context.Context, c *openai.Client, model, sys, user string) (string, error) {
 	r := openai.ChatCompletionRequest{Model: model, Messages: []openai.ChatCompletionMessage{
-		{Role: openai.ChatMessageRoleSystem, Content: Prompt}, {Role: openai.ChatMessageRoleUser, Content: user}}}
+		{Role: openai.ChatMessageRoleSystem, Content: sys}, {Role: openai.ChatMessageRoleUser, Content: user}}}
 	llm.Load().Thinking(llm.Ollama, model, llm.PathListen).Apply(&r, ReplyCap)
 	res, err := c.CreateChatCompletion(ctx, r)
 	if err != nil || len(res.Choices) == 0 {
