@@ -1,17 +1,31 @@
 // Package robotconn holds one gRPC ClientConn per robot, shared by every caller and never closed per call.
+// A changed target or guid closes the old conn, so a caller still holding its Vector sees Canceled.
 package robotconn
 
 import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"net"
 	"sync"
+	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
+)
+
+// A conn shared for life must notice a robot that vanished without FIN/RST (blackout, WiFi drop):
+// unacked writes fail after userTimeout instead of TCP's ~15 min retransmit, and an idle conn with an
+// open stream is pinged every keepaliveTime. keepaliveTime stays >= 5 min, gRPC's server MinTime,
+// so the robot never answers too_many_pings with GOAWAY.
+const (
+	userTimeout      = 10 * time.Second
+	keepaliveTime    = 5 * time.Minute
+	keepaliveTimeout = 20 * time.Second
 )
 
 type entry struct {
@@ -53,11 +67,19 @@ func Get(esn, guid, target string) (*vector.Vector, error) {
 	return v, nil
 }
 
-// dialRobot is the SDK's vector.New dial: TLS without verify, bearer guid per RPC.
+// dialRobot is the SDK's vector.New dial (TLS without verify, bearer guid per RPC) plus dead-peer detection.
 func dialRobot(target, guid string, extra ...grpc.DialOption) (*grpc.ClientConn, error) {
 	return grpc.Dial(target, append([]grpc.DialOption{
 		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})),
-		grpc.WithPerRPCCredentials(token(guid))}, extra...)...)
+		grpc.WithPerRPCCredentials(token(guid)),
+		grpc.WithContextDialer(dialTCP),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{Time: keepaliveTime, Timeout: keepaliveTimeout})}, extra...)...)
+}
+
+// dialTCP dials with TCP_USER_TIMEOUT = userTimeout where the OS has it (setUserTimeout).
+func dialTCP(ctx context.Context, addr string) (net.Conn, error) {
+	d := net.Dialer{Control: setUserTimeout}
+	return d.DialContext(ctx, "tcp", addr)
 }
 
 type token string

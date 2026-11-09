@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/robotconn"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	lcztn "github.com/kercre123/wire-pod/chipper/pkg/wirepod/localization"
 )
@@ -188,7 +188,7 @@ func ParamChecker(req interface{}, intent string, speechText string, botSerial s
 				}
 			}
 			if matched {
-				vec, err := vector.New(vector.WithSerialNo(botSerial), vector.WithToken(guid), vector.WithTarget(target))
+				vec, err := robotconn.Get(botSerial, guid, target) // my-vector: one shared conn per robot (robotconn)
 				if err != nil {
 					logger.Println("error connecting to vector:", err)
 				} else {
