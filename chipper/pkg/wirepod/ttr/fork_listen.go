@@ -2,7 +2,6 @@ package wirepod_ttr
 
 import (
 	"context"
-	"net/http"
 	"os"
 	"time"
 
@@ -23,23 +22,8 @@ var forkListening = func() *listen.State {
 	return s
 }()
 
-// forkCapture is the old listen.sh clip path; nothing Starts it since the stream (M6), Stage 3.2 deletes it.
-var forkCapture = &listen.Runner{
-	Script: listen.ScriptPath,
-	Log:    func(l string) { logger.Println(l) },
-}
-
-// forkJoiner turns listen.sh clips (listen.ClipAPI) into utterances for forkHearer.
-var forkJoiner = &listen.Joiner{
-	STT:     func(pcm []byte) (string, error) { return listen.STT(lang.Current(), pcm) },
-	Heard:   func(u listen.Utterance) { go forkHearer.Heard(u) },
-	Clipped: func(esn string) { forkCapture.Clipped(esn) },
-	Log:     func(l string) { logger.Println(l) },
-}
-
 func init() {
 	forkListening.OnOff, forkArm.Off = forkArm.Stop, forkListening.Deactivate
-	http.HandleFunc(listen.ClipAPI, listen.ClipHandler(forkListening, forkJoiner, func(l string) { logger.Println(l) }))
 }
 
 // forkHearer decides overheard utterances.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mic-stream Stage 1.2 CPU gate (docs/plans/2026-11-08-mic-stream.md): vic-anim CPU with the patch-0016 stream off vs on.
+# Mic-stream Stage 1.2 CPU gate (2026-11-08-mic-stream.md (docs/plans/)): vic-anim CPU with the patch-0016 stream off vs on.
 # "on" points the robot at a PC byte sink on PORT (default 8094; not wire-pod, so no Hearer and no robot sound); each
 # window prints vic-anim % of one core (/proc utime+stime) and the bytes the sink got (0 in silence: G1 gate).
 # Usage: [SECS=300] [PORT=8094] gate.sh [window …]   windows: off | on (default: off on off — the offs bracket the drift).

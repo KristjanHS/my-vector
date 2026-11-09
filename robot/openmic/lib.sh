@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Open-mic pieces probe.sh and listen.sh source: robot facts (env.sh), service URLs, silent RecordMicDataClip clips → 16 kHz pcm.
+# Open-mic pieces probe.sh sources: robot facts (env.sh), service URLs, silent RecordMicDataClip clips → 16 kHz pcm.
 lib_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=robot/env.sh
 . "$lib_dir/../env.sh"
