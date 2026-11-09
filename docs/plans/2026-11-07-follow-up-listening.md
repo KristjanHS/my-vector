@@ -1,6 +1,6 @@
 # Follow-up listening
 
-Status: 2.1–4.3, 7.1, 7.2, 7.4, 7.5, 8.1, 8.2, 9.1 done; 7.3 + 8.3 review next; G3's next lever waits on `docs/backlog.md` §OWED[USER] (P7). Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order item 3. Runs after `2026-11-07-reply-cap-by-ask.md (docs/plans/)`.
+Status: 2.1–4.3, 7.1, 7.2, 7.4, 7.5, 8.1, 8.2, 9.1 done, 7.3 + 8.3 reviewed and fixed; the user ships + reruns the P4 silent chain (7.3); G3's next lever waits on `docs/backlog.md` §OWED[USER] (P7). Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order item 3. Runs after `2026-11-07-reply-cap-by-ask.md (docs/plans/)`.
 
 ## Rulings
 
