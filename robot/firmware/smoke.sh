@@ -127,7 +127,7 @@ pid=$(pidof -s vic-robot) || { echo "vic-robot not running"; exit 1; }
 epid=$(pidof -s vic-engine) || epid=none
 awk -v tag="vic-robot $pid " -v eng="vic-engine $epid " '
   index($0, tag) && !seen++ { whole = index($0, "robot.main: Starting robot process") > 0 }
-  index($0, tag) && /LiftController\.Calibrated.*reason Startup/ { on = 1; n = 0; loop = 0; bad = 0; msg = "" }
+  index($0, tag) && /LiftController\.Calibrated.*reason Startup/ { on = 1; n = 0; loop = 0; bad = 0; empty = 0; msg = "" }
   /LiftController\.Calibrated/ { split($2, t, ":"); c[++n] = t[1] * 3600 + t[2] * 60 + t[3]
     if (n >= 3 && (c[n] - c[n - 2] + 86400) % 86400 < 60) loop++ }
   $0 ~ ENVIRON["FATAL"] { bad++; msg = msg "fatal: " substr($0, 1, 160) "\n" }

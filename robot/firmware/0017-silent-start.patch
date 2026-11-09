@@ -5,7 +5,7 @@ Subject: [PATCH] silent-start
 
 vic-engine: while /data/myvector/silent-start holds an expiry epoch (s, robot clock) still ahead and at most 15 min
 ahead, an AnimSequence holding the InitialWakeUp trigger (NormalWakeUp, the power-on anim after each engine start) ends
-without playing it, a tick after activation via a 0 s wait (as a played anim ends): a CancelSelf() inside activation
+without playing it, a few ticks after activation via a 0 s wait (as a played anim ends): a CancelSelf() inside activation
 left InitNormalOperation, the always-delegating stack base, with no delegate that tick, so it cancelled itself and
 emptied the behavior stack. Ending rather than refusing to activate starts InitNormalOperation's run-once cooldown,
 so it never replays later. A missing, empty, garbage, expired or over-cap file plays the anim.
