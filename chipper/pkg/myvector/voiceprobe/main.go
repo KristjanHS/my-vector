@@ -4,6 +4,7 @@
 //	go run ./pkg/myvector/voiceprobe play -vol 100 file.pcm             # 16 kHz s16le mono via K2's stream
 //	go run ./pkg/myvector/voiceprobe cancel                             # silent: free a stream left open
 //	go run ./pkg/myvector/voiceprobe overlap                            # silent: overlapping + short streams
+//	go run ./pkg/myvector/voiceprobe race                               # silent: a closed stream's Cancel must not cut the playing one
 package main
 
 import (
@@ -244,20 +245,23 @@ func main() {
 }
 
 // run refuses with the QUIET line before connecting while the robot sound lock holds (G5); say and play both make sound.
-// cancel is silent, so it skips the lock and behavior control.
+// cancel, overlap and race are silent, so they skip the lock and behavior control.
 func run(args []string) error {
-	if len(args) == 2 && (args[1] == "cancel" || args[1] == "overlap") {
+	if len(args) == 2 && (args[1] == "cancel" || args[1] == "overlap" || args[1] == "race") {
 		v, err := connect(botinfo.Path())
 		if err != nil {
 			return err
 		}
-		if args[1] == "overlap" {
+		switch args[1] {
+		case "overlap":
 			return overlap(v)
+		case "race":
+			return race(v)
 		}
 		return cancelStream(v)
 	}
 	if len(args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: voiceprobe say|play [flags] <text|file.pcm> | voiceprobe cancel")
+		fmt.Fprintln(os.Stderr, "usage: voiceprobe say|play [flags] <text|file.pcm> | voiceprobe cancel|overlap|race")
 		os.Exit(2)
 	}
 	if c := args[1]; c != "say" && c != "play" {
