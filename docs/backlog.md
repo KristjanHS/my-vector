@@ -22,6 +22,7 @@
 - Listen-switch prompt line (same plan, H6): "never claim you switched active listening" breaks `TestPromptArmsLongAbout` (arm X 611 > `prompt.Budget` 600) — raise the budget, drop arm X, trim a line, or skip it.
 - syncwt speed live (`2026-11-09-syncwt-speed.md` (docs/plans/) stop rule): next `make syncwt` report — no-rebase ≤ 3 s, rebased gate ≤ 20 s; a re-gate seen in practice → re-pick S3/S4.
 - Shut-up-sleep live (`2026-11-07-shut-up-sleep.md` (docs/plans/) 6.4, volume 1, after `make ship`): its 6.4 row; then `robot/openmic/probe.sh -m` et-EE + en-US → Stage 1 verdict, which re-cuts Stage 5.
+- Ship speed rung 2 live (`2026-11-08-ship-speed.md` (docs/plans/) 2.3 + Target): 3 server-lane `make ship` → its settings-gap awk ≤ 6 s per log and the Target one-liner (median push ≤ 33 s) exit 0; missed → pick rung 3 from that plan.
 
 ## Assistant-owed
 

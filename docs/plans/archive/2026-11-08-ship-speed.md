@@ -1,5 +1,7 @@
 # make ship — speed audit (Kaizen VSM + Muda), 2026-11-08
 
+Status: ✅ SHIPPED — rung 2 on main (2.1 C6, 2.2 L1+C4+T2, check + review green); 2.3 live ships + Target owed (`docs/backlog.md` §OWED[USER]).
+
 Goal: cut the wall-clock time of every next `make ship` as far as possible. Audit only; nothing implemented.
 Method: Value Stream Mapping of `robot/firmware/ship.sh` (steps, waits, handoffs), then Muda (waste) per step.
 Evidence: the 21 kept ship logs, a live timestamped tail of ship `28a8cd3` (14:44:41 → 14:48:05), a
