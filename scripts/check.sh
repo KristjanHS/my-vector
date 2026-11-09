@@ -41,6 +41,7 @@ shopt -s nullglob # a pre-R6 commit has no robot/*.sh
 for f in "$dir"/robot/*.sh "$dir"/robot/*/*.sh "$dir"/robot/*/tests/*.sh "$dir"/scripts/*.sh "$dir"/scripts/lib/*.sh "$dir"/scripts/tests/*.sh "$dir"/tts/*.sh "$dir"/et-stt/*.sh; do bash -n "$f" || { echo "syntax: ${f#"$dir"/}" >&2; exit 1; }; done
 echo "shell syntax OK"
 . "$repo/scripts/lib/check-runner.sh"
+# Jobs run in parallel under load: never pipe into an early-exiting reader (grep -q, head) under pipefail — use <<<"$(…)".
 opt() { if [[ -f $2 ]]; then job "$@"; fi; } # a test an older --head commit lacks is skipped
 gotest() { cd "$dir/chipper" && go test "$@"; }
 if [[ -f $dir/scripts/wire-pod-guard.nft ]] && unshare -rn true 2>/dev/null; then
