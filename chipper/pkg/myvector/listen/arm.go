@@ -23,7 +23,7 @@ const (
 	PortHold   = 200 * time.Millisecond
 )
 
-// RestartWait spaces re-arms after a miss (C3); one more miss turns listening off.
+// RestartWait spaces re-arms after a miss (M6); one more miss turns listening off.
 var RestartWait = []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute}
 
 // ConsoleURL is vic-anim's console on the robot (:8889, as sdkapp trigger_wake_word); tests point it at httptest.
