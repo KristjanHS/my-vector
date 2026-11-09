@@ -117,21 +117,26 @@ if [[ $ssf =~ ^([0-9]+)\ ([0-9]+)$ ]] && ((BASH_REMATCH[2] > BASH_REMATCH[1] && 
 fi
 
 # P1: since the running vic-robot's last Startup lift calibration: no crash lines, no recalibration loop (3 within 60 s).
+# The running vic-engine never logged NoStackInitialized: an emptied behavior stack runs nothing and ignores SDK motor
+# commands (patch 0017's first silent start did that, 2026-11-09; A1 then only saw the head not move).
 # The 8 MB messages rotation (robot/logkeep) can drop that line: then WARN (exit 3) and judge the lines left, as quiet-count.sh's INCOMPLETE.
 logcheck() {
   local log rc=0
   log=$(ssh_ "FATAL='$fatal' sh -s" <<'EOF'
 pid=$(pidof -s vic-robot) || { echo "vic-robot not running"; exit 1; }
-awk -v tag="vic-robot $pid " '
+epid=$(pidof -s vic-engine) || epid=none
+awk -v tag="vic-robot $pid " -v eng="vic-engine $epid " '
   index($0, tag) && !seen++ { whole = index($0, "robot.main: Starting robot process") > 0 }
   index($0, tag) && /LiftController\.Calibrated.*reason Startup/ { on = 1; n = 0; loop = 0; bad = 0; msg = "" }
   /LiftController\.Calibrated/ { split($2, t, ":"); c[++n] = t[1] * 3600 + t[2] * 60 + t[3]
     if (n >= 3 && (c[n] - c[n - 2] + 86400) % 86400 < 60) loop++ }
   $0 ~ ENVIRON["FATAL"] { bad++; msg = msg "fatal: " substr($0, 1, 160) "\n" }
+  index($0, eng) && /UpdateBehaviorStack\.NoStackInitialized/ { empty++ }
   END { cut = !on && !whole
+    if (empty) msg = msg sprintf("vic-engine behavior stack empty: %d NoStackInitialized lines (no behavior runs, SDK control never granted)\n", empty)
     printf "%s%slift calibrated %d since %s, loop hits %d, crash lines %d", msg, cut ? "log rotated past Startup; " : "", n,
       cut ? "the oldest line" : "Startup", loop, bad
-    exit loop || bad || !cut && !on ? 1 : cut ? 3 : 0 }' $(ls -tr /var/log/messages.* 2>/dev/null) /var/log/messages
+    exit loop || bad || empty || !cut && !on ? 1 : cut ? 3 : 0 }' $(ls -tr /var/log/messages.* 2>/dev/null) /var/log/messages
 EOF
 ) || rc=$?
   ((rc != 3)) || { echo "WARN: log ($1): $log"; return 0; }
