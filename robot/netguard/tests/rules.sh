@@ -37,7 +37,7 @@ got6=$(grep '^ip6tables -A MYVECTOR_IN_NEW' "$tmp/log" | sed 's/^ip6tables -A MY
 [[ $got6 == "$want6" ]] || die "v6 rules: got
 $got6"
 # every allow rule (both families) lands before the first hook change
-first_hook=$(grep -n ' -I INPUT ' "$tmp/log" | head -1 | cut -d: -f1)
+first_hook=$(grep -n ' -I INPUT ' "$tmp/log"); first_hook=${first_hook%%$'\n'*} first_hook=${first_hook%%:*}
 last_add=$(grep -n ' -A MYVECTOR_IN_NEW ' "$tmp/log" | tail -1 | cut -d: -f1)
 [[ -n $first_hook ]] && ((last_add < first_hook)) || die "a rule is added after the hook swap began (add line $last_add, hook line $first_hook)"
 for t in iptables ip6tables; do

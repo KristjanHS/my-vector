@@ -55,7 +55,7 @@ if out=$(run "$with"); then die "(f) empty s_client output: exit 0 [$out]"; fi
 [[ $out == *'no TLS leaf'* ]] || die "(f) message lacks 'no TLS leaf': [$out]"
 
 # Callers: the interlock line (failing the caller) comes before the first robot step. ncline <file> <ERE>: first non-comment match's line.
-ncline() { { grep -nE "$2" "$1" || :; } | { grep -vE '^[0-9]+:[[:space:]]*#' || :; } | head -1 | cut -d: -f1; }
+ncline() { local m; m=$({ grep -nE "$2" "$1" || :; } | { grep -vE '^[0-9]+:[[:space:]]*#' || :; }); m=${m%%$'\n'*}; echo "${m%%:*}"; }
 before() { # <file> <call ERE> <first robot step ERE>
   local c r; c=$(ncline "$1" "$2"); r=$(ncline "$1" "$3")
   [[ -n $c && -n $r ]] || die "${1#"$robot"/}: no line matches [$2] (call: ${c:-none}) or [$3] (robot: ${r:-none})"

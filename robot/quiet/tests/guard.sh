@@ -60,13 +60,13 @@ rc=0; out=$(PATH="$tmp/bin3:$PATH" CONDS=base:1.0 SOUNDS="chime blink curious" O
 srcre='(^|[;&|({[:space:]])(\.|source)[[:space:]]+[^#]*'
 src_lines() { grep -nE "$srcre$2" "$1" | grep -vE '^[0-9]+:[[:space:]]*#' | cut -d: -f1 || true; }
 first_src() { # first_src <file>: line number of its first line reaching env.sh, empty when none
-  local lib n p
-  { src_lines "$1" '(env\.sh|envsh)'
+  local lib n p out
+  out=$({ src_lines "$1" '(env\.sh|envsh)'
     for n in $(src_lines "$1" 'lib\.sh'); do
-      p=$(sed -n "${n}p" "$1" | grep -oE '(\.\./[A-Za-z0-9_-]+/)?lib\.sh' | head -1)
+      p=$(grep -oE '(\.\./[A-Za-z0-9_-]+/)?lib\.sh' <<<"$(sed -n "${n}p" "$1")"); p=${p%%$'\n'*}
       lib=$(dirname "$1")/$p
       [[ -n $p && -f $lib && -z $(src_lines "$lib" '(env\.sh|envsh)') ]] || echo "$n" # an unresolvable lib.sh counts as reaching
-    done; } | sort -n | head -1
+    done; } | sort -n); echo "${out%%$'\n'*}"
 }
 unlisted_in() { # unlisted_in <root>: the scripts under <root> failing the check, root-relative
   local f rel first s
@@ -75,7 +75,7 @@ unlisted_in() { # unlisted_in <root>: the scripts under <root> failing the check
     [[ $rel == */lib.sh || $rel == env.sh ]] && continue
     first=$(first_src "$f"); [[ -n $first ]] || continue
     [[ " ${sound[*]} " == *" $rel "* ]] && continue
-    s=$(grep -nE '^[[:space:]]*silent=1([[:space:]]|;|$)' "$f" | head -1 | cut -d: -f1)
+    s=$(grep -nE '^[[:space:]]*silent=1([[:space:]]|;|$)' "$f"); s=${s%%$'\n'*} s=${s%%:*}
     [[ -n $s ]] && ((s < first)) || echo "$rel"
   done < <(find "$1" \( -path "$1/work" -o -path "$1/ota" -o -path "$1/backup" -o -path "$1/quiet" \) -prune -o -name '*.sh' -type f -print)
 }

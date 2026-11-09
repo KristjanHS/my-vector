@@ -12,10 +12,13 @@ out=$(. "$lib"; job a sleep 0.3; job b echo hi-b; run_jobs "$tmp") || die "green
 [[ $(awk '{print $1, $2}' <<<"$out" | paste -sd,) == "ok a,ok b" ]] || die "summary not in queue order: $out"
 grep -q 'hi-b$' <<<"$out" || die "summary lacks the job's last log line: $out"
 
-m=31.$RANDOM SECONDS=0
-out=$(. "$lib"; job slow sleep "$m"; job bad sh -c 'echo boom; exit 3'; run_jobs "$tmp" 2>&1) && die "red run passed: $out"
+# slow's grandchild lingers 0.3 s after TERM, so run_jobs returning before it is gone leaves it to pgrep; bad fails once it is up
+m=$RANDOM.$$ ready=$tmp/ready SECONDS=0
+linger='trap "sleep 0.3; exit 0" TERM; sleep 31 & touch "$1"; wait'
+out=$(. "$lib"; job slow sh -c 'sh -c "$1" "linger-$2" "$3" & wait' sh "$linger" "$m" "$ready"
+  job bad sh -c 'until [ -e "$1" ]; do sleep 0.01; done; echo boom; exit 3' sh "$ready"; run_jobs "$tmp" 2>&1) && die "red run passed: $out"
 ((SECONDS < 5)) || die "red run took ${SECONDS}s: the slow job was waited for, not killed"
-! pgrep -f "sleep $m" >/dev/null || die "slow job survived the kill"
+! pgrep -f "linger-$m" >/dev/null || die "slow job's process group outlived run_jobs"
 grep -q '^killed *slow' <<<"$out" || die "slow job not reported killed: $out"
 grep -q '^boom$' <<<"$out" || die "failing job's log not printed: $out"
 echo "check-runner tests OK"
