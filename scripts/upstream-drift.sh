@@ -22,6 +22,7 @@ allowed_edits=(
   .dockerignore                          # + secrets, certs (never bake keys into an image)
   chipper/pkg/logger/logger.go           # LogUI/LogTray update the log globals under forkLogMu (fork_logger.go) — goroutines logged concurrently (race)
   chipper/pkg/wirepod/config-ws/webserver.go # get_logs/get_debug_logs read via logger.ForkLogList/ForkLogTrayList (fork_logger.go)
+  chipper/pkg/wirepod/ttr/intentparam.go # names_username_extend face hint dials via robotconn.Get (myvector/robotconn), was vector.New per use
   setup.sh                               # certs dir ./certs -> ./secrets/server/certs (fork_paths.go)
 )
 
