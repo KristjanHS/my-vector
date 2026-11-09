@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
+	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -30,10 +32,16 @@ type robot struct {
 	needControl, controlled          bool                                       // the gateway's SayText needs behavior control
 	grant                            bool                                       // BehaviorControl grants a ControlRequest
 	released                         int
-	mu                               sync.Mutex // sent, at, open, overlaps: streams may run concurrently
+	mu                               sync.Mutex // sent, at, open, overlaps, streams: streams may run concurrently
 	open, overlaps                   int        // streams between Prepare and Complete/Cancel; Prepares while one was open
 	failChunk                        bool       // Send fails on a chunk
 	hangChunk                        bool       // Send blocks on a chunk until the stream ends
+	streams                          int        // streams opened
+	// The gateway ends the first shutN streams with status shut (patch 0019's refusal): their Sends are dropped,
+	// then io.EOF from shutAfter on; Recv returns shut 50 ms after that.
+	shut      error
+	shutN     int
+	shutAfter time.Duration
 }
 
 func (r *robot) SayText(_ context.Context, in *vectorpb.SayTextRequest, _ ...grpc.CallOption) (*vectorpb.SayTextResponse, error) {
@@ -45,7 +53,14 @@ func (r *robot) SayText(_ context.Context, in *vectorpb.SayTextRequest, _ ...grp
 }
 
 func (r *robot) ExternalAudioStreamPlayback(ctx context.Context, _ ...grpc.CallOption) (vectorpb.ExternalInterface_ExternalAudioStreamPlaybackClient, error) {
-	return &audio{r: r, ctx: ctx}, nil
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.streams++
+	a := &audio{r: r, ctx: ctx}
+	if r.streams <= r.shutN {
+		a.eof = time.Now().Add(r.shutAfter)
+	}
+	return a, nil
 }
 
 func (r *robot) BehaviorControl(ctx context.Context, _ ...grpc.CallOption) (vectorpb.ExternalInterface_BehaviorControlClient, error) {
@@ -87,11 +102,18 @@ type audio struct {
 	grpc.ClientStream
 	r   *robot
 	ctx context.Context
+	eof time.Time // non-zero: a shut stream
 }
 
 func (a *audio) Send(m *vectorpb.ExternalAudioStreamRequest) error {
 	if err := a.ctx.Err(); err != nil {
 		return err // grpc: a cancelled stream reaches the robot no more
+	}
+	if !a.eof.IsZero() {
+		if time.Now().Before(a.eof) {
+			return nil // buffered by grpc, never played
+		}
+		return io.EOF
 	}
 	if a.r.hangChunk && m.GetAudioStreamChunk() != nil {
 		<-a.ctx.Done() // grpc flow control: the robot reads no more
@@ -121,6 +143,14 @@ func (a *audio) Send(m *vectorpb.ExternalAudioStreamRequest) error {
 }
 
 func (a *audio) Recv() (*vectorpb.ExternalAudioStreamResponse, error) {
+	if !a.eof.IsZero() {
+		select {
+		case <-time.After(time.Until(a.eof) + 50*time.Millisecond):
+			return nil, a.r.shut
+		case <-a.ctx.Done():
+			return nil, a.ctx.Err()
+		}
+	}
 	select {
 	case v := <-a.r.verdict:
 		return v, nil
@@ -416,12 +446,6 @@ func TestStreamCancelsOnEarlyExit(t *testing.T) {
 }
 
 func TestStreamNoCancelAfterVerdict(t *testing.T) {
-	cut := func(w http.ResponseWriter, r *http.Request) {
-		w.Write(make([]byte, 2048))
-		w.(http.Flusher).Flush()
-		time.Sleep(100 * time.Millisecond) // the verdict lands first
-		panic(http.ErrAbortHandler)
-	}
 	for name, c := range map[string]struct {
 		h       http.HandlerFunc
 		verdict *vectorpb.ExternalAudioStreamResponse
@@ -429,8 +453,6 @@ func TestStreamNoCancelAfterVerdict(t *testing.T) {
 		"overrun": {oneSecond, <-overrun()},
 		"failure": {oneSecond, &vectorpb.ExternalAudioStreamResponse{AudioResponseType: &vectorpb.ExternalAudioStreamResponse_AudioStreamPlaybackFailyer{
 			AudioStreamPlaybackFailyer: &vectorpb.ExternalAudioStreamPlaybackFailure{}}}},
-		"complete": {cut, &vectorpb.ExternalAudioStreamResponse{AudioResponseType: &vectorpb.ExternalAudioStreamResponse_AudioStreamPlaybackComplete{
-			AudioStreamPlaybackComplete: &vectorpb.ExternalAudioStreamPlaybackComplete{}}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			service(t, c.h)
@@ -470,4 +492,94 @@ func overrun() chan *vectorpb.ExternalAudioStreamResponse {
 	c <- &vectorpb.ExternalAudioStreamResponse{AudioResponseType: &vectorpb.ExternalAudioStreamResponse_AudioStreamBufferOverrun{
 		AudioStreamBufferOverrun: &vectorpb.ExternalAudioStreamBufferOverrun{}}}
 	return c
+}
+
+func TestStreamIgnoresStaleComplete(t *testing.T) {
+	stale := &vectorpb.ExternalAudioStreamResponse{AudioResponseType: &vectorpb.ExternalAudioStreamResponse_AudioStreamPlaybackComplete{
+		AudioStreamPlaybackComplete: &vectorpb.ExternalAudioStreamPlaybackComplete{}}}
+	t.Run("early exit still cancels", func(t *testing.T) {
+		service(t, func(w http.ResponseWriter, r *http.Request) {
+			w.Write(make([]byte, 2048))
+			w.(http.Flusher).Flush()
+			time.Sleep(100 * time.Millisecond) // the stale complete lands first
+			panic(http.ErrAbortHandler)
+		})
+		r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1)}
+		r.verdict <- stale
+		if _, err := sayOn(t, r); err == nil {
+			t.Fatal("Say = nil, want the cut body's error")
+		}
+		if last := r.sent[len(r.sent)-1]; last.GetAudioStreamCancel() == nil {
+			t.Errorf("last message = %T, want cancel (a complete before ours is an earlier playback's)", last.AudioRequestType)
+		}
+	})
+	t.Run("ours still ends it", func(t *testing.T) {
+		service(t, oneSecond)
+		r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 2), completeOnEnd: true}
+		r.verdict <- stale
+		start := time.Now()
+		if _, err := sayOn(t, r); err != nil || time.Since(start) > time.Second {
+			t.Errorf("Say = %v after %s, want nil on the PlaybackComplete after our Complete (before the 1 s estimate)", err, time.Since(start))
+		}
+	})
+}
+
+func TestSayRefusedStream(t *testing.T) {
+	service(t, oneSecond)
+	for name, c := range map[string]struct {
+		refused, said, played int
+		want                  string
+	}{
+		"retry plays":     {1, 0, 2 * 16000, "cori"},
+		"then falls back": {2, 1, 0, Fallback + ": "},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1), completeOnEnd: true,
+				shut: status.Error(codes.ResourceExhausted, "an SDK audio stream is already open"), shutN: c.refused, shutAfter: 50 * time.Millisecond}
+			got, err := sayOn(t, r)
+			if err != nil || !strings.HasPrefix(got, c.want) || len(r.said) != c.said || r.streams != 2 {
+				t.Fatalf("Say = %q, %v, SayText %d, streams %d; want %q, nil, SayText %d, 2 streams", got, err, len(r.said), r.streams, c.want, c.said)
+			}
+			played := 0
+			for _, m := range r.sent {
+				played += len(m.GetAudioStreamChunk().GetAudioChunkSamples())
+			}
+			if played != c.played {
+				t.Errorf("robot played %d bytes, want %d (the retry replays what the refused try read)", played, c.played)
+			}
+		})
+	}
+}
+
+func TestStreamPrefersRecvStatus(t *testing.T) {
+	service(t, oneSecond)
+	r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1), shut: status.Error(codes.Unavailable, "vic-cloud restarting"), shutN: 1}
+	if got, err := sayOn(t, r); status.Code(err) != codes.Unavailable || len(r.said) != 0 {
+		t.Fatalf("Say = %q, %v, SayText %d; want the stream's Recv status (not Send's io.EOF), no fallback", got, err, len(r.said))
+	}
+}
+
+func TestStreamTimeoutEnds(t *testing.T) {
+	service(t, func(w http.ResponseWriter, r *http.Request) { w.Write(make([]byte, 3200)) }) // 100 ms
+	old := tail
+	tail = 100 * time.Millisecond
+	t.Cleanup(func() { tail = old })
+	r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1)} // never answers
+	logged := strings.Count(logger.ForkLogTrayList(), "no robot verdict")
+	ret := make(chan error, 1)
+	go func() { _, err := sayOn(t, r); ret <- err }()
+	select {
+	case err := <-ret:
+		if err != nil {
+			t.Fatalf("Say = %v, want nil once the audio played out", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Say still blocked 2 s after a 100 ms clip, want it ended at the estimate + tail")
+	}
+	if last := r.sent[len(r.sent)-1]; last.GetAudioStreamComplete() == nil {
+		t.Errorf("last message = %T, want complete", last.AudioRequestType)
+	}
+	if n := strings.Count(logger.ForkLogTrayList(), "no robot verdict"); n != logged+1 {
+		t.Errorf("%d timeout log line(s), want 1", n-logged)
+	}
 }
