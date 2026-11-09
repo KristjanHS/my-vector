@@ -325,6 +325,12 @@ func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader)
 	select {
 	case err = <-done:
 		return err
+	case <-ctx.Done(): // interrupted while our audio still plays: stop the robot (sctx outlives ctx by grace)
+		if !verdict.Load() {
+			c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamCancel{
+				AudioStreamCancel: &vectorpb.ExternalAudioStreamCancel{}}})
+		}
+		return ctx.Err()
 	case <-time.After(time.Until(end) + tail):
 		logger.Println("myvector voice: no robot verdict " + tail.String() + " past the audio's end; stream ended unconfirmed")
 		return ctx.Err()
