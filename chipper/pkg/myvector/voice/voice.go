@@ -27,6 +27,7 @@ const (
 	volume       = 100                    // R23: the stream path's max; 60 (R6) was picked at master 2
 	boostDB      = 2.0                    // R23: on top of the service's -14 LUFS base; ~3% of speech already limited >3 dB, no headroom left
 	lead         = 300 * time.Millisecond // audio queued ahead of the speaker
+	grace        = 2 * time.Second        // the stream outlives the caller ctx by this, for its Cancel
 )
 
 var (
@@ -218,30 +219,34 @@ func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader)
 		return err
 	}
 	defer free()
-	sctx, cancel := context.WithCancel(context.WithoutCancel(ctx)) // the stream outlives ctx by its Cancel
+	sctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
+	defer context.AfterFunc(ctx, func() { time.AfterFunc(grace, cancel) })()
 	c, err := v.Conn.ExternalAudioStreamPlayback(sctx)
 	if err != nil {
 		return err
 	}
 	done := make(chan error, 1)
-	go func() { // the robot's verdict, if it sends one
+	var verdict atomic.Bool // the robot ended the stream itself: no Cancel
+	go func() {
 		for {
 			r, err := c.Recv()
 			if err != nil {
 				return
 			}
+			var e error
 			switch {
 			case r.GetAudioStreamPlaybackComplete() != nil:
-				done <- nil
-				return
 			case r.GetAudioStreamBufferOverrun() != nil:
-				done <- errors.New("robot audio buffer overrun")
-				return
+				e = errors.New("robot audio buffer overrun")
 			case r.GetAudioStreamPlaybackFailyer() != nil:
-				done <- errors.New("robot audio playback failed")
-				return
+				e = errors.New("robot audio playback failed")
+			default:
+				continue
 			}
+			verdict.Store(true)
+			done <- e
+			return
 		}
 	}()
 	err = c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamPrepare{
@@ -249,7 +254,7 @@ func stream(ctx context.Context, v *vector.Vector, first []byte, body io.Reader)
 	completed := false
 	if err == nil {
 		defer func() { // a prepared stream left open starves vic-anim (sdk-audio-orphan.md (docs/plans/))
-			if !completed {
+			if !completed && !verdict.Load() {
 				c.Send(&vectorpb.ExternalAudioStreamRequest{AudioRequestType: &vectorpb.ExternalAudioStreamRequest_AudioStreamCancel{
 					AudioStreamCancel: &vectorpb.ExternalAudioStreamCancel{}}})
 			}

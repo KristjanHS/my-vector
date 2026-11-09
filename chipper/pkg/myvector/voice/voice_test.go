@@ -33,6 +33,7 @@ type robot struct {
 	mu                               sync.Mutex // sent, at, open, overlaps: streams may run concurrently
 	open, overlaps                   int        // streams between Prepare and Complete/Cancel; Prepares while one was open
 	failChunk                        bool       // Send fails on a chunk
+	hangChunk                        bool       // Send blocks on a chunk until the stream ends
 }
 
 func (r *robot) SayText(_ context.Context, in *vectorpb.SayTextRequest, _ ...grpc.CallOption) (*vectorpb.SayTextResponse, error) {
@@ -91,6 +92,10 @@ type audio struct {
 func (a *audio) Send(m *vectorpb.ExternalAudioStreamRequest) error {
 	if err := a.ctx.Err(); err != nil {
 		return err // grpc: a cancelled stream reaches the robot no more
+	}
+	if a.r.hangChunk && m.GetAudioStreamChunk() != nil {
+		<-a.ctx.Done() // grpc flow control: the robot reads no more
+		return a.ctx.Err()
 	}
 	a.r.mu.Lock()
 	a.r.sent = append(a.r.sent, m)
@@ -385,9 +390,8 @@ func TestStreamCancelsOnEarlyExit(t *testing.T) {
 		r       *robot
 		timeout time.Duration
 	}{
-		"verdict": {oneSecond, &robot{verdict: overrun()}, 5 * time.Second},
-		"send":    {oneSecond, &robot{failChunk: true}, 5 * time.Second},
-		"ctx":     {oneSecond, &robot{}, 400 * time.Millisecond},
+		"send": {oneSecond, &robot{failChunk: true}, 5 * time.Second},
+		"ctx":  {oneSecond, &robot{}, 400 * time.Millisecond},
 		"body": {func(w http.ResponseWriter, r *http.Request) {
 			w.Write(make([]byte, 2048))
 			w.(http.Flusher).Flush()
@@ -408,6 +412,56 @@ func TestStreamCancelsOnEarlyExit(t *testing.T) {
 				t.Errorf("last message = %T, want cancel (the robot would hold a prepared stream)", last.AudioRequestType)
 			}
 		})
+	}
+}
+
+func TestStreamNoCancelAfterVerdict(t *testing.T) {
+	cut := func(w http.ResponseWriter, r *http.Request) {
+		w.Write(make([]byte, 2048))
+		w.(http.Flusher).Flush()
+		time.Sleep(100 * time.Millisecond) // the verdict lands first
+		panic(http.ErrAbortHandler)
+	}
+	for name, c := range map[string]struct {
+		h       http.HandlerFunc
+		verdict *vectorpb.ExternalAudioStreamResponse
+	}{
+		"overrun": {oneSecond, <-overrun()},
+		"failure": {oneSecond, &vectorpb.ExternalAudioStreamResponse{AudioResponseType: &vectorpb.ExternalAudioStreamResponse_AudioStreamPlaybackFailyer{
+			AudioStreamPlaybackFailyer: &vectorpb.ExternalAudioStreamPlaybackFailure{}}}},
+		"complete": {cut, &vectorpb.ExternalAudioStreamResponse{AudioResponseType: &vectorpb.ExternalAudioStreamResponse_AudioStreamPlaybackComplete{
+			AudioStreamPlaybackComplete: &vectorpb.ExternalAudioStreamPlaybackComplete{}}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			service(t, c.h)
+			r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1)}
+			r.verdict <- c.verdict
+			if _, err := sayOn(t, r); err == nil {
+				t.Fatal("Say = nil, want the early exit's error")
+			}
+			for _, m := range r.sent {
+				if m.GetAudioStreamCancel() != nil {
+					t.Fatal("Cancel sent after the robot's verdict: it already ended the stream")
+				}
+			}
+		})
+	}
+}
+
+func TestStreamEndsAfterCallerGrace(t *testing.T) {
+	service(t, oneSecond)
+	r := &robot{verdict: make(chan *vectorpb.ExternalAudioStreamResponse, 1), hangChunk: true}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	ret := make(chan error, 1)
+	go func() { _, err := Say(ctx, &vector.Vector{Conn: r}, "smoke test", "cori", 1); ret <- err }()
+	select {
+	case err := <-ret:
+		if err == nil {
+			t.Error("Say = nil, want the cancelled stream's error")
+		}
+	case <-time.After(grace + time.Second):
+		t.Fatalf("Say still blocked %s after its ctx ended, want the stream cancelled after %s", grace+time.Second, grace)
 	}
 }
 
