@@ -13,7 +13,7 @@ Status: 2.1–4.3, 6.1 offline (P3), 7.1, 7.2, 7.4, 7.5, 8.1, 8.2, 9.1 done, 7.3
 | F5 | Independent of `commands_enable`; en + et. `forkCommands` stops offering `newVoiceRequest` (F1 replaces it). | `ttr/fork_prompt.go`, `prompt.Commands` |
 | R1 | Follow-up turns arrive isKG=true, so reply-cap-by-ask D1 gives them the long cap. Accepted; revisit only if live follow-up replies run long. | — |
 | OOS | Cross-conversation learning / Claude memory consolidation → `2026-11-07-system-prompt-redesign.md (docs/plans/)` ruling M / M-later, build order item 6. | — |
-| P1 | `followupprobe` `prompts[0]`: Ollama (qwen en + gemma4:e2b et) 9/10 ×2 runs, Claude 10/10 ×2; median ≤ 250 ms Ollama, ~670 ms Claude, max 987 ms. EstLLM et 4/5 — rerun if et moves off gemma4:e2b. | `followupprobe` |
+| P1 | `followupprobe` `prompts[0]`: Ollama (qwen en + gemma4:e2b et) 9/10 ×2 runs, Claude 10/10 ×2; median ≤ 250 ms Ollama, ~670 ms Claude, max 987 ms. EstLLM et 4/5 (rerun → P3). | `followupprobe` |
 | P2 | Stage 1.2 (11-09): docked `knowledge_question` listens and answers (et, isKG long cap), stays on the charger; silence sends no request. | — |
 | B1 | A follow-up whose text is blank ends the chain: `followup.Reset(esn)`, no LLM call, no reply (user ruling 11-09; P2 says silence sends none, so it is a guard). | `ttr/fork_followup.go`, `ttr/kgsim.go` |
 | P3 | 6.1 rerun 11-09, `prompts[0]` (= `followup.Prompt`), 1 run: et brain `apertus-estllm:8b` en 2/5 et 3/5 (< 9/10 → `docs/backlog.md` §OWED[USER]); EstLLM-1125 (`-also`) en 4/5 et 5/5; both medians ≤ 64 ms. | `followupprobe` |
