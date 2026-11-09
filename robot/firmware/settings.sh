@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Re-apply the robot's runtime settings that a re-onboard or factory reset loses (make ship runs it after deploy): sshd host keys, root SSH key, 24h clock + Celsius + Tallinn time zone, no-auto-update, T2 voice file, /data fill guard, server CA trust, escapepod.local pin + firewall.
-# Usage: settings.sh   idempotent: reads first, sets only what differs. Exit 0 = all in place; 1 = a WARN line printed; 2 = SETUP (robot/env.sh).  (env: ESN, SERVER)
+# Usage: settings.sh   idempotent: reads first, sets only what differs. Exit 0 = all in place; 1 = a WARN line printed; 2 = SETUP (robot/env.sh).  (env: ESN, SERVER; SKIP_KEYS=1 skips hostkey + sshkey — make ship applied them)
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=robot/env.sh
@@ -15,16 +15,18 @@ rc=0
 ok() { echo "ok: $*"; }
 warn() { echo "WARN: $*"; rc=1; }
 
-# sshd host keys first (robot/hostkey): a reflash restores the image ones, which only hostkey's own login still trusts.
-hk=$here/../hostkey/apply.sh
-if [[ ! -f $hk ]]; then warn "hostkey: $hk missing (older sha?); not checked"
-elif out=$(bash "$hk" 2>&1); then ok "${out//$'\n'/; }"
-else warn "hostkey: ${out//$'\n'/; }"; fi
-# Root SSH key next (robot/sshkey): a reflash restores the image key, and every check below logs in with ROBOT_KEY.
-sk=$here/../sshkey/apply.sh
-if [[ ! -f $sk ]]; then warn "sshkey: $sk missing (older sha?); not checked"
-elif out=$(bash "$sk" 2>&1); then if [[ $out == WARN:* ]]; then warn "${out#WARN: }"; else ok "${out//$'\n'/; }"; fi
-else warn "sshkey: ${out//$'\n'/; }"; fi
+if [[ -z ${SKIP_KEYS:-} ]]; then
+  # sshd host keys first (robot/hostkey): a reflash restores the image ones, which only hostkey's own login still trusts.
+  hk=$here/../hostkey/apply.sh
+  if [[ ! -f $hk ]]; then warn "hostkey: $hk missing (older sha?); not checked"
+  elif out=$(bash "$hk" 2>&1); then ok "${out//$'\n'/; }"
+  else warn "hostkey: ${out//$'\n'/; }"; fi
+  # Root SSH key next (robot/sshkey): a reflash restores the image key, and every check below logs in with ROBOT_KEY.
+  sk=$here/../sshkey/apply.sh
+  if [[ ! -f $sk ]]; then warn "sshkey: $sk missing (older sha?); not checked"
+  elif out=$(bash "$sk" 2>&1); then if [[ $out == WARN:* ]]; then warn "${out#WARN: }"; else ok "${out//$'\n'/; }"; fi
+  else warn "sshkey: ${out//$'\n'/; }"; fi
+fi
 
 ssh_() { ssh "${ssh_opts[@]}" "root@$ip" "$@"; }
 ssh_ true 2>/dev/null || { warn "settings: SSH to $ip failed; nothing checked"; exit 1; }
