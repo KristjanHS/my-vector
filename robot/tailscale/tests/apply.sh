@@ -66,7 +66,7 @@ rc=0; run "$r" "$tmp/authkey" "$tmp/empty" >/dev/null || rc=$?
 r=$(fresh nokey)
 out=$(run "$r" "$tmp/none") || die "no key: $out"
 [[ $out == *"WARN: tailscale: not logged in"* && $(calls "$r") != *up* ]] || die "no key + logged out: out=[$out] calls=[$(calls "$r")]"
-for l in 'After=network-pre.target myvector-netguard.service' 'RequiresMountsFor=/data' 'Restart=on-failure' 'WantedBy=multi-user.target' \
+for l in 'After=network-pre.target myvector-netguard.service' 'RequiresMountsFor=/data' 'After=mount-data.service' 'Restart=on-failure' 'WantedBy=multi-user.target' \
   'ExecStart=/data/myvector/tailscale/tailscaled --statedir=/data/myvector/tailscale/state/ --socket=/run/tailscale/tailscaled.sock --port=41641 --tun=tailscale0'; do
   grep -qxF -- "$l" "$r/$unit" || die "unit lacks [$l]: $(cat "$r/$unit")"
 done
@@ -88,6 +88,10 @@ out=$(run "$r" "$tmp/authkey") || die "2nd run: $out"
 : >"$r/calls"; printf '#!/bin/sh\necho tailscaled v2\n' >"$tmp/work/tailscaled"
 out=$(run "$r" "$tmp/authkey") || die "new binary: $out"
 [[ $(calls "$r") == 'ssh raw|systemctl restart' ]] || die "new binary calls [$(calls "$r")], want one push + restart"
+
+r=$(fresh stopped); echo Stopped >"$r/ts-state"
+out=$(run "$r" "$tmp/authkey") || die "Stopped: $out"
+[[ $out == *"WARN: tailscale: BackendState 'Stopped'"* && ! -e $r/seen-key ]] && ! grep -q '^ssh up$' "$r/calls" || die "a logged-in, non-Running node got the key: out=[$out]"
 
 r=$(fresh hand); : >"$r/hand-run"
 if out=$(run "$r" "$tmp/authkey"); then die "hand-run tailscaled passed: $out"; fi
