@@ -27,6 +27,7 @@ Status: ✅ SHIPPED to main (all stages); `make ship` + the 6.1 / 7.3 / 7.5 live
 | P8 | 9.2 (11-10, `chainprobe -arms S -reps 20 -chained`): 0/20 reps speak as the person or narrate an exchange not in the history. Raw: `robot/work/followup-debug/g3-armS.jsonl`. | `llm/sampling.go` |
 | P9 | P3 rep-up (11-10, `followupprobe -models apertus-estllm:8b`, 3 runs, `prompts[0]`): et 11/15 at temp 1 / top_p 1, 8/15 under P8's sampling, temp 0 et 3/5 (1 run). EstLLM decider ruled out: 8 GB GPU, apertus holds 5.4 GB. Raw: `robot/work/followup-debug/p3{,s}-rep{1,2,3}.txt`. | → 6.3 |
 | P10 | 6.3 (11-10, under P8): the statement line gives apertus et 7/15 over 3 runs → reverted → 6.4. Raw: `robot/work/followup-debug/p63-ap{1,2,3}.txt`. | — |
+| P11 | Model-card 0.8 / 0.9 vs P8 (11-10, `chainprobe -arms S -temp 0.8 -topp 0.9`): G3 chain `-chained -reps 20` 2/20 put the robot's own words in the person's mouth (rep 3 "Sa ütlesid, et on tore, kui öeldakse, et on hea meel", rep 18 "Sa küsisid, mida sa täna teha tahad"; P8 0/20), plus 1 English leak (rep 16). Variety, empty history, 10 reps each, 0.4 → 0.8: "räägi mulle nali" told a joke 1/10 → 4/10 (refused 8 → 5); "räägi lugu" told 9 → 8 stories, the fox "Reio" in 5/9 → 0/8. Pre-registered rule: invented conversations back → keep 0.4 (no code change). Raw: `robot/work/followup-debug/g3-armS08.jsonl`, `variety-0{4,8}.jsonl`. | — |
 
 ## Stages
 
