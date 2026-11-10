@@ -198,7 +198,6 @@ type settingsReply struct {
 type searchReply struct {
 	Provider     string       `json:"provider"`
 	TavilyKey    string       `json:"tavilyKey"`
-	OllamaKey    string       `json:"ollamaKey"`
 	SearxngURL   string       `json:"searxngUrl"`
 	WeatherPlace string       `json:"weatherPlace"`
 	Usage        []search.Use `json:"usage"`
@@ -209,14 +208,13 @@ func currentSearch() searchReply {
 	if c.Provider == "" {
 		c.Provider = "auto"
 	}
-	return searchReply{c.Provider, llm.Mask(c.TavilyKey), llm.Mask(c.OllamaKey), c.SearxngURL, c.WeatherPlace, search.Usage(time.Now())}
+	return searchReply{c.Provider, llm.Mask(c.TavilyKey), c.SearxngURL, c.WeatherPlace, search.Usage(time.Now())}
 }
 
 // searchRequest is the POST's "search" object: an absent field keeps its saved value, a key "" clears it.
 type searchRequest struct {
 	Provider     *string `json:"provider"`
 	TavilyKey    *string `json:"tavily_key"`
-	OllamaKey    *string `json:"ollama_key"`
 	SearxngURL   *string `json:"searxng_url"`
 	WeatherPlace *string `json:"weather_place"`
 }
@@ -224,7 +222,7 @@ type searchRequest struct {
 // config is the saved search.Config with q's fields over it.
 func (q *searchRequest) config() search.Config {
 	c := search.LoadConfig()
-	for dst, src := range map[*string]*string{&c.Provider: q.Provider, &c.TavilyKey: q.TavilyKey, &c.OllamaKey: q.OllamaKey,
+	for dst, src := range map[*string]*string{&c.Provider: q.Provider, &c.TavilyKey: q.TavilyKey,
 		&c.SearxngURL: q.SearxngURL, &c.WeatherPlace: q.WeatherPlace} {
 		if src != nil {
 			*dst = *src

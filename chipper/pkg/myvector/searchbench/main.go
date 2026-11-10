@@ -1,6 +1,6 @@
 // Command searchbench scores each search provider on fixed Estonian queries (web-search plan W11, Stage 3.1).
 //
-//	go run ./pkg/myvector/searchbench [-config ../secrets/server/myvectorConfig.json] [-providers tavily,ollama,searxng] [-judge claude-haiku-5-5]   # from chipper/
+//	go run ./pkg/myvector/searchbench [-config ../secrets/server/myvectorConfig.json] [-providers tavily,searxng] [-judge claude-haiku-5-5]   # from chipper/
 //
 // Every call spends quota via search.State.Take; without claude_key the judge columns print "-".
 package main
