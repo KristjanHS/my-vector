@@ -12,7 +12,7 @@ serial=$(curl -s "$A/get_sdk_info" | grep -o '"esn":"[^"]*"' | head -1 | cut -d'
 [[ -n $serial ]] || { echo "FAIL: wire-pod has no robot (is chipper running?)" >&2; exit 2; }
 rtpc() { curl -s -o /dev/null "${C}SetAudioParameter&args=Robot_Vic_Volume_$1+$2"; }
 # Shipped levels: firmware 0008-speech-volume.patch sets Animation 0.1 at audio init; the rest stay 1.0.
-reset_rtpcs() { for b in ${RESET:-Animation Behavior Procedural}; do rtpc "$b" "$([[ $b == Animation ]] && echo 0.1 || echo 1.0)"; done; }
+reset_rtpcs() { local b l; for b in ${RESET:-Animation Behavior Procedural}; do l=1.0; [[ $b == Animation ]] && l=0.1; rtpc "$b" "$l"; done; }
 # Capture left on fills /data (2026-11-05: 822 MB, /data 100 %): the EXIT trap stops it. Scripts add cleanup with on_exit, never trap.
 capturing=0 exit_hooks=()
 on_exit() { exit_hooks+=("$1"); }
