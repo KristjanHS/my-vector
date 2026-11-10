@@ -77,6 +77,29 @@ for s in voice-samples/onset.sh volume-probe/pcvoice.sh; do
   ((rc == 3)) && [[ $out == *QUIET:* ]] || die "$s with a mid-run lock: want exit 3 + QUIET, got $rc: $out"
   [[ $(wc -l <"$tmp/says") -eq 1 ]] || die "$s played $(wc -l <"$tmp/says") SayText lines after the lock, want 1"
 done
+# W10: a run that played KG searching posts its getout once on exit, before release; none when searching never played,
+# and none but a WARN when the lock went on mid-run.
+mkdir -p "$tmp/bin6"
+cat >"$tmp/bin6/curl" <<F
+#!/bin/sh
+case "\$*" in
+  *get_sdk_info*) echo '{"esn":"000fake"}' ;;
+  *PlayAnimation*) echo "\$*" | sed 's/.*args=//' >>"$tmp/calls6"; [ -z "\$LOCK_ON_PLAY" ] || echo "\$((\$(date +%s) + 600)) - voice:shut up" >"$MYVECTOR_QUIET_FILE" ;;
+  *release_behavior_control*) echo release >>"$tmp/calls6" ;;
+esac
+F
+printf '#!/bin/sh\n' >"$tmp/bin6/sleep"; cp "$tmp/bin6/sleep" "$tmp/bin6/ssh"; cp "$tmp/bin6/sleep" "$tmp/bin6/scp"
+chmod +x "$tmp/bin6/"*
+kgs=anim_knowledgegraph_searching_01
+for run in "loopstop.sh|-||0|$kgs+16 anim_knowledgegraph_searching_getout_01+1 release" \
+  "anim.sh|anim_x $kgs|1|0|anim_x+1 release" "anim.sh|$kgs anim_x|1|1|$kgs+1 release"; do
+  IFS='|' read -r s anims lk warn want <<<"$run" # lk=1: the first play locks, so quiet_guard ends the run before the second anim
+  rm -f "$MYVECTOR_QUIET_FILE" "$tmp/calls6"
+  out=$(PATH="$tmp/bin6:$PATH" LOCK_ON_PLAY=$lk W=0 ANIMS=$anims CONDS=base:1 OUT=$tmp/out6 "$robot/volume-probe/$s" "$tmp/out6" 2>&1 >/dev/null || true)
+  got=$(tr '\n' ' ' <"$tmp/calls6"); [[ $got == "$want " ]] || die "$s ANIMS='$anims': want '$want', got '$got'"
+  w=0; [[ $out == *"WARN sound lock: KG searching loop"*getout_01* ]] && w=1
+  ((w == warn)) || die "$s ANIMS='$anims': want getout WARN=$warn, got: $out"
+done
 
 # C1: under a lock restarts.sh, catch.sh and epod/apply.sh write Q1's silent-start flag before the anki-robot.target restart;
 # unlocked they write none. A symlinked tree keeps their robot/work output in $tmp.

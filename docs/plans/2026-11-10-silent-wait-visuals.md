@@ -3,7 +3,7 @@
 **Goal**: whenever the robot waits on wire-pod (web search, LLM reply, vision model, any other slow fetch), his screen
 shows a visual that fits the wait, such as "searching" or "thinking", and he makes **no sound** until the answer starts.
 The wake chime before the wait and the spoken answer after it stay as they are.
-**Status**: 🔨 Stage 1 done 2026-11-10 (W2 A then C as Stage 2b; W3 think face); Stage 2 next.
+**Status**: 🔨 Stage 2 done 2026-11-10 (KG wait = think face, unshipped); Stage 2b next.
 
 ## Today (audit 2026-11-10)
 
@@ -47,7 +47,7 @@ Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS)
 ### Stage 2: thinnest visible slice — KG wait silent
 - [x] `fork_wait.go` with the W2 pick, KG path only; `kgsim.go` loop → `forkWait` (add to `scripts/upstream-drift.sh`).
 - [x] Unit (fake robot): wait plays only `anim_avs_think_loop_01`, never `anim_knowledgegraph_searching_01`, and stops before getout, on the error path and on interrupt.
-- [ ] `make check`; commit; user ships (`make ship`).
+- [x] `make check`; commit. User ships (`make syncwt`, `make ship`).
 
 ### Stage 2b: firmware `0022` (W2-C, W10)
 - [ ] vic-anim drops `Play__Robot_Vic_Sfx__Knowledge_Graph_Searching_Loop_Play`; `fork_wait.go` search face → `anim_knowledgegraph_searching_01`.
