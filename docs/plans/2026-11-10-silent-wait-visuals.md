@@ -3,7 +3,7 @@
 **Goal**: whenever the robot waits on wire-pod (web search, LLM reply, vision model, any other slow fetch), his screen
 shows a visual that fits the wait, such as "searching" or "thinking", and he makes **no sound** until the answer starts.
 The wake chime before the wait and the spoken answer after it stay as they are.
-**Status**: 📝 PLANNED 2026-11-10. Nothing built yet.
+**Status**: 🔨 Stage 1 done 2026-11-10 (W2 A now, C later; W3 think face); Stage 2 next.
 
 ## Today (audit 2026-11-10)
 
@@ -23,8 +23,8 @@ Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS)
 | id | ruling | edit site |
 |---|---|---|
 | W1 | Measure before building: `anim.sh` on each wait anim + one live KG turn and one wake-word turn captured end to end. The loud baseline also shows the W8 falsifier can fail | Stage 1, no code |
-| W2 | `[USER DECISION]` silence: (A) W1-silent anims only (kg searching is out: its loop) · (B) `Robot_Vic_Volume_Animation=0` for the wait · (C, rec.) firmware `kMyVectorSilentWait`: drop anim `PostAudioEvent` (never TTS/`Wake_Word_*`) until a self-expiring deadline | `0022-silent-wait.patch` (C) / `fork_wait.go` (A, B) |
-| W3 | `[USER DECISION]` visuals: (A, rec. first) stock anim per wait kind · (B) drawn 184×96 frames via `DisplayFaceImageRGB`. User look 11-10 (`LOOPS=10 anim.sh`): face = search `anim_knowledgegraph_searching_01`, think `anim_avs_think_loop_01` (−99, silent); `explorer_planning_idle_01`, `rtsound_oncharger_observe_front_01`, `eyepose_curious` head-only/blank → out; `lookatdevice_icon` out (−18.3); look kind still needs a face anim | `fork_wait.go` |
+| W2 | Silence (user 11-10, A now, C later): waits play only W3-silent anims, so `anim_knowledgegraph_searching_01` and its loop never start; C (`0022`, drop the loop Play) brings the search face back after the SeAssert soak | `fork_wait.go`; `0022-silent-wait.patch` later |
+| W3 | Face (user 11-10): `anim_avs_think_loop_01` (−99) for every kind until C; search face `anim_knowledgegraph_searching_01` only after C; look face unpicked (think until then). Out: `explorer_planning_idle_01`, `rtsound_oncharger_observe_front_01`, `eyepose_curious` (blank face), `lookatdevice_icon` (−18.3) | `fork_wait.go` |
 | W4 | One wait loop for every path: `forkWait(robot, kind)` with `kind` ∈ {search, think, look}, changeable while it runs. It ends before `TTSGetinAnimation`, on the LLM-error path (`KGSim` error line), and on an interrupt | new `chipper/pkg/wirepod/ttr/fork_wait.go`; `kgsim.go` loop → one `forkWait` call (drift-listed) |
 | W5 | Kind switches: `forkSearch` start → search; search done / LLM stream open → think; photo turn after "Let me look." → look | hook in `fork_prompt.go` around `forkSearch`; `fork_vision.go` |
 | W6 | Wake-word turns (`!isKG`) get the wait too: send `IntentPass(intent_greeting_hello)` + `forkBControl` at stream open, not at the first sentence (as `forkPhotoTurn` does). `[AUDIT]` that an early intent doesn't cut vic-engine's listen or the follow-up arm (`fork_followup.go`) | `kgsim.go` `StreamingKGSim` |
@@ -42,11 +42,11 @@ Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS)
 - [x] Per-anim loudness + face look, 11-10 (W3, W10).
 - [x] Live KG, wake-word and photo turns captured (`robot/work/volume-probe/live-{kg,photo,kg-long}/`), Today table.
 - [x] `robot/quiet/scan.sh '<start>'`. Exit 1 → stop, `make quiet`, tell the user.
-- [ ] Record results in this file's Today table, then put the W2/W3 decisions to the user.
+- [x] Record results in this file's Today table, then put the W2/W3 decisions to the user.
 
 ### Stage 2: thinnest visible slice — KG wait silent
 - [ ] `fork_wait.go` with the W2 pick, KG path only; `kgsim.go` loop → `forkWait` (add to `scripts/upstream-drift.sh`).
-- [ ] Unit (fake robot): wait plays only W3-listed anims; mute (B/C) set before the first and cleared before getin, on the error path and on interrupt.
+- [ ] Unit (fake robot): wait plays only `anim_avs_think_loop_01`, never `anim_knowledgegraph_searching_01`, and stops before getout, on the error path and on interrupt.
 - [ ] `make check`; commit; user ships (`make ship`).
 
 ### Stage 3: wake-word path (W6)
@@ -59,13 +59,14 @@ Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS)
 ### Backlog (re-pick after each stage)
 - W3-B drawn face frames.
 - W11 answer-face loop.
+- W2-C `0022`: drop the KG search loop Play in vic-anim, then search face back (after the SeAssert soak).
 - Same wait for the relay/camera path (`fork_relay.go`) if it has a visible gap.
 
 ## Falsifiers
 - `go test ./pkg/wirepod/ttr -run 'ForkWait'` (from `chipper/`): a fake that records `PlayAnimation`/console calls fails
-  if any wait anim is outside the silent set, or if the mute isn't cleared on the error/interrupt paths.
+  if any wait anim is outside the silent set, or if the wait outlives getout, the error path or an interrupt.
 - Live: W1's baseline capture is loud (shows the check can fail); after the change the same capture shows 0 s above −45 dBFS.
 
 ## Rollback
-B: `SetAudioParameter&args=Robot_Vic_Volume_Animation+1.0`. C: consolevar `kMyVectorSilentWait` off, or redeploy
+C: consolevar `kMyVectorSilentWait` off, or redeploy
 without `0022`. wire-pod: revert `fork_wait.go` and the `kgsim.go` call.
