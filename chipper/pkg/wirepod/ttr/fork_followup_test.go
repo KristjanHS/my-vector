@@ -294,7 +294,7 @@ func TestForkBegin(t *testing.T) {
 	forkChain.Reset(esn)
 	followup.SetNoSpeech(esn, 0.94)
 	if !begin(true, "tere.") || forkChain.Count(esn) != 0 {
-		t.Error("unarmed knowledge request (\"I have a question\") at 0.94: want skip (silent-wake-gate S5)")
+		t.Error("unarmed knowledge request (\"I have a question\") at 0.94: want skip")
 	}
 	followup.SetNoSpeech(esn, 0.7)
 	if begin(true, "mis on oecd?") {
@@ -303,7 +303,7 @@ func TestForkBegin(t *testing.T) {
 	arm()
 	followup.SetNoSpeech(esn, 0.9)
 	if !begin(false, "aitäh.") || forkChain.Count(esn) != 0 {
-		t.Error("silent wake (intent-graph) at 0.9: want skip, noaudio and the chain reset (silent-wake-gate S2)")
+		t.Error("silent wake (intent-graph) at 0.9: want skip, noaudio and the chain reset")
 	}
 	followup.SetNoSpeech(esn, 0.7)
 	if begin(false, "teine, palun.") {
