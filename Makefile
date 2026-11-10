@@ -9,7 +9,8 @@ help: ## List available targets (default)
 	@grep -E '^[a-zA-Z0-9_.-]+:.*## ' $(firstword $(MAKEFILE_LIST)) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
 	@echo "  syncwt|commit|commitwt  shared worktree targets (~/.config/make/worktree.mk, from dotfiles)"
 
-start: ## Restart wire-pod.service (runs the last shipped commit, robot/work/server-sha) once daemon-enable ran, else go run the working tree in the foreground (NOPASSWD sudoers rules)
+start: ## Start SearXNG if it is down, then restart wire-pod.service (runs the last shipped commit, robot/work/server-sha) once daemon-enable ran, else go run the working tree in the foreground (NOPASSWD sudoers rules)
+	@$(CURDIR)/scripts/searxng.sh ensure || echo "searxng not started (Docker Desktop running?): search falls back to Tavily only"
 	@if systemctl is-enabled -q wire-pod 2>/dev/null; then $(CURDIR)/scripts/restart-service.sh; \
 	else sudo -n $(CURDIR)/chipper/start.sh || { echo "no sudoers rule? see docs/run-without-sudo-password.md"; exit 1; }; fi
 
