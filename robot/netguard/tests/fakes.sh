@@ -56,6 +56,7 @@ case " $* " in
 esac
 EOF
 cp "$tmp/bin/iptables" "$tmp/bin/ip6tables"
+printf '#!/bin/sh\necho ping >>"$ETC_ROOT/calls"; [ "${FAKE_LAN_PING:-up}" = up ]\n' >"$tmp/bin/ping" # FAKE_LAN_PING=down: no echo reply (PC off the robot LAN)
 cat >"$tmp/bin/curl" <<'EOF'
 #!/bin/sh
 for u; do :; done

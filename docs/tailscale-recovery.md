@@ -121,7 +121,8 @@ ROBOT_ENV=robot/work/robot-lan.env robot/tailscale/apply.sh
 ## F10 — locked out by the wlan0 firewall (netguard)
 
 - **Self-heal**: while `robot/netguard/apply.sh` applies, a 5-minute rollback timer is armed, and only the
-  `confirm` step cancels it. Run off the home LAN, apply.sh now leaves the firewall as it is (it no longer undoes it).
+  `confirm` step cancels it. Off the home LAN (no LAN ssh and no ping reply), apply.sh leaves the firewall as it is:
+  WARN if it's hooked, FAIL if it isn't.
 - **Plan B** (any working root shell, over tailnet or LAN): unhook and disable the firewall:
 
 ```

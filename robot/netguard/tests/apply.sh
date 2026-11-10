@@ -5,7 +5,7 @@ set -euo pipefail
 . "$(dirname "$0")/fakes.sh"
 die() { echo "FAIL: netguard apply test: $*" >&2; exit 1; }
 unit=etc/systemd/system/myvector-netguard.service
-seq_of() { grep -E '^(ssh (hosts|live|fw|undo|confirm)|setsid|systemctl enable)' "$1/calls" | paste -sd'|'; }
+seq_of() { grep -E '^(ssh (hosts|hook|fw|undo|confirm)|ping|setsid|systemctl enable)' "$1/calls" | paste -sd'|'; }
 
 for stale in d:10.0.0.7 "$pc"; do # another PC_LAN_IP; a pre-D marker
   r=$(fresh "gate${stale//[:.]/}"); echo "$stale" >"$r/ok"
@@ -44,21 +44,35 @@ out=$(run "$r" FAKE_SRC="$pc") && [[ -e $r/run/myvector/netguard.confirm ]] || d
 r=$(fresh tsdown); echo "d:$pc" >"$r/ok"
 if out=$(run "$r" FAKE_TS_SSH=down); then die "fresh tailnet ssh down passed: $out"; fi
 [[ $out == *"not arming"* ]] && ! grep -qE 'setsid|ssh fw' "$r/calls" || die "tailnet ssh down: out=[$out] calls=[$(seq_of "$r")]"
+# booted <name>: a confirmed --selftest root, then a reboot (/run/myvector emptied, the boot unit re-hooked $bin); calls cleared
+booted() { local r; r=$(fresh "$1"); out=$(run "$r" -- --selftest) || die "$1: selftest: $out"
+  rm "$r/run/myvector/netguard.confirm" "$r/run/myvector/netguard.sh"; : >"$r/calls"; echo "$r"; }
+# LAN ssh refused but ping answers (on the LAN: decoy pending, another PC_LAN_IP's chain): the usual path, undo on a miss
+r=$(booted pingup)
+if out=$(run "$r" FAKE_LAN_SSH=down); then die "pingup: LAN ssh down, ping up passed: $out"; fi
+[[ $(seq_of "$r") == 'ssh hosts|ping|ssh fw|setsid|ssh undo' ]] || die "pingup: calls=[$(seq_of "$r")], want the usual fw path"
+# off the robot LAN (no ssh, no ping) after a reboot: WARN, exit 0, the boot unit's firewall untouched (no arm/undo/disable) —
+# also with a stale $bin (another rules render live), which must not count as "not the firewall"
+for v in offlan offlanstale; do
+  r=$(booted $v)
+  [[ $v == offlan ]] || { bash "$robot/netguard/rules.sh" 10.0.0.7 41641 >"$r/etc/myvector/netguard.sh"; echo 10.0.0.7 >"$r/iptables.live"; }
+  out=$(run "$r" FAKE_LAN_SSH=down FAKE_LAN_PING=down) || die "$v: run exited non-zero: $out"
+  [[ $out == *"WARN: PC not on the robot LAN ($bot_lan: no ping); firewall left as is"* && $(seq_of "$r") == 'ssh hosts|ping|ssh hook' ]] ||
+    die "$v: out=[$out] calls=[$(seq_of "$r")]"
+  [[ -e $r/enabled && -e $r/iptables.hooked && -e $r/ip6tables.hooked ]] || die "$v: unit disabled or hook removed: calls=[$(seq_of "$r")]"
+done
+r=$(fresh offlanopen); echo "d:$pc" >"$r/ok" # off the LAN, nothing hooked: FAIL, still no fw
+if out=$(run "$r" FAKE_LAN_SSH=down FAKE_LAN_PING=down); then die "offlanopen: unhooked wlan0 off the LAN passed: $out"; fi
+[[ $out == *"FAIL: netguard: wlan0 firewall NOT hooked and PC not on the robot LAN ($bot_lan: no ping)"* && $(seq_of "$r") == 'ssh hosts|ping|ssh hook' ]] ||
+  die "offlanopen: out=[$out] calls=[$(seq_of "$r")]"
+r=$(fresh offlanself)
+if out=$(run "$r" FAKE_LAN_SSH=down FAKE_LAN_PING=down -- --selftest); then die "offlan selftest passed: $out"; fi
+[[ $out == *"selftest needs LAN ssh"* && ! -e $r/ok && $(seq_of "$r") == 'ssh hosts|ssh hosts|ping' ]] || die "offlan selftest: out=[$out] calls=[$(seq_of "$r")]"
 # a pending arm (no confirm file) with the decoy live is not "in place": re-applied and confirmed
 r=$(fresh pending); out=$(run "$r" -- --selftest) || die "pending: selftest: $out"
 rm "$r/run/myvector/netguard.confirm"; echo 192.0.2.1 >"$r/iptables.live"
 out=$(run "$r") || die "pending: run: $out"
 [[ $out != *"in place"* && $(cat "$r/iptables.live") == "$pc" && -e $r/run/myvector/netguard.confirm ]] || die "pending arm taken as in place: out=[$out]"
-
-# rebooted (/run/myvector emptied), PC off the robot LAN: WARN, exit 0, the boot unit's firewall untouched (no arm/undo/disable)
-r=$(fresh offlan); out=$(run "$r" -- --selftest) || die "offlan: selftest: $out"
-rm "$r/run/myvector/netguard.confirm" "$r/run/myvector/netguard.sh"; : >"$r/calls"
-out=$(run "$r" FAKE_LAN_SSH=down) || die "offlan: run exited non-zero: $out"
-[[ $out == *"WARN: PC not on the robot LAN ($bot_lan ssh refused)"* && $(seq_of "$r") == 'ssh hosts|ssh live' ]] || die "offlan: out=[$out] calls=[$(seq_of "$r")]"
-[[ -e $r/enabled && -e $r/iptables.hooked && -e $r/ip6tables.hooked ]] || die "offlan: unit disabled or hook removed: calls=[$(seq_of "$r")]"
-r=$(fresh offlanself)
-if out=$(run "$r" FAKE_LAN_SSH=down -- --selftest); then die "offlan selftest passed: $out"; fi
-[[ $out == *"selftest needs LAN ssh"* && ! -e $r/ok && $(seq_of "$r") == 'ssh hosts|ssh hosts|ssh live' ]] || die "offlan selftest: out=[$out] calls=[$(seq_of "$r")]"
 
 r=$(fresh swapfail); echo "d:$pc" >"$r/ok"
 if out=$(run "$r" FAKE_E_FAIL=1); then die "a failed swap passed: $out"; fi
