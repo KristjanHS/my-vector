@@ -258,9 +258,18 @@ func TestForkCommandsSample(t *testing.T) {
 			}
 		}
 	}
+	for _, brain := range prompt.Brains { // a photo answer: animations, PhotoLine, no getImage
+		if block := forkCommands(brain, true); strings.Contains(block, "getImage") || !strings.Contains(block, prompt.PhotoLine(brain)) ||
+			!strings.Contains(block, "{{playAnimationWI||") {
+			t.Errorf("%s: photo block %q", brain, block)
+		}
+	}
 	vars.APIConfig.Knowledge.CommandsEnable = false
 	if forkCommands(prompt.Claude, false) != "" {
 		t.Error("commands block rendered with CommandsEnable off")
+	}
+	if got := forkCommands(prompt.Ollama, true); got != prompt.PhotoLine(prompt.Ollama) {
+		t.Errorf("photo block with CommandsEnable off %q, want PhotoLine alone", got)
 	}
 }
 

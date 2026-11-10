@@ -53,26 +53,51 @@ var forkPhotoNames = map[string]bool{"vector": true, "vektor": true}
 // forkPhotoAsk: text holds one of l's photo phrases, NFC-composed, case-folded and punctuation-stripped, whole words
 // (V16, V16a); a combining mark stays inside its word.
 func forkPhotoAsk(l, text string) bool {
-	w := strings.FieldsFunc(strings.ToLower(norm.NFC.String(text)), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.IsMark(r)
-	})
+	w := forkPhotoWords(text)
 	p := forkPhotoPhrases[l]
 	for _, ph := range p.anywhere {
 		if strings.Contains(" "+strings.Join(w, " ")+" ", " "+ph+" ") {
 			return true
 		}
 	}
-	if len(w) > 1 && (w[0] == "hey" || w[0] == "hei") && forkPhotoNames[w[1]] {
-		w = w[2:]
-	} else if len(w) > 0 && forkPhotoNames[w[0]] {
-		w = w[1:]
-	}
+	w = forkPhotoUnnamed(w)
 	for _, ph := range p.start {
 		if strings.HasPrefix(strings.Join(w, " ")+" ", ph+" ") {
 			return true
 		}
 	}
 	return false
+}
+
+// forkPhotoBare: text is one of l's photo phrases and nothing else (after an optional hey + name), so its English is
+// forkRelayAsk without a translation hop.
+func forkPhotoBare(l, text string) bool {
+	w := strings.Join(forkPhotoUnnamed(forkPhotoWords(text)), " ")
+	p := forkPhotoPhrases[l]
+	for _, ph := range append(append([]string{}, p.anywhere...), p.start...) {
+		if w == ph {
+			return true
+		}
+	}
+	return false
+}
+
+// forkPhotoWords is text NFC-composed, case-folded and split on everything but letters, digits and marks.
+func forkPhotoWords(text string) []string {
+	return strings.FieldsFunc(strings.ToLower(norm.NFC.String(text)), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.IsMark(r)
+	})
+}
+
+// forkPhotoUnnamed is w without a leading robot name or hey/hei + name.
+func forkPhotoUnnamed(w []string) []string {
+	if len(w) > 1 && (w[0] == "hey" || w[0] == "hei") && forkPhotoNames[w[1]] {
+		return w[2:]
+	}
+	if len(w) > 0 && forkPhotoNames[w[0]] {
+		return w[1:]
+	}
+	return w
 }
 
 // forkPhotoRobot is esn's robot as StreamingKGSim dials and probes it; a var so tests fake it.
