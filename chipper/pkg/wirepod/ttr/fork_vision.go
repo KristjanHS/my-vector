@@ -52,8 +52,8 @@ var forkPhotoPhrases = map[string]struct{ anywhere, start []string }{
 // forkPhotoNames are the robot's name as STT writes it, stripped (after an optional hey / hei) before a start phrase.
 var forkPhotoNames = map[string]bool{"vector": true, "vektor": true}
 
-// forkPhotoAsk: text holds one of l's photo phrases or asks for a new photo (F7), NFC-composed, case-folded and
-// punctuation-stripped, whole words (V16, V16a); a combining mark stays inside its word.
+// forkPhotoAsk: text, NFC-composed, case-folded and punctuation-stripped, holds one of l's photo phrases as whole words
+// (V16, V16a) or a forkPhotoNew ask in any language (F7); a combining mark stays inside its word.
 func forkPhotoAsk(l, text string) bool {
 	w := forkPhotoWords(text)
 	if forkPhotoNew(w) {
@@ -138,20 +138,24 @@ var forkPhotoFollowWords = map[string]bool{
 	"foto": true, "fotol": true, "fotolt": true, "fotos": true, "picture": true, "photo": true, "image": true,
 }
 
-// forkPhotoNewWords beside an F3 word ask for a new photo (F7).
+// forkPhotoNewWords ≤1 word before a forkPhotoFollowWords word ask for a new photo (F7).
 var forkPhotoNewWords = map[string]bool{"tee": true, "take": true, "uus": true, "uue": true, "new": true, "another": true}
 
-// forkPhotoNew: w holds a pildist* word, or a forkPhotoNewWords word and an F3 word (F7).
+// forkPhotoNew: w holds a pildista* word, or a forkPhotoNewWords word 1–2 words before a forkPhotoFollowWords one (F7).
 func forkPhotoNew(w []string) bool {
-	verb, named := false, false
-	for _, x := range w {
-		if strings.HasPrefix(x, "pildist") {
+	for i, x := range w {
+		if strings.HasPrefix(x, "pildista") {
 			return true
 		}
-		verb = verb || forkPhotoNewWords[x]
-		named = named || forkPhotoFollowWords[x]
+		if forkPhotoNewWords[x] {
+			for j := i + 1; j <= i+2 && j < len(w); j++ {
+				if forkPhotoFollowWords[w[j]] {
+					return true
+				}
+			}
+		}
 	}
-	return verb && named
+	return false
 }
 
 // forkPhotoNamed: text holds an F3 word, whole words as forkPhotoWords splits them.
