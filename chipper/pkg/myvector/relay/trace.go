@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -160,7 +162,29 @@ func (t *Trace) savePhoto(url string) string {
 	if err := os.WriteFile(filepath.Join(t.Dir, name), b, 0o644); err != nil {
 		return name + " (not saved: " + err.Error() + ")"
 	}
-	return fmt.Sprintf("[%s](%s), %d bytes", name, name, len(b))
+	return fmt.Sprintf("[%s](%s), %d bytes", name, name, len(b)) + lastPhoto.seen(b, filepath.Base(t.Dir))
+}
+
+// lastPhoto is the previous traced photo: the same bytes again are a kept-photo follow-up
+// (2026-11-10-photo-followup.md (docs/plans/) F5).
+var lastPhoto photoSeen
+
+type photoSeen struct {
+	mu    sync.Mutex
+	sum   [32]byte
+	stamp string
+}
+
+// seen notes "reused photo from <stamp>" when b repeats the previous photo, else records b under stamp.
+func (p *photoSeen) seen(b []byte, stamp string) string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	sum := sha256.Sum256(b)
+	if p.stamp != "" && sum == p.sum {
+		return ", reused photo from " + p.stamp
+	}
+	p.sum, p.stamp = sum, stamp
+	return ""
 }
 
 // Reply appends step's reply: model, time, whether it hit its token cap, the text or the error.

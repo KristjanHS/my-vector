@@ -3,6 +3,7 @@ package wirepod_ttr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/photo"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/robotconn"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	openai "github.com/sashabaranov/go-openai"
@@ -121,20 +123,48 @@ var forkPhotoRobot = func(esn string) (*vector.Vector, error) {
 // forkPhotoIntent answers a non-KG turn's intent request as StreamingKGSim's first sentence does; a var so tests fake it.
 var forkPhotoIntent = IntentPass
 
+// forkPhotos is each robot's last photo (2026-11-10-photo-followup.md (docs/plans/) F1, F2, F6).
+var forkPhotos = new(photo.Store)
+
+// forkPhotoKept is DoGetImage's param for a follow-up on the kept photo (F4).
+const forkPhotoKept = "kept"
+
+// forkPhotoFollowWords name the picture (F3).
+var forkPhotoFollowWords = map[string]bool{
+	"pilt": true, "pildi": true, "pildil": true, "pildile": true, "pildilt": true, "pildis": true,
+	"foto": true, "fotol": true, "fotolt": true, "fotos": true, "picture": true, "photo": true, "image": true,
+}
+
+// forkPhotoNamed: text holds an F3 word, whole words as forkPhotoWords splits them.
+func forkPhotoNamed(text string) bool {
+	for _, w := range forkPhotoWords(text) {
+		if forkPhotoFollowWords[w] {
+			return true
+		}
+	}
+	return false
+}
+
 // forkPhotoTurn is StreamingKGSim's phrase trigger (V16): a matched request runs forkPhotoShot under StreamingKGSim's
 // control, interrupter and speak-loop end, with no brain hop; true = handled. A dial error falls through. A non-KG
 // request (intent_graph's unmatched utterance) first gets StreamingKGSim's intent_greeting_hello answer, then control.
+// With a fresh photo, an F3 word or a photo-armed follow-up asks about the kept photo instead (F4, F6).
 func forkPhotoTurn(req interface{}, esn string, isKG bool, text string) bool {
 	l := lang.Current()
+	heard := forkPhotos.TakeListen(esn) && isKG && forkChain.Count(esn) > 0
+	param, kind := "front", "phrase ask"
 	if !forkPhotoAsk(l, text) {
-		return false
+		if _, ok := forkPhotos.Fresh(esn, forkNow()); !ok || !(heard || forkPhotoNamed(text)) {
+			return false
+		}
+		param, kind = forkPhotoKept, "kept-photo ask"
 	}
 	robot, err := forkPhotoRobot(esn)
 	if err != nil {
-		logger.Println("myvector vision: phrase ask " + l + ": " + err.Error())
+		logger.Println("myvector vision: " + kind + " " + l + ": " + err.Error())
 		return false
 	}
-	logger.Println("myvector vision: phrase ask " + l)
+	logger.Println("myvector vision: " + kind + " " + l)
 	msgs := CreateAIReq(text, esn, false, isKG).Messages // LLM-marks the ask before IntentPass captures it (M4)
 	start, stop, stopStop := make(chan bool), make(chan bool), make(chan bool, 1)
 	if !isKG {
@@ -150,11 +180,12 @@ func forkPhotoTurn(req interface{}, esn string, isKG bool, text string) bool {
 	defer close(shot.quit)
 	go func() { interrupted.Store(InterruptKGSimWhenTouchedOrWaked(ibot, istop, stopStop)) }()
 	for range start {
-		forkPhotoShot(robot, l, msgs, shot.stop)
+		forkPhotoShot(robot, l, msgs, shot.stop, param)
 		if !interrupted.Load() {
 			stopStop <- true
 			stop <- true
 		}
+		forkFollowUp(robot, nil, esn, interrupted.Load()) // F6: a spoken photo answer listens again
 	}
 	return true
 }
@@ -181,13 +212,45 @@ func forkPhotoStop(cut context.Context) forkPhotoShotStop {
 }
 
 // forkPhotoShot speaks the V18 line, then DoGetImage on the request's messages; DoGetImage remembers the turn.
-func forkPhotoShot(robot *vector.Vector, l string, msgs []openai.ChatCompletionMessage, stop chan bool) {
+func forkPhotoShot(robot *vector.Vector, l string, msgs []openai.ChatCompletionMessage, stop chan bool, param string) {
 	line := "Let me look."
 	if l == lang.Estonian {
 		line = "Vaatan."
 	}
 	forkVisionSay(line, robot)
-	DoGetImage(msgs, "front", robot, stop)
+	DoGetImage(msgs, param, robot, stop)
+}
+
+// forkPhotoCapture is DoGetImage's capture: param forkPhotoKept with a fresh photo returns it with no mirror,
+// countdown or shutter (F4); otherwise upstream's capture, kept for follow-ups (F1). false = stopped mid-countdown.
+func forkPhotoCapture(robot *vector.Vector, param string, stop *bool) (*vectorpb.CaptureSingleImageResponse, bool) {
+	esn := robot.Cfg.SerialNo
+	if param == forkPhotoKept {
+		if s, ok := forkPhotos.Fresh(esn, forkNow()); ok {
+			logger.Println("myvector vision: kept photo " + s.Lang + ", taken " + forkNow().Sub(s.Taken).Round(time.Second).String() + " ago")
+			return &vectorpb.CaptureSingleImageResponse{Data: s.JPEG}, true
+		}
+	}
+	robot.Conn.EnableMirrorMode(context.Background(), &vectorpb.EnableMirrorModeRequest{Enable: true})
+	for i := 3; i > 0; i-- {
+		if *stop {
+			return nil, false
+		}
+		time.Sleep(time.Millisecond * 300)
+		robot.Conn.SayText(context.Background(), &vectorpb.SayTextRequest{Text: fmt.Sprint(i), UseVectorVoice: true, DurationScalar: 1.05})
+		if *stop {
+			return nil, false
+		}
+	}
+	resp, _ := robot.Conn.CaptureSingleImage(context.Background(), &vectorpb.CaptureSingleImageRequest{EnableHighResolution: true})
+	robot.Conn.EnableMirrorMode(context.Background(), &vectorpb.EnableMirrorModeRequest{Enable: false})
+	go robot.Conn.PlayAnimation(context.Background(), &vectorpb.PlayAnimationRequest{
+		Animation: &vectorpb.Animation{Name: "anim_photo_shutter_01"}, Loops: 1,
+	})
+	if resp != nil && len(resp.Data) > 0 {
+		forkPhotos.Put(esn, resp.Data, lang.Current(), forkNow())
+	}
+	return resp, true
 }
 
 // forkPhotoData is DoGetImage's capture result: a failed capture speaks the V8 line and sets *stop, so DoGetImage
@@ -249,6 +312,9 @@ func forkPhotoRemember(msgs []openai.ChatCompletionMessage, answer, esn string, 
 		logger.Println("myvector vision: interrupted, turn not remembered")
 		return true
 	default:
+	}
+	if answer != "" {
+		forkPhotos.Answered(esn, forkNow()) // F2 freshness, F6 listen
 	}
 	n := len(msgs) - 1 // the image
 	brain := n > 0 && msgs[n-1].Role == openai.ChatMessageRoleAssistant
