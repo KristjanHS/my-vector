@@ -1,6 +1,6 @@
 # Robot Tailscale (option D: spike, then productise)
 
-Status: Stage 1 done 2026-11-10 (robot-ts 192.0.2.112, laptop-ts 192.0.2.105); Stage 2 GO 2026-11-10 (2.5 PASS by user ruling on a 21/30-sample run; pinned back to LAN); Stage 3: 3.1–3.2 done, 3.3 owed (hand-run tailscaled pid still up). Executes item 3 of §Recommended plan in `2026-11-07-public-wifi-security.md (docs/plans/)`
+Status: Stage 1 done 2026-11-10 (robot-ts 192.0.2.112, laptop-ts 192.0.2.105); Stage 2 GO 2026-11-10 (2.5 PASS by user ruling on a 21/30-sample run; pinned back to LAN); Stage 3 done 2026-11-10 (unit boots on its own); next Stage 4.1. Until 4.2 lands no D13 pair: robot egress on `tailscale0` drops (LAN pin, voice unaffected). Executes item 3 of §Recommended plan in `2026-11-07-public-wifi-security.md (docs/plans/)`
 (§D. Tunnel on the robot itself) and extends the netguard shipped by `2026-11-07-wifi-baseline-hardening.md (docs/plans/)`.
 `[USER]` = a live run on the robot, server or admin console: Claude asks first, never runs it unasked. `[SOUND]` = makes
 robot sound: `robot/quiet/quiet.sh status` ≠ 3 right before it, ask, note the start time, then `robot/quiet/scan.sh '<start>'`
