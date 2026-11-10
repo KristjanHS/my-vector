@@ -25,6 +25,8 @@ const (
 	ClaudeModel = "claude-haiku-5-5"
 	// NoSpeech: an armed follow-up whose clip's STT no_speech (max segment) reaches this is blank (G1, P4).
 	NoSpeech = 0.6
+	// WakeNoSpeech: an unarmed turn (wake or "I have a question") scored this high is a silent wake, dropped (silent-wake-gate S3).
+	WakeNoSpeech = 0.8
 )
 
 // RuleModels are Ollama model-name prefixes (after any "namespace/") whose decider is Rule, not an LLM call

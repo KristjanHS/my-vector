@@ -192,7 +192,7 @@ func CreateAIReq(transcribedText, esn string, gpt3tryagain, isKG bool) openai.Ch
 }
 
 func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bool) (string, error) {
-	turn, skip := forkBegin(esn, isKG, transcribedText)           // my-vector: follow-up chain count; a blank follow-up ends it (fork_followup.go)
+	turn, skip := forkBegin(req, esn, isKG, transcribedText)      // my-vector: follow-up chain count; a blank follow-up ends it (fork_followup.go)
 	skip = skip || forkPhotoTurn(req, esn, isKG, transcribedText) // my-vector: a photo phrase runs the camera turn, no brain hop (fork_vision.go)
 	if skip {
 		return "", nil

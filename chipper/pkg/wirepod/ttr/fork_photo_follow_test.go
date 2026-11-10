@@ -58,7 +58,7 @@ func TestForkPhotoFollowReuse(t *testing.T) {
 	}{{"kus on tass?", true}, {"kus pildi peal on tass?", false}} {
 		isKG := ask.armed
 		if isKG {
-			if _, skip := forkBegin(followESN, true, ask.text); skip {
+			if _, skip := forkBegin(nil, followESN, true, ask.text); skip {
 				t.Fatal("armed follow-up skipped")
 			}
 		}
@@ -116,7 +116,7 @@ func TestForkPhotoFollowFallsThrough(t *testing.T) {
 func TestForkPhotoFollowNew(t *testing.T) {
 	r := usePhotoRig(t)
 	photoAnswered(t, r)
-	if _, skip := forkBegin(followESN, true, "tee uus pilt"); skip {
+	if _, skip := forkBegin(nil, followESN, true, "tee uus pilt"); skip {
 		t.Fatal("armed request skipped")
 	}
 	if !forkPhotoTurn(nil, followESN, true, "tee uus pilt") {
@@ -140,7 +140,7 @@ func TestForkPhotoFollowListen(t *testing.T) {
 	if !forkFollowUp(nil, decided(&yes), followESN, false) {
 		t.Fatal("decider YES did not arm")
 	}
-	if _, skip := forkBegin(followESN, true, "kus on tass?"); skip || forkPhotoTurn(nil, followESN, true, "kus on tass?") {
+	if _, skip := forkBegin(nil, followESN, true, "kus on tass?"); skip || forkPhotoTurn(nil, followESN, true, "kus on tass?") {
 		t.Error("a decider-armed listen reused the photo without an F3 word")
 	}
 
@@ -175,12 +175,12 @@ func TestForkPhotoFollowIntentEnds(t *testing.T) {
 		t.Error("intent-graph answer left the photo listen set")
 	}
 	forkPhotos.Listen(followESN, true) // re-set, so the next check fails on a surviving chain alone
-	if _, skip := forkBegin(followESN, true, "kus on tass?"); skip || forkChain.Count(followESN) != 0 || forkPhotoTurn(nil, followESN, true, "kus on tass?") {
+	if _, skip := forkBegin(nil, followESN, true, "kus on tass?"); skip || forkChain.Count(followESN) != 0 || forkPhotoTurn(nil, followESN, true, "kus on tass?") {
 		t.Errorf("after an intent-graph answer: skip %v, chain %d, or the photo was reused", skip, forkChain.Count(followESN))
 	}
 
 	forkPhotos.Listen(followESN, true)
-	if _, skip := forkBegin(followESN, true, " "); !skip || forkPhotos.TakeListen(followESN) {
+	if _, skip := forkBegin(nil, followESN, true, " "); !skip || forkPhotos.TakeListen(followESN) {
 		t.Errorf("blank request: skip %v, or its photo listen survived", skip)
 	}
 }

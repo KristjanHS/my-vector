@@ -165,7 +165,7 @@ func TestForkBeginSwitch(t *testing.T) {
 	follow := func(text string) bool {
 		forkChain.Reset(esn)
 		forkChain.Arm(esn, forkNow())
-		_, skip := forkBegin(esn, true, text)
+		_, skip := forkBegin(nil, esn, true, text)
 		return skip
 	}
 	for _, c := range []struct {
@@ -201,7 +201,7 @@ func TestForkBeginSwitch(t *testing.T) {
 	if len(naps) != 2 {
 		t.Errorf("naps %d, want 2: forkQuietLock's async one + the one held under control", len(naps))
 	}
-	if _, skip := forkBegin(esn, false, "ole vait"); skip {
+	if _, skip := forkBegin(nil, esn, false, "ole vait"); skip {
 		t.Error("an intent request must not run the switch (ProcessTextAll already did)")
 	}
 }
