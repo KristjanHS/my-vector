@@ -3,6 +3,7 @@
 ## OWED[USER]
 - Camera et relay live (`2026-11-10-camera-et-relay.md` (docs/plans/) 3.1): `make ship`, quiet status ≠ 3, ask before sound; et "mida sa näed?" + "mis värvi mu särk on?" → Estonian answer to each, ~5 s; `journalctl -u wire-pod --since '<t>' | grep -c 'camera relay '` ≥ 1; `robot/quiet/scan.sh '<t>'`.
 - Vision phrase trigger live (`archive/2026-11-08-vision-setting.md` (docs/plans/) 5.2): `make ship`, quiet status ≠ 3, ask before sound; et "mida sa näed?" + en "what do you see?" → robot says "Vaatan." / "Let me look." then describes; `journalctl -u wire-pod --since '<t>' | grep -c 'myvector vision: phrase ask'` = 2; `robot/quiet/scan.sh '<t>'`. Pass also closes camera-et-relay 3.1.
+- Photo follow-up live (`2026-11-10-photo-followup.md` (docs/plans/) Live row): `make ship`, quiet ≠ 3, ask before sound; "mida sa näed", then while he listens "kus pildi peal asub rulli keeratud joogamatt?" → no countdown, says left; then "tee uus pilt" → countdown.
 - Ollama et split (`2026-11-10-ollama-et-prompt.md` (docs/plans/)): `make ship`; `/myvector/prompt` Ollama et tab shows only the "About me (eesti)" box; in et ask Vector to sing — the persona dropped `SingEt`, a refusal re-opens it.
 
 - Follow-up listening live (`2026-11-07-follow-up-listening.md` (docs/plans/) 6.1, 7.3): `make ship`, restart wire-pod; "ask me a riddle" → answer → chain, "dance" mid-chain goes to the LLM, et once; silent P4 rerun: no "Ready", no answered turn (`journalctl -u wire-pod | grep follow-up`).
