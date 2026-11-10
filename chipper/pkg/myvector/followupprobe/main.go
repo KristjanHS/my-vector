@@ -1,4 +1,4 @@
-// Command followupprobe scores candidate "listen again?" prompts (follow-up-listening.md (docs/plans/) Stage 1.1).
+// Command followupprobe scores candidate "listen again?" prompts (2026-11-07-follow-up-listening.md (docs/plans/) Stage 1.1).
 //
 //	go run ./pkg/myvector/followupprobe [-config ../../../my-vector/secrets/server/myvectorConfig.json] [-models a,b -think none,low -think-budget N]   # from chipper/
 //

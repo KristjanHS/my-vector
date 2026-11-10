@@ -1,5 +1,5 @@
 // Package followup decides whether the robot listens again after an LLM answer and caps the chain
-// (follow-up-listening.md (docs/plans/) F1, F2).
+// (2026-11-07-follow-up-listening.md (docs/plans/) F1, F2).
 package followup
 
 import (
