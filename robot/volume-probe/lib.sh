@@ -17,8 +17,15 @@ reset_rtpcs() { local b l; for b in ${RESET:-Animation Behavior Procedural}; do 
 capturing=0 exit_hooks=()
 on_exit() { exit_hooks+=("$1"); }
 cap_stop() { ((capturing)) || return 0; curl -s -m 5 -o /dev/null "${C}SetWriteAudioOutputCapture&args=false"; capturing=0; }
+# KG searching's loop sfx outlives the clip; only its getout stops it (W10). play_anim flags it, the trap plays the getout once.
+kg=anim_knowledgegraph_searching_01 kg_played=0
+play_anim() { [[ $1 == "$kg" ]] && kg_played=1; curl -s -o /dev/null "${C}PlayAnimation&args=$1+${2:-1}"; }
+kg_getout() { ((kg_played)) || return 0; kg_played=0
+  if quiet_locked; then echo "WARN sound lock: KG searching loop sfx left running; after make unquiet play anim_knowledgegraph_searching_getout_01" >&2; return 0; fi
+  play_anim anim_knowledgegraph_searching_getout_01; sleep 2; }
+# Exit order: capture off, KG getout (behavior control still held), then on_exit hooks in order (release last).
 # shellcheck disable=SC2154 # h: the trap's own loop variable
-trap 'cap_stop; for h in "${exit_hooks[@]}"; do eval "$h" || true; done' EXIT
+trap 'cap_stop; kg_getout; for h in "${exit_hooks[@]}"; do eval "$h" || true; done' EXIT
 cap_on() { ssh "${so[@]}" "root@$ip" "rm -f $D/*.wav"; capturing=1; curl -s -o /dev/null "${C}SetWriteAudioOutputCapture&args=true"; }
 # A copy failure (e.g. diskguard removed a capture over 50 MB, ~13 min) is loud: a stale $1 from an earlier run would read as new.
 cap_off() { cap_stop; sleep 1.1; rm -f "$1"; scp -q "${so[@]}" "root@$ip:$D/*.wav" "$1" || echo "WARN: no capture copied to $1" >&2; }

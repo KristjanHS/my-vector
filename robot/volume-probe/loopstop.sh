@@ -7,7 +7,7 @@ set -uo pipefail
 OUT=$1; mkdir -p "$OUT"; W=${W:-8} OBJ=${OBJ-4}
 stop() { curl -s -o /dev/null "${C}PostAudioEvent&args=Stop__Robot_Vic_Sfx__Knowledge_Graph_Searching_Loop_Stop${OBJ:++$OBJ}"; }
 on_exit release; hold; reset_rtpcs; quiet_guard
-cap_on; curl -s -o /dev/null "${C}PlayAnimation&args=anim_knowledgegraph_searching_01+16"
+cap_on; play_anim anim_knowledgegraph_searching_01 16
 end=$((SECONDS + W)); while ((SECONDS < end)); do stop; sleep 0.2; done
 cap_off "$OUT/during.wav"; stop
 cap_on; sleep 4; cap_off "$OUT/after.wav"
