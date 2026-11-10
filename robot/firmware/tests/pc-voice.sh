@@ -45,7 +45,7 @@ timeout 30 "$tmp/t" "$here/tts-urls.txt" || rc=$?
 # voice-push.sh + settings.sh in a throwaway robot/ (GIT_DIR=/nonexistent: env.sh falls back to the copy's own robot.env).
 # Stub robot (ssh runs settings.sh's sed on robot_jdoc's file): clock 24h, Celsius; the voice file lands in $vp/voice.json, curl calls in $vp/curl.log.
 vp=$tmp/vp
-mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/robot/logkeep" "$vp/robot/sshkey" "$vp/robot/hostkey" "$vp/robot/epod" "$vp/robot/netguard" "$vp/bin" "$vp/secrets/server/jdocs"
+mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/robot/logkeep" "$vp/robot/sshkey" "$vp/robot/hostkey" "$vp/robot/epod" "$vp/robot/tailscale" "$vp/robot/netguard" "$vp/bin" "$vp/secrets/server/jdocs"
 mkdir -p "$vp/robot/quiet" && cp "$fw/../env.sh" "$vp/robot/" && cp "$fw/../quiet/guard.sh" "$vp/robot/quiet/"
 cp "$fw/voice-push.sh" "$fw/settings.sh" "$vp/robot/firmware/"
 printf '#!/bin/sh\necho diskguard stub\n' >"$vp/robot/diskguard/apply.sh"
@@ -53,6 +53,7 @@ printf '#!/bin/sh\necho logkeep stub\n' >"$vp/robot/logkeep/apply.sh"
 printf '#!/bin/sh\necho sshkey stub\n' >"$vp/robot/sshkey/apply.sh"
 printf '#!/bin/sh\necho hostkey stub\n' >"$vp/robot/hostkey/apply.sh"
 printf '#!/bin/sh\necho epod >>"$(dirname "$0")/../../order.log"; echo epod stub\n' >"$vp/robot/epod/apply.sh"
+printf '#!/bin/sh\necho tailscale >>"$(dirname "$0")/../../order.log"; echo tailscale stub\n' >"$vp/robot/tailscale/apply.sh"
 printf '#!/bin/sh\necho netguard >>"$(dirname "$0")/../../order.log"; echo netguard stub\n' >"$vp/robot/netguard/apply.sh"
 : >"$vp/robot/key"
 cat >"$vp/bin/ssh" <<'STUB'
@@ -164,7 +165,7 @@ settings_run true false '{"lang": "en-US"}'
 [[ $(grep -c consolevarset "$vp/curl.log") == 1 && $rc == 0 && $out == *"ok: nap re-armed until"* ]] &&
   grep -qF "http://127.0.0.1:8888/consolevarset?key=SleepCycle_NapUntil_s&value=$until_s" "$vp/curl.log" ||
   die "settings.sh, sound lock held: want one nap re-arm to $until_s, exit $rc, curl $(cat "$vp/curl.log"): $out"
-[[ $(tr '\n' ' ' <"$vp/order.log") == "epod netguard nap " ]] || die "settings.sh: nap re-arm must come last, got order: $(cat "$vp/order.log")"
+[[ $(tr '\n' ' ' <"$vp/order.log") == "epod tailscale netguard nap " ]] || die "settings.sh: tailscale before netguard (D6), nap re-arm last, got order: $(cat "$vp/order.log")"
 # A firmware without the var answers 200 "Variable not found": WARN, not ok.
 echo notfound >"$vp/nap-mode"
 settings_run true false '{"lang": "en-US"}'

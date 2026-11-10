@@ -5,6 +5,7 @@ Everything in this folder is secret. Git tracks only this README and `.gitignore
 | path | what it is | made by | used by |
 |---|---|---|---|
 | `myvector_ed25519` (+ `.pub`) | robot root SSH key (ed25519, no passphrase) | `robot/sshkey/keygen.sh` | every robot script, via `ROBOT_KEY=../secrets/myvector_ed25519` in `robot/robot.env`; installed on the robot by `robot/sshkey/apply.sh` |
+| `tailscale-authkey` | one-off, pre-approved, `tag:vector` Tailscale auth key (mode 600) | admin console → `(umask 077; cat >secrets/tailscale-authkey)` | `robot/tailscale/apply.sh`: pushed on ssh stdin into the robot's `/run` only while the node is logged out, deleted there right after `tailscale up` |
 | `server/` | wire-pod's private state: `apiConfig.json` (API keys), `myvector*.json` (fork settings incl. the Claude and search keys, prompt, search cache, memory), `jdocs/` (bot tokens), `session-certs/`, `certs/` (TLS key, `server_config.json`) | wire-pod itself, `setup.sh` (certs) | wire-pod (cwd `chipper/`, paths in `chipper/pkg/vars/fork_paths.go`), `tts/` + `et-stt/` + `robot/firmware/settings.sh` (read `server/myvectorConfig.json`) |
 | `server-state/server-state-*.tgz` | snapshot of `server/` + `chipper/source.sh` | `robot/unlock/backup-server-state.sh` | restore by hand |
 | `epod/` `ca.{crt,key}`, `ep.{crt,key}` | planned (Stage 4): own escapepod CA and server TLS leaf | planned `robot/epod/mkcert.sh` → `epod-new/`, then renamed to `epod/` | planned: wire-pod `EPOD_DIR` |
