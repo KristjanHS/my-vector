@@ -158,7 +158,8 @@ this. The same goes for `tailscale funnel` (the guard file already warns: serve/
    guard, bound to that interface.
 2. **S1 + S2 properly:** buy a C travel router. Set Vector up on its SSID, reserve the IP, and set up WireGuard or
    Tailscale to home, with the kill switch on.
-3. **D spike** (TUN confirmed, so it's no longer optional-later): `tailscaled` armv7 static binary in `/data`, started
+3. **D spike** (TUN confirmed, so it's no longer optional-later) → plan: `2026-11-10-robot-tailscale.md (docs/plans/)`
+   (user picked D 2026-11-10; wlan0 :22 from the PC LAN IP only). `tailscaled` armv7 static binary in `/data`, started
    by hand. Pre-registered rule: robot joins the tailnet **and** a voice turn works with `escapepod.local` → laptop
    tailnet IP **and** `tailscaled` RSS < 40 MB with no vic-* crash in 30 min → productise (init hook, iptables, hosts).
    Otherwise → C.
