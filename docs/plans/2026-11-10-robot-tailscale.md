@@ -18,7 +18,7 @@ rewrite of the lines it supersedes inside Stage 4, not a seam move ahead of it.
 |---|---|---|
 | D1 | Target = Tailscale on the robot. Spike (Stages 1–2) gates productise (3–5). Spike NO-GO → stop here, fall back to option C; no C work in this plan. | — |
 | D2 | `tailscaled` kernel TUN (`tailscale0`), official static `arm` tgz from pkgs.tailscale.com, `TS_VERSION`/`TS_SHA256` pinned in source; `fetch.sh` refuses a sha mismatch. Binaries + statedir in `/data` (survives OTA). Flags: `tailscaled --statedir=<TS_STATEDIR> --socket=<TS_SOCK> --port=<TS_PORT> --tun=tailscale0`; `tailscale up --hostname=<TS_HOSTNAME> --advertise-tags=<TS_TAG> --accept-dns=false --netfilter-mode=off` (netguard stays the only iptables writer). | `robot/tailscale/fetch.sh` |
-| D3 | Node identity `[USER]` in the admin console: ACL `tagOwners` for `TS_TAG`; grants laptop → `TS_TAG:*` and `TS_TAG` → laptop `:80,443,8084,8091,8093` only; one-off pre-approved tagged auth key; key expiry disabled; revoke the node if the robot is lost. Never `tailscale serve`/`funnel`. | admin console |
+| D3 | Node identity `[USER]` in the admin console: ACL `tagOwners` for `TS_TAG`; the default allow-all grant is replaced by `autogroup:member` → `autogroup:self:*`, `autogroup:member` → `TS_TAG:*` and `TS_TAG` → `wsl-ubuntu` tcp `80,443,8084,8091,8093` only; one-off pre-approved tagged auth key; key expiry disabled; revoke the node if the robot is lost. Never `tailscale serve`/`funnel`. | admin console |
 | D4 | Auth key lives at `TS_AUTHKEY` (mode 600); it reaches the robot only on ssh stdin into `/run`, is used as `--auth-key=file:<run path>` and deleted in the same phase; never in laptop argv. | `secrets/README.md` row; `scripts/tests/secrets.sh` check-ignore list |
 | D5 | Boot unit `TS_UNIT` via `etc_put` + daemon-reload + enable: `After=network-pre.target myvector-netguard.service`, `RequiresMountsFor=/data`, `Restart=on-failure`, `WantedBy=multi-user.target`. `apply.sh` runs `tailscale up` only when not logged in and `TS_AUTHKEY` exists, else `WARN:`. | `robot/tailscale/apply.sh` |
 | D6 | Extends K6: `settings.sh` order … → epod → **tailscale** → netguard (tailnet path exists before wlan0 closes); `ship.sh` `ls-tree` list gains `robot/tailscale`. | `robot/firmware/{settings.sh,ship.sh}` |
@@ -33,7 +33,7 @@ rewrite of the lines it supersedes inside Stage 4, not a seam move ahead of it.
 
 | symbol | value | home / validated by |
 |---|---|---|
-| `TS_VERSION` / `TS_SHA256` | pin latest stable at execution; sha256 from the tgz's `.sha256` on pkgs.tailscale.com (web-verify) | `robot/tailscale/fetch.sh`; `robot/tailscale/tests/fetch.sh` |
+| `TS_VERSION` / `TS_SHA256` | 1.104.5 (stable 2026-11-10); sha256 = its `.sha256` on pkgs.tailscale.com | `robot/tailscale/fetch.sh`; `robot/tailscale/tests/fetch.sh` |
 | `TS_DIR` / `TS_STATEDIR` | `/data/myvector/tailscale/` / `/data/myvector/tailscale/state/` | `robot/tailscale/tests/apply.sh` |
 | `TS_SOCK` | `/run/tailscale/tailscaled.sock` | same |
 | `TS_UNIT` | `myvector-tailscaled.service` | same |
@@ -54,7 +54,7 @@ Focus: `robot/tailscale/fetch.sh` (new); `secrets/`.
 |---|---|---|---|
 | 1.1 | `[USER]` admin console per D3; key → `(umask 077; cat >secrets/tailscale-authkey)` | `git check-ignore -q secrets/tailscale-authkey && [ "$(stat -c %a secrets/tailscale-authkey)" = 600 ]` | `bash scripts/tests/secrets.sh` |
 | 1.2 | `fetch.sh`: download tgz + `.sha256` into `robot/work/tailscale/`, check against `TS_SHA256`, unpack `tailscale`+`tailscaled` | `robot/tailscale/tests/fetch.sh` (fake `curl` serving a local tgz): wrong `TS_SHA256` → exit 1, nothing unpacked. Red: skip the compare → FAIL | `bash robot/tailscale/tests/fetch.sh`; live `robot/tailscale/fetch.sh` exit 0 |
-| 1.3 | `[USER]` silent: `scp` binaries to `TS_DIR`; `setsid tailscaled` per D2 (log in `/run/myvector/`); key via stdin → `tailscale up` per D2/D4; robot `rm` of the key copy | robot `tailscale --socket=<TS_SOCK> status --json \| grep -q '"BackendState": "Running"'`; laptop `tailscale ping -c 3 <robot-ts>` and robot `tailscale ping -c 3 <laptop-ts>` exit 0; robot `iptables -S \| grep -c '^-N ts-'` = 0 (`--netfilter-mode=off` held); robot `ls /run/myvector/` has no key | `[USER]` console: node tagged `tag:vector`, expiry disabled |
+| 1.3 | `[USER]` silent: `scp` binaries to `TS_DIR`; `setsid tailscaled` per D2 (log in `/run/myvector/`); key via stdin → `tailscale up` per D2/D4; robot `rm` of the key copy | robot `tailscale --socket=<TS_SOCK> status --json \| grep -q '"BackendState": "Running"'`; laptop `tailscale ping -c 3 <robot-ts>` and robot `tailscale ping -c 3 <laptop-ts>` exit 0; robot `iptables -S \| grep -c '^-N ts-'` = 0 (`--netfilter-mode=off` held); robot `ls /run/myvector/` has no key; D7 hedge (non-gating): a deploy-image container `nc -zv -w3 <robot-ts> 1873` → result into D7 | `[USER]` console: node tagged `tag:vector`, expiry disabled |
 
 ## Stage 2 — spike gate (D12)
 
