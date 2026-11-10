@@ -217,7 +217,7 @@ func history(esn string, n int) []openai.ChatCompletionMessage {
 }
 
 // An et photo phrase runs forkPhotoTurn (the StreamingKGSim hook's seam) on a knowledge request and on intent_graph's
-// unmatched one: "Vaatan." first, then the relay's two brain hops on the utterance and one vision chat — no
+// unmatched one: "Vaatan." first, then the relay's two brain hops on the (not bare) utterance and one vision chat — no
 // getImage-deciding brain hop — the answer spoken, and the turn remembered as (ask, answer) only.
 func TestForkPhotoAskCamera(t *testing.T) {
 	for _, isKG := range []bool{true, false} {
@@ -226,7 +226,7 @@ func TestForkPhotoAskCamera(t *testing.T) {
 			if forkPhotoTurn(nil, "00e60001", isKG, "mis kell on?") || r.dials != 0 {
 				t.Fatalf("a non-photo request ran the photo turn (dials %d)", r.dials)
 			}
-			if !forkPhotoTurn(nil, "00e60001", isKG, "Mida sa näed?") {
+			if !forkPhotoTurn(nil, "00e60001", isKG, "Mida sa näed laual?") {
 				t.Fatal("photo phrase not handled")
 			}
 			if strings.Join(r.lines, "|") != "Vaatan. @" {
@@ -236,7 +236,7 @@ func TestForkPhotoAskCamera(t *testing.T) {
 			if got := strings.Join(r.intents, ","); got != want {
 				t.Errorf("intent answers %q, want %q", got, want)
 			}
-			if brain, vision := r.chats(); len(brain) != 2 || vision != 1 || !strings.Contains(brain[0], "Mida sa näed?") {
+			if brain, vision := r.chats(); len(brain) != 2 || vision != 1 || !strings.Contains(brain[0], "Mida sa näed laual?") {
 				t.Errorf("events %v, brain hops %d (want the relay's 2, the first on the utterance), vision chats %d", r.f.events, len(brain), vision)
 			}
 			r.bot.smu.Lock()
@@ -245,9 +245,9 @@ func TestForkPhotoAskCamera(t *testing.T) {
 			}
 			r.bot.smu.Unlock()
 			h := history("00e60001", 2)
-			if len(h) != 2 || h[0].Role != openai.ChatMessageRoleUser || h[0].Content != "Mida sa näed?" || h[0].MultiContent != nil ||
+			if len(h) != 2 || h[0].Role != openai.ChatMessageRoleUser || h[0].Content != "Mida sa näed laual?" || h[0].MultiContent != nil ||
 				h[1].Role != openai.ChatMessageRoleAssistant || h[1].Content != "Valge tass." {
-				t.Errorf("history %+v, want [user Mida sa näed?, assistant Valge tass.]", h)
+				t.Errorf("history %+v, want [user Mida sa näed laual?, assistant Valge tass.]", h)
 			}
 		})
 	}

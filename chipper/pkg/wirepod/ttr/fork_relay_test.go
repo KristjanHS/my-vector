@@ -102,7 +102,7 @@ func TestForkRelayHop0Down(t *testing.T) {
 		if err != nil || text != "Valge tass." || finish != openai.FinishReasonStop {
 			t.Errorf("q %q: stream %q %q %v", q, text, finish, err)
 		}
-		if hop1 := f.bodies[len(f.bodies)-2]; !strings.Contains(hop1, `"text":"`+forkRelayAsk+`"`) {
+		if hop1 := f.bodies[len(f.bodies)-2]; !strings.Contains(hop1, `"text":"`+forkRelayAsk+`"`) || !strings.Contains(hop1, `"content":"`+q+`"`) && q != "" {
 			t.Errorf("q %q: hop 1 %s", q, hop1)
 		}
 		want := "unload estllm:x,chat llava:7b,unload llava:7b,chat estllm:x"
@@ -260,6 +260,10 @@ func TestForkCameraRelaySkips(t *testing.T) {
 		if strings.Join(chats, ",") != "chat "+c.want {
 			t.Errorf("%s: chats %v, want one chat %s", c.name, chats, c.want)
 		}
+		tier := map[string]string{"en-US": prompt.Ollama, "same model": prompt.OllamaEt}[c.name] // Ollama vision: a photo prompt
+		if body := f.bodies[len(f.bodies)-1]; tier != "" && !strings.Contains(body, prompt.PhotoLine(tier)) {
+			t.Errorf("%s: vision body lacks PhotoLine: %s", c.name, body)
+		}
 	}
 }
 
@@ -338,5 +342,35 @@ func TestForkRelayTraceHop2Failed(t *testing.T) {
 	md, _ := os.ReadFile(filepath.Join(root, dirs[0].Name(), "trace.md"))
 	if !strings.HasSuffix(string(md), "## hop 2 failed\n\n````\nempty reply\n````\n\n") {
 		t.Errorf("trace.md tail:\n%s", md)
+	}
+}
+
+// A bare photo phrase skips hop 0: the vision model gets forkRelayAsk, the brain only translates the answer.
+func TestForkRelayBarePhrase(t *testing.T) {
+	for _, q := range []string{"Mida sa näed?", "hei vektor, vaata", "tee pilt"} {
+		f, brain, vision := forkRelayFake(t)
+		f.replies["estllm:x"] = []string{"Valge tass."}
+		f.replies["llava:7b"] = []string{"A white cup."}
+		text, _, err := forkRelayStream(brain, vision, q)
+		if err != nil || text != "Valge tass." {
+			t.Errorf("q %q: stream %q %v", q, text, err)
+		}
+		if want := "unload estllm:x,chat llava:7b,unload llava:7b,chat estllm:x"; strings.Join(f.events, ",") != want {
+			t.Errorf("q %q: events %v, want %s", q, f.events, want)
+		}
+		if hop1 := f.bodies[0]; !strings.Contains(hop1, `"text":"`+forkRelayAsk+`"`) {
+			t.Errorf("q %q: hop 1 %s", q, hop1)
+		}
+	}
+}
+
+func TestForkPhotoBare(t *testing.T) {
+	for text, want := range map[string]bool{
+		"Mida sa näed?": true, "mis sa näed": true, "Hei Vektor, tee foto!": true, "vektor vaata": true,
+		"mida sa näed laual?": false, "vaata seda tassi": false, "tee pilt ja ütle värv": false, "": false,
+	} {
+		if got := forkPhotoBare(lang.Estonian, text); got != want {
+			t.Errorf("forkPhotoBare(%q) = %v, want %v", text, got, want)
+		}
 	}
 }
