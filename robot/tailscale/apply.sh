@@ -41,6 +41,8 @@ unit) # [NEWBIN=1]: unit per D5, enabled, running; prints state=<BackendState>
 Description=my-vector tailscaled: tailnet path to the PC (robot/tailscale)
 After=network-pre.target myvector-netguard.service
 RequiresMountsFor=/data
+Wants=mount-data.service
+After=mount-data.service
 
 [Service]
 Type=notify
@@ -48,6 +50,7 @@ RuntimeDirectory=tailscale
 ExecStart=$TS_DIR/tailscaled --statedir=$TS_DIR/state/ --socket=$sock --port=41641 --tun=tailscale0
 ExecStopPost=$TS_DIR/tailscaled --cleanup
 Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target"
@@ -59,7 +62,9 @@ WantedBy=multi-user.target"
   if ! systemctl is-active -q myvector-tailscaled; then systemctl start myvector-tailscaled; echo "tailscale: started tailscaled"
   elif [ -n "$ETC_CHANGED" ] || [ -n "${NEWBIN:-}" ]; then systemctl restart myvector-tailscaled; echo "tailscale: restarted tailscaled"
   fi
-  echo "state=$(state)" ;;
+  i=0 s=$(state) # just started: NoState/Starting is not "logged out"; up to ~15 s to settle
+  while { [ -z "$s" ] || [ "$s" = NoState ] || [ "$s" = Starting ]; } && [ $i -lt 15 ]; do sleep 1; i=$((i + 1)); s=$(state); done
+  echo "state=$s" ;;
 up) # the key is at $RUN_KEY (pushed on stdin); removed whatever up does
   trap 'rm -f "$ETC_ROOT$RUN_KEY"' EXIT
   "$d/tailscale" --socket="$sock" up --auth-key="file:$ETC_ROOT$RUN_KEY" --hostname=vector --advertise-tags=tag:vector \
@@ -84,6 +89,7 @@ out=$(remote unit $newbin) || die "${out:-unit phase failed}"
 echo "${out%state=*}" | sed '/^$/d'
 state=${out##*state=}
 if [[ $state == Running ]]; then echo "tailscale: logged in ($state)"; exit 0; fi
+[[ $state == NeedsLogin ]] || { echo "WARN: tailscale: BackendState '${state}' (not Running, not NeedsLogin): key not used"; exit 0; }
 [[ -f $authkey ]] || { echo "WARN: tailscale: not logged in (state ${state:-unknown}) and no $authkey — see secrets/README.md"; exit 0; }
 # shellcheck disable=SC2016 # expands on the robot
 ssh "${ssh_opts[@]}" "root@$ip" 'umask 077; k=${ETC_ROOT:-}'"$run_key"'; mkdir -p "${k%/*}" && cat >"$k"' <"$authkey" || die "key push failed"
