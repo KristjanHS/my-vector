@@ -493,7 +493,9 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 				fullRespSlice, fullRespText, held = forkFlushHeld(fullRespSlice, fullRespText) // my-vector: a sentence held at a digit '.' (fork_split.go)
 				forkSignalHeld(speakReady, held)
 				var flushed bool
-				if fullRespSlice, flushed = forkFlushUnpunctuated(fullRespSlice, fullRespText); flushed {
+				fullRespSlice, flushed = forkFlushUnpunctuated(fullRespSlice, fullRespText)
+				forkPhotoAnswered(fullRespSlice, robot.Cfg.SerialNo, stopped) // my-vector: before isDone, so this turn's forkFollowUp sees it (fork_vision.go)
+				if flushed {
 					isDone = true
 					select {
 					case speakReady <- fullRespSlice[0]:

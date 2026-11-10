@@ -66,7 +66,7 @@ func TestForkPhotoAsk(t *testing.T) {
 }
 
 // photoBot is the robot side of a camera turn: control, the interrupter's event stream, mirror mode, photo, speech.
-// A closed wake fires one wake-word event on the stream; noPhoto fails the capture.
+// A closed wake fires one wake-word event on the stream; noPhoto fails the capture; capture n's JPEG ends in byte n.
 type photoBot struct {
 	controlBot
 	smu      sync.Mutex
@@ -118,11 +118,12 @@ func (b *photoBot) EnableMirrorMode(context.Context, *vectorpb.EnableMirrorModeR
 func (b *photoBot) CaptureSingleImage(context.Context, *vectorpb.CaptureSingleImageRequest, ...grpc.CallOption) (*vectorpb.CaptureSingleImageResponse, error) {
 	b.smu.Lock()
 	b.captures++
+	n := b.captures
 	b.smu.Unlock()
 	if b.noPhoto {
 		return nil, errors.New("no camera")
 	}
-	return &vectorpb.CaptureSingleImageResponse{Data: []byte{0xff, 0xd8, 0xff}}, nil
+	return &vectorpb.CaptureSingleImageResponse{Data: []byte{0xff, 0xd8, 0xff, byte(n)}}, nil
 }
 
 func (b *photoBot) PlayAnimation(context.Context, *vectorpb.PlayAnimationRequest, ...grpc.CallOption) (*vectorpb.PlayAnimationResponse, error) {
@@ -547,6 +548,8 @@ func TestForkPhotoAskHook(t *testing.T) {
 		{"kgsim.go", "func StreamingKGSim(", "\n\tif skip {", "\n\tskip = skip || forkPhotoTurn(req, esn, isKG, transcribedText)"},
 		{"kgsim_cmds.go", "func DoGetImage(", "\n\t// add image to messages", "\n\treqBase64 := base64.StdEncoding.EncodeToString(forkPhotoData(resp, robot, &stopImaging))"},
 		{"kgsim_cmds.go", "func DoGetImage(", "\n\t\t\t\t\tRemember(msgs[len(msgs)-1],", "\n\t\t\t\tif !forkPhotoRemember(msgs, newStr, robot.Cfg.SerialNo, stopped) {"},
+		{"kgsim_cmds.go", "func DoGetImage(", "\n\t\t\t\t\tisDone = true", "\n\t\t\t\tforkPhotoAnswered(fullRespSlice, robot.Cfg.SerialNo, stopped)"},
+		{"matchIntentSend.go", "func IntentPass(", "\n\t// intercept if not intent graph", "\n\tforkIntentPass(esn, intentThing, speechText)"},
 	} {
 		b, err := os.ReadFile(h.file)
 		if err != nil {

@@ -300,6 +300,19 @@ func forkPhotoUnsaid(spoken int, stopped <-chan struct{}, robot *vector.Vector) 
 	}
 }
 
+// forkPhotoAnswered is DoGetImage's stream-EOF mark before isDone (else the turn's forkFollowUp can run first): a
+// non-empty, uninterrupted answer freshens the photo and makes this turn listen again (F2, F6).
+func forkPhotoAnswered(chunks []string, esn string, stopped <-chan struct{}) {
+	select {
+	case <-stopped:
+		return
+	default:
+	}
+	if strings.TrimSpace(strings.Join(chunks, "")) != "" {
+		forkPhotos.Answered(esn, forkNow())
+	}
+}
+
 // forkPhotoRemember is DoGetImage's stream-EOF Remember: a camera turn is remembered as (the user's text ask, the
 // answer), with or without SaveChat as StreamingKGSim + forkAfterReply remember a turn (F3) — never the image
 // message, never the V18 line. msgs end in the image; a brain-decided getImage has the brain's reply before it, and
@@ -312,9 +325,6 @@ func forkPhotoRemember(msgs []openai.ChatCompletionMessage, answer, esn string, 
 		logger.Println("myvector vision: interrupted, turn not remembered")
 		return true
 	default:
-	}
-	if answer != "" {
-		forkPhotos.Answered(esn, forkNow()) // F2 freshness, F6 listen
 	}
 	n := len(msgs) - 1 // the image
 	brain := n > 0 && msgs[n-1].Role == openai.ChatMessageRoleAssistant
