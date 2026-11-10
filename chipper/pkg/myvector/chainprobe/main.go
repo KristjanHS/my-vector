@@ -5,7 +5,8 @@
 //
 // c.json: {"lang":"et-EE","history":[{"user":…,"assistant":…}],"turns":["ja.","mida?"]}. Each rep starts from the
 // history alone; -chained remembers each turn's own reply before the next turn. Arms: 0 = as saved; S = -temp, -topp
-// (default 0.4, 0.9: routeprobe's S); Q = the saved ollama template without "Now and then ask a question back.";
+// (default 0.4, 0.9: routeprobe's S, now the apertus family's own, so for apertus only a non-default S differs from
+// arm 0); Q = the saved ollama template without "Now and then ask a question back.";
 // P = the saved ollama template with lineP (no speaking as the person, no invented past) right after that line;
 // E = the et EstLLM brain. Like routeprobe, nothing under secrets/server/ is written (temp copies), web search is off.
 package main
@@ -48,18 +49,20 @@ type chain struct {
 }
 
 type line struct {
-	Arm    string `json:"arm"`
-	Rep    int    `json:"rep"`
-	Turn   int    `json:"turn"`
-	Ask    string `json:"ask"`
-	Reply  string `json:"reply"`
-	Raw    string `json:"raw"`
-	Finish string `json:"finish"`
-	Target string `json:"target"`
-	Prompt int    `json:"prompt_tokens"`
-	Hist   int    `json:"history_msgs"`
-	Ms     int64  `json:"ms"`
-	Err    string `json:"err,omitempty"`
+	Arm    string  `json:"arm"`
+	Temp   float32 `json:"temp,omitempty"`
+	TopP   float32 `json:"top_p,omitempty"`
+	Rep    int     `json:"rep"`
+	Turn   int     `json:"turn"`
+	Ask    string  `json:"ask"`
+	Reply  string  `json:"reply"`
+	Raw    string  `json:"raw"`
+	Finish string  `json:"finish"`
+	Target string  `json:"target"`
+	Prompt int     `json:"prompt_tokens"`
+	Hist   int     `json:"history_msgs"`
+	Ms     int64   `json:"ms"`
+	Err    string  `json:"err,omitempty"`
 }
 
 var tmp string
@@ -71,10 +74,10 @@ func main() {
 	reps := flag.Int("reps", 1, "reps per arm")
 	brain := flag.String("brain", "", "provider:model for the chain language's profile (not arm E)")
 	out := flag.String("out", "", "JSONL output file (appended)")
-	temp := flag.Float64("temp", 0.4, "arm S temperature")
-	topP := flag.Float64("topp", 0.9, "arm S top_p")
+	temp := flag.Float64("temp", 0.4, "arm S temperature, > 0 (0 would fall back to the Modelfile value)")
+	topP := flag.Float64("topp", 0.9, "arm S top_p, in (0, 1]")
 	flag.Parse()
-	if *chainFile == "" || *out == "" || *reps < 1 || *temp <= 0 || *topP <= 0 {
+	if *chainFile == "" || *out == "" || *reps < 1 || !(*temp > 0 && *temp < 10) || !(*topP > 0 && *topP <= 1) {
 		flag.Usage()
 		os.Exit(2)
 	}
@@ -167,6 +170,9 @@ func main() {
 				cancel()
 				l.Reply, l.Raw, l.Finish, l.Target = strings.Join(strings.Fields(res.Answer), " "), res.RawAnswer, res.Finish, res.Target
 				l.Prompt, l.Ms = res.Usage.PromptTokens, res.Dur.Milliseconds()
+				if arm == "S" {
+					l.Temp, l.TopP = float32(*temp), float32(*topP)
+				}
 				if err != nil {
 					l.Err = err.Error()
 				}
