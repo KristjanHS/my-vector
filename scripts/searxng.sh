@@ -18,13 +18,13 @@ up)
   docker rm -f "$NAME" >/dev/null 2>&1 || true
   docker run -d --name "$NAME" -e FORCE_OWNERSHIP=false -p "127.0.0.1:$PORT:8080" -v "$WORK:/etc/searxng" "$IMAGE" >/dev/null
   for _ in $(seq 30); do
-    if curl -sf -o /dev/null "http://127.0.0.1:$PORT/healthz"; then echo "searxng up on 127.0.0.1:$PORT"; exit 0; fi
+    if curl -sf -o /dev/null -m 2 "http://127.0.0.1:$PORT/healthz"; then echo "searxng up on 127.0.0.1:$PORT"; exit 0; fi
     sleep 1
   done
   echo "searxng did not answer in 30 s; docker logs $NAME" >&2; exit 1 ;;
 ensure)
   if curl -sf -o /dev/null -m 3 "http://127.0.0.1:$PORT/healthz"; then echo "searxng already up on 127.0.0.1:$PORT"; exit 0; fi
-  exec "$0" up ;;
+  exec timeout 90 "$0" up ;; # bounds an image pull or a stalled engine so make start always reaches wire-pod
 down) docker rm -f "$NAME" >/dev/null && echo "searxng down" ;;
 check) curl -sf "http://127.0.0.1:$PORT/search?q=tartu&format=json" | jq -e '.results|length>0' >/dev/null && echo "searxng ok" ;;
 status) docker ps --filter "name=^$NAME\$" --format '{{.Status}}  {{.Image}}' ;;

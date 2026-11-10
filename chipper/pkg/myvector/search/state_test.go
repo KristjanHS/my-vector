@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 )
 
 func TestQuota(t *testing.T) {
@@ -83,5 +86,24 @@ func TestStateCorruptFile(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
 		t.Fatal("temp file left behind")
+	}
+}
+
+// A config saved before Ollama web search was removed loads as auto, chains tavily then searxng, and Save drops the stale key.
+func TestLegacyOllamaConfig(t *testing.T) {
+	useConfig(t, `{"search":{"provider":"ollama","tavily_key":"T","ollama_key":"O"}}`)
+	c := LoadConfig()
+	var names []string
+	for _, p := range chain(c) {
+		names = append(names, p.Name())
+	}
+	if c.Provider != "" || strings.Join(names, ",") != "tavily,searxng" {
+		t.Fatalf("provider %q chain %v, want auto and tavily,searxng", c.Provider, names)
+	}
+	if err := Save(c); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(lang.Path()); strings.Contains(string(b), "ollama") {
+		t.Fatalf("saved config still names ollama: %s", b)
 	}
 }

@@ -38,6 +38,9 @@ func LoadConfig() Config {
 		json.Unmarshal(b, &f)
 	}
 	c := f.Search
+	if !slices.Contains(Providers, c.Provider) {
+		c.Provider = "" // a removed provider (ollama) or junk reads as auto
+	}
 	if strings.TrimSpace(c.SearxngURL) == "" {
 		c.SearxngURL = DefaultSearxngURL
 	}
