@@ -112,6 +112,25 @@ func TestForkPhotoFollowFallsThrough(t *testing.T) {
 	}
 }
 
+// F7: in a photo-armed listen "tee uus pilt" takes a new photo, its bytes in the vision chat.
+func TestForkPhotoFollowNew(t *testing.T) {
+	r := usePhotoRig(t)
+	photoAnswered(t, r)
+	if _, skip := forkBegin(followESN, true, "tee uus pilt"); skip {
+		t.Fatal("armed request skipped")
+	}
+	if !forkPhotoTurn(nil, followESN, true, "tee uus pilt") {
+		t.Fatal("new-photo ask not handled")
+	}
+	if c, _ := r.counts(); c != 2 {
+		t.Errorf("captures %d, want 2: a new-photo ask beats the kept photo", c)
+	}
+	fresh := base64.StdEncoding.EncodeToString([]byte{0xff, 0xd8, 0xff, 2})
+	if v := r.visionBodies(); len(v) != 2 || !strings.Contains(v[1], fresh) {
+		t.Errorf("vision chats %d, want 2, the last carrying capture 2's JPEG %s", len(v), fresh)
+	}
+}
+
 // F6: a non-photo arm clears the photo listen; a failed capture never listens; a brain-photo answer forces the
 // decider's NO to a listen.
 func TestForkPhotoFollowListen(t *testing.T) {
