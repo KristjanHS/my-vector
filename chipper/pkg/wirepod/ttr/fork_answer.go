@@ -95,7 +95,7 @@ func forkControl(robot *vector.Vector, ctx context.Context, stop chan bool, done
 	return nil
 }
 
-// forkEndKGLoop stops kgsim's searching-anim loop when start closed unsent: that loop stops only inside `for range start`.
+// forkEndKGLoop stops kgsim's forkWait loop when start closed unsent: that loop stops only inside `for range start`.
 func forkEndKGLoop(isKG bool, stopLooping *bool, ready chan bool) {
 	if isKG && !*stopLooping {
 		*stopLooping = true

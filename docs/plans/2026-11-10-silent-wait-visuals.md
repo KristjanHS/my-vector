@@ -45,8 +45,8 @@ Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS)
 - [x] Record results in this file's Today table, then put the W2/W3 decisions to the user.
 
 ### Stage 2: thinnest visible slice — KG wait silent
-- [ ] `fork_wait.go` with the W2 pick, KG path only; `kgsim.go` loop → `forkWait` (add to `scripts/upstream-drift.sh`).
-- [ ] Unit (fake robot): wait plays only `anim_avs_think_loop_01`, never `anim_knowledgegraph_searching_01`, and stops before getout, on the error path and on interrupt.
+- [x] `fork_wait.go` with the W2 pick, KG path only; `kgsim.go` loop → `forkWait` (add to `scripts/upstream-drift.sh`).
+- [x] Unit (fake robot): wait plays only `anim_avs_think_loop_01`, never `anim_knowledgegraph_searching_01`, and stops before getout, on the error path and on interrupt.
 - [ ] `make check`; commit; user ships (`make ship`).
 
 ### Stage 2b: firmware `0022` (W2-C, W10)
