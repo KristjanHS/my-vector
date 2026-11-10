@@ -8,16 +8,14 @@ vision model, with no new capture.
 | F1 | Keep the last photo per robot: JPEG bytes + capture time + its lang; replaced by every capture | new `chipper/pkg/myvector/photo` store, set in `forkPhotoCapture` |
 | F2 | Fresh = last photo answer (new or reused) ≤ 120 s ago (`photo.Keep`), so a follow-up chain keeps the photo; stale or absent → today's path, no reuse | same store |
 | F6 | Every photo answer (phrase, reuse, brain `getImage`) that was spoken listens again under `forkMax`; failed capture / V8 / interrupt → no listen. An utterance heard in a photo-armed listen goes to F4 even without an F3 word | `forkPhotoTurn` calls `forkFollowUp` (`fork_followup.go`); an intent-graph-handled request ends the chain and the photo listen |
-| F3 | Follow-up = utterance names the picture: et `pilt/pildi/pildil/pildile/pildilt/pildis/foto/fotol/fotolt/fotos`, en `picture/photo/image`, whole words via `forkPhotoWords`; a photo phrase (`forkPhotoAsk`), a take verb (`tee`/`take`) or `uus`/`new`/`another` + an F3 word, or `pildista` alone takes a NEW photo — also inside a photo-armed listen, where it beats F6's reuse | `fork_vision.go` beside `forkPhotoAsk` |
+| F3 | Follow-up = utterance names the picture: et `pilt/pildi/pildil/pildile/pildilt/pildis/foto/fotol/fotolt/fotos`, en `picture/photo/image`, whole words via `forkPhotoWords`; a photo phrase (`forkPhotoAsk`) still takes a NEW photo |
+| F7 | OPEN — a take verb (`tee`/`take`) or `uus`/`new`/`another` + an F3 word, or `pildista` alone ("tee uus pilt") takes a NEW photo, also inside a photo-armed listen where it beats F6's reuse | `forkPhotoTurn` branch order, `fork_vision.go` | `fork_vision.go` beside `forkPhotoAsk` |
 | F4 | Fresh + follow-up → `forkPhotoShot` with param `kept`: "Vaatan." stays, no countdown/mirror/shutter; same relay, same `forkPhotoRemember` | `DoGetImage` capture block → `forkPhotoCapture` (one hook, `upstream-drift.sh`) |
-| R1 | OPEN — review of f52c352, I1: an intent-graph-handled request does `forkChain.Reset` + `forkPhotos.TakeListen`; `forkBegin`'s skip paths clear the listen too | fork hook on `IntentPass` → `forkCaptureIntent`; `fork_followup.go` |
-| R2 | OPEN — I3: `forkPhotos.Answered` happens before `isDone = true` and `forkPhotoWake` at DoGetImage's stream EOF | fork-marked lines in `kgsim_cmds.go` |
-| R3 | OPEN — `photoBot` returns per-capture-distinct bytes; reuse tests assert the vision body carries the FIRST capture's base64 | `fork_photo_follow_test.go`, `fork_vision_test.go` |
 | F5 | The relay trace of a photo whose bytes equal the previous one notes "reused photo from <stamp>" | `relay.Trace.savePhoto` |
 
 Falsifiers:
 - `go test ./pkg/wirepod/ttr -run 'PhotoFollow'` (from chipper/): fresh+follow-up → one vision chat carrying the stored bytes, zero `CaptureSingleImage`; stale → no reuse; photo phrase → new capture.
 - Replay: `robot/work/vision-trace/20261110-173339.367` + `expected.md` (mat = left edge, on the floor) — do not re-read the photo.
 - `go test ./pkg/wirepod/ttr -run 'PhotoFollow'`: a photo turn whose reply has no "?" still listens again; the heard utterance (no F3 word) reuses the photo.
-- `go test ./pkg/wirepod/ttr -run 'PhotoFollow'`: in a photo-armed listen "tee uus pilt" → captures +1; an intent-graph-handled listen utterance, then a wake-word "kus on tass?" → no reuse.
+- F7: `go test ./pkg/wirepod/ttr -run 'PhotoFollow'`: in a photo-armed listen "tee uus pilt" → captures +1, the new bytes in the vision chat.
 - Live (USER): "mida sa näed", then — no wake word, while he listens — "kus pildi peal asub rulli keeratud joogamatt?" → no countdown, answer says left.
