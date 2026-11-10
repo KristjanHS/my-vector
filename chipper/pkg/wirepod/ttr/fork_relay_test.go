@@ -202,7 +202,8 @@ func TestForkCameraRelay(t *testing.T) {
 			}
 		}
 		if !strings.Contains(hop1, `"model":"`+llm.DefaultVisionET+`"`) || !strings.Contains(hop1, `"text":"What colour is the cup?"`) ||
-			!strings.Contains(hop1, prompt.SpeechBlock(prompt.Ollama)) || strings.Contains(hop1, prompt.LangLine(prompt.OllamaEt, lang.Estonian)) {
+			!strings.Contains(hop1, prompt.SpeechBlock(prompt.Ollama)) || strings.Contains(hop1, prompt.LangLine(prompt.OllamaEt, lang.Estonian)) ||
+			!strings.Contains(hop1, prompt.PhotoLine(prompt.Ollama)) || strings.Contains(hop1, "takes a photo") || strings.Contains(hop1, "mis värvi on tass?") {
 			t.Errorf("%s: hop 1 %s", c.name, hop1)
 		}
 		chats := 0
