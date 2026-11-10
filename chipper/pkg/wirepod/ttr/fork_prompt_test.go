@@ -227,7 +227,7 @@ func TestForkCommandsSample(t *testing.T) {
 		t.Errorf("prompt.SampleEmotions drifted from playAnimationWI ParamChoices %q", byName["playAnimationWI"].ParamChoices)
 	}
 	for _, brain := range prompt.Brains {
-		block := forkCommands(brain)
+		block := forkCommands(brain, false)
 		offered := map[string]bool{}
 		for _, m := range regexp.MustCompile(`\{\{([\pL\w]+)\|\|([\pL\w]+)\}\}`).FindAllStringSubmatch(block, -1) {
 			name, param := m[1], m[2]
@@ -253,13 +253,13 @@ func TestForkCommandsSample(t *testing.T) {
 		}
 		for _, save := range []bool{true, false} {
 			vars.APIConfig.Knowledge.SaveChat = save
-			if offered["newVoiceRequest"] || strings.Contains(forkCommands(brain), "newVoiceRequest") {
+			if offered["newVoiceRequest"] || strings.Contains(forkCommands(brain, false), "newVoiceRequest") {
 				t.Errorf("%s save_chat %v: block offers newVoiceRequest (F5: forkFollowUp listens again)", brain, save)
 			}
 		}
 	}
 	vars.APIConfig.Knowledge.CommandsEnable = false
-	if forkCommands(prompt.Claude) != "" {
+	if forkCommands(prompt.Claude, false) != "" {
 		t.Error("commands block rendered with CommandsEnable off")
 	}
 }
