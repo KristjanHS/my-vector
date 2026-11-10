@@ -1,6 +1,7 @@
 #!/bin/bash
 # PostToolUse Write|Edit: gofmt -w the one .go file just written — never a package (`go fmt ./pkg/...` churns upstream files).
 # Skipped when the file's HEAD copy isn't gofmt-clean (upstream), so its diff stays only the edit (ruff-check.sh baseline rule).
+# Misses Bash/sed edits and fork files committed unformatted: make check runs scripts/tests/gofmt.sh for those.
 in=$(cat)
 f=$(jq -r '.tool_input.file_path // empty' <<<"$in")
 [[ "$f" == *.go && -f "$f" ]] || exit 0
@@ -14,5 +15,5 @@ fi
 before=$(sha1sum <"$f")
 "$gofmt" -w "$f" 2>/dev/null || exit 0
 [[ $(sha1sum <"$f") == "$before" ]] && exit 0
-jq -n --arg f "$f" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: "gofmt -w reformatted \($f); Read it before the next Edit."}}'
+jq -n --arg f "$f" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: "gofmt -w reformatted \($f)"}}'
 exit 0
