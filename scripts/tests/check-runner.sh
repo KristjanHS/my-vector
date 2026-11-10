@@ -2,7 +2,7 @@
 # Host test of scripts/lib/check-runner.sh (make check): green prints in queue order; a failure prints its log and kills the rest.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$here/../../../.git")")
+main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$here/../../.git")")
 tmp=$(mktemp -d "$main/robot/work/check-runner-test.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 die() { echo "FAIL: check-runner host test: $*" >&2; exit 1; }
