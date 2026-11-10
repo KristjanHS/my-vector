@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace), then in parallel (scripts/lib/check-runner.sh: first failure stops the rest) scripts/tests/{guard,check-runner}.sh, firmware static checks (check-static.sh), patch 0010 + 0011 + 0016 + 0017 host tests (tests/pc-voice.sh, tests/nap.sh, tests/mic-stream.sh, tests/silent-start.sh) + smoke logcheck (tests/logcheck.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey,logkeep}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + robot/netguard/tests/{rules,hosts,apply}.sh + scripts/tests/secrets.sh, go vet + Fork tests of the patched sdkapp,
+# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace), then in parallel (scripts/lib/check-runner.sh: first failure stops the rest) scripts/tests/{guard,check-runner}.sh, firmware static checks (check-static.sh), patch 0010 + 0011 + 0016 + 0017 host tests (tests/pc-voice.sh, tests/nap.sh, tests/mic-stream.sh, tests/silent-start.sh) + smoke logcheck (tests/logcheck.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey,logkeep}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + robot/netguard/tests/{rules,hosts,apply}.sh + scripts/tests/secrets.sh + scripts/tests/gofmt.sh (fork Go files gofmt-clean) + gofmt-host.sh, go vet + Fork tests of the patched sdkapp,
 # chipper myvector + vars + localization fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir), tts + stt pytest (when each venv exists).
 # Usage: check.sh [--head [rev]]   --head checks only that commit (default HEAD) via a git archive copy;
 #   make ship passes its pinned sha so the checked commit is the one it ships.
@@ -61,6 +61,8 @@ opt secrets "$dir"/scripts/tests/secrets.sh "$repo" "${head[@]}" ${head[0]:+"$di
 opt quiet-guard "$dir"/robot/quiet/tests/guard.sh
 opt quiet-scan "$dir"/robot/quiet/tests/scan.sh
 opt check-runner "$dir"/scripts/tests/check-runner.sh
+opt gofmt "$dir"/scripts/tests/gofmt.sh "$repo" "${head[@]}" ${head[0]:+"$dir"}
+opt gofmt-host "$dir"/scripts/tests/gofmt-host.sh
 job go-sdkapp sh -c 'cd "$1/chipper" && go vet ./pkg/wirepod/sdkapp/ && go test -run Fork ./pkg/wirepod/sdkapp/' sh "$dir"
 if [[ -d $dir/chipper/pkg/myvector ]]; then job go-myvector gotest ./pkg/myvector/...; fi
 if [[ -f $dir/chipper/pkg/vars/fork_intents_test.go ]]; then job go-vars gotest -run Fork ./pkg/vars/; fi
