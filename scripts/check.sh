@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace), then in parallel (scripts/lib/check-runner.sh: first failure stops the rest) scripts/tests/{guard,check-runner}.sh, firmware static checks (check-static.sh), patch 0010 + 0011 + 0016 + 0017 host tests (tests/pc-voice.sh, tests/nap.sh, tests/mic-stream.sh, tests/silent-start.sh) + smoke logcheck (tests/logcheck.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey,logkeep}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + robot/netguard/tests/{rules,hosts,apply}.sh + robot/tailscale/tests/fetch.sh + scripts/tests/secrets.sh + scripts/tests/gofmt.sh (fork Go files gofmt-clean) + gofmt-host.sh, go vet + Fork tests of the patched sdkapp,
+# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace), then in parallel (scripts/lib/check-runner.sh: first failure stops the rest) scripts/tests/{guard,check-runner}.sh, firmware static checks (check-static.sh), patch 0010 + 0011 + 0016 + 0017 host tests (tests/pc-voice.sh, tests/nap.sh, tests/mic-stream.sh, tests/silent-start.sh) + smoke logcheck (tests/logcheck.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey,logkeep}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + robot/netguard/tests/{rules,hosts,apply}.sh + robot/tailscale/tests/{fetch,soak}.sh + scripts/tests/secrets.sh + scripts/tests/gofmt.sh (fork Go files gofmt-clean) + gofmt-host.sh, go vet + Fork tests of the patched sdkapp,
 # chipper myvector + vars + localization fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir), tts + stt pytest (when each venv exists).
 # Usage: check.sh [--head [rev]]   --head checks only that commit (default HEAD) via a git archive copy;
 #   make ship passes its pinned sha so the checked commit is the one it ships.
@@ -57,7 +57,7 @@ opt hostkey "$dir"/robot/hostkey/tests/apply.sh
 opt logkeep "$dir"/robot/logkeep/tests/apply.sh
 for t in mkcert apply interlock; do opt "epod-$t" "$dir/robot/epod/tests/$t.sh"; done
 for t in rules hosts apply; do opt "netguard-$t" "$dir/robot/netguard/tests/$t.sh"; done
-opt tailscale-fetch "$dir"/robot/tailscale/tests/fetch.sh
+for t in fetch soak; do opt "tailscale-$t" "$dir/robot/tailscale/tests/$t.sh"; done
 opt secrets "$dir"/scripts/tests/secrets.sh "$repo" "${head[@]}" ${head[0]:+"$dir"}
 opt quiet-guard "$dir"/robot/quiet/tests/guard.sh
 opt quiet-scan "$dir"/robot/quiet/tests/scan.sh
