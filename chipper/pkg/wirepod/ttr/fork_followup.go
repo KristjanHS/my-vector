@@ -21,6 +21,8 @@ var (
 	forkChain         followup.Chain
 	forkDecider       = forkDecide
 	forkFire          = func(robot *vector.Vector) { go DoNewRequest(robot) }
+	// forkNoAudio ends a dropped intent-graph turn as a blank transcript does (preqs/intent_graph.go).
+	forkNoAudio = func(req interface{}) { IntentPass(req, "intent_system_noaudio", "", map[string]string{}, false) }
 )
 
 // forkTurn carries one request's decider channel (nil = no decider) from its stream goroutine to its speak loop.
@@ -48,10 +50,10 @@ func forkAfterReply(turn forkTurn, esn string, isKG bool, ask, reply string) {
 }
 
 // forkBegin runs as StreamingKGSim starts: a knowledge request consumes an armed follow-up (F2), any other
-// request resets the chain; a blank one, an armed one STT scored as no speech, or a quiet/listen phrase
-// (forkKGSwitch) ends it and skips the LLM call (B1). turn is this request's forkTurn. A skipped knowledge request
-// takes no forkBControl, so each skip cuts streamingKG's placeholder or the robot speaks it ("bla bla bla").
-func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
+// request resets the chain; a blank one, one STT scored as no speech (armed ≥ NoSpeech, unarmed ≥ WakeNoSpeech), or
+// a quiet/listen phrase (forkKGSwitch) ends it and skips the LLM call (B1). turn is this request's forkTurn. A skipped
+// knowledge request takes no forkBControl, so each skip cuts streamingKG's placeholder or the robot speaks it ("bla bla bla").
+func forkBegin(req interface{}, esn string, isKG bool, text string) (turn forkTurn, skip bool) {
 	turn = make(forkTurn, 1)
 	defer func() { // a skipped request ends a photo-armed listen too (F6)
 		if skip {
@@ -63,6 +65,11 @@ func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
 	switch {
 	case !isKG:
 		forkChain.Reset(esn)
+		if p >= followup.WakeNoSpeech { // silent-wake-gate S2
+			logger.Println("myvector: stt no-speech " + strconv.FormatFloat(p, 'f', 3, 64) + ", silent wake, dropped")
+			forkNoAudio(req)
+			return turn, true
+		}
 	case strings.TrimSpace(text) == "":
 		forkChain.Reset(esn)
 		logger.Println("myvector: follow-up blank, chain ends")
@@ -73,9 +80,13 @@ func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
 		logger.Println("myvector: follow-up switch phrase, chain ends")
 		return turn, true
 	default:
-		if forkChain.Begin(esn, forkNow()) && p >= followup.NoSpeech {
+		if armed := forkChain.Begin(esn, forkNow()); armed && p >= followup.NoSpeech || !armed && p >= followup.WakeNoSpeech {
 			forkChain.Reset(esn)
-			logger.Println("myvector: stt no-speech " + strconv.FormatFloat(p, 'f', 3, 64) + ", blank, chain ends")
+			what := ", blank, chain ends"
+			if !armed {
+				what = ", silent wake, dropped" // silent-wake-gate S5
+			}
+			logger.Println("myvector: stt no-speech " + strconv.FormatFloat(p, 'f', 3, 64) + what)
 			forkKGSilence(esn)
 			return turn, true
 		}
