@@ -67,6 +67,10 @@ r=$(fresh nokey)
 out=$(run "$r" "$tmp/none") || die "no key: $out"
 [[ $out == *"WARN: tailscale: not logged in"* && $(calls "$r") != *up* ]] || die "no key + logged out: out=[$out] calls=[$(calls "$r")]"
 for l in 'After=network-pre.target myvector-netguard.service' 'RequiresMountsFor=/data' 'After=mount-data.service' 'Restart=on-failure' 'WantedBy=multi-user.target' \
+  "ExecStartPre=/bin/sh -c 'iptables -C OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null || iptables -I OUTPUT -o tailscale0 -j ACCEPT'" \
+  "ExecStartPre=/bin/sh -c 'ip6tables -C OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null || ip6tables -I OUTPUT -o tailscale0 -j ACCEPT'" \
+  "ExecStopPost=-/bin/sh -c 'while iptables -D OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null; do :; done'" \
+  "ExecStopPost=-/bin/sh -c 'while ip6tables -D OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null; do :; done'" \
   'ExecStart=/data/myvector/tailscale/tailscaled --statedir=/data/myvector/tailscale/state/ --socket=/run/tailscale/tailscaled.sock --port=41641 --tun=tailscale0'; do
   grep -qxF -- "$l" "$r/$unit" || die "unit lacks [$l]: $(cat "$r/$unit")"
 done
