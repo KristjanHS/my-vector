@@ -54,9 +54,19 @@ func TestForkPhotoAsk(t *testing.T) {
 		row{lang.Estonian, "tee\u0331 pilt", false},     // e + macron below has no composed form: the mark stays in its word
 		row{lang.Estonian, "Vektor, vaata siia", true},
 		row{lang.Estonian, "hei vektor, vaata siia", true},
+		row{lang.Estonian, "Tee uus pilt!", true}, // F7
+		row{lang.Estonian, "tee uue pildi", true},
+		row{lang.Estonian, "uue pildi palun", true},
+		row{lang.Estonian, "Pildista!", true},
+		row{lang.Estonian, "kas sa saad pildistada?", true},
+		row{lang.English, "Take another picture.", true},
+		row{lang.Estonian, "kus pildil joogamatt on?", false},
+		row{lang.Estonian, "mis veel pildil on?", false},
+		row{lang.Estonian, "tee mulle kohvi", false},
+		row{lang.English, "what is new today", false},
 	)
-	if len(rows) != 3*10+14 {
-		t.Fatalf("%d rows, want 44 (10 phrases × 3 + 14)", len(rows))
+	if len(rows) != 3*10+24 {
+		t.Fatalf("%d rows, want 54 (10 phrases × 3 + 24)", len(rows))
 	}
 	for _, r := range rows {
 		if got := forkPhotoAsk(r.l, r.text); got != r.hit {
