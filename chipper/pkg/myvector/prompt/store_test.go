@@ -50,7 +50,7 @@ func TestRenderAppendsMissing(t *testing.T) {
 		t.Errorf("default flagged: %v", appended)
 	}
 	_, _ = useStore(t)
-	if err := Save(Ollama, ptr("Be brief."), nil); err != nil {
+	if err := Save(Ollama, ptr("Be brief."), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if live := Load().Live(Ollama); !strings.Contains(live, "{commands}") {
@@ -59,7 +59,7 @@ func TestRenderAppendsMissing(t *testing.T) {
 }
 
 func TestValidateBudget(t *testing.T) {
-	for _, b := range []string{Claude, Ollama} {
+	for _, b := range Brains {
 		if err := Validate(b, Default(b), strings.Repeat("a", AboutCap)); err != nil {
 			t.Errorf("%s default with a full about-me: %v", b, err)
 		}
@@ -72,20 +72,86 @@ func TestValidateBudget(t *testing.T) {
 
 func TestAboutCap(t *testing.T) {
 	_, logs := useStore(t)
-	if err := Save(Claude, nil, ptr(strings.Repeat("ä", AboutCap))); err != nil {
+	if err := Save(Claude, nil, ptr(strings.Repeat("ä", AboutCap)), nil); err != nil {
 		t.Errorf("at cap: %v", err)
 	}
-	if err := Save(Claude, nil, ptr(strings.Repeat("ä", AboutCap+1))); err == nil {
+	if err := Save(Claude, nil, ptr(strings.Repeat("ä", AboutCap+1)), nil); err == nil {
 		t.Error("over cap accepted")
 	}
-	if got := Load().User(); !strings.HasPrefix(got, "About the person you are talking with:\n") {
+	if got := Load().User(Claude); !strings.HasPrefix(got, "About the person you are talking with:\n") {
 		t.Errorf("user block = %q", got)
 	}
-	if got := (Store{About: strings.Repeat("a", AboutCap+1)}).User(); got != "" || len(*logs) != 1 {
+	if got := (Store{About: strings.Repeat("a", AboutCap+1)}).User(Claude); got != "" || len(*logs) != 1 {
 		t.Errorf("hand-edited over-cap about: block %q, logs %v", got, *logs)
 	}
 	if UserBlock("  ") != "" {
 		t.Error("empty about rendered a block")
+	}
+}
+
+// R8/R9: only ollama-et renders AboutEt, under the Estonian heading; empty AboutEt falls back to About.
+func TestAboutEtOllamaEtOnly(t *testing.T) {
+	_, logs := useStore(t)
+	if err := Save(OllamaEt, nil, ptr("Mari"), ptr(" Mari elab Tartus. ")); err != nil {
+		t.Fatal(err)
+	}
+	s := Load()
+	if got := s.User(OllamaEt); got != "Inimene, kellega räägid:\nMari elab Tartus." {
+		t.Errorf("ollama-et user block = %q", got)
+	}
+	for _, b := range []string{Claude, Ollama} {
+		if got := s.User(b); got != "About the person you are talking with:\nMari" {
+			t.Errorf("%s user block = %q", b, got)
+		}
+	}
+	if err := Save(Claude, nil, nil, ptr("")); err != nil {
+		t.Fatal(err)
+	}
+	if got := Load().User(OllamaEt); got != "About the person you are talking with:\nMari" {
+		t.Errorf("empty AboutEt: ollama-et user block = %q", got)
+	}
+	if Save(OllamaEt, nil, nil, ptr(strings.Repeat("ä", AboutCap+1))) == nil {
+		t.Error("over-cap AboutEt accepted")
+	}
+	over := Store{About: "Mari", AboutEt: strings.Repeat("a", AboutCap+1)}
+	if got := over.User(OllamaEt); got != UserBlock("Mari") || len(*logs) != 1 {
+		t.Errorf("hand-edited over-cap AboutEt: block %q, logs %v", got, *logs)
+	}
+}
+
+// Save validates only the brains whose {user} block changes, each with its own block.
+func TestSaveAboutScope(t *testing.T) {
+	path, _ := useStore(t)
+	os.WriteFile(path, []byte(`{"templates":{"claude":"Hi {weather}"}}`), 0o600)
+	if err := Save(OllamaEt, nil, nil, ptr("Mari")); err != nil {
+		t.Errorf("AboutEt change validated claude's broken template: %v", err)
+	}
+	if err := Save(OllamaEt, nil, ptr("Mari"), nil); err == nil || !strings.Contains(err.Error(), "saved claude template") {
+		t.Errorf("About change skipped claude: err = %v", err)
+	}
+	os.WriteFile(path, []byte(`{"about_et":"Mari"}`), 0o600)
+	full := Default(OllamaEt) + "\n"
+	for validate(OllamaEt, full+"x", UserBlockEt("Mari")) == nil { // pad to the budget's edge
+		full += "x"
+	}
+	if err := Save(OllamaEt, &full, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	long := strings.Repeat("a", AboutCap)
+	if err := Save(Claude, nil, ptr(long), nil); err != nil {
+		t.Errorf("About change blocked though ollama-et renders AboutEt: %v", err)
+	}
+	for name, et := range map[string]string{"long AboutEt": long, "cleared AboutEt (falls back to the long About)": ""} {
+		err := Save(Claude, nil, nil, &et)
+		if !errors.As(err, new(Invalid)) || !strings.Contains(err.Error(), "saved ollama-et template") {
+			t.Errorf("%s over ollama-et's budget: err = %v", name, err)
+		}
+	}
+	if s := Load(); s.AboutEt != "Mari" || s.About != long {
+		t.Errorf("a rejected save wrote: about_et %q", s.AboutEt)
+	}
+	if err := Save(Claude, nil, nil, ptr("Mai")); err != nil {
+		t.Errorf("AboutEt change checked against the long About, not its own block: %v", err)
 	}
 }
 
@@ -111,11 +177,11 @@ func TestLoadFallback(t *testing.T) {
 func TestVersionsKeepFive(t *testing.T) {
 	_, _ = useStore(t)
 	for i := 0; i < 7; i++ {
-		if err := Save(Claude, ptr(fmt.Sprintf("v%d", i)), nil); err != nil {
+		if err := Save(Claude, ptr(fmt.Sprintf("v%d", i)), nil, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	Save(Claude, ptr("v6"), nil) // same as newest: no entry
+	Save(Claude, ptr("v6"), nil, nil) // same as newest: no entry
 	if got := strings.Join(Load().Versions[Claude], " "); got != "v6 v5 v4 v3 v2" {
 		t.Errorf("versions = %s", got)
 	}
@@ -133,9 +199,9 @@ func TestVersionsKeepFive(t *testing.T) {
 
 func TestReset(t *testing.T) {
 	_, _ = useStore(t)
-	Save(Claude, ptr("mine"), nil)
-	Save(Ollama, ptr("theirs"), nil)
-	Save(Claude, nil, ptr("Mari"))
+	Save(Claude, ptr("mine"), nil, nil)
+	Save(Ollama, ptr("theirs"), nil, nil)
+	Save(Claude, nil, ptr("Mari"), nil)
 	if err := Reset(Claude); err != nil {
 		t.Fatal(err)
 	}
@@ -145,11 +211,40 @@ func TestReset(t *testing.T) {
 	}
 }
 
+func TestSeedOllamaEt(t *testing.T) {
+	path, _ := useStore(t)
+	os.WriteFile(path, []byte(`{"templates":{"claude":"c","ollama":"o"},"versions":{"ollama":["o","o1"]}}`), 0o600)
+	s := Load() // no anchor in "o": seeded as is
+	if s.Templates[OllamaEt] != "o" || strings.Join(s.Versions[OllamaEt], " ") != "o o1" || s.Templates[Ollama] != "o" {
+		t.Fatalf("seeded: %+v", s)
+	}
+	os.WriteFile(path, []byte(`{"templates":{"ollama":"Hi. `+singAnchor+` Bye."}}`), 0o600)
+	if s = Load(); s.Templates[OllamaEt] != "Hi. "+singAnchor+" "+SingEt+" Bye." || len(s.Versions[OllamaEt]) != 1 {
+		t.Fatalf("seeded: %+v", s)
+	}
+	if err := Save(Claude, ptr("c2"), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); !strings.Contains(string(b), `"ollama-et"`) {
+		t.Fatalf("seed not persisted by the next write: %s", b)
+	}
+	if err := Reset(OllamaEt); err != nil {
+		t.Fatal(err)
+	}
+	if s := Load(); s.Live(OllamaEt) != Default(OllamaEt) || len(s.Versions[OllamaEt]) != 1 {
+		t.Errorf("reset ollama-et re-seeded: %+v", s)
+	}
+	os.WriteFile(path, []byte(`{"templates":{"ollama":"o","ollama-et":"e"}}`), 0o600)
+	if s := Load(); s.Templates[OllamaEt] != "e" {
+		t.Errorf("saved ollama-et overwritten by the seed: %+v", s)
+	}
+}
+
 func TestCorruptStoreNotOverwritten(t *testing.T) {
 	path, _ := useStore(t)
 	writes := map[string]func() error{
-		"Save":       func() error { return Save(Claude, ptr("Hi."), nil) },
-		"Save about": func() error { return Save(Claude, nil, ptr("Mari")) },
+		"Save":       func() error { return Save(Claude, ptr("Hi."), nil, nil) },
+		"Save about": func() error { return Save(Claude, nil, ptr("Mari"), nil) },
 		"Reset":      func() error { return Reset(Claude) },
 		"Restore":    func() error { return Restore(Claude, 0) },
 	}
@@ -170,7 +265,7 @@ func TestCorruptStoreNotOverwritten(t *testing.T) {
 // Every tag renders at least as long in et-EE as in en-US, so only an Estonian-only overrun is constructible.
 func TestValidateBudgetBothLanguages(t *testing.T) {
 	render := func(tmpl, l string) string {
-		v := Sample(l)
+		v := Sample(Ollama, l)
 		v.User = ""
 		return Render(tmpl, v)
 	}

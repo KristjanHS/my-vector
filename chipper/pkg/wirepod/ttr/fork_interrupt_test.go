@@ -36,10 +36,10 @@ func (s *eventStream) Recv() (*vectorpb.EventResponse, error) {
 func TestForkInterruptEnds(t *testing.T) {
 	base := runtime.NumGoroutine()
 	fake := &eventBot{recvErr: make(chan error, 1)}
-	bot, end := forkInterruptBot(&vector.Vector{Conn: fake})
 	stop, stopStop := make(chan bool), make(chan bool, 1)
+	bot, istop, end := forkInterruptBot(&vector.Vector{Conn: fake}, stop)
 	done := make(chan bool)
-	go func() { done <- InterruptKGSimWhenTouchedOrWaked(bot, stop, stopStop) }()
+	go func() { done <- InterruptKGSimWhenTouchedOrWaked(bot, istop, stopStop) }()
 
 	select {
 	case <-done:
@@ -65,5 +65,29 @@ func TestForkInterruptEnds(t *testing.T) {
 	}
 	if n := runtime.NumGoroutine(); n > base {
 		t.Fatalf("goroutines = %d, baseline %d", n, base)
+	}
+}
+
+func TestForkInterruptCutsSpeech(t *testing.T) {
+	robot := &vector.Vector{}
+	stop := make(chan bool)
+	_, istop, end := forkInterruptBot(robot, stop)
+	defer end()
+	speak := forkSpeakCtx(robot)
+	if speak.Err() != nil {
+		t.Fatal("speech cut before an interrupt")
+	}
+	istop <- true
+	select {
+	case <-stop:
+	case <-time.After(2 * time.Second):
+		t.Fatal("interrupt never reached stop")
+	}
+	if !errors.Is(speak.Err(), context.Canceled) {
+		t.Fatalf("speak ctx err = %v after interrupt, want context.Canceled", speak.Err())
+	}
+	end()
+	if forkSpeakCtx(robot).Err() != nil {
+		t.Fatal("speak ctx still cut after the answer ended")
 	}
 }

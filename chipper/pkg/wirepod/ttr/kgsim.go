@@ -192,7 +192,8 @@ func CreateAIReq(transcribedText, esn string, gpt3tryagain, isKG bool) openai.Ch
 }
 
 func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bool) (string, error) {
-	turn, skip := forkBegin(esn, isKG, transcribedText) // my-vector: follow-up chain count; a blank follow-up ends it (fork_followup.go)
+	turn, skip := forkBegin(esn, isKG, transcribedText)           // my-vector: follow-up chain count; a blank follow-up ends it (fork_followup.go)
+	skip = skip || forkPhotoTurn(req, esn, isKG, transcribedText) // my-vector: a photo phrase runs the camera turn, no brain hop (fork_vision.go)
 	if skip {
 		return "", nil
 	}
@@ -415,11 +416,11 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 		defer forkBControl(robot, ctx, start, stop, esn)() // my-vector: one answer per robot, a second waits (fork_answer.go)
 	}
 	interrupted := false
-	ibot, endInterrupt := forkInterruptBot(robot) // my-vector: the interrupter's stream and stopStop rangers end with the answer (fork_interrupt.go)
+	ibot, istop, endInterrupt := forkInterruptBot(robot, stop) // my-vector: the interrupter's stream and stopStop rangers end with the answer; its stop cuts the speech (fork_interrupt.go)
 	defer close(stopStop)
 	defer endInterrupt()
 	go func() {
-		interrupted = InterruptKGSimWhenTouchedOrWaked(ibot, stop, stopStop)
+		interrupted = InterruptKGSimWhenTouchedOrWaked(ibot, istop, stopStop)
 	}()
 	var TTSLoopAnimation string
 	var TTSGetinAnimation string

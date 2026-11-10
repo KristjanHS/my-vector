@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"unicode"
 
@@ -23,6 +24,12 @@ const (
 	DefaultETModel   = "gemma4:e4b-it-qat"
 	DefaultENModel   = DefaultETModel // en-US default too (user ruling 2026-11-09: qwen3.5 thinking unusable, gemma4 is the saved en model)
 	DefaultOllamaURL = "http://localhost:11434"
+	// DefaultVisionEN / DefaultVisionET: each language's local camera model when "vision" is unsaved (plan vision-setting D1).
+	DefaultVisionEN = "qwen3.5:4b"
+	DefaultVisionET = "qwen3.5:4b"
+	// NoVision is the family the camera never uses (2026-11-10-vision-et-prompt-bench.md (docs/plans/) D2): gemma4 sees
+	// less than qwen3.5 (en keywords 28–40 vs 42–53), writes broken Estonian and breaks {{command}} syntax.
+	NoVision         = "gemma4"
 	AnthropicVersion = "2023-06-01"
 	// ModelMax is the longest model name ValidModel takes, in characters.
 	ModelMax = 200
@@ -42,6 +49,7 @@ type Profile struct {
 // Config is the file's LLM keys; Profiles == nil means the page never saved them (legacy: wire-pod Knowledge + et_model).
 type Config struct {
 	Profiles      map[string]Profile
+	Vision        map[string]Profile // saved camera profiles; nil = unsaved (DefaultVision per language)
 	OllamaURL     string
 	ClaudeKey     string
 	LegacyETModel string
@@ -69,6 +77,7 @@ func IsOllama(kg KG) bool {
 func Load() Config {
 	var f struct {
 		LLM       map[string]Profile `json:"llm"`
+		Vision    map[string]Profile `json:"vision"`
 		OllamaURL string             `json:"ollama_url"`
 		ClaudeKey string             `json:"claude_key"`
 		ETModel   any                `json:"et_model"`
@@ -78,7 +87,12 @@ func Load() Config {
 	if err != nil || json.Unmarshal(b, &f) != nil {
 		return Config{}
 	}
-	c := Config{Profiles: f.LLM, OllamaURL: f.OllamaURL, ClaudeKey: f.ClaudeKey}
+	c := Config{Profiles: f.LLM, Vision: f.Vision, OllamaURL: f.OllamaURL, ClaudeKey: f.ClaudeKey}
+	for l, p := range c.Vision { // a pre-ban or hand-edited NoVision camera would fail every Save and show on the page
+		if !VisionAllowed(p.Model) {
+			delete(c.Vision, l)
+		}
+	}
 	if m, ok := f.ETModel.(string); ok {
 		c.LegacyETModel = m
 	}
@@ -175,18 +189,45 @@ func ResolveOllama(c Config, l string, kg KG, model string) (Target, bool) {
 	return Target{Ollama, u + "/v1", "ollama", model}, true
 }
 
-// ResolveVision is language l's camera Target: Resolve's, but et-EE on Ollama asks (same base) the en-US Ollama
-// model, else DefaultENModel (E26); false leaves the photo question on wire-pod's Knowledge.
+// DefaultVision is language l's local camera model.
+func DefaultVision(l string) string {
+	if l == lang.Estonian {
+		return DefaultVisionET
+	}
+	return DefaultVisionEN
+}
+
+// EffectiveVision is what the page shows: each language's saved camera profile or its local default.
+func EffectiveVision(c Config) map[string]Profile {
+	p := map[string]Profile{}
+	for _, l := range []string{lang.English, lang.Estonian} {
+		p[l] = Profile{Ollama, DefaultVision(l)}
+		if s, ok := c.Vision[l]; ok {
+			p[l] = s
+		}
+	}
+	return p
+}
+
+// ResolveVision is language l's camera Target: the saved "vision" profile (Claude needs the key, else the local
+// default), else DefaultVision on the Effective Ollama URL; false = legacy (nothing saved, Knowledge not Ollama).
 func ResolveVision(c Config, l string, kg KG) (Target, bool) {
-	t, ok := Resolve(c, l, kg)
-	if !ok || !t.Ollama() || l != lang.Estonian {
-		return t, ok
+	p, ok := EffectiveVision(c)[l]
+	if !ok || (c.Profiles == nil && c.Vision == nil && !IsOllama(kg)) {
+		return Target{}, false
 	}
-	t.Model = DefaultENModel
-	if p, _ := Effective(c, kg); p[lang.English].Provider == Ollama && p[lang.English].Model != "" {
-		t.Model = p[lang.English].Model
+	if p.Model == "" || (p.Provider != Ollama && p.Provider != Claude) || !VisionAllowed(p.Model) { // a hand edit Load does not validate
+		p = Profile{Ollama, DefaultVision(l)}
 	}
-	return t, true
+	if p.Provider == Claude && c.ClaudeKey != "" {
+		return Target{Claude, AnthropicBase + "/v1", c.ClaudeKey, p.Model}, true
+	}
+	if p.Provider == Claude {
+		logger.Println("myvector llm: " + l + " claude vision has no key — using " + DefaultVision(l))
+		p.Model = DefaultVision(l)
+	}
+	_, u := Effective(c, kg)
+	return Target{Ollama, u + "/v1", "ollama", p.Model}, true
 }
 
 // OllamaBase is t's Ollama root, for its native /api routes.
@@ -201,29 +242,47 @@ func NewClient(t Target) *openai.Client {
 	return openai.NewClientWithConfig(cfg)
 }
 
+// VisionAllowed reports whether model may be a camera model: not the NoVision family, matched on the name's last
+// path segment, any case or padding ("library/Gemma4:x").
+func VisionAllowed(model string) bool {
+	return !strings.HasPrefix(strings.ToLower(path.Base(strings.TrimSpace(model))), NoVision)
+}
+
 // Validate checks a Config for Save; Profiles must hold only supported languages.
 func Validate(c Config) error {
-	for l, p := range c.Profiles {
-		if !lang.Valid(l) {
-			return fmt.Errorf("llm: language %q: one of %v", l, lang.Supported)
-		}
-		if p.Provider != Ollama && p.Provider != Claude {
-			return fmt.Errorf("llm %s: provider %q: ollama or claude", l, p.Provider)
-		}
-		if strings.TrimSpace(p.Model) == "" {
-			return fmt.Errorf("llm %s: model is empty", l)
-		}
-		if err := ValidModel(p.Model); err != nil {
-			return fmt.Errorf("llm %s: %w", l, err)
-		}
-		if p.Provider == Claude && strings.TrimSpace(c.ClaudeKey) == "" {
-			return fmt.Errorf("llm %s: a Claude model needs a Claude key", l)
+	for kind, ps := range map[string]map[string]Profile{"llm": c.Profiles, "vision": c.Vision} {
+		for l, p := range ps {
+			if err := validProfile(c, l, p); err != nil {
+				return fmt.Errorf("%s %w", kind, err)
+			}
+			if kind == "vision" && !VisionAllowed(p.Model) {
+				return fmt.Errorf("vision %s: %s is not a camera model (%s is out)", l, p.Model, NoVision)
+			}
 		}
 	}
 	if err := ValidKey(c.ClaudeKey); err != nil {
 		return err
 	}
 	return ValidOllamaURL(c.OllamaURL)
+}
+
+func validProfile(c Config, l string, p Profile) error {
+	if !lang.Valid(l) {
+		return fmt.Errorf("language %q: one of %v", l, lang.Supported)
+	}
+	if p.Provider != Ollama && p.Provider != Claude {
+		return fmt.Errorf("%s: provider %q: ollama or claude", l, p.Provider)
+	}
+	if strings.TrimSpace(p.Model) == "" {
+		return fmt.Errorf("%s: model is empty", l)
+	}
+	if err := ValidModel(p.Model); err != nil {
+		return fmt.Errorf("%s: %w", l, err)
+	}
+	if p.Provider == Claude && strings.TrimSpace(c.ClaudeKey) == "" {
+		return fmt.Errorf("%s: a Claude model needs a Claude key", l)
+	}
+	return nil
 }
 
 // ValidKey: empty (unset) or, trimmed, 20–200 printable ASCII characters without whitespace.
@@ -256,7 +315,8 @@ func ValidOllamaURL(s string) error {
 	return nil
 }
 
-// Save validates c and writes "llm", "ollama_url" and "claude_key" together (the URL without a trailing / or /v1).
+// Save validates c and writes "llm", "ollama_url" and "claude_key" together (the URL without a trailing / or /v1),
+// and "vision" when c.Vision is not nil (nil keeps the saved one).
 func Save(c Config) error {
 	if err := Validate(c); err != nil {
 		return err
@@ -269,6 +329,14 @@ func Save(c Config) error {
 		ps[l] = Profile{p.Provider, strings.TrimSpace(p.Model)}
 	}
 	u := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(c.OllamaURL), "/"), "/v1")
+	kv := map[string]any{"llm": ps, "ollama_url": u, "claude_key": strings.TrimSpace(c.ClaudeKey)}
+	if c.Vision != nil {
+		vs := map[string]Profile{}
+		for l, p := range c.Vision {
+			vs[l] = Profile{p.Provider, strings.TrimSpace(p.Model)}
+		}
+		kv["vision"] = vs
+	}
 	defer clearCache()
-	return conf.Update(lang.Path(), map[string]any{"llm": ps, "ollama_url": u, "claude_key": strings.TrimSpace(c.ClaudeKey)})
+	return conf.Update(lang.Path(), kv)
 }

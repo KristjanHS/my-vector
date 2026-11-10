@@ -51,7 +51,7 @@ func render(rs []Result, runes int) string {
 // prompt.SearchBudget; "" when none fit.
 func Block(brain string, rs []Result) string {
 	n, runes := SnippetsClaude, runesClaude
-	if brain == prompt.Ollama {
+	if prompt.IsOllama(brain) {
 		n, runes = SnippetsOllama, runesOllama
 	}
 	if len(rs) > n {

@@ -57,12 +57,12 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 		ollama = t.Ollama()
 	}
 	llm.SamplingFor(provider, r.Model).Apply(&r)
-	brain := forkBrain(ollama)
+	brain := forkBrain(ollama, l)
 	long := isKG
 	if n := len(r.Messages); n > 0 && !long {
 		long = vars.ForkLongAsk(r.Messages[n-1].Content)
 	}
-	forkReplyCap(&r, ollama, long)
+	forkReplyCap(&r, ollama, long, brain)
 	if ollama {
 		cfg.Thinking(llm.Ollama, r.Model, llm.PathChat).Apply(&r, r.MaxTokens)
 	}
@@ -70,21 +70,10 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 		logger.Println("myvector: reply cap", prompt.LongReplyCap(brain), "(long ask)")
 	}
 	if len(r.Messages) > 0 && r.Messages[0].Role == openai.ChatMessageRoleSystem {
-		s := prompt.Load()
 		last := r.Messages[len(r.Messages)-1].Content
 		memory.MarkLLM(esn, last)
 		memory.Touch()
-		facts, diary := forkMemory(esn, last, brain)
-		r.Messages[0].Content = prompt.Render(s.Live(brain), prompt.Vars{
-			Now:      prompt.Now(l, forkNow(), forkBotZone(esn)),
-			Lang:     prompt.LangLine(l),
-			User:     s.User(),
-			Facts:    facts,
-			Diary:    diary,
-			Search:   forkSearch(last, l, brain, forkBotZone(esn)),
-			Speech:   prompt.SpeechBlock(),
-			Commands: forkCommands(),
-		})
+		r.Messages[0].Content = forkSystem(esn, last, l, brain, forkSearch(last, l, brain, forkBotZone(esn)))
 		if os.Getenv("DEBUG_PRINT_PROMPT") == "true" {
 			logger.Println(r.Messages[0].Content)
 		}
@@ -92,11 +81,27 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 	return r
 }
 
+// forkSystem renders brain's live template for esn's utterance last in language l.
+func forkSystem(esn, last, l, brain, search string) string {
+	s := prompt.Load()
+	facts, diary := forkMemory(esn, last, brain)
+	return prompt.Render(s.Live(brain), prompt.Vars{
+		Now:      prompt.Now(l, forkNow(), forkBotZone(esn)),
+		Lang:     prompt.LangLine(brain, l),
+		User:     s.User(brain),
+		Facts:    facts,
+		Diary:    diary,
+		Search:   search,
+		Speech:   prompt.SpeechBlock(brain),
+		Commands: forkCommands(brain),
+	})
+}
+
 // forkReplyCap sets the brain's ReplyCap (LongReplyCap when long): Ollama's /v1 honours only max_tokens (0.40.14 ignores max_completion_tokens).
-func forkReplyCap(r *openai.ChatCompletionRequest, ollama, long bool) {
-	n := prompt.ReplyCap(forkBrain(ollama))
+func forkReplyCap(r *openai.ChatCompletionRequest, ollama, long bool, brain string) {
+	n := prompt.ReplyCap(brain)
 	if long {
-		n = prompt.LongReplyCap(forkBrain(ollama))
+		n = prompt.LongReplyCap(brain)
 	}
 	if ollama {
 		r.MaxTokens, r.MaxCompletionTokens = n, 0
@@ -105,15 +110,16 @@ func forkReplyCap(r *openai.ChatCompletionRequest, ollama, long bool) {
 	}
 }
 
-func forkBrain(ollama bool) string {
+// forkBrain picks the brain by provider and reply language l.
+func forkBrain(ollama bool, l string) string {
 	if ollama {
-		return prompt.Ollama
+		return prompt.OllamaFor(l)
 	}
 	return prompt.Claude
 }
 
-// forkCommands is the {commands} block: empty unless CommandsEnable.
-func forkCommands() string {
+// forkCommands is brain's {commands} block: empty unless CommandsEnable.
+func forkCommands(brain string) string {
 	k := vars.APIConfig.Knowledge
 	if !k.CommandsEnable {
 		return ""
@@ -124,64 +130,75 @@ func forkCommands() string {
 			emotions = c.ParamChoices
 		}
 	}
-	return prompt.Commands(emotions)
+	return prompt.Commands(brain, emotions)
 }
 
-// forkCameraReq readies the getImage follow-up on forkVision's target and swaps *cl to it; defer the returned
-// func. et-EE on Ollama (E26): the ET model is unloaded first and the vision model after, so one LLM stays resident.
-func forkCameraReq(r *openai.ChatCompletionRequest, cl **openai.Client) func() {
+// forkCameraReq readies the getImage follow-up on llm.ResolveVision's target (the brain when that is false but the brain
+// resolves) and swaps *cl to it; defer the returned func. A local vision model other than the brain's unloads the
+// brain before and itself after, so one Ollama model stays resident (E26); a Claude-tier system prompt is re-rendered
+// for the Ollama tier (V14). et-EE with a separate local vision model runs forkRelay instead.
+func forkCameraReq(r *openai.ChatCompletionRequest, cl **openai.Client, esn string) func() {
 	l, c, kg := lang.Current(), llm.Load(), forkKG()
 	t, ok := forkResolve(c, l, kg)
-	forkReplyCap(r, (ok && t.Ollama()) || (!ok && llm.IsOllama(kg)), false)
-	if !ok {
+	v, vok := llm.ResolveVision(c, l, kg)
+	if l == lang.Estonian && vok && ok && v.Ollama() && t.Model != v.Model {
+		return forkCameraRelay(r, cl, esn, t, v)
+	}
+	if !vok && ok {
+		logger.Println("myvector llm: camera " + l + " has no vision target — asking the brain " + t.Model)
+		v, vok = t, true
+	}
+	if !vok {
+		ollama := llm.IsOllama(kg)
+		forkReplyCap(r, ollama, false, forkBrain(ollama, l))
 		if kg.Provider == "openai" && kg.Model != "" {
 			r.Model = kg.Model // upstream DoGetImage hardcodes GPT4oMini for openai
 		}
-		if llm.IsOllama(kg) {
+		if ollama {
 			r.ReasoningEffort = "none"
 		}
 		llm.SamplingFor("", r.Model).Apply(r)
 		return func() {}
 	}
-	v, vok := forkVision(c, l, kg, t)
-	if !vok {
-		logger.Println("myvector llm: camera " + l + " has no vision target — asking the brain " + t.Model)
-		v = t
-	}
 	logger.Println("myvector llm: camera " + l + " → " + v.Provider + " " + v.Model + " @ " + v.BaseURL)
 	*cl = llm.NewClient(v)
 	r.Model = v.Model
+	forkReplyCap(r, v.Ollama(), false, forkBrain(v.Ollama(), l))
 	if v.Ollama() {
 		r.ReasoningEffort = "none"
 	}
 	llm.SamplingFor(v.Provider, v.Model).Apply(r)
-	if !t.Ollama() || l != lang.Estonian || v.Model == t.Model { // same model: unloading it only forces a cold reload
+	brain, bok := t, ok
+	if !ok && llm.IsOllama(kg) {
+		brain, bok = llm.Target{Provider: llm.Ollama, BaseURL: kg.Endpoint, Model: kg.Model}, true
+	}
+	if v.Ollama() && !(bok && brain.Ollama()) {
+		forkOllamaTier(r, esn, l)
+	}
+	if !v.Ollama() || (bok && brain.Ollama() && brain.Model == v.Model) { // same model: unloading it only forces a cold reload
 		return func() {}
 	}
-	base := t.OllamaBase()
-	forkUnload(base, t.Model)
-	return func() { forkUnload(base, v.Model) }
+	if bok && brain.Ollama() {
+		forkUnload(brain.OllamaBase(), brain.Model)
+	}
+	return func() { forkUnload(v.OllamaBase(), v.Model) }
 }
 
-// forkVision is llm.ResolveVision on the already-resolved brain t (one listening read decides both): et-EE on Ollama
-// keeps t's base and takes the vision model; false = no vision target (a copied profile map: the saved one is untouched).
-func forkVision(c llm.Config, l string, kg llm.KG, t llm.Target) (llm.Target, bool) {
-	if !t.Ollama() || l != lang.Estonian {
-		return t, true
+// forkOllamaTier re-renders r's system message for l's Ollama tier, without search results (V14).
+func forkOllamaTier(r *openai.ChatCompletionRequest, esn, l string) {
+	brain := prompt.OllamaFor(l)
+	if len(r.Messages) == 0 || r.Messages[0].Role != openai.ChatMessageRoleSystem {
+		return
 	}
-	ps := map[string]llm.Profile{l: {Provider: llm.Ollama, Model: t.Model}}
-	for k, p := range c.Profiles {
-		if k != l {
-			ps[k] = p
+	last := ""
+	for _, m := range r.Messages[1:] {
+		if m.Role == openai.ChatMessageRoleUser && m.Content != "" {
+			last = m.Content
 		}
 	}
-	c.Profiles = ps
-	w, ok := llm.ResolveVision(c, l, kg)
-	if !ok || !w.Ollama() {
-		return llm.Target{}, false
-	}
-	t.Model = w.Model
-	return t, true
+	msgs := append([]openai.ChatCompletionMessage{}, r.Messages...) // the caller's msgs keep the brain's prompt
+	msgs[0].Content = forkSystem(esn, last, l, brain, "")
+	r.Messages = msgs
 }
 
 // forkUnload asks the Ollama at base to drop model from memory now (native /api/generate, keep_alive 0).

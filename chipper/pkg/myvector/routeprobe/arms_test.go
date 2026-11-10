@@ -50,10 +50,10 @@ func TestPromptArms(t *testing.T) {
 			}
 			got, _ := os.ReadFile(prompt.Path())
 			s := prompt.Load()
-			if err := prompt.Validate(prompt.Ollama, s.Templates[prompt.Ollama], s.About); err != nil {
+			if err := prompt.Validate(prompt.OllamaEt, s.Templates[prompt.OllamaEt], s.About); err != nil {
 				t.Errorf("arm %s: %v", pa.id, err)
 			}
-			changed := s.Live(prompt.Ollama) != base.tmpl
+			changed := s.Live(prompt.OllamaEt) != base.tmpl[prompt.OllamaEt]
 			if changed != (pa.tmpl != nil) {
 				t.Errorf("arm %s: template changed %v, has a rewrite %v", pa.id, changed, pa.tmpl != nil)
 			}
@@ -99,10 +99,10 @@ func TestPromptArms(t *testing.T) {
 				t.Fatalf("%s: %v", pa.id, err)
 			}
 			s := prompt.Load()
-			if err := prompt.Validate(prompt.Ollama, s.Templates[prompt.Ollama], s.About); err != nil {
+			if err := prompt.Validate(prompt.OllamaEt, s.Templates[prompt.OllamaEt], s.About); err != nil {
 				t.Errorf("arm %s: %v", pa.id, err)
 			}
-			live, sampled := s.Live(prompt.Ollama), llm.SamplingFor(llm.Ollama, "qwen3.5:4b").Family == "probe-S"
+			live, sampled := s.Live(prompt.OllamaEt), llm.SamplingFor(llm.Ollama, "qwen3.5:4b").Family == "probe-S"
 			switch pa.id {
 			case "S+R":
 				if !sampled || !strings.HasSuffix(strings.TrimSpace(live), lineR) || s.About != testAbout {
@@ -128,7 +128,7 @@ func TestPromptArmsLongAbout(t *testing.T) {
 	long := strings.Repeat("Mari Tamm elab Vesikülas. ", 20)[:prompt.AboutCap]
 	for _, tmpl := range []string{prompt.Default(prompt.Ollama), savedLike} {
 		withStore(t, tmpl)
-		if err := prompt.Save(prompt.Ollama, nil, &long); err != nil {
+		if err := prompt.Save(prompt.Ollama, nil, &long, nil); err != nil {
 			t.Fatal(err)
 		}
 		base, err := readBase(nil)

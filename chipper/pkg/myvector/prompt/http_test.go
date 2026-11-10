@@ -123,7 +123,10 @@ func TestPromptAPISaveBoth(t *testing.T) {
 	if Validate(Ollama, full, long) == nil {
 		t.Fatal("setup: padded template still fits the long about-me")
 	}
-	if err := Save(Ollama, &full, nil); err != nil {
+	if err := Save(Ollama, &full, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(OllamaEt, ptr("Be brief."), nil, nil); err != nil { // replace the seeded copy of full
 		t.Fatal(err)
 	}
 	if w := post(t, APIHandler, `{"action":"save","brain":"ollama","about":"`+long+`"}`); w.Code != http.StatusBadRequest {
@@ -158,13 +161,39 @@ func TestPreviewReportsAppended(t *testing.T) {
 	if strings.Join(p.Appended, " ") != strings.Join(RequiredTags, " ") || p.Budget != Budget(Ollama) || p.Tokens != Estimate(p.Text) || p.Error != "" {
 		t.Errorf("preview: %+v", p)
 	}
-	if !strings.HasPrefix(p.Text, "Be brief.\n\nAbout the person you are talking with:\nMari") || !strings.HasSuffix(p.Text, LangLine(lang.Estonian)) {
+	if !strings.HasPrefix(p.Text, "Be brief.\n\nAbout the person you are talking with:\nMari") || !strings.HasSuffix(p.Text, LangLine(Ollama, lang.Estonian)) {
 		t.Errorf("preview text: %q", p.Text)
 	}
 	w = post(t, PreviewHandler, `{"brain":"ollama","template":"`+strings.Repeat("x", 3*Budget(Ollama))+`"}`)
 	json.Unmarshal(w.Body.Bytes(), &p)
 	if !strings.Contains(p.Error, "budget") {
 		t.Errorf("over-budget preview error = %q", p.Error)
+	}
+}
+
+func TestPromptAPIAboutEt(t *testing.T) {
+	_, _ = useStore(t)
+	if w := post(t, APIHandler, `{"action":"save","brain":"ollama-et","about_et":"Mari elab Tartus."}`); w.Code != http.StatusOK {
+		t.Fatalf("save about_et: %d %q", w.Code, w.Body.String())
+	}
+	get := httptest.NewRecorder()
+	APIHandler(get, httptest.NewRequest(http.MethodGet, API, nil))
+	var r reply
+	if json.Unmarshal(get.Body.Bytes(), &r); r.AboutEt != "Mari elab Tartus." || r.About != "" {
+		t.Errorf("GET: about_et %q, about %q", r.AboutEt, r.About)
+	}
+	body := `"template":"Be brief.\n\n{user}","about":"Mari","about_et":"Mari elab Tartus.","lang":"et-EE"}`
+	for brain, want := range map[string]string{OllamaEt: "Inimene, kellega räägid:\nMari elab Tartus.", Claude: "About the person you are talking with:\nMari"} {
+		var p previewReply
+		json.Unmarshal(post(t, PreviewHandler, `{"brain":"`+brain+`",`+body).Body.Bytes(), &p)
+		if !strings.HasPrefix(p.Text, "Be brief.\n\n"+want+"\n") || p.Error != "" {
+			t.Errorf("%s preview: %q, error %q", brain, p.Text, p.Error)
+		}
+	}
+	var p previewReply
+	json.Unmarshal(post(t, PreviewHandler, `{"brain":"ollama-et","template":"Hi.","about_et":"`+strings.Repeat("a", AboutCap+1)+`"}`).Body.Bytes(), &p)
+	if !strings.Contains(p.Error, "limit") {
+		t.Errorf("over-cap about_et preview error = %q", p.Error)
 	}
 }
 
@@ -175,7 +204,7 @@ func TestPromptPageServed(t *testing.T) {
 	if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
 		t.Fatalf("page: %d %s", w.Code, w.Header().Get("Content-Type"))
 	}
-	for _, want := range []string{API + `"`, PreviewAPI + `"`, `id="tmpl"`, `id="about"`, `id="versions"`, `id="meter"`, "--accent:", "if (cur.load_error) notes.push("} {
+	for _, want := range []string{API + `"`, PreviewAPI + `"`, `id="tmpl"`, `id="about"`, `id="aboutEt"`, "body.about_et = ", `id="versions"`, `id="meter"`, "--accent:", "if (cur.load_error) notes.push("} {
 		if !strings.Contains(b, want) {
 			t.Errorf("page lacks %s", want)
 		}
