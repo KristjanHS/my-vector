@@ -33,7 +33,7 @@ out=$(bash "$tmp/sound.sh" 2>&1) || die "no lock file blocks: $out"
 
 # Every sound script stops at the guard: exit 3, the QUIET line, no robot call.
 lock 600
-sound=(voice-samples/onset.sh voice-samples/play.sh volume-probe/sweep.sh volume-probe/idle.sh volume-probe/anim.sh
+sound=(voice-samples/onset.sh voice-samples/play.sh volume-probe/sweep.sh volume-probe/idle.sh volume-probe/anim.sh volume-probe/loopstop.sh
   volume-probe/pcvoice.sh unlock/power-stress.sh openmic/probe.sh)
 for s in "${sound[@]}"; do
   rc=0; out=$("$robot/$s" et-EE x 2>&1) || rc=$?
