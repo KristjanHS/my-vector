@@ -21,6 +21,7 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/photo"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/voice"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 	openai "github.com/sashabaranov/go-openai"
@@ -68,10 +69,11 @@ func TestForkPhotoAsk(t *testing.T) {
 // A closed wake fires one wake-word event on the stream; noPhoto fails the capture.
 type photoBot struct {
 	controlBot
-	smu     sync.Mutex
-	said    []string
-	wake    chan struct{}
-	noPhoto bool
+	smu      sync.Mutex
+	said     []string
+	wake     chan struct{}
+	noPhoto  bool
+	captures int
 }
 
 func (b *photoBot) EventStream(ctx context.Context, _ *vectorpb.EventRequest, _ ...grpc.CallOption) (vectorpb.ExternalInterface_EventStreamClient, error) {
@@ -114,6 +116,9 @@ func (b *photoBot) EnableMirrorMode(context.Context, *vectorpb.EnableMirrorModeR
 }
 
 func (b *photoBot) CaptureSingleImage(context.Context, *vectorpb.CaptureSingleImageRequest, ...grpc.CallOption) (*vectorpb.CaptureSingleImageResponse, error) {
+	b.smu.Lock()
+	b.captures++
+	b.smu.Unlock()
 	if b.noPhoto {
 		return nil, errors.New("no camera")
 	}
@@ -140,6 +145,7 @@ type photoRig struct {
 	mu      sync.Mutex
 	lines   []string
 	intents []string
+	fires   int
 	onSay   func(line string, robot *vector.Vector) // runs after a line is noted
 }
 
@@ -159,7 +165,14 @@ func usePhotoRig(t *testing.T) *photoRig {
 	freshListening(t)
 	oldChats := vars.RememberedChats
 	vars.RememberedChats = nil
-	oldRobot, oldSay, oldIntent := forkPhotoRobot, forkVisionSay, forkPhotoIntent
+	oldRobot, oldSay, oldIntent, oldFire, oldPhotos := forkPhotoRobot, forkVisionSay, forkPhotoIntent, forkFire, forkPhotos
+	forkPhotos = new(photo.Store)
+	forkChain.Reset("00e60001")
+	forkFire = func(*vector.Vector) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.fires++
+	}
 	forkPhotoRobot = func(esn string) (*vector.Vector, error) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -188,7 +201,8 @@ func usePhotoRig(t *testing.T) *photoRig {
 		return nil, nil
 	}
 	t.Cleanup(func() {
-		forkPhotoRobot, forkVisionSay, forkPhotoIntent = oldRobot, oldSay, oldIntent
+		forkPhotoRobot, forkVisionSay, forkPhotoIntent, forkFire, forkPhotos = oldRobot, oldSay, oldIntent, oldFire, oldPhotos
+		forkChain.Reset("00e60001")
 		vars.RememberedChats = oldChats
 	})
 	return r

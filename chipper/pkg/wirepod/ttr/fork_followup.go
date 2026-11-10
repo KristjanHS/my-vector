@@ -53,6 +53,7 @@ func forkAfterReply(turn forkTurn, esn string, isKG bool, ask, reply string) {
 // takes no forkBControl, so each skip cuts streamingKG's placeholder or the robot speaks it ("bla bla bla").
 func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
 	turn = make(forkTurn, 1)
+	forkPhotos.TakeTurn(esn) // a photo answer from an earlier, unfinished turn never forces this one's listen
 	p := followup.TakeNoSpeech(esn)
 	switch {
 	case !isKG:
@@ -87,8 +88,11 @@ func forkKGSilence(esn string) {
 // forkFollowUp runs after the reply is spoken: on the decider's YES under the chain cap it arms the chain and
 // re-opens the mic (F1, F2); skip (interrupted / disconnected) or a cut speech (forkSpeakCtx: the speak loop can
 // end before `interrupted` is set) drops the decision. Waits up to forkFollowUpWait for turn's decider and its answer.
+// A photo answered this turn is a YES without the decider; a nil turn without one is a NO (2026-11-10-photo-followup.md
+// (docs/plans/) F6).
 func forkFollowUp(robot *vector.Vector, turn forkTurn, esn string, skip bool) bool {
-	if skip || forkSpeakCtx(robot).Err() != nil {
+	photo := forkPhotos.TakeTurn(esn)
+	if skip || forkSpeakCtx(robot).Err() != nil || (turn == nil && !photo) {
 		return false
 	}
 	max := forkMax(esn)
@@ -97,22 +101,26 @@ func forkFollowUp(robot *vector.Vector, turn forkTurn, esn string, skip bool) bo
 		return false
 	}
 	n := strconv.Itoa(forkChain.Count(esn)+1) + "/" + strconv.Itoa(max)
-	verdict, yes := "timeout", false
-	deadline := time.After(forkFollowUpWait)
-	select {
-	case d := <-turn:
-		if d == nil {
-			return false
-		}
+	verdict, yes := "photo answer", photo
+	if !photo {
+		verdict = "timeout"
+		deadline := time.After(forkFollowUpWait)
 		select {
-		case yes = <-d:
-			verdict = map[bool]string{true: "YES", false: "NO"}[yes]
+		case d := <-turn:
+			if d == nil {
+				return false
+			}
+			select {
+			case yes = <-d:
+				verdict = map[bool]string{true: "YES", false: "NO"}[yes]
+			case <-deadline:
+			}
 		case <-deadline:
 		}
-	case <-deadline:
 	}
 	logger.Println("myvector: follow-up " + n + " " + verdict)
 	if yes {
+		forkPhotos.Listen(esn, photo)
 		forkChain.Arm(esn, forkNow())
 		forkFire(robot)
 	}

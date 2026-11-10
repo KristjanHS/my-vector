@@ -1,8 +1,10 @@
 package relay
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,6 +30,19 @@ func TestNewTracePrunes(t *testing.T) {
 	want := []string{"20261110-170002.000", "20261110-170003.000", "keep-me"}
 	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
 		t.Errorf("dirs %v, want %v", got, want)
+	}
+}
+
+// F5: a photo whose bytes repeat the previous trace's names that trace; a new photo does not.
+func TestTraceReusedPhoto(t *testing.T) {
+	t.Setenv("MYVECTOR_VISION_TRACE_DIR", t.TempDir())
+	t0 := time.Date(2026, 11, 10, 17, 0, 0, 0, time.Local)
+	url := func(s string) string { return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString([]byte(s)) }
+	first := NewTrace(t0).savePhoto(url("a"))
+	again := NewTrace(t0.Add(time.Second)).savePhoto(url("a"))
+	other := NewTrace(t0.Add(2 * time.Second)).savePhoto(url("b"))
+	if strings.Contains(first, "reused") || !strings.HasSuffix(again, ", reused photo from 20261110-170000.000") || strings.Contains(other, "reused") {
+		t.Errorf("notes %q / %q / %q, want only the second reused from the first", first, again, other)
 	}
 }
 
