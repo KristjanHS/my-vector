@@ -15,7 +15,8 @@ while (($#)); do case $1 in -i | -o | -O) shift 2 ;; root@*) to=${1#root@}; shif
 cmd=$*
 ph=$(sed -n 's/^PHASE=\([a-z]*\) .*/\1/p' <<<"$cmd"); echo "ssh ${ph:-$cmd}" >>"$ETC_ROOT/calls"
 n=$(grep -c "^ssh $ph$" "$ETC_ROOT/calls"); [[ -n $ph && $ph:$n == "${FAKE_SSH_FAIL:-}" ]] && exit 255 # FAKE_SSH_FAIL=<phase>:<nth call>
-if [[ $to == "$FAKE_BOT_LAN" ]]; then # FAKE_LAN_SSH=open: the firewall does not bite
+if [[ $to == "$FAKE_BOT_LAN" ]]; then # FAKE_LAN_SSH=open: the firewall does not bite; =down: PC off the robot LAN
+  [[ ${FAKE_LAN_SSH:-} == down ]] && exit 255
   [[ ${FAKE_LAN_SSH:-} != open && -e $ETC_ROOT/iptables.hooked ]] && ! grep -qx "$FAKE_PC" "$ETC_ROOT/iptables.live" && exit 255
 elif [[ $cmd == true && ${FAKE_TS_SSH:-} == down ]]; then exit 255 # a fresh tailnet ssh fails; the mux phases still run
 fi

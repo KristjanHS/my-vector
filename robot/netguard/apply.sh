@@ -49,6 +49,11 @@ fw) # SCRIPT=<base64 rules.sh output> [FORCE=1]
   printf '%s\n' "$new" >"$ETC_ROOT$run"
   sh "$ETC_ROOT$run"
   echo "netguard: firewall applied live (rollback armed, $ROLLBACK_MIN min)" ;;
+live) # SCRIPT: the live wlan0 chain = live=open (none hooked), live=admits ($bin = SCRIPT hooked, no arm pending), else live=other
+  if ! iptables -C INPUT -i wlan0 -j MYVECTOR_IN 2>/dev/null && ! ip6tables -C INPUT -i wlan0 -j MYVECTOR_IN 2>/dev/null; then echo live=open
+  elif [ "$(cat "$ETC_ROOT$bin" 2>/dev/null)" = "$(echo "$SCRIPT" | base64 -d)" ] && hooked &&
+    { [ -e "$ETC_ROOT/run/myvector/netguard.confirm" ] || [ ! -e "$ETC_ROOT$run" ]; }; then echo live=admits
+  else echo live=other; fi ;;
 undo)
   eval "$restore"; echo "netguard: firewall unhooked" ;;
 confirm) # SCRIPT
@@ -111,6 +116,15 @@ fi
 
 if ((!selftest)) && [[ $(cat "$ok_file" 2>/dev/null) != "$ok_tag" ]]; then
   echo "WARN: netguard firewall: not applied, no selftest for $ok_tag — run robot/netguard/apply.sh --selftest"
+  exit 0
+fi
+# LAN ssh refused before any arm while the live chain admits PC_LAN_IP (or none is hooked) = PC off the robot LAN, or a stale
+# ROBOT_LAN_IP: the post-apply check would miss and undo would disable the boot unit, so leave the firewall as is. A pending arm
+# (maybe the decoy) or another PC_LAN_IP's chain explains the refusal itself: apply as usual. --selftest FAILs: no D10 proof, no marker.
+if [[ $(ssh_new "$robot_lan") != ok ]] &&
+  out=$(remote live "SCRIPT=$(bash "$here/rules.sh" "$pc_lan" "$ts_port" | base64 -w0)") && [[ $out == live=open || $out == live=admits ]]; then
+  ((selftest)) && die "PC not on the robot LAN ($robot_lan ssh refused): selftest needs LAN ssh; firewall left as is"
+  echo "WARN: PC not on the robot LAN ($robot_lan ssh refused); firewall left as is"
   exit 0
 fi
 if ((selftest)); then fw "$decoy" refused; fi
