@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# SearXNG on 127.0.0.1:8888 for the search provider (web-search Stage 2.3). Manual only: no restart policy.
+# SearXNG on 127.0.0.1:8888 for the search provider (web-search Stage 2.3). No restart policy: a Docker or PC
+# restart stops it, and `make start` brings it back via `ensure` (up only when /healthz does not answer).
 #
-#   scripts/searxng.sh up | down | status | check     (check exits non-zero unless a JSON search returns results)
+#   scripts/searxng.sh up | ensure | down | status | check     (check exits non-zero unless a JSON search returns results)
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 IMAGE=searxng/searxng:2026.11.2-cccbc9e15
@@ -21,6 +22,9 @@ up)
     sleep 1
   done
   echo "searxng did not answer in 30 s; docker logs $NAME" >&2; exit 1 ;;
+ensure)
+  if curl -sf -o /dev/null -m 3 "http://127.0.0.1:$PORT/healthz"; then echo "searxng already up on 127.0.0.1:$PORT"; exit 0; fi
+  exec "$0" up ;;
 down) docker rm -f "$NAME" >/dev/null && echo "searxng down" ;;
 check) curl -sf "http://127.0.0.1:$PORT/search?q=tartu&format=json" | jq -e '.results|length>0' >/dev/null && echo "searxng ok" ;;
 status) docker ps --filter "name=^$NAME\$" --format '{{.Status}}  {{.Image}}' ;;
