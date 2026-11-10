@@ -27,4 +27,4 @@
 ## Assistant-owed
 
 
-- et joke refusal: apertus-estllm:8b answers "räägi mulle nali" with "ma ei saa nalja rääkida" 8/10 at its 0.4 / 0.9, still 5/10 at 0.8 (`2026-11-07-follow-up-listening.md` (docs/plans/archive/) P11). Temperature is ruled out as the lever; the next things to try are a prompt line or a joke intent.
+- et joke refusal: apertus-estllm:8b answers "räägi mulle nali" with "ma ei saa nalja rääkida" 8/10 at its 0.4 / 0.9, still 5/10 at 0.8 (`2026-11-07-follow-up-listening.md` (docs/plans/archive/) P11). Temperature is ruled out as the lever; EstLLM-1125 tells one 10/10 but fails stories (P12). The next things to try are a prompt line or a joke intent.
