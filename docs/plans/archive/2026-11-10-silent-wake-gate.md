@@ -1,5 +1,7 @@
 # Silent wake gate — a false wake on silence ends quietly, not with an answer to a made-up word
 
+Status: ✅ SHIPPED (c2b1201) — S1 + live check USER-owed (`docs/backlog.md` §OWED[USER]).
+
 Goal: an unarmed turn whose clip STT scores as silence (`no_speech` ≥ `WakeNoSpeech`) is dropped like a blank follow-up is today.
 
 | id | ruling | edit site |
@@ -11,6 +13,6 @@ Goal: an unarmed turn whose clip STT scores as silence (`no_speech` ≥ `WakeNoS
 | S5 | Unarmed KG turns ("I have a question") gate at `WakeNoSpeech` too — reverses follow-up-listening 7.5 (ruling 11-10): default case `armed && p ≥ NoSpeech \|\| !armed && p ≥ WakeNoSpeech` → same log, `forkKGSilence` | `fork_followup.go` default case |
 
 Falsifiers:
-- `go test ./pkg/wirepod/ttr -run 'ForkBegin'` (from chipper/): `!isKG` 0.9 → skip + one noaudio; `!isKG` 0.7 → answered; unarmed KG 0.94 → skip, 0.7 → answered; armed KG 0.7 → skip. Each fails on the pre-change code.
+- `go test ./pkg/wirepod/ttr -run 'ForkBegin'` (from chipper/): `!isKG` 0.9 → skip + one noaudio; `!isKG` 0.7 → answered; unarmed KG 0.94 → skip, 0.7 → answered; armed KG 0.7 → skip. Each fails under its mutation (commit c2b1201).
 - `make check` green.
 - Live (USER, after `make ship`): next false wake → `journalctl -u wire-pod | grep 'silent wake'` hits, robot silent; a real request still answered.
