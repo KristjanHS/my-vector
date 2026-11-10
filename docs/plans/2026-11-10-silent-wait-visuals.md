@@ -9,27 +9,25 @@ The wake chime before the wait and the spoken answer after it stay as they are.
 
 | wait | where | what he shows now | sound |
 |---|---|---|---|
-| KG turn (`isKG`): search + LLM until the first sentence | `kgsim.go` `StreamingKGSim`, loop at ~L231 | `anim_knowledgegraph_searching_01` looped every 1/3 s (face sprite `face_knowledgegraph_searching`) | `[AUDIT]` unmeasured. Audio IDs are numeric in the `.bin`, so decode as in eye-chimes E3, or capture (W1) |
-| Wake-word turn (`!isKG`): search + LLM until the first sentence | `kgsim.go` L404–417: `IntentPass` and `forkBControl` run only **after** the first sentence | nothing from wire-pod; vic-engine's own post-listen state | `[AUDIT]` |
-| KG → answer handoff | `kgsim.go` L446: `TTSGetinAnimation` = `anim_knowledgegraph_searching_getout_01` | getout anim | `[AUDIT]` |
+| KG turn (`isKG`): search + LLM until the first sentence | `kgsim.go` `StreamingKGSim`, `if isKG` loop | `anim_knowledgegraph_searching_01` looped every 1/3 s (face sprite `face_knowledgegraph_searching`) | `[AUDIT]` unmeasured. Audio IDs are numeric in the `.bin`, so decode as in eye-chimes E3, or capture (W1) |
+| Wake-word turn (`!isKG`): search + LLM until the first sentence | `StreamingKGSim`: `IntentPass` + `forkBControl` run only **after** the first sentence | nothing from wire-pod; vic-engine's own post-listen state | `[AUDIT]` |
+| KG → answer handoff | `StreamingKGSim` `TTSGetinAnimation` = `anim_knowledgegraph_searching_getout_01` | getout anim | `[AUDIT]` |
 | Photo turn: "Let me look." → vision model → first sentence | `fork_vision.go` `forkPhotoShot` → `DoGetImage` | `[AUDIT]` whatever `DoGetImage` plays during the vision call | `[AUDIT]` |
 | Web search | inside `CreateAIReq` → `forkSearch` (`fork_prompt.go`), before the LLM stream opens | same as the enclosing turn: no separate visual | — |
 
-Tools on hand: `robot/volume-probe/anim.sh` captures one animation's output as dBFS (`ANIMS=… CONDS=base:1.0`).
-`idle.sh` counts seconds above −45 dBFS. `Robot_Vic_Volume_Animation` is a live RTPC through
-`:8889/consolefunccall?func=SetAudioParameter` (speech-volume V3/V6). `PlayAnimationRequest` has no ignore-audio flag
-(only `IgnoreBody/Head/LiftTrack`).
+Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS); mute knob: `:8889` `SetAudioParameter`
+`Robot_Vic_Volume_Animation`. `PlayAnimationRequest` has no ignore-audio flag.
 
 ## Rulings
 
 | id | ruling | edit site |
 |---|---|---|
 | W1 | Measure before building: `anim.sh` on each wait anim + one live KG turn and one wake-word turn captured end to end. The loud baseline also shows the W8 falsifier can fail | Stage 1, no code |
-| W2 | `[USER DECISION]` **How the wait goes silent** — **(A)** play only animations W1 measured silent; **(B)** wire-pod sets `Robot_Vic_Volume_Animation=0` for the wait and back to 1.0 before the answer's getin; **(C)** firmware `kMyVectorSilentWait` in `cozmoAudioController.cpp`: drops every animation-object `PostAudioEvent` (never TTS, never `Wake_Word_*`) until a deadline wire-pod sets via consolevar, and expires on its own. Recommend **C**: it keeps the stock visuals and a wire-pod crash can't leave him mute. B is the no-build stopgap, but eye-chimes E1 saw an RTPC come back after a turn, and a crash mid-wait leaves animations mute until the next turn | `0022-silent-wait.patch` (C) / new `fork_wait.go` (A, B) |
-| W3 | `[USER DECISION]` **Which visuals** — **(A)** stock animations per wait kind (picked from `ListAnimations` by W1 + eye check); **(B)** wire-pod-drawn 184×96 face frames via `DisplayFaceImageRGB` (magnifier = search, dots = thinking, lens = photo), silent by construction and independent of W2. Recommend A first (thin slice), B as backlog if stock faces don't read as "relevant" | `fork_wait.go` |
+| W2 | `[USER DECISION]` silence: (A) W1-silent anims only · (B) `Robot_Vic_Volume_Animation=0` for the wait · (C, rec.) firmware `kMyVectorSilentWait`: drop anim `PostAudioEvent` (never TTS/`Wake_Word_*`) until a self-expiring deadline | `0022-silent-wait.patch` (C) / `fork_wait.go` (A, B) |
+| W3 | `[USER DECISION]` visuals: (A, rec. first) stock anim per wait kind from `ListAnimations` · (B) drawn 184×96 frames via `DisplayFaceImageRGB` | `fork_wait.go` |
 | W4 | One wait loop for every path: `forkWait(robot, kind)` with `kind` ∈ {search, think, look}, changeable while it runs. It ends before `TTSGetinAnimation`, on the LLM-error path (`KGSim` error line), and on an interrupt | new `chipper/pkg/wirepod/ttr/fork_wait.go`; `kgsim.go` loop → one `forkWait` call (drift-listed) |
 | W5 | Kind switches: `forkSearch` start → search; search done / LLM stream open → think; photo turn after "Let me look." → look | hook in `fork_prompt.go` around `forkSearch`; `fork_vision.go` |
-| W6 | Wake-word turns (`!isKG`) get the wait too: send `IntentPass(intent_greeting_hello)` + `forkBControl` at stream open, not at the first sentence (the photo turn already does this, `fork_vision.go` L192–196). `[AUDIT]` that an early intent doesn't cut vic-engine's listen or the follow-up arm (`fork_followup.go`) | `kgsim.go` L404–417 |
+| W6 | Wake-word turns (`!isKG`) get the wait too: send `IntentPass(intent_greeting_hello)` + `forkBControl` at stream open, not at the first sentence (as `forkPhotoTurn` does). `[AUDIT]` that an early intent doesn't cut vic-engine's listen or the follow-up arm (`fork_followup.go`) | `kgsim.go` `StreamingKGSim` |
 | W7 | Out of scope: weather and other intent-path answers (no LLM wait), and the answer's own TTS loop anim | — |
 | W8 | Done = during the wait window (end of speech → first TTS sample) the capture has 0 s above −45 dBFS; the visual is on screen for the whole window | Stage 4 |
 
