@@ -112,15 +112,33 @@ func SpeechBlock(brain string) string {
 // English in every language: the reply parser matches them. No newVoiceRequest: forkFollowUp listens again (F5).
 func Commands(brain, emotions string) string {
 	if brain == OllamaEt {
+		return animations(brain, emotions) + "\n{{getImage||front}} teeb foto; ütle enne, et teed foto, ja pane käsk lause lõppu."
+	}
+	return animations(brain, emotions) + "\n{{getImage||front}} takes a photo; say so first, end the sentence with it."
+}
+
+// PhotoCommands is Commands for a photo answer: no getImage, PhotoLine after the animations.
+func PhotoCommands(brain, emotions string) string {
+	return animations(brain, emotions) + "\n\n" + PhotoLine(brain)
+}
+
+// PhotoLine tells a photo answer the image is its own, already-taken photo.
+func PhotoLine(brain string) string {
+	if brain == OllamaEt {
+		return "Sa näed: viimases sõnumis olev pilt on see, mida su enda kaamera praegu näeb. Ütle, mida sa sellel näed; ära ütle, et sa ei näe."
+	}
+	return "You can see: the image in the last message is what your own camera sees right now. Say what you see in it; never say you can't see."
+}
+
+func animations(brain, emotions string) string {
+	if brain == OllamaEt {
 		return "Tegutse, kirjutades vastusesse {{käsk||parameeter}}, nt \"{{playAnimationWI||happy}} Tere!\". Ainult need:\n" +
 			"{{playAnimationWI||emotsioon}} rääkimise ajal; emotsioonid (kirjuta täpselt nii): " + emotions + ".\n" +
-			"{{playAnimation||emotsioon}} peatab su kõne; ainult siis, kui palutakse animatsiooni teha.\n" +
-			"{{getImage||front}} teeb foto; ütle enne, et teed foto, ja pane käsk lause lõppu."
+			"{{playAnimation||emotsioon}} peatab su kõne; ainult siis, kui palutakse animatsiooni teha."
 	}
 	return "Act by writing {{command||parameter}} in your reply, e.g. \"{{playAnimationWI||happy}} Hello!\". Only these:\n" +
 		"{{playAnimationWI||emotion}} while you talk; emotions: " + emotions + ".\n" +
-		"{{playAnimation||emotion}} pauses your speech; only when asked to animate.\n" +
-		"{{getImage||front}} takes a photo; say so first, end the sentence with it."
+		"{{playAnimation||emotion}} pauses your speech; only when asked to animate."
 }
 
 // SampleEmotions mirrors ValidLLMCommands playAnimationWI ParamChoices (TestForkCommandsSample guards it).

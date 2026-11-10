@@ -67,9 +67,13 @@ func (f *forkRelay) RoundTrip(req *http.Request) (*http.Response, error) {
 	if tr != nil {
 		logger.Println("myvector llm: camera relay trace → " + tr.Dir)
 	}
-	q := forkRelayQuestion(msgs)
+	q, qi := forkRelayQuestion(msgs)
 	tr.Note("question (last user message before the photo)", q)
 	ask, d0 := f.hop0(req.Context(), tr, q)
+	if qi >= 0 { // hop 1 gets the question once, in English, on the photo message
+		msgs = append(msgs[:qi:qi], msgs[qi+1:]...)
+		body["messages"] = msgs
+	}
 	if f.brain.Ollama() {
 		forkUnload(f.brain.OllamaBase(), f.brain.Model)
 	}
@@ -198,15 +202,15 @@ func (f *forkRelay) complete(ctx context.Context, r openai.ChatCompletionRequest
 	return resp.Choices[0].Message.Content, resp.Choices[0].FinishReason == openai.FinishReasonLength, nil
 }
 
-// forkRelayQuestion is the last user message's text before the photo message (R11).
-func forkRelayQuestion(msgs []any) string {
+// forkRelayQuestion is the last user message's text before the photo message (R11) and its index, -1 when none.
+func forkRelayQuestion(msgs []any) (string, int) {
 	for i := len(msgs) - 2; i >= 0; i-- {
 		m, _ := msgs[i].(map[string]any)
 		if s, ok := m["content"].(string); ok && m["role"] == openai.ChatMessageRoleUser && strings.TrimSpace(s) != "" {
-			return s
+			return s, i
 		}
 	}
-	return ""
+	return "", -1
 }
 
 // forkRelaySSE is reply as one stream chunk + [DONE]; finish_reason length when a hop hit its cap (R6).

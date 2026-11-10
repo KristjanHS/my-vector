@@ -73,7 +73,7 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 		last := r.Messages[len(r.Messages)-1].Content
 		memory.MarkLLM(esn, last)
 		memory.Touch()
-		r.Messages[0].Content = forkSystem(esn, last, l, brain, forkSearch(last, l, brain, forkBotZone(esn)))
+		r.Messages[0].Content = forkSystem(esn, last, l, brain, forkSearch(last, l, brain, forkBotZone(esn)), false)
 		if os.Getenv("DEBUG_PRINT_PROMPT") == "true" {
 			logger.Println(r.Messages[0].Content)
 		}
@@ -81,8 +81,8 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 	return r
 }
 
-// forkSystem renders brain's live template for esn's utterance last in language l.
-func forkSystem(esn, last, l, brain, search string) string {
+// forkSystem renders brain's live template for esn's utterance last in language l; photo: a photo answer's commands.
+func forkSystem(esn, last, l, brain, search string, photo bool) string {
 	s := prompt.Load()
 	facts, diary := forkMemory(esn, last, brain)
 	return prompt.Render(s.Live(brain), prompt.Vars{
@@ -93,7 +93,7 @@ func forkSystem(esn, last, l, brain, search string) string {
 		Diary:    diary,
 		Search:   search,
 		Speech:   prompt.SpeechBlock(brain),
-		Commands: forkCommands(brain),
+		Commands: forkCommands(brain, photo),
 	})
 }
 
@@ -118,10 +118,13 @@ func forkBrain(ollama bool, l string) string {
 	return prompt.Claude
 }
 
-// forkCommands is brain's {commands} block: empty unless CommandsEnable.
-func forkCommands(brain string) string {
+// forkCommands is brain's {commands} block: empty unless CommandsEnable (a photo answer's: PhotoLine alone).
+func forkCommands(brain string, photo bool) string {
 	k := vars.APIConfig.Knowledge
 	if !k.CommandsEnable {
+		if photo {
+			return prompt.PhotoLine(brain)
+		}
 		return ""
 	}
 	emotions := prompt.SampleEmotions
@@ -129,6 +132,9 @@ func forkCommands(brain string) string {
 		if c.Command == "playAnimationWI" {
 			emotions = c.ParamChoices
 		}
+	}
+	if photo {
+		return prompt.PhotoCommands(brain, emotions)
 	}
 	return prompt.Commands(brain, emotions)
 }
@@ -184,7 +190,7 @@ func forkCameraReq(r *openai.ChatCompletionRequest, cl **openai.Client, esn stri
 	return func() { forkUnload(v.OllamaBase(), v.Model) }
 }
 
-// forkOllamaTier re-renders r's system message for l's Ollama tier, without search results (V14).
+// forkOllamaTier re-renders r's system message for l's Ollama tier as a photo answer, without search results (V14).
 func forkOllamaTier(r *openai.ChatCompletionRequest, esn, l string) {
 	brain := prompt.OllamaFor(l)
 	if len(r.Messages) == 0 || r.Messages[0].Role != openai.ChatMessageRoleSystem {
@@ -197,7 +203,7 @@ func forkOllamaTier(r *openai.ChatCompletionRequest, esn, l string) {
 		}
 	}
 	msgs := append([]openai.ChatCompletionMessage{}, r.Messages...) // the caller's msgs keep the brain's prompt
-	msgs[0].Content = forkSystem(esn, last, l, brain, "")
+	msgs[0].Content = forkSystem(esn, last, l, brain, "", true)
 	r.Messages = msgs
 }
 
