@@ -1,5 +1,7 @@
 # Photo follow-up — ask about the last photo (option B)
 
+Status: ✅ SHIPPED (F1–F7 on main; live check → `docs/backlog.md` §OWED[USER])
+
 Goal: "kus pildi peal asub rulli keeratud joogamatt?" after a photo turn is answered from THAT photo by the
 vision model, with no new capture.
 
