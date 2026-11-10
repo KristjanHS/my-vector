@@ -369,3 +369,16 @@ func TestForkNextChunk(t *testing.T) {
 		t.Error("no wake with nothing dropped: a lost send or an extraBit append leaves the loop waiting")
 	}
 }
+
+func TestForkDecideByRule(t *testing.T) {
+	for reply, want := range map[string]bool{"What has keys?": true, "It's half past seven.": false} {
+		var body map[string]any
+		tg := llm.Target{Provider: llm.Ollama, BaseURL: decideServer(t, "NO", 0, 0, &body), Key: "k", Model: "apertus-estllm:8b"}
+		if got := <-forkDecide(tg, "ask", reply); got != want {
+			t.Errorf("apertus %q: %v, want %v", reply, got, want)
+		}
+		if body != nil {
+			t.Errorf("apertus %q: the decider called the LLM", reply)
+		}
+	}
+}

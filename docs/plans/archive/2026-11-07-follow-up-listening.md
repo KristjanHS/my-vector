@@ -1,6 +1,6 @@
 # Follow-up listening
 
-Status: 2.1–4.3, 6.1 offline (P3), 7.1, 7.2, 7.4, 7.5, 8.1, 8.2, 9.1 done, 7.3 + 8.3 reviewed and fixed; the user ships + reruns the P4 silent chain (7.3); 9.2 done (G3 → P8); 6.3 statement line failed and reverted (P10); the apertus decider waits on `docs/backlog.md` §OWED[USER]. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order item 3. Runs after `2026-11-07-reply-cap-by-ask.md (docs/plans/)`.
+Status: ✅ SHIPPED to main (all stages); `make ship` + the 6.1 / 7.3 / 7.5 live checks → `docs/backlog.md` §OWED[USER]. Parent: `2026-11-07-system-prompt-redesign.md (docs/plans/)` build order item 3.
 
 ## Rulings
 
@@ -25,8 +25,8 @@ Status: 2.1–4.3, 6.1 offline (P3), 7.1, 7.2, 7.4, 7.5, 8.1, 8.2, 9.1 done, 7.3
 | G3 | Live 11-09 20:03–20:04 (active listening off, fresh history after the 20:01 restart): apertus-estllm:8b answered a bare "ja." with an invented exchange it plays both sides of ("Kas sulle meeldis, kui sa mind "mossudeks" kutsusid? Mina meeldisin sulle siis väga! :)"), retold it after "mida?", decider YES 3/3. `chainprobe` 0/5 on arms 0, S, Q, E. User ruling 11-09: rep up the falsifier before any fix (9.1); no decider-NO on filler asks, no brain swap. | `robot/work/followup-debug/g3.json` |
 | P7 | 9.1 (11-09, 20 reps each): arm 0 4/20 reps speak as the person or narrate an exchange not in the history; arm P (the prompt line) 4/20 (reps 7, 12, 17, 18), 2/20 strict = puts words in the person's mouth (12, 18) → line not kept. Raw: `robot/work/followup-debug/g3-rep20.jsonl`, `g3-armP.jsonl`. | — |
 | P8 | 9.2 (11-10, `chainprobe -arms S -reps 20 -chained`): 0/20 reps speak as the person or narrate an exchange not in the history. Raw: `robot/work/followup-debug/g3-armS.jsonl`. | `llm/sampling.go` |
-| P9 | P3 rep-up (11-10, `followupprobe -models apertus-estllm:8b`, 3 runs, `prompts[0]`): et 11/15 at temp 1 / top_p 1, 8/15 under P8's sampling; under P8, 5 false YES on et statements (Kuu 3/3, Kell 2/3) + 2 false NO (riddle); en adds 6 false YES. EstLLM decider ruled out: 8 GB GPU, apertus holds 5.4 GB. Raw: `robot/work/followup-debug/p3{,s}-rep{1,2,3}.txt`. | → 6.3 |
-| P10 | 6.3 (11-10, under P8): the statement line gives apertus et 7/15 over 3 runs (still Kuu YES 3/3, riddle NO 3/3) → reverted, `docs/backlog.md` §OWED[USER]. Raw: `robot/work/followup-debug/p63-ap{1,2,3}.txt`. | — |
+| P9 | P3 rep-up (11-10, `followupprobe -models apertus-estllm:8b`, 3 runs, `prompts[0]`): et 11/15 at temp 1 / top_p 1, 8/15 under P8's sampling, temp 0 et 3/5 (1 run). EstLLM decider ruled out: 8 GB GPU, apertus holds 5.4 GB. Raw: `robot/work/followup-debug/p3{,s}-rep{1,2,3}.txt`. | → 6.3 |
+| P10 | 6.3 (11-10, under P8): the statement line gives apertus et 7/15 over 3 runs → reverted → 6.4. Raw: `robot/work/followup-debug/p63-ap{1,2,3}.txt`. | — |
 
 ## Stages
 
@@ -55,3 +55,4 @@ Refactor-first: skipped — history reads go through `forkAIReq` (F3) and the fo
 | 9.1 | G3, offline, silent: `go run ./pkg/myvector/chainprobe -chain ../robot/work/followup-debug/g3.json -chained -arms 0 -reps 20 -out ../robot/work/followup-debug/g3-rep20.jsonl` (from chipper/). A reply that speaks as the user or narrates an exchange not in the history counts. ≥ 1 → a chainprobe prompt-line arm (never speak as the user, never invent past events), kept if 0/20; 0/20 → `docs/backlog.md` line with this command. | `chainprobe` |
 | 9.2 | G3 (user ruling 11-10): apertus family sampling = chainprobe arm S (temp 0.4, top_p 0.9); proof `TestSamplingFor` apertus row. | `llm/sampling.go` `families` |
 | 6.3 | P3 (user ruling 11-10): `followup.Prompt` adds "a reply that only states a fact or the time, with no question or invitation, is NO". Rerun 1.1 (saved profiles + qwen3.5:4b + Claude, apertus ×3); keep only if every model ≥ 9/10 and apertus ≥ 27/30 pooled, else revert and §OWED[USER]. Failed on apertus (P10), reverted. | `followup/followup.go` `Prompt` |
+| 6.4 | P10 (user ruling 11-10): an Ollama model in `followup.RuleModels` (apertus) decides by `followup.Rule` (spoken reply contains "?"), no LLM call; other brains keep the LLM decider. Proof `TestRule`, `TestByRule`, `TestForkDecideByRule`. | `followup/followup.go`, `ttr/fork_followup.go` `forkDecideNow` |

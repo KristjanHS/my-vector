@@ -1,9 +1,9 @@
 # Backlog
 
 ## OWED[USER]
-- apertus follow-up decider (`2026-11-07-follow-up-listening.md` (docs/plans/) P9, P10): et 7–11/15 across samplings and the statement line; nothing fits beside it on the 8 GB GPU — pick a decider for apertus or accept.
 - Vision et fluency (`2026-11-08-vision-setting.md` (docs/plans/) D1): read qwen3.5:4b's et answers (`go run ./pkg/myvector/visionbench -lang et-EE -show`, from chipper/) — OK → 3.1 runs; not OK → no local et vision model.
 
+- Follow-up listening live (`2026-11-07-follow-up-listening.md` (docs/plans/) 6.1, 7.3): `make ship`, restart wire-pod; "ask me a riddle" → answer → chain, "dance" mid-chain goes to the LLM, et once; silent P4 rerun: no "Ready", no answered turn (`journalctl -u wire-pod | grep follow-up`).
 - Follow-up "jah" by voice (`2026-11-07-follow-up-listening.md` (docs/plans/) 7.5, after 7.3's ship): `mkdir robot/work/et-stt/mic` (capture is on only while it exists), answer a follow-up with "jah", then `robot/work/et-stt/venv/bin/python et-stt/nospeech.py --max 0.6 <newest robot/work/et-stt/mic/*.ogg>` must exit 0.
 - SDK audio orphan live (`2026-11-09-sdk-audio-orphan.md` (docs/plans/)): `make ship` (patch 0019 + vic-cloud gateway), then `voiceprobe overlap` — B refused (ResourceExhausted), A/C/D/F hear PlaybackComplete, no `starved` / `VERIFY(_audioPrepared)` line.
 - WiFi baseline live (`2026-11-07-wifi-baseline-hardening.md` (docs/plans/) 4.4 row, 6.1): restart vic-cloud → `make server-pin` → `mv secrets/epod-new secrets/epod && make start` → `make syncwt` → `make ship` → `robot/netguard/apply.sh --selftest` → the 6.1 ranked e2e.

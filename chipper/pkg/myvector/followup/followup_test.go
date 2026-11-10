@@ -52,3 +52,25 @@ func TestChain(t *testing.T) {
 		t.Fatal("Reset left a count or an armed follow-up")
 	}
 }
+
+func TestRule(t *testing.T) {
+	for reply, want := range map[string]bool{
+		"Mis see on: hommikul neljal jalal, lõunal kahel ja õhtul kolmel?": true,
+		"Kas mängime midagi? Võin sulle loomade kohta küsimusi esitada.":   true,
+		"Kuu kaugeneb Maast igal aastal umbes neli sentimeetrit.":          false,
+		"Kell on pool kaheksa õhtul.":                                      false,
+		"":                                                                 false,
+	} {
+		if got := Rule(reply); got != want {
+			t.Errorf("Rule(%q) = %v, want %v", reply, got, want)
+		}
+	}
+}
+
+func TestByRule(t *testing.T) {
+	for model, want := range map[string]bool{"apertus-estllm:8b": true, "hf.co/x/Apertus-8B:Q4": true, "qwen3.5:4b": false, "gemma4:e4b-it-qat": false} {
+		if got := ByRule(model); got != want {
+			t.Errorf("ByRule(%q) = %v, want %v", model, got, want)
+		}
+	}
+}
