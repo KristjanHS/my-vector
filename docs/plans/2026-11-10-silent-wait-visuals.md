@@ -9,9 +9,9 @@ The wake chime before the wait and the spoken answer after it stay as they are.
 
 | wait | where | what he shows now | sound |
 |---|---|---|---|
-| KG turn (`isKG`): search + LLM until the first sentence | `kgsim.go` `StreamingKGSim`, `if isKG` loop | `anim_knowledgegraph_searching_01` looped every 1/3 s (face sprite `face_knowledgegraph_searching`) | `[AUDIT]` unmeasured. Audio IDs are numeric in the `.bin`, so decode as in eye-chimes E3, or capture (W1) |
+| KG turn (`isKG`): search + LLM until the first sentence | `kgsim.go` `StreamingKGSim`, `if isKG` loop | `anim_knowledgegraph_searching_01` looped every 1/3 s (face sprite `face_knowledgegraph_searching`) | silent: peak −42.4 = idle floor −42.3 (`anim.sh`, 11-10) |
 | Wake-word turn (`!isKG`): search + LLM until the first sentence | `StreamingKGSim`: `IntentPass` + `forkBControl` run only **after** the first sentence | nothing from wire-pod; vic-engine's own post-listen state | `[AUDIT]` |
-| KG → answer handoff | `StreamingKGSim` `TTSGetinAnimation` = `anim_knowledgegraph_searching_getout_01` | getout anim | `[AUDIT]` |
+| KG → answer handoff | `StreamingKGSim` `TTSGetinAnimation` = `anim_knowledgegraph_searching_getout_01` | getout anim | loud: peak −18.9 dBFS; kept (W8) |
 | Photo turn: "Let me look." → vision model → first sentence | `fork_vision.go` `forkPhotoShot` → `DoGetImage` | `[AUDIT]` whatever `DoGetImage` plays during the vision call | `[AUDIT]` |
 | Web search | inside `CreateAIReq` → `forkSearch` (`fork_prompt.go`), before the LLM stream opens | same as the enclosing turn: no separate visual | — |
 
@@ -24,18 +24,18 @@ Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS)
 |---|---|---|
 | W1 | Measure before building: `anim.sh` on each wait anim + one live KG turn and one wake-word turn captured end to end. The loud baseline also shows the W8 falsifier can fail | Stage 1, no code |
 | W2 | `[USER DECISION]` silence: (A) W1-silent anims only · (B) `Robot_Vic_Volume_Animation=0` for the wait · (C, rec.) firmware `kMyVectorSilentWait`: drop anim `PostAudioEvent` (never TTS/`Wake_Word_*`) until a self-expiring deadline | `0022-silent-wait.patch` (C) / `fork_wait.go` (A, B) |
-| W3 | `[USER DECISION]` visuals: (A, rec. first) stock anim per wait kind from `ListAnimations` · (B) drawn 184×96 frames via `DisplayFaceImageRGB` | `fork_wait.go` |
+| W3 | `[USER DECISION]` visuals: (A, rec. first) stock anim per wait kind · (B) drawn 184×96 frames via `DisplayFaceImageRGB`. A candidates, all at idle floor: search `anim_knowledgegraph_searching_01` · think `anim_avs_think_loop_01` / `anim_explorer_planning_idle_01` · look `anim_rtsound_oncharger_observe_front_01` / `anim_eyepose_curious`; `anim_lookatdevice_icon` out (−18.3, left a sound running) | `fork_wait.go` |
 | W4 | One wait loop for every path: `forkWait(robot, kind)` with `kind` ∈ {search, think, look}, changeable while it runs. It ends before `TTSGetinAnimation`, on the LLM-error path (`KGSim` error line), and on an interrupt | new `chipper/pkg/wirepod/ttr/fork_wait.go`; `kgsim.go` loop → one `forkWait` call (drift-listed) |
 | W5 | Kind switches: `forkSearch` start → search; search done / LLM stream open → think; photo turn after "Let me look." → look | hook in `fork_prompt.go` around `forkSearch`; `fork_vision.go` |
 | W6 | Wake-word turns (`!isKG`) get the wait too: send `IntentPass(intent_greeting_hello)` + `forkBControl` at stream open, not at the first sentence (as `forkPhotoTurn` does). `[AUDIT]` that an early intent doesn't cut vic-engine's listen or the follow-up arm (`fork_followup.go`) | `kgsim.go` `StreamingKGSim` |
 | W7 | Out of scope: weather and other intent-path answers (no LLM wait), and the answer's own TTS loop anim | — |
-| W8 | Done = wait window (end of speech → getout start, else first TTS sample) has 0 s above −45 dBFS, visual on screen throughout; getout keeps its sound (user 2026-11-10) | Stage 4 |
+| W8 | `[AUDIT]` −45 sits under today's idle floor (5/5 s above): re-pick vs an `idle.sh` capture. Done = wait window (end of speech → getout start, else first TTS sample) has 0 s above −45 dBFS, visual on screen throughout; getout keeps its sound (user 2026-11-10) | Stage 4 |
 
 ## Checklist
 
 ### Stage 1: measure (no code) — sound test, ask the user first
 - [ ] `robot/quiet/quiet.sh status` ≠ 3, user OK, note start time.
-- [ ] `ANIMS="anim_knowledgegraph_searching_01 anim_knowledgegraph_searching_getout_01" CONDS=base:1.0 robot/volume-probe/anim.sh` → dBFS per anim.
+- [x] `ANIMS="anim_knowledgegraph_searching_01 anim_knowledgegraph_searching_getout_01" CONDS=base:1.0 robot/volume-probe/anim.sh` → dBFS per anim.
 - [ ] One live KG question + one wake-word question with capture on: seconds above −45 dBFS inside the wait window.
 - [ ] `robot/quiet/scan.sh '<start>'`. Exit 1 → stop, `make quiet`, tell the user.
 - [ ] Record results in this file's Today table, then put the W2/W3 decisions to the user.
