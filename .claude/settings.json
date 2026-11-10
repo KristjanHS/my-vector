@@ -4,5 +4,20 @@
       "Bash(make ship)",
       "Bash(make ship:*)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gofmt-edited.sh",
+            "timeout": 10,
+            "statusMessage": "gofmt (edited file)"
+          }
+        ]
+      }
+    ]
   }
 }
