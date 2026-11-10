@@ -52,10 +52,13 @@ var forkPhotoPhrases = map[string]struct{ anywhere, start []string }{
 // forkPhotoNames are the robot's name as STT writes it, stripped (after an optional hey / hei) before a start phrase.
 var forkPhotoNames = map[string]bool{"vector": true, "vektor": true}
 
-// forkPhotoAsk: text holds one of l's photo phrases, NFC-composed, case-folded and punctuation-stripped, whole words
-// (V16, V16a); a combining mark stays inside its word.
+// forkPhotoAsk: text holds one of l's photo phrases or asks for a new photo (F7), NFC-composed, case-folded and
+// punctuation-stripped, whole words (V16, V16a); a combining mark stays inside its word.
 func forkPhotoAsk(l, text string) bool {
 	w := forkPhotoWords(text)
+	if forkPhotoNew(w) {
+		return true
+	}
 	p := forkPhotoPhrases[l]
 	for _, ph := range p.anywhere {
 		if strings.Contains(" "+strings.Join(w, " ")+" ", " "+ph+" ") {
@@ -133,6 +136,22 @@ const forkPhotoKept = "kept"
 var forkPhotoFollowWords = map[string]bool{
 	"pilt": true, "pildi": true, "pildil": true, "pildile": true, "pildilt": true, "pildis": true,
 	"foto": true, "fotol": true, "fotolt": true, "fotos": true, "picture": true, "photo": true, "image": true,
+}
+
+// forkPhotoNewWords beside an F3 word ask for a new photo (F7).
+var forkPhotoNewWords = map[string]bool{"tee": true, "take": true, "uus": true, "uue": true, "new": true, "another": true}
+
+// forkPhotoNew: w holds a pildist* word, or a forkPhotoNewWords word and an F3 word (F7).
+func forkPhotoNew(w []string) bool {
+	verb, named := false, false
+	for _, x := range w {
+		if strings.HasPrefix(x, "pildist") {
+			return true
+		}
+		verb = verb || forkPhotoNewWords[x]
+		named = named || forkPhotoFollowWords[x]
+	}
+	return verb && named
 }
 
 // forkPhotoNamed: text holds an F3 word, whole words as forkPhotoWords splits them.
