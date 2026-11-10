@@ -5,7 +5,7 @@
 # Usage: gofmt.sh [repo] [--head rev tree]   default repo = this checkout; --head checks that commit (tree = its archive copy).
 set -euo pipefail
 repo=${1:-$(cd "$(dirname "$0")/../.." && pwd)}
-g=(git -C "$repo")
+g=(git -C "$repo" -c core.quotePath=false) # non-ASCII paths unquoted for gofmt
 gofmt=$(command -v gofmt || echo "$(go env GOROOT)/bin/gofmt")
 rev='' dir=$repo
 if [[ ${2:-} == --head ]]; then rev=$3 dir=$4; fi
