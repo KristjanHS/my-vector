@@ -14,6 +14,7 @@ func TestSamplingFor(t *testing.T) {
 		{Ollama, "qwen3.5:4b", Sampling{"qwen3.5", 0.7, 0.8, 1.5}},
 		{Ollama, "hf.co/unsloth/Qwen3.5-4B-GGUF:Q4_K_M", Sampling{"qwen3.5", 0.7, 0.8, 1.5}},
 		{Ollama, "gemma4:e4b-it-qat", Sampling{"gemma4", 1, 0.95, 0}},
+		{Ollama, "apertus-estllm:8b", Sampling{"apertus", 0.4, 0.9, 0}},
 		{Ollama, "gemma3:4b-it-qat", Sampling{"", 1, 1, 0}},
 		{Ollama, "cas/mistral-7b-instruct-v0.3:latest", Sampling{"", 1, 1, 0}},
 		{Claude, "haiku-latest", Sampling{"claude", 1, 0, 0}},

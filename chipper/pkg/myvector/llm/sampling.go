@@ -14,11 +14,12 @@ type Sampling struct {
 	Temperature, TopP, PresencePenalty float32
 }
 
-// families: model-card values for chat with thinking off (docs/model-prompt-formats.md).
-// top_k can't go over /v1; the Modelfile's already matches (qwen3.5 20, gemma4 64).
+// families: model-card values for chat with thinking off (docs/model-prompt-formats.md); apertus is
+// chainprobe arm S (follow-up-listening plan P8). top_k can't go over /v1 (Modelfile: qwen3.5 20, gemma4 64).
 var families = []Sampling{
 	{"qwen3.5", 0.7, 0.8, 1.5},
 	{"gemma4", 1, 0.95, 0},
+	{"apertus", 0.4, 0.9, 0},
 }
 
 // ProbeSampling is nil in production; a probe sets it so its arm's sampling replaces a non-Claude model's.
