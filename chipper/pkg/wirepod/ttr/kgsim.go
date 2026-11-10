@@ -227,22 +227,8 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 		return "", err
 	}
 	if isKG {
-		defer forkBControl(robot, ctx, start, stop, esn)() // my-vector: one answer per robot, a second waits (fork_answer.go)
-		go func() {
-			for {
-				if kgStopLooping {
-					kgReadyToAnswer <- true
-					break
-				}
-				robot.Conn.PlayAnimation(ctx, &vectorpb.PlayAnimationRequest{
-					Animation: &vectorpb.Animation{
-						Name: "anim_knowledgegraph_searching_01",
-					},
-					Loops: 1,
-				})
-				time.Sleep(time.Second / 3)
-			}
-		}()
+		defer forkBControl(robot, ctx, start, stop, esn)()               // my-vector: one answer per robot, a second waits (fork_answer.go)
+		forkWait(robot, forkWaitSearch, &kgStopLooping, kgReadyToAnswer) // my-vector: silent wait face, no searching-loop sfx (fork_wait.go)
 	}
 	var fullRespText string
 	var fullfullRespText string
@@ -515,7 +501,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 		}
 		forkFollowUp(robot, turn, esn, interrupted || disconnect) // my-vector: listen again on the decider's YES (fork_followup.go)
 	}
-	forkEndKGLoop(isKG, &kgStopLooping, kgReadyToAnswer) // my-vector: start closed unsent leaves the searching anim looping (fork_answer.go)
+	forkEndKGLoop(isKG, &kgStopLooping, kgReadyToAnswer) // my-vector: start closed unsent leaves forkWait looping (fork_answer.go)
 	return "", nil
 }
 
