@@ -49,3 +49,23 @@ func forkWait(robot *vector.Vector, kind forkWaitKind, stopLooping *bool, ready 
 	}()
 	return w
 }
+
+// forkStreamSay speaks the stream-failure line (upstream's empty-EOF KGSim); tests stub it.
+var forkStreamSay = KGSim
+
+// forkStreamFailed is StreamingKGSim's non-EOF Recv error / choice-less chunk hook (W4): upstream returned with the
+// turn on `range successIntent` or the speak loop on isDone, and forkWait looping. Mirrors the empty-EOF branch.
+func forkStreamFailed(isKG bool, esn string, chunks []string, successIntent chan bool, isDone *bool, speakReady chan string, stopLooping *bool, ready chan bool, stop chan bool) {
+	if len(chunks) > 0 { // the turn took a sentence: the speak loop ends the wait and the turn
+		*isDone = true
+		new(forkRepeats).wake(speakReady)
+		return
+	}
+	successIntent <- false
+	if isKG {
+		forkEndKGLoop(isKG, stopLooping, ready)
+		stop <- true
+		time.Sleep(time.Second / 3)
+		forkStreamSay(esn, "There was an error getting data from the L. L. M.")
+	}
+}
