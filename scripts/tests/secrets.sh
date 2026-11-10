@@ -15,7 +15,7 @@ else
 fi
 extra=$(grep -vxE 'secrets/(\.gitignore|README\.md)|' <<<"$tracked" | sort -u || true)
 [[ -z $extra ]] || { echo "FAIL: secrets: tracked or unignored: $extra" >&2; exit 1; }
-for p in secrets/myvector_ed25519 secrets/zz-any secrets/zz-dir/zz-any secrets/server/apiConfig.json secrets/server/certs/cert.key; do
+for p in secrets/myvector_ed25519 secrets/tailscale-authkey secrets/zz-any secrets/zz-dir/zz-any secrets/server/apiConfig.json secrets/server/certs/cert.key; do
   "${g[@]}" check-ignore -q --no-index "$p" || { echo "FAIL: secrets: $p is not gitignored" >&2; exit 1; }
 done
 ! "${g[@]}" check-ignore -q --no-index secrets/README.md || { echo "FAIL: secrets: README.md is ignored" >&2; exit 1; }

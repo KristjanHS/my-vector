@@ -29,6 +29,7 @@ rewrite of the lines it supersedes inside Stage 4, not a seam move ahead of it.
 | D10 | Extends N3/N5: `fw` refuses unless `${SSH_CLIENT%% *}` ∈ {`PC_LAN_IP`, laptop tailnet IP} **and** a fresh ssh to `ROBOT_IP` works before `arm`. After apply: via `ROBOT_IP` ssh ok + `:8888` 200; via `ROBOT_LAN_IP` ssh ok + `:8888` 000; any miss → `undo`. `--selftest` decoy renders D8 with `PC_LAN_IP` = decoy → LAN ssh must be refused while tailnet ssh works. `NETGUARD_OK` holds `PC_LAN_IP`. | `robot/netguard/apply.sh` |
 | D11 | Laptop guard: robot tailnet IP joins `tailnet4` (+`tailnet6`) at 2.2; robot LAN IP leaves `allowed4` at 4.5 (re-add for a BLE re-setup after a factory reset). | `scripts/wire-pod-guard.nft` |
 | D12 | Spike gate (pre-registered, from the public plan): GO iff robot joins the tailnet **and** a voice turn works with `escapepod.local` → laptop tailnet IP **and** `tailscaled` VmRSS < `RSS_CAP` **and** no vic-* restart in a `SOAK_MIN` soak. Stopping rule: the first failed clause is NO-GO — no tuning, retry or extra arm; run 2.6 undo and stop. | Stage 2.6 |
+| D14 | Claude runs the silent `[USER]` 2.x steps unprompted; 3.1+3.2 committed during the 2.5 soak (user ask): NO-GO → 2.6 also `git revert`s those commits. | Stage 2.6 |
 
 ## Constants (source is the home; values below)
 

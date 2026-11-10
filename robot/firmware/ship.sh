@@ -48,7 +48,7 @@ trap cleanup EXIT
 # robot/env.sh: settings.sh + smoke.sh source it from $pd/.. (robot/quiet: its guard.sh; robot/lib: the installers' etc.sh); ls-tree drops what an older sha lacks.
 # shellcheck disable=SC2046 # unquoted on purpose: empty for an older sha
 git -C "$repo" archive "$full" robot/firmware chipper/pkg/wirepod/sdkapp/fork_smoke.go \
-  $(git -C "$repo" ls-tree --name-only "$full" robot/env.sh robot/quiet robot/lib robot/diskguard robot/logkeep robot/sshkey robot/hostkey robot/epod robot/netguard chipper/pkg/myvector/voice) |
+  $(git -C "$repo" ls-tree --name-only "$full" robot/env.sh robot/quiet robot/lib robot/diskguard robot/logkeep robot/sshkey robot/hostkey robot/epod robot/tailscale robot/netguard chipper/pkg/myvector/voice) |
   tar -x -C "$head"
 pd=$head/robot/firmware
 if ((deploy)); then
