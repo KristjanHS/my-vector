@@ -394,49 +394,10 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 	}()
 	logger.Println("Get image here...")
 	// get image
-	robot.Conn.EnableMirrorMode(context.Background(), &vectorpb.EnableMirrorModeRequest{
-		Enable: true,
-	})
-	for i := 3; i > 0; i-- {
-		if stopImaging {
-			return
-		}
-		time.Sleep(time.Millisecond * 300)
-		robot.Conn.SayText(
-			context.Background(),
-			&vectorpb.SayTextRequest{
-				Text:           fmt.Sprint(i),
-				UseVectorVoice: true,
-				DurationScalar: 1.05,
-			},
-		)
-		if stopImaging {
-			return
-		}
+	resp, ok := forkPhotoCapture(robot, param, &stopImaging) // my-vector: mirror, countdown, capture, shutter — or the kept photo (fork_vision.go)
+	if !ok {
+		return
 	}
-	resp, _ := robot.Conn.CaptureSingleImage(
-		context.Background(),
-		&vectorpb.CaptureSingleImageRequest{
-			EnableHighResolution: true,
-		},
-	)
-	robot.Conn.EnableMirrorMode(
-		context.Background(),
-		&vectorpb.EnableMirrorModeRequest{
-			Enable: false,
-		},
-	)
-	go func() {
-		robot.Conn.PlayAnimation(
-			context.Background(),
-			&vectorpb.PlayAnimationRequest{
-				Animation: &vectorpb.Animation{
-					Name: "anim_photo_shutter_01",
-				},
-				Loops: 1,
-			},
-		)
-	}()
 	// encode to base64
 	reqBase64 := base64.StdEncoding.EncodeToString(forkPhotoData(resp, robot, &stopImaging)) // my-vector: a failed capture speaks the V8 line, no vision call (fork_vision.go)
 
