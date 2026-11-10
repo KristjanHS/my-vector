@@ -11,7 +11,7 @@ The wake chime before the wait and the spoken answer after it stay as they are.
 |---|---|---|---|
 | KG turn (`isKG`): search + LLM until the first sentence | `kgsim.go` `StreamingKGSim`, `if isKG` loop | `anim_knowledgegraph_searching_01` looped every 1/3 s (face sprite `face_knowledgegraph_searching`) | silent: peak −42.4 = idle floor −42.3 (`anim.sh`, 11-10) |
 | Wake-word turn (`!isKG`): search + LLM until the first sentence | `StreamingKGSim`: `IntentPass` + `forkBControl` run only **after** the first sentence | nothing from wire-pod; vic-engine's own post-listen state | `[AUDIT]` |
-| KG → answer handoff | `StreamingKGSim` `TTSGetinAnimation` = `anim_knowledgegraph_searching_getout_01` | getout anim | loud: peak −18.9 dBFS; kept (W8) |
+| KG → answer handoff | `StreamingKGSim` `TTSGetinAnimation` = `anim_knowledgegraph_searching_getout_01` | getout anim | peak −18.9, loud50ms −28.9: ≥9.5 dB under stock speech (−7.4 / −19.4); not on the Animation bus (same at 0.1 and 1.0) |
 | Photo turn: "Let me look." → vision model → first sentence | `fork_vision.go` `forkPhotoShot` → `DoGetImage` | `[AUDIT]` whatever `DoGetImage` plays during the vision call | `[AUDIT]` |
 | Web search | inside `CreateAIReq` → `forkSearch` (`fork_prompt.go`), before the LLM stream opens | same as the enclosing turn: no separate visual | — |
 
@@ -29,6 +29,7 @@ Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS)
 | W5 | Kind switches: `forkSearch` start → search; search done / LLM stream open → think; photo turn after "Let me look." → look | hook in `fork_prompt.go` around `forkSearch`; `fork_vision.go` |
 | W6 | Wake-word turns (`!isKG`) get the wait too: send `IntentPass(intent_greeting_hello)` + `forkBControl` at stream open, not at the first sentence (as `forkPhotoTurn` does). `[AUDIT]` that an early intent doesn't cut vic-engine's listen or the follow-up arm (`fork_followup.go`) | `kgsim.go` `StreamingKGSim` |
 | W7 | Out of scope: weather and other intent-path answers (no LLM wait), and the answer's own TTS loop anim | — |
+| W9 | Getout no louder than speech at the same master (user 11-10): holds today, no change. Falsifier: `anim.sh` getout loud50ms ≤ `pcvoice.sh` stock loud50ms | — |
 | W8 | `[AUDIT]` −45 sits under today's idle floor (5/5 s above): re-pick vs an `idle.sh` capture. Done = wait window (end of speech → getout start, else first TTS sample) has 0 s above −45 dBFS, visual on screen throughout; getout keeps its sound (user 2026-11-10) | Stage 4 |
 
 ## Checklist
