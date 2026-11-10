@@ -1,7 +1,6 @@
 package wirepod_ttr
 
 import (
-	"context"
 	"strings"
 	"time"
 
@@ -11,10 +10,10 @@ import (
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/voice"
 )
 
-// forkSayText speaks an LLM answer in the current language's saved T1 voice (DoSayText's hook, plan B3).
+// forkSayText speaks an LLM answer in the current language's saved T1 voice (DoSayText's hook, plan B3); an interrupt cuts it.
 func forkSayText(input string, robot *vector.Vector) error {
 	from := time.Now()
-	used, err := voice.Speak(context.Background(), robot, input, voice.Current().For(lang.Current()))
+	used, err := voice.Speak(forkSpeakCtx(robot), robot, input, voice.Current().For(lang.Current()))
 	forkListening.Spoken(robot.Cfg.SerialNo, from, time.Now())
 	if err != nil {
 		logger.Println("myvector voice " + used + ": " + err.Error())

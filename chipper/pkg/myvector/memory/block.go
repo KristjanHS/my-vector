@@ -20,7 +20,7 @@ const (
 // dropping diary then facts from the end until both fit prompt.MemoryBudget(brain); the profile is never dropped.
 func Block(s *Store, esn, utterance, brain string) (facts, diary string) {
 	nFacts, nDiary := FactsClaude, DiaryClaude
-	if brain == prompt.Ollama {
+	if prompt.IsOllama(brain) {
 		nFacts, nDiary = FactsOllama, DiaryOllama
 	}
 	fs := Retrieve(s, esn, utterance)

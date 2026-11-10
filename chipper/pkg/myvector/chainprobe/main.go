@@ -1,13 +1,15 @@
 // Command chainprobe replays a follow-up chain through the real chat request path (CreateAIReq → forkAIReq splices
 // the per-ESN remembered chat) without the robot, per arm × rep, one JSON line per call.
 //
-//	go run ./pkg/myvector/chainprobe -chain c.json [-chained] [-arms 0,S,Q,P,E] [-reps 5] [-brain ollama:model] [-temp 0.4 -topp 0.9] -out o.jsonl   # from chipper/
+//	go run ./pkg/myvector/chainprobe -chain c.json [-chained] [-arms 0,S,Q,P,C,L,E] [-line text] [-reps 5] [-brain ollama:model] [-temp 0.4 -topp 0.9] -out o.jsonl   # from chipper/
 //
 // c.json: {"lang":"et-EE","history":[{"user":…,"assistant":…}],"turns":["ja.","mida?"]}. Each rep starts from the
 // history alone; -chained remembers each turn's own reply before the next turn. Arms: 0 = as saved; S = -temp, -topp
 // (default 0.4, 0.9: routeprobe's S, now the apertus family's own, so for apertus only a non-default S differs from
 // arm 0); Q = the saved ollama template without "Now and then ask a question back.";
 // P = the saved ollama template with lineP (no speaking as the person, no invented past) right after that line;
+// C = the same with lineC (it speaks aloud, so it tells jokes, sings by saying the words, recites poems) there;
+// L = the same with -line there;
 // E = the et EstLLM brain. Like routeprobe, nothing under secrets/server/ is written (temp copies), web search is off.
 package main
 
@@ -19,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -36,6 +39,7 @@ import (
 const (
 	lineQ  = "Now and then ask a question back. "
 	lineP  = "Never speak as the person or put words in their mouth, and never invent past events or conversations. "
+	lineC  = "You speak aloud through your robot body, so when asked you tell jokes, sing a song by saying its words, and recite poems. "
 	brainE = "ollama:hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M"
 )
 
@@ -50,6 +54,7 @@ type chain struct {
 
 type line struct {
 	Arm    string  `json:"arm"`
+	Line   string  `json:"line,omitempty"` // arm L's -line
 	Temp   float32 `json:"temp,omitempty"`
 	TopP   float32 `json:"top_p,omitempty"`
 	Rep    int     `json:"rep"`
@@ -70,10 +75,11 @@ var tmp string
 func main() {
 	chainFile := flag.String("chain", "", "chain JSON file")
 	chained := flag.Bool("chained", false, "remember each turn's own reply before the next turn")
-	armList := flag.String("arms", "0", "comma list of 0, S, Q, P, E")
+	armList := flag.String("arms", "0", "comma list of 0, S, Q, P, C, L, E")
 	reps := flag.Int("reps", 1, "reps per arm")
 	brain := flag.String("brain", "", "provider:model for the chain language's profile (not arm E)")
 	out := flag.String("out", "", "JSONL output file (appended)")
+	extra := flag.String("line", "", "arm L's prompt line, inserted after \""+strings.TrimSpace(lineQ)+"\"")
 	temp := flag.Float64("temp", 0.4, "arm S temperature, > 0 (0 would fall back to the Modelfile value)")
 	topP := flag.Float64("topp", 0.9, "arm S top_p, in (0, 1]")
 	flag.Parse()
@@ -91,9 +97,15 @@ func main() {
 	}
 	arms := strings.Split(*armList, ",")
 	for _, a := range arms {
-		if a != "0" && a != "S" && a != "Q" && a != "P" && a != "E" {
-			die("arms: 0, S, Q, P, E")
+		if a != "0" && a != "S" && a != "Q" && a != "P" && a != "C" && a != "L" && a != "E" {
+			die("arms: 0, S, Q, P, C, L, E")
 		}
+		if a == "L" && strings.TrimSpace(*extra) == "" {
+			die("arm L needs -line")
+		}
+	}
+	if strings.TrimSpace(*extra) != "" && !slices.Contains(arms, "L") {
+		die("-line without arm L")
 	}
 	f, err := os.OpenFile(*out, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -123,9 +135,10 @@ func main() {
 	if err != nil {
 		die("prompt: %v", err)
 	}
-	baseTmpl := prompt.Load().Live(prompt.Ollama)
+	pb := prompt.OllamaFor(c.Lang)
+	baseTmpl := prompt.Load().Live(pb)
 	if n := strings.Count(baseTmpl, lineQ); n != 1 {
-		die("arm Q: %q appears %d times in the live ollama template, want 1", lineQ, n)
+		die("arm Q: %q appears %d times in the live %s template, want 1", lineQ, n, pb)
 	}
 	enc := json.NewEncoder(f)
 	for _, arm := range arms {
@@ -141,19 +154,20 @@ func main() {
 			llm.ProbeSampling = func(provider, _ string) (llm.Sampling, bool) { return s, provider != llm.Claude }
 		case "Q":
 			t := strings.Replace(baseTmpl, lineQ, "", 1)
-			if err := prompt.Save(prompt.Ollama, &t, nil); err != nil {
+			if err := prompt.Save(pb, &t, nil, nil); err != nil {
 				die("arm Q: %v", err)
 			}
-			if strings.Contains(prompt.Load().Live(prompt.Ollama), lineQ) {
+			if strings.Contains(prompt.Load().Live(pb), lineQ) {
 				die("arm Q: the saved template still has the line")
 			}
-		case "P":
-			t := strings.Replace(baseTmpl, lineQ, lineQ+lineP, 1)
-			if err := prompt.Save(prompt.Ollama, &t, nil); err != nil {
-				die("arm P: %v", err)
+		case "P", "C", "L":
+			add := map[string]string{"P": lineP, "C": lineC, "L": strings.TrimSpace(*extra) + " "}[arm]
+			t := strings.Replace(baseTmpl, lineQ, lineQ+add, 1)
+			if err := prompt.Save(pb, &t, nil, nil); err != nil {
+				die("arm %s: %v", arm, err)
 			}
-			if !strings.Contains(prompt.Load().Live(prompt.Ollama), lineP) {
-				die("arm P: the saved template lacks the line")
+			if !strings.Contains(prompt.Load().Live(pb), lineQ+add) {
+				die("arm %s: the saved template lacks the line", arm)
 			}
 		case "E":
 			lang.Path = func() string { return ePath }
@@ -165,6 +179,9 @@ func main() {
 			}
 			for i, ask := range c.Turns {
 				l := line{Arm: arm, Rep: rep, Turn: i + 1, Ask: ask, Hist: len(ttr.GetChat(esn).Chats)}
+				if arm == "L" {
+					l.Line = strings.TrimSpace(*extra)
+				}
 				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 				res, err := ttr.ForkProbeLLMFull(ctx, ask, esn)
 				cancel()

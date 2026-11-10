@@ -2,6 +2,7 @@ package wirepod_ttr
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -52,7 +53,7 @@ func TestForkPromptEstonian(t *testing.T) {
 	if r.Model != llm.DefaultETModel {
 		t.Errorf("Model = %q, want %q", r.Model, llm.DefaultETModel)
 	}
-	if want := "\n\nPraegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn).\n\nAnswer in Estonian. Keep names, brands and titles as written."; !strings.HasSuffix(r.Messages[0].Content, want) {
+	if want := "\n\nPraegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn).\n\n" + prompt.LangLine(prompt.OllamaEt, lang.Estonian); !strings.HasSuffix(r.Messages[0].Content, want) {
 		t.Errorf("system prompt lacks the now + language lines: %q", r.Messages[0].Content)
 	}
 	if r.ReasoningEffort != "none" {
@@ -67,7 +68,7 @@ func TestForkPromptEnglishNow(t *testing.T) {
 	vars.APIConfig.Knowledge.OpenAIPrompt = "You are a pirate."
 	r := CreateAIReq("what day is it", "esn", false, true)
 	want := prompt.Render(prompt.Default(prompt.Ollama), prompt.Vars{
-		Now: "It is Saturday, 7 November 2026, 16:43 (Asia/Tokyo).", Speech: prompt.SpeechBlock(),
+		Now: "It is Saturday, 7 November 2026, 16:43 (Asia/Tokyo).", Speech: prompt.SpeechBlock(prompt.Ollama),
 	})
 	if r.Model != "qwen3.5:4b" || r.Messages[0].Content != want {
 		t.Errorf("English request: model %q, prompt %q", r.Model, r.Messages[0].Content)
@@ -89,7 +90,7 @@ func TestForkPromptReadsStore(t *testing.T) {
 	prompt.Path = func() string { return path }
 	t.Cleanup(func() { prompt.Path = old })
 	tmpl, about := "Be a pirate robot.\n\n{user}", "Mari lives in Tartu."
-	if err := prompt.Save(prompt.Ollama, &tmpl, &about); err != nil {
+	if err := prompt.Save(prompt.Ollama, &tmpl, &about, nil); err != nil {
 		t.Fatal(err)
 	}
 	c := CreateAIReq("what day is it", "esn", false, true).Messages[0].Content
@@ -112,7 +113,7 @@ func TestForkPromptOpenAIOmitsReasoning(t *testing.T) {
 		if r.ReasoningEffort != "" || r.Model != k[2] {
 			t.Errorf("%s %s: ReasoningEffort %q, Model %q", k[0], k[1], r.ReasoningEffort, r.Model)
 		}
-		if !strings.HasSuffix(r.Messages[0].Content, prompt.LangLine(lang.Estonian)) {
+		if !strings.HasSuffix(r.Messages[0].Content, prompt.LangLine(prompt.Claude, lang.Estonian)) {
 			t.Errorf("%s: language line missing", k[1])
 		}
 	}
@@ -129,9 +130,12 @@ func TestForkPromptReplyCap(t *testing.T) {
 		{"https://api.anthropic.com/v1", "claude-haiku-5-5", false, 1024},
 	} {
 		useKnowledge(t, "custom", k.endpoint, k.model)
+		if k.ollama {
+			fakeOllamaKG(t, k.model)
+		}
 		checkCap(t, k.model, CreateAIReq("hi", "esn", false, false), k.ollama, k.want)
 		cam := openai.ChatCompletionRequest{Model: k.model, MaxCompletionTokens: 2048}
-		forkCameraReq(&cam, new(*openai.Client))()
+		forkCameraReq(&cam, new(*openai.Client), "esn")()
 		checkCap(t, k.model+" camera", cam, k.ollama, k.want)
 	}
 }
@@ -146,7 +150,7 @@ func TestForkPromptReplyCapLongAsk(t *testing.T) {
 		{"https://api.anthropic.com/v1", "claude-haiku-5-5", false},
 	} {
 		useKnowledge(t, "custom", k.endpoint, k.model)
-		long, short := prompt.LongReplyCap(forkBrain(k.ollama)), prompt.ReplyCap(forkBrain(k.ollama))
+		long, short := prompt.LongReplyCap(forkBrain(k.ollama, lang.Estonian)), prompt.ReplyCap(forkBrain(k.ollama, lang.Estonian))
 		lang.UseForTest(t, lang.English)
 		checkCap(t, k.model+" story", CreateAIReq("Tell me a story about a robot", "esn", false, false), k.ollama, long)
 		checkCap(t, k.model+" KG hi", CreateAIReq("hi", "esn", false, true), k.ollama, long)
@@ -179,7 +183,8 @@ func TestForkPromptReplyCapProfile(t *testing.T) {
 		{"https://api.anthropic.com/v1", "claude-haiku-5-5", llm.Profile{Provider: llm.Ollama, Model: "qwen3.5:4b"}, 300},
 	} {
 		useKnowledge(t, "custom", k.endpoint, k.model)
-		saveLLM(t, lang.English, llm.Config{Profiles: map[string]llm.Profile{lang.English: k.profile}, ClaudeKey: strings.Repeat("k", 20)})
+		p := map[string]llm.Profile{lang.English: k.profile} // vision = brain: the camera cap follows it
+		saveLLM(t, lang.English, llm.Config{Profiles: p, Vision: p, ClaudeKey: strings.Repeat("k", 20)})
 		r := CreateAIReq("hi", "esn", false, false)
 		if r.Model != k.profile.Model {
 			t.Errorf("%s profile: model %q", k.profile.Provider, r.Model)
@@ -187,8 +192,19 @@ func TestForkPromptReplyCapProfile(t *testing.T) {
 		ollama := k.profile.Provider == llm.Ollama
 		checkCap(t, k.profile.Provider+" profile", r, ollama, k.want)
 		cam := openai.ChatCompletionRequest{Model: k.model}
-		forkCameraReq(&cam, new(*openai.Client))()
+		forkCameraReq(&cam, new(*openai.Client), "esn")()
 		checkCap(t, k.profile.Provider+" profile camera", cam, ollama, k.want)
+	}
+}
+
+func TestForkPhotoActs(t *testing.T) {
+	acts := GetActionsFromString("{{playAnimationWI||happy}} I see a cup. {{getImage||front}} Nice!")
+	var kinds []int
+	for _, a := range forkPhotoActs(acts) {
+		kinds = append(kinds, a.Action)
+	}
+	if fmt.Sprint(kinds) != fmt.Sprint([]int{ActionPlayAnimationWI, ActionSayText, ActionSayText}) {
+		t.Errorf("photo actions %v from %+v", kinds, acts)
 	}
 }
 
@@ -210,38 +226,40 @@ func TestForkCommandsSample(t *testing.T) {
 	if byName["playAnimationWI"].ParamChoices != prompt.SampleEmotions {
 		t.Errorf("prompt.SampleEmotions drifted from playAnimationWI ParamChoices %q", byName["playAnimationWI"].ParamChoices)
 	}
-	block := forkCommands()
-	offered := map[string]bool{}
-	for _, m := range regexp.MustCompile(`\{\{(\w+)\|\|(\w+)\}\}`).FindAllStringSubmatch(block, -1) {
-		name, param := m[1], m[2]
-		if name == "command" {
-			continue // the grammar line itself
+	for _, brain := range prompt.Brains {
+		block := forkCommands(brain)
+		offered := map[string]bool{}
+		for _, m := range regexp.MustCompile(`\{\{([\pL\w]+)\|\|([\pL\w]+)\}\}`).FindAllStringSubmatch(block, -1) {
+			name, param := m[1], m[2]
+			if name == "command" || name == "käsk" {
+				continue // the grammar line itself
+			}
+			if param == "emotion" || param == "emotsioon" {
+				param = "love" // placeholder: the list is SampleEmotions
+			}
+			offered[name] = true
+			if !slices.Contains(strings.Split(byName[name].ParamChoices, ", "), param) {
+				t.Errorf("%s: block offers {{%s||%s}}, not in its ParamChoices", brain, name, param)
+			}
+			a := GetActionsFromString("{{" + name + "||" + param + "}}")
+			if len(a) == 0 || a[0].Action != byName[name].Action || a[0].Parameter != param {
+				t.Errorf("%s: block offers {{%s||%s}}; the parser returns %+v", brain, m[1], m[2], a)
+			}
 		}
-		if param == "emotion" {
-			param = "love" // placeholder: the list is SampleEmotions
+		for _, name := range []string{"playAnimationWI", "playAnimation", "getImage"} {
+			if !offered[name] {
+				t.Errorf("%s: block lacks {{%s||…}}", brain, name)
+			}
 		}
-		offered[name] = true
-		if !slices.Contains(strings.Split(byName[name].ParamChoices, ", "), param) {
-			t.Errorf("block offers {{%s||%s}}, not in its ParamChoices", name, param)
-		}
-		a := GetActionsFromString("{{" + name + "||" + param + "}}")
-		if len(a) == 0 || a[0].Action != byName[name].Action || a[0].Parameter != param {
-			t.Errorf("block offers {{%s||%s}}; the parser returns %+v", m[1], m[2], a)
-		}
-	}
-	for _, name := range []string{"playAnimationWI", "playAnimation", "getImage"} {
-		if !offered[name] {
-			t.Errorf("block lacks {{%s||…}}", name)
-		}
-	}
-	for _, save := range []bool{true, false} {
-		vars.APIConfig.Knowledge.SaveChat = save
-		if offered["newVoiceRequest"] || strings.Contains(forkCommands(), "newVoiceRequest") {
-			t.Errorf("save_chat %v: block offers newVoiceRequest (F5: forkFollowUp listens again)", save)
+		for _, save := range []bool{true, false} {
+			vars.APIConfig.Knowledge.SaveChat = save
+			if offered["newVoiceRequest"] || strings.Contains(forkCommands(brain), "newVoiceRequest") {
+				t.Errorf("%s save_chat %v: block offers newVoiceRequest (F5: forkFollowUp listens again)", brain, save)
+			}
 		}
 	}
 	vars.APIConfig.Knowledge.CommandsEnable = false
-	if forkCommands() != "" {
+	if forkCommands(prompt.Claude) != "" {
 		t.Error("commands block rendered with CommandsEnable off")
 	}
 }
@@ -275,14 +293,14 @@ func TestForkCameraEstonianUnloads(t *testing.T) {
 		after  []string
 	}{
 		{lang.English, nil, nil},
-		{lang.Estonian, []string{llm.DefaultETModel}, []string{llm.DefaultETModel, "qwen3.5:4b"}},
+		{lang.Estonian, nil, nil}, // the relay unloads inside its stream (TestForkCameraRelay); the deferred func is a no-op
 	} {
 		lang.UseForTest(t, c.lang)
 		got = nil
 		r := CreateAIReq("mida sa näed?", "esn", false, true)
 		r.Model = vars.APIConfig.Knowledge.Model // DoGetImage's own model pick
 		r.ReasoningEffort = ""
-		done := forkCameraReq(&r, new(*openai.Client))
+		done := forkCameraReq(&r, new(*openai.Client), "esn")
 		if r.ReasoningEffort != "none" || r.Model != "qwen3.5:4b" {
 			t.Errorf("%s: camera request ReasoningEffort %q, Model %q", c.lang, r.ReasoningEffort, r.Model)
 		}
@@ -310,12 +328,12 @@ func TestForkAIReqSearch(t *testing.T) {
 	}
 
 	empty := CreateAIReq("mis ilm homme on?", "esn", false, true).Messages[0].Content
-	if want := []string{"mis ilm homme on?", lang.Estonian, prompt.Ollama, "Europe/Tallinn"}; !slices.Equal(got, want) {
+	if want := []string{"mis ilm homme on?", lang.Estonian, prompt.OllamaEt, "Europe/Tallinn"}; !slices.Equal(got, want) {
 		t.Errorf("forkSearch got %q, want %q", got, want)
 	}
-	if want := prompt.Render(prompt.Default(prompt.Ollama), prompt.Vars{
+	if want := prompt.Render(prompt.Default(prompt.OllamaEt), prompt.Vars{
 		Now:  "Praegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn).",
-		Lang: prompt.LangLine(lang.Estonian), Speech: prompt.SpeechBlock(),
+		Lang: prompt.LangLine(prompt.OllamaEt, lang.Estonian), Speech: prompt.SpeechBlock(prompt.OllamaEt),
 	}); empty != want {
 		t.Errorf("empty search left residue:\n%q\nwant\n%q", empty, want)
 	}
@@ -340,12 +358,12 @@ func TestForkAIReqMemory(t *testing.T) {
 	}
 
 	empty := CreateAIReq("kas mu koer on terve?", "esn", false, true).Messages[0].Content
-	if want := []string{"esn", "kas mu koer on terve?", prompt.Ollama}; !slices.Equal(got, want) {
+	if want := []string{"esn", "kas mu koer on terve?", prompt.OllamaEt}; !slices.Equal(got, want) {
 		t.Errorf("forkMemory got %q, want %q", got, want)
 	}
-	if want := prompt.Render(prompt.Default(prompt.Ollama), prompt.Vars{
+	if want := prompt.Render(prompt.Default(prompt.OllamaEt), prompt.Vars{
 		Now:  "Praegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn).",
-		Lang: prompt.LangLine(lang.Estonian), Speech: prompt.SpeechBlock(),
+		Lang: prompt.LangLine(prompt.OllamaEt, lang.Estonian), Speech: prompt.SpeechBlock(prompt.OllamaEt),
 	}); empty != want {
 		t.Errorf("empty memory left residue:\n%q\nwant\n%q", empty, want)
 	}

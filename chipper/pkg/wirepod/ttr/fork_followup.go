@@ -49,7 +49,8 @@ func forkAfterReply(turn forkTurn, esn string, isKG bool, ask, reply string) {
 
 // forkBegin runs as StreamingKGSim starts: a knowledge request consumes an armed follow-up (F2), any other
 // request resets the chain; a blank one, an armed one STT scored as no speech, or a quiet/listen phrase
-// (forkKGSwitch) ends it and skips the LLM call (B1). turn is this request's forkTurn.
+// (forkKGSwitch) ends it and skips the LLM call (B1). turn is this request's forkTurn. A skipped knowledge request
+// takes no forkBControl, so each skip cuts streamingKG's placeholder or the robot speaks it ("bla bla bla").
 func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
 	turn = make(forkTurn, 1)
 	p := followup.TakeNoSpeech(esn)
@@ -59,6 +60,7 @@ func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
 	case strings.TrimSpace(text) == "":
 		forkChain.Reset(esn)
 		logger.Println("myvector: follow-up blank, chain ends")
+		forkKGSilence(esn)
 		return turn, true
 	case forkKGSwitch(esn, text):
 		forkChain.Reset(esn)
@@ -68,17 +70,25 @@ func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
 		if forkChain.Begin(esn, forkNow()) && p >= followup.NoSpeech {
 			forkChain.Reset(esn)
 			logger.Println("myvector: stt no-speech " + strconv.FormatFloat(p, 'f', 3, 64) + ", blank, chain ends")
+			forkKGSilence(esn)
 			return turn, true
 		}
 	}
 	return turn, false
 }
 
+// forkKGSilence cuts streamingKG's placeholder with nothing said in its place (forkKGSwitch cuts its own).
+func forkKGSilence(esn string) {
+	if err := forkKGCut(esn, func() {}); err != nil {
+		logger.Println("myvector: follow-up kg cut: " + err.Error())
+	}
+}
+
 // forkFollowUp runs after the reply is spoken: on the decider's YES under the chain cap it arms the chain and
-// re-opens the mic (F1, F2); skip (interrupted / disconnected) drops the decision. Waits up to forkFollowUpWait
-// for turn's decider and its answer. Reports whether it fired.
+// re-opens the mic (F1, F2); skip (interrupted / disconnected) or a cut speech (forkSpeakCtx: the speak loop can
+// end before `interrupted` is set) drops the decision. Waits up to forkFollowUpWait for turn's decider and its answer.
 func forkFollowUp(robot *vector.Vector, turn forkTurn, esn string, skip bool) bool {
-	if skip {
+	if skip || forkSpeakCtx(robot).Err() != nil {
 		return false
 	}
 	max := forkMax(esn)
@@ -173,7 +183,18 @@ func (r *forkRepeats) wake(speakReady chan string) {
 // forkSignalHeld) neither indexes past the slice nor stops the loop early. chunks and done read the stream
 // goroutine's fullRespSlice and isDone.
 func forkNextChunk(chunks func() []string, done func() bool, n int, speakReady chan string) (string, bool) {
+	return forkNextChunkUntil(chunks, done, n, speakReady, nil)
+}
+
+// forkNextChunkUntil is forkNextChunk that also ends, ok false, once stop is closed: before it returns a chunk and
+// while it waits (DoGetImage's interrupt — nothing else wakes the wait). A nil stop never ends it.
+func forkNextChunkUntil(chunks func() []string, done func() bool, n int, speakReady chan string, stop <-chan struct{}) (string, bool) {
 	for {
+		select {
+		case <-stop:
+			return "", false
+		default:
+		}
 		if s := chunks(); n < len(s) {
 			return s[n], true
 		}
@@ -181,7 +202,11 @@ func forkNextChunk(chunks func() []string, done func() bool, n int, speakReady c
 			return "", false
 		}
 		logger.Println("Waiting for more content from LLM...")
-		<-speakReady
+		select {
+		case <-speakReady:
+		case <-stop:
+			return "", false
+		}
 	}
 }
 

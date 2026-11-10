@@ -177,10 +177,11 @@ func TestResolveVision(t *testing.T) {
 	t.Cleanup(func() { AnthropicBase = old })
 	const key, pc = "sk-ant-0123456789abcdefWxYz", "http://pc:11434"
 	legacy, kg := Config{LegacyETModel: "estllm:x"}, KG{"custom", ollamaV1, "llama:k"}
-	saved := func(en, et Profile, key string) Config {
-		return Config{OllamaURL: pc, ClaudeKey: key, Profiles: map[string]Profile{lang.English: en, lang.Estonian: et}}
+	claudeBrain := map[string]Profile{lang.English: {Claude, "claude-haiku-5-5"}, lang.Estonian: {Claude, "claude-haiku-5-5"}}
+	saved := func(vision map[string]Profile, key string) Config {
+		return Config{OllamaURL: pc, ClaudeKey: key, Profiles: claudeBrain, Vision: vision}
 	}
-	claude := Target{Claude, "https://claude.test/v1", key, "claude-haiku-5-5"}
+	claude := Target{Claude, "https://claude.test/v1", key, "claude-sonnet-5-5"}
 	for _, w := range []struct {
 		name string
 		c    Config
@@ -189,19 +190,72 @@ func TestResolveVision(t *testing.T) {
 		want Target
 		ok   bool
 	}{
-		{"legacy en", legacy, lang.English, kg, Target{}, false},
-		{"legacy et ollama", legacy, lang.Estonian, kg, Target{Ollama, ollamaV1, "ollama", "llama:k"}, true},
-		{"legacy et ollama no model", legacy, lang.Estonian, KG{"custom", ollamaV1, ""}, Target{Ollama, ollamaV1, "ollama", DefaultENModel}, true},
-		{"legacy et openai", legacy, lang.Estonian, KG{"openai", "", "gpt-4o-mini"}, Target{}, false},
-		{"en X et Y: et", saved(Profile{Ollama, "x:1"}, Profile{Ollama, "y:1"}, ""), lang.Estonian, kg, Target{Ollama, pc + "/v1", "ollama", "x:1"}, true},
-		{"en X et Y: en", saved(Profile{Ollama, "x:1"}, Profile{Ollama, "y:1"}, ""), lang.English, kg, Target{Ollama, pc + "/v1", "ollama", "x:1"}, true},
-		{"en claude et ollama", saved(Profile{Claude, "claude-haiku-5-5"}, Profile{Ollama, "y:1"}, key), lang.Estonian, kg, Target{Ollama, pc + "/v1", "ollama", DefaultENModel}, true},
-		{"et claude key", saved(Profile{Ollama, "x:1"}, Profile{Claude, "claude-haiku-5-5"}, key), lang.Estonian, kg, claude, true},
-		{"en claude key", saved(Profile{Claude, "claude-haiku-5-5"}, Profile{Ollama, "y:1"}, key), lang.English, kg, claude, true},
-		{"et claude no key", saved(Profile{Ollama, "x:1"}, Profile{Claude, "claude-haiku-5-5"}, ""), lang.Estonian, kg, Target{}, false},
+		{"legacy openai", legacy, lang.Estonian, KG{"openai", "", "gpt-4o-mini"}, Target{}, false},
+		{"legacy en openai", legacy, lang.English, KG{"openai", "", "gpt-4o-mini"}, Target{}, false},
+		{"legacy et ollama", legacy, lang.Estonian, kg, Target{Ollama, ollamaV1, "ollama", DefaultVisionET}, true},
+		{"legacy en ollama", legacy, lang.English, kg, Target{Ollama, ollamaV1, "ollama", DefaultVisionEN}, true},
+		{"brain claude, unsaved: et", saved(nil, key), lang.Estonian, kg, Target{Ollama, pc + "/v1", "ollama", DefaultVisionET}, true},
+		{"brain claude, unsaved: en", saved(nil, key), lang.English, KG{}, Target{Ollama, pc + "/v1", "ollama", DefaultVisionEN}, true},
+		{"saved ollama", saved(map[string]Profile{lang.Estonian: {Ollama, "llava:7b"}}, ""), lang.Estonian, kg, Target{Ollama, pc + "/v1", "ollama", "llava:7b"}, true},
+		{"saved ollama, other language default", saved(map[string]Profile{lang.Estonian: {Ollama, "llava:7b"}}, ""), lang.English, kg, Target{Ollama, pc + "/v1", "ollama", DefaultVisionEN}, true},
+		{"hand-edited gemma4", saved(map[string]Profile{lang.Estonian: {Ollama, "gemma4:e4b-it-qat"}}, ""), lang.Estonian, kg, Target{Ollama, pc + "/v1", "ollama", DefaultVisionET}, true},
+		{"saved claude + key", saved(map[string]Profile{lang.English: {Claude, "claude-sonnet-5-5"}}, key), lang.English, kg, claude, true},
+		{"saved claude, no key", saved(map[string]Profile{lang.English: {Claude, "claude-sonnet-5-5"}}, ""), lang.English, kg, Target{Ollama, pc + "/v1", "ollama", DefaultVisionEN}, true},
+		{"vision only saved", Config{Vision: map[string]Profile{lang.English: {Ollama, "v:1"}}}, lang.English, KG{"openai", "", ""}, Target{Ollama, DefaultOllamaURL + "/v1", "ollama", "v:1"}, true},
+		{"unknown language", saved(nil, key), "fr-FR", kg, Target{}, false},
+		{"hand-edited empty model", saved(map[string]Profile{lang.English: {Ollama, ""}}, key), lang.English, kg, Target{Ollama, pc + "/v1", "ollama", DefaultVisionEN}, true},
+		{"hand-edited provider", saved(map[string]Profile{lang.English: {"openai", "gpt-4o"}}, key), lang.English, kg, Target{Ollama, pc + "/v1", "ollama", DefaultVisionEN}, true},
 	} {
 		if got, ok := ResolveVision(w.c, w.l, w.kg); got != w.want || ok != w.ok {
 			t.Errorf("%s: ResolveVision = %+v %v, want %+v %v", w.name, got, ok, w.want, w.ok)
 		}
+	}
+}
+
+func TestValidateVision(t *testing.T) {
+	key := "sk-ant-0123456789abcdefWxYz"
+	for name, c := range map[string]Config{
+		"provider":      {Vision: map[string]Profile{lang.English: {"gemini", "g"}}},
+		"claude no key": {Vision: map[string]Profile{lang.Estonian: {Claude, "claude-haiku-5-5"}}},
+		"language":      {Vision: map[string]Profile{"fr-FR": {Ollama, "m"}}},
+		"empty model":   {Vision: map[string]Profile{lang.English: {Ollama, ""}}},
+		"gemma4":        {Vision: map[string]Profile{lang.Estonian: {Ollama, "gemma4:e4b-it-qat"}}},
+		"padded gemma4": {Vision: map[string]Profile{lang.Estonian: {Ollama, " gemma4:e4b "}}},
+	} {
+		if err := Validate(c); err == nil || !strings.HasPrefix(err.Error(), "vision ") {
+			t.Errorf("%s: Validate(%+v) = %v, want a vision error", name, c, err)
+		}
+	}
+	path := tempPath(t)
+	brain := map[string]Profile{lang.Estonian: {Claude, "claude-haiku-5-5"}}
+	if err := Save(Config{ClaudeKey: key, Profiles: brain, Vision: map[string]Profile{lang.Estonian: {Ollama, " llava:7b "}}}); err != nil {
+		t.Fatal(err)
+	}
+	if c := Load(); c.Profiles[lang.Estonian] != brain[lang.Estonian] || c.Vision[lang.Estonian] != (Profile{Ollama, "llava:7b"}) {
+		t.Errorf("saved %+v", c)
+	}
+	if err := Save(Config{ClaudeKey: key, Profiles: brain}); err != nil { // vision absent: kept
+		t.Fatal(err)
+	}
+	if c := Load(); c.Vision[lang.Estonian] != (Profile{Ollama, "llava:7b"}) || c.Profiles[lang.Estonian] != brain[lang.Estonian] {
+		b, _ := os.ReadFile(path)
+		t.Errorf("vision-less Save: %+v (%s)", c, b)
+	}
+}
+
+func TestVisionAllowed(t *testing.T) {
+	for m, want := range map[string]bool{"qwen3.5:4b": true, "llava:7b": true, "library/llava:7b": true, "mygemma4:x": true,
+		"gemma4:e4b": false, "library/gemma4:e4b": false, "Gemma4:x": false, "GEMMA4": false, " gemma4:e4b ": false} {
+		if got := VisionAllowed(m); got != want {
+			t.Errorf("VisionAllowed(%q) = %v, want %v", m, got, want)
+		}
+	}
+}
+
+func TestLoadDropsNoVision(t *testing.T) {
+	path := tempPath(t)
+	os.WriteFile(path, []byte(`{"vision":{"et-EE":{"provider":"ollama","model":"gemma4:e4b"},"en-US":{"provider":"ollama","model":"llava:7b"}}}`), 0644)
+	if c := Load(); len(c.Vision) != 1 || c.Vision[lang.English] != (Profile{Ollama, "llava:7b"}) {
+		t.Errorf("Load vision = %+v, want only en-US llava:7b", c.Vision)
 	}
 }

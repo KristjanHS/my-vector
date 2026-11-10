@@ -37,7 +37,7 @@
       font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
     a { color: var(--accent); }
-    .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 32px; }
+    .wrap { padding: 0 16px 32px; }
     .top { position: sticky; top: 0; z-index: 1; background: var(--bg); border-bottom: 1px solid var(--border); }
     .bar { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
     .bar h1 { flex: 1; margin: 0; font-size: 18px; font-weight: 600; }
@@ -125,6 +125,10 @@
             <p class="hint" id="pick_en-US"></p>
             <p class="hint" id="res_en-US" aria-live="polite"></p>
           </div>
+          <div class="field">
+            <label for="vision_en-US">Camera (vision)</label>
+            <select id="vision_en-US"><optgroup label="Local (Ollama)" data-provider="ollama"></optgroup><optgroup label="Claude API — sends the photo to Anthropic" data-provider="claude"></optgroup></select>
+          </div>
           <div class="two">
             <div class="field"><label for="t1">Answer voice (T1)</label><select id="t1"></select><p class="hint">Speaks LLM answers</p></div>
             <div class="field"><label for="t2">Robot voice (T2)</label><select id="t2"></select><p class="hint">Vector's built-in lines</p></div>
@@ -137,6 +141,10 @@
             <div class="inline wrap-sm"><select id="llm_et-EE"><optgroup label="Local (Ollama)" data-provider="ollama"></optgroup><optgroup label="Claude API" data-provider="claude"></optgroup></select><button type="button" data-test="et-EE">Test</button></div>
             <p class="hint" id="pick_et-EE"></p>
             <p class="hint" id="res_et-EE" aria-live="polite"></p>
+          </div>
+          <div class="field">
+            <label for="vision_et-EE">Camera (vision)</label>
+            <select id="vision_et-EE"><optgroup label="Local (Ollama)" data-provider="ollama"></optgroup><optgroup label="Claude API — sends the photo to Anthropic" data-provider="claude"></optgroup></select>
           </div>
           <div class="two">
             <div class="field"><label for="t1_et">Answer voice (T1)</label><select id="t1_et"></select><p class="hint">Speaks LLM answers</p></div>
@@ -229,19 +237,19 @@
     const opt = (value, text = value) => Object.assign(document.createElement("option"), { value, textContent: text });
     const pick = (t) => { const r = document.querySelector(`input[name=${t}]:checked`); return r && r.value; };
     const dirty = (on) => $("save").classList.toggle("dirty", on);
-    function choice(l) { // the dropdown's {provider, model}; the group gives the provider
-      const o = $("llm_" + l).selectedOptions[0];
-      return o ? { provider: o.parentElement.dataset.provider, model: o.value } : cur.llm[l];
+    function choice(l, kind = "llm") { // the kind's ("llm" or "vision") dropdown {provider, model}; the group gives the provider
+      const o = $(kind + "_" + l).selectedOptions[0];
+      return o ? { provider: o.parentElement.dataset.provider, model: o.value } : cur[kind][l];
     }
     function showPick(l) { // the full model id under the dropdown, which a narrow screen may cut
       const c = choice(l);
       $("pick_" + l).textContent = c ? (c.provider === "claude" ? "Claude API" : "Ollama") + " · " + c.model : "";
     }
-    function fillModels(select, want) { // fills a select's Ollama + Claude optgroups and selects want {provider, model}
+    function fillModels(select, want, kind = "models") { // fills a select's Ollama (o[kind]) + Claude optgroups and selects want {provider, model}
       const [local, claude] = select.querySelectorAll("optgroup");
       claude.dataset.label ||= claude.label;
       const o = (lists && lists.ollama) || { models: [] }, c = (lists && lists.claude) || { models: [], keySet: !!cur.claudeKey };
-      local.replaceChildren(...o.models.map((m) => opt(m)));
+      local.replaceChildren(...(o[kind] || []).map((m) => opt(m)));
       claude.replaceChildren(...c.models.map((m) => opt(m.id, m.name || m.id)));
       claude.disabled = !c.keySet;
       claude.label = c.keySet ? claude.dataset.label : claude.dataset.label + " — add a Claude key under Connections";
@@ -249,12 +257,13 @@
       const group = want.provider === "claude" ? claude : local;
       let sel = [...group.children].find((x) => x.value === want.model);
       if (!sel) {
-        const why = !lists ? "" : want.provider === "claude" ? " (not listed)" : o.error ? " (Ollama unreachable)" : " (not installed)";
+        const why = !lists ? "" : want.provider === "claude" ? " (not listed)" : o.error ? " (Ollama unreachable)" : o.models.includes(want.model) ? " (no vision)" : " (not installed)";
         group.append(sel = opt(want.model, want.model + why));
       }
       sel.selected = true;
     }
     function fillLLM(l, want) { fillModels($("llm_" + l), want); showPick(l); }
+    function fillVision(l, want) { fillModels($("vision_" + l), want, "vision"); }
     function memoryChoice() { // "off" or "<provider>:<model>"
       const o = $("memory_model").selectedOptions[0];
       return !o ? cur.memoryModel : o.parentElement.dataset.provider ? o.parentElement.dataset.provider + ":" + o.value : o.value;
@@ -337,7 +346,7 @@
         $(t).replaceChildren(...s.voices[l].map((v) => opt(v)));
         $(t).value = s[t];
       }
-      for (const l of s.langs) fillLLM(l, s.llm[l]);
+      for (const l of s.langs) { fillLLM(l, s.llm[l]); fillVision(l, s.vision[l]); }
       fillMemory(s.memoryModel);
       if (!s.langs.includes(view)) view = s.lang;
       buildLang();
@@ -372,9 +381,10 @@
     }
     async function loadModels(refresh) {
       const keep = cur && Object.fromEntries(cur.langs.map((l) => [l, choice(l)])), keepMemory = memoryChoice();
+      const keepVision = cur && Object.fromEntries(cur.langs.map((l) => [l, choice(l, "vision")]));
       try { lists = await call(undefined, modelsApi + (refresh ? "?refresh=1" : "")); }
       catch (err) { lists = { ollama: { models: [], error: err.message }, claude: { models: [], keySet: !!cur.claudeKey } }; }
-      for (const l of cur.langs) fillLLM(l, keep[l]);
+      for (const l of cur.langs) { fillLLM(l, keep[l]); fillVision(l, keepVision[l]); }
       fillMemory(keepMemory);
       warnings();
     }
@@ -429,7 +439,7 @@
       if (!cur) return status("Nothing to save: the settings did not load. Reload the page.", "err");
       $("save").disabled = true;
       status("Saving…");
-      const extra = { llm: Object.fromEntries(cur.langs.map((l) => [l, choice(l)])), ollama_url: $("ollama_url").value, memory_model: memoryChoice() };
+      const extra = { llm: Object.fromEntries(cur.langs.map((l) => [l, choice(l)])), vision: Object.fromEntries(cur.langs.map((l) => [l, choice(l, "vision")])), ollama_url: $("ollama_url").value, memory_model: memoryChoice() };
       if (clearKey) extra.claude_key = "";
       else if ($("claude_key").value.trim()) extra.claude_key = $("claude_key").value.trim();
       extra.search = { provider: $("search_provider").value, searxng_url: $("searxng_url").value, weather_place: $("weather_place").value };

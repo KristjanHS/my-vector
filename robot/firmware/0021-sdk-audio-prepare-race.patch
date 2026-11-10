@@ -1,0 +1,481 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Tue, 10 Nov 2026 12:00:00 +0200
+Subject: [PATCH] sdk-audio-prepare-race
+
+Stream ids end to end (plan 2026-11-10 answer-conn-and-prepare-race P2.a1): stream A sent Complete and closed,
+the gateway freed its slot while vic-anim still played A's buffered audio; stream B was admitted, its Prepare was
+refused (PrepareFailed), it closed without Complete, and the gateway's close-Cancel (sdk-audio-orphan) cut A.
+Nothing carried a stream id, so no hop could tell B's messages from A's.
+vic-cloud gateway: numbers each ExternalAudioStreamPlayback and stamps the id into every Prepare/Chunk/Complete/
+Cancel it forwards (a client value is overwritten), including its own close-Cancel. A status whose stream_id is
+not this stream's is neither forwarded nor its verdict (logs my-vector.SdkAudioOrphan); completeSent is gone,
+the id match replaces it.
+gateway proto: stream_id on ExternalAudioStreamPrepare/Chunk/Complete/Cancel and ExternalAudioStreamResponse
+(new field numbers, proto3 backward compatible).
+CLAD: stream_id on ExternalAudioPrepare/Chunk/Complete/Cancel, streamId on AudioStreamStatusEvent; first in Chunk
+and StatusEvent because the CPPLite emitter needs a uint_32 4-aligned. ExternalAudioChunk is 1030 bytes, under
+the emitter's --max-message-size 1400 (EngineToRobot stays 1219).
+vic-engine: SDKComponent copies the id from the gateway requests into the CLAD messages and from
+AudioStreamStatusEvent into ExternalAudioStreamResponse; its own chunk-size failures carry the chunk's id.
+vic-anim: Prepare remembers the accepted id; Chunk/Complete/Cancel with another id are dropped (my-vector.
+SdkAudioOrphan names both ids; a foreign stream's chunks log once); every status is stamped, a refused or failed
+Prepare with the refused stream's id, so the gateway takes it as that stream's verdict and sends no close-Cancel.
+Falsifier: voiceprobe race, C's PlaybackComplete lands at or after A's audio end (FAIL before: 1.013 s early).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../src/cozmoAnim/audio/sdkAudioComponent.cpp | 43 +++++++++--
+ .../src/cozmoAnim/audio/sdkAudioComponent.h   |  4 ++
+ cloud/cloud/message_handler.go                | 71 ++++++++++++++-----
+ engine/components/sdkComponent.cpp            | 19 +++--
+ engine/components/sdkComponent.h              |  2 +-
+ .../robotInterface/messageEngineToRobot.clad  |  6 +-
+ .../messageFromAnimProcess.clad               |  1 +
+ tools/protobuf/gateway/public/messages.proto  |  5 ++
+ 8 files changed, 123 insertions(+), 28 deletions(-)
+
+diff --git a/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp b/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp
+index eb1922e3..d158d4b2 100644
+--- a/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp
++++ b/animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp
+@@ -72,6 +72,9 @@ void SdkAudioComponent::HandleMessage(const RobotInterface::ExternalAudioComplet
+   if (ANKI_VERIFY(_audioPrepared, 
+                     "SdkAudioComponent.HandleMessage.ExternalAudioComplete", 
+                     "Audio stream complete message received without start")) {
++    if (!IsPreparedStream("Complete", msg.stream_id, false)) {
++      return;
++    }
+     if (!_audioPosted) {
+       // my-vector sdk-audio-orphan: under AUDIO_TO_BEGIN_PLAYING_SEC nothing was posted, so no end callback would clear it
+       if (_totalAudioFramesReceived == 0) {
+@@ -101,6 +104,9 @@ void SdkAudioComponent::HandleMessage(const RobotInterface::ExternalAudioCancel&
+   if (ANKI_VERIFY(_audioPrepared, 
+                     "SdkAudioComponent.HandleMessage.ExternalAudioCancel", 
+                     "Audio stream cancel message received without start")) {
++    if (!IsPreparedStream("Cancel", msg.stream_id, false)) {
++      return; // my-vector sdk-audio-prepare-race: a refused stream's close-Cancel must not cut the playing one
++    }
+     CleanupAudioEngine();
+     SendAnimToEngine(SDKAudioStreamingState::Cancelled);
+   }
+@@ -116,13 +122,14 @@ void SdkAudioComponent::HandleMessage(const RobotInterface::ExternalAudioPrepare
+ 
+   if (_audioPrepared) {
+     // my-vector sdk-audio-orphan: no ClearOperationData here, it would orphan the playing stream
+-    LOG_WARNING("my-vector.SdkAudioOrphan", "Prepare refused: a stream is playing, it keeps playing");
+-    SendAnimToEngine(SDKAudioStreamingState::PrepareFailed);
++    LOG_WARNING("my-vector.SdkAudioOrphan", "Prepare of stream %u refused: stream %u is playing, it keeps playing",
++                msg.stream_id, _streamId);
++    SendAnimToEngine(SDKAudioStreamingState::PrepareFailed, 0, 0, msg.stream_id); // the refused stream's verdict
+     return;
+   }
+   if (!PrepareAudioEngine(msg)) {
+     LOG_DEBUG("SdkAudioComponent.HandleMessage.ExternalAudioPrepare", "Unable to prepare audio engine for streaming");
+-    SendAnimToEngine(SDKAudioStreamingState::PrepareFailed);
++    SendAnimToEngine(SDKAudioStreamingState::PrepareFailed, 0, 0, msg.stream_id);
+     ClearOperationData();
+     return;
+   }
+@@ -137,6 +144,9 @@ void SdkAudioComponent::HandleMessage(const RobotInterface::ExternalAudioChunk&
+     LOG_DEBUG("SdkAudioComponent.HandleMessage.ExternalAudioChunk", "Dropping chunks due to cancellation");
+     return;
+   }
++  if (!IsPreparedStream("Chunk", msg.stream_id, true)) {
++    return;
++  }
+ 
+   //add our wave data to the playing instance
+   if (!AddAudioChunk(msg)) {
+@@ -211,6 +221,7 @@ bool SdkAudioComponent::PrepareAudioEngine(const RobotInterface::ExternalAudioPr
+ 
+   _audioRate = msg.audio_rate;
+   _totalAudioFramesReceived = 0;
++  _streamId = msg.stream_id; // my-vector sdk-audio-prepare-race: kept after ClearOperationData, so the end status carries it
+   _audioPrepared = true;
+ 
+   return true;
+@@ -365,15 +376,39 @@ void SdkAudioComponent::OnAudioCompleted()
+ // Send audio streaming status message to Engine process
+ //
+ bool SdkAudioComponent::SendAnimToEngine(SDKAudioStreamingState audioState, uint32_t audioSent, uint32_t audioPlayed)
++{
++  return SendAnimToEngine(audioState, audioSent, audioPlayed, _streamId);
++}
++
++bool SdkAudioComponent::SendAnimToEngine(SDKAudioStreamingState audioState, uint32_t audioSent, uint32_t audioPlayed,
++                                         uint32_t streamId)
+ {
+   LOG_DEBUG("sdkAudioComponent.SendAnimToEngine", 
+-            "audioState %d audioSent %d audioPlayed %d", (int)audioState, audioSent, audioPlayed);
++            "audioState %d audioSent %d audioPlayed %d stream %u", (int)audioState, audioSent, audioPlayed, streamId);
+   AudioStreamStatusEvent evt;
+   evt.streamResultID = audioState;
+   evt.audioReceived = audioSent;  //used only for ChunkAdded messages
+   evt.audioPlayed = audioPlayed;  //used only for ChunkAdded messages
++  evt.streamId = streamId;        // my-vector sdk-audio-prepare-race: the gateway takes only its own stream's statuses
+   return AnimProcessMessages::SendAnimToEngine(std::move(evt));
+ }
+ 
++//
++// my-vector sdk-audio-prepare-race: only the stream accepted on Prepare feeds, completes or cancels the playing one
++//
++bool SdkAudioComponent::IsPreparedStream(const char* what, uint32_t streamId, bool chunk)
++{
++  if (streamId == _streamId) {
++    return true;
++  }
++  if (!chunk || streamId != _droppedChunkStreamId) { // one line per foreign stream's chunks, not one per chunk
++    LOG_WARNING("my-vector.SdkAudioOrphan", "%s of stream %u dropped: stream %u is prepared", what, streamId, _streamId);
++  }
++  if (chunk) {
++    _droppedChunkStreamId = streamId;
++  }
++  return false;
++}
++
+ }   // end namespace Anki
+ }   // end namespace Vector
+diff --git a/animProcess/src/cozmoAnim/audio/sdkAudioComponent.h b/animProcess/src/cozmoAnim/audio/sdkAudioComponent.h
+index 8c371061..9cb53f4a 100644
+--- a/animProcess/src/cozmoAnim/audio/sdkAudioComponent.h
++++ b/animProcess/src/cozmoAnim/audio/sdkAudioComponent.h
+@@ -72,6 +72,8 @@ private:
+   uint32_t  _totalAudioFramesReceived;
+   bool      _audioPrepared;
+   bool      _audioPosted;
++  uint32_t  _streamId = 0;             // my-vector sdk-audio-prepare-race: the gateway stream accepted on Prepare
++  uint32_t  _droppedChunkStreamId = 0; // the last foreign stream whose chunk was logged
+   std::shared_ptr<AudioCallbackType> _audioPlaybackFinishedPtr;
+ 
+   // -------------------------------------------------------------------------------------------------------------------
+@@ -89,6 +91,8 @@ private:
+   void ClearOperationData();
+   bool SetPlayerVolume(float volume) const;
+   bool SendAnimToEngine(SDKAudioStreamingState audioState, uint32_t audioSent=0, uint32_t audioPlayed=0);
++  bool SendAnimToEngine(SDKAudioStreamingState audioState, uint32_t audioSent, uint32_t audioPlayed, uint32_t streamId);
++  bool IsPreparedStream(const char* what, uint32_t streamId, bool chunk);
+ };
+ 
+ }   // end namespace Anki
+diff --git a/cloud/cloud/message_handler.go b/cloud/cloud/message_handler.go
+index 2956f2eb..60385dea 100644
+--- a/cloud/cloud/message_handler.go
++++ b/cloud/cloud/message_handler.go
+@@ -39,6 +39,8 @@ var (
+ 
+ 	// my-vector sdk-audio-orphan: one open ExternalAudioStreamPlayback at a time (vic-anim plays one SDK stream)
+ 	myVectorAudioStreamSlot = make(chan struct{}, 1)
++	// my-vector sdk-audio-prepare-race: numbers each stream; the id rides every request to vic-anim and back on its statuses
++	myVectorAudioStreamSeq atomic.Uint32
+ )
+ 
+ // TODO: we should find a way to auto-generate the equivalent of this function as part of clad or protoc
+@@ -3613,9 +3615,47 @@ func (service *rpcService) ExternalAudioStreamRequestToGatewayWrapper(request *e
+ const myVectorAudioIdleTimeout = 15 * time.Second
+ 
+ type myVectorAudioStream struct {
+-	verdict      atomic.Bool // the engine answered this stream (Complete/Overrun/Failure); a Cancel now would hit the next stream
+-	completeSent atomic.Bool // this stream sent Complete; only then is a PlaybackComplete its own, not the previous stream's late one
+-	timedOut     bool        // written before done closes
++	id       uint32      // my-vector sdk-audio-prepare-race: stamped on every request; only statuses with it are this stream's
++	verdict  atomic.Bool // the engine answered this stream (Complete/Overrun/Failure); a Cancel now would hit the next stream
++	timedOut bool        // written before done closes
++}
++
++// my-vector sdk-audio-prepare-race: the gateway's id replaces any client value (vic-anim acts only on the prepared id)
++func myVectorStampAudioRequest(request *extint.ExternalAudioStreamRequest, id uint32) {
++	switch r := request.AudioRequestType.(type) {
++	case *extint.ExternalAudioStreamRequest_AudioStreamPrepare:
++		if r.AudioStreamPrepare != nil {
++			r.AudioStreamPrepare.StreamId = id
++		}
++	case *extint.ExternalAudioStreamRequest_AudioStreamChunk:
++		if r.AudioStreamChunk != nil {
++			r.AudioStreamChunk.StreamId = id
++		}
++	case *extint.ExternalAudioStreamRequest_AudioStreamComplete:
++		if r.AudioStreamComplete == nil {
++			r.AudioStreamComplete = &extint.ExternalAudioStreamComplete{}
++		}
++		r.AudioStreamComplete.StreamId = id
++	case *extint.ExternalAudioStreamRequest_AudioStreamCancel:
++		if r.AudioStreamCancel == nil {
++			r.AudioStreamCancel = &extint.ExternalAudioStreamCancel{}
++		}
++		r.AudioStreamCancel.StreamId = id
++	}
++}
++
++// my-vector sdk-audio-prepare-race: whether a status ends st (a status of another stream id is never st's verdict)
++func myVectorAudioVerdict(st *myVectorAudioStream, msg *extint.ExternalAudioStreamResponse) bool {
++	if msg.GetStreamId() != st.id {
++		return false
++	}
++	switch msg.GetAudioResponseType().(type) {
++	case *extint.ExternalAudioStreamResponse_AudioStreamPlaybackComplete,
++		*extint.ExternalAudioStreamResponse_AudioStreamBufferOverrun,
++		*extint.ExternalAudioStreamResponse_AudioStreamPlaybackFailyer:
++		return true // Failure includes this stream's own PrepareFailed
++	}
++	return false
+ }
+ 
+ func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalInterface_ExternalAudioStreamPlaybackServer, done chan struct{}, st *myVectorAudioStream) {
+@@ -3627,9 +3667,9 @@ func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalI
+ 		if !prepared || st.verdict.Load() {
+ 			return
+ 		}
+-		log.Println("my-vector.SdkAudioOrphan: stream closed after Prepare without Complete, sending Cancel")
++		log.Printf("my-vector.SdkAudioOrphan: stream closed after Prepare without Complete, sending Cancel for stream %d\n", st.id)
+ 		cancel := &extint.GatewayWrapper{OneofMessageType: &extint.GatewayWrapper_ExternalAudioStreamCancel{
+-			ExternalAudioStreamCancel: &extint.ExternalAudioStreamCancel{},
++			ExternalAudioStreamCancel: &extint.ExternalAudioStreamCancel{StreamId: st.id},
+ 		}}
+ 		if _, _, err := engineProtoManager.Write(cancel); err != nil {
+ 			log.Printf("Could not write GatewayWrapper_ExternalAudioStreamCancel\n")
+@@ -3668,6 +3708,7 @@ func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalI
+ 		}
+ 		log.Println("External AudioStream playback incoming request") //not printing message, lengthy sample data too busy for logs
+ 
++		myVectorStampAudioRequest(request, st.id)
+ 		msg, err := service.ExternalAudioStreamRequestToGatewayWrapper(request)
+ 		if err != nil {
+ 			log.Println(err)
+@@ -3686,9 +3727,6 @@ func (service *rpcService) ExternalAudioStreamRequestHandler(in extint.ExternalI
+ 			idleC = idle.C
+ 		}
+ 
+-		if _, ok := request.AudioRequestType.(*extint.ExternalAudioStreamRequest_AudioStreamComplete); ok {
+-			st.completeSent.Store(true) // before Write, so the engine's answer cannot beat it
+-		}
+ 		numCommandsSentFromSDK++
+ 		_, _, err = engineProtoManager.Write(msg)
+ 		if err != nil {
+@@ -3710,14 +3748,12 @@ func (service *rpcService) ExternalAudioStreamResponseHandler(out extint.Externa
+ 				return grpc.Errorf(codes.Internal, "Failed to retrieve message")
+ 			}
+ 			msg := response.GetExternalAudioStreamResponse()
+-			switch msg.GetAudioResponseType().(type) {
+-			case *extint.ExternalAudioStreamResponse_AudioStreamPlaybackComplete:
+-				if st.completeSent.Load() { // else a stale broadcast of the previous stream's OnAudioCompleted
+-					st.verdict.Store(true)
+-				}
+-			case *extint.ExternalAudioStreamResponse_AudioStreamBufferOverrun,
+-				*extint.ExternalAudioStreamResponse_AudioStreamPlaybackFailyer:
+-				st.verdict.Store(true) // Failure includes this stream's own PrepareFailed: a Cancel would hit the previous stream
++			if msg.GetStreamId() != st.id { // a late status of an earlier stream: the engine broadcasts to whichever stream is open
++				log.Printf("my-vector.SdkAudioOrphan: status of stream %d not sent on stream %d\n", msg.GetStreamId(), st.id)
++				continue
++			}
++			if myVectorAudioVerdict(st, msg) {
++				st.verdict.Store(true)
+ 			}
+ 			if err := out.Send(msg); err != nil {
+ 				log.Println("Closing AudioStream (on send):", err)
+@@ -3755,7 +3791,8 @@ func (service *rpcService) ExternalAudioStreamPlayback(bidirectionalStream extin
+ 	f, audioStreamStatus := engineProtoManager.CreateChannel(&extint.GatewayWrapper_ExternalAudioStreamResponse{}, 1)
+ 	defer f()
+ 
+-	st := &myVectorAudioStream{}
++	st := &myVectorAudioStream{id: myVectorAudioStreamSeq.Add(1)}
++	log.Printf("my-vector.SdkAudioOrphan: audio stream %d opened\n", st.id)
+ 	go service.ExternalAudioStreamRequestHandler(bidirectionalStream, done, st)
+ 	return service.ExternalAudioStreamResponseHandler(bidirectionalStream, audioStreamStatus, done, st)
+ }
+diff --git a/engine/components/sdkComponent.cpp b/engine/components/sdkComponent.cpp
+index 96c80e80..d7e386c0 100644
+--- a/engine/components/sdkComponent.cpp
++++ b/engine/components/sdkComponent.cpp
+@@ -144,7 +144,7 @@ void SDKComponent::InitDependent(Vector::Robot* robot, const RobotCompMap& depen
+   _signalHandles.push_back(messageHandler->Subscribe(RobotInterface::RobotToEngineTag::audioStreamStatusEvent, [this](const AnkiEvent<RobotInterface::RobotToEngine>& event) {
+       auto streamEvent = event.GetData().Get_audioStreamStatusEvent();
+       HandleStreamStatusEvent(streamEvent.streamResultID, streamEvent.audioReceived,
+-                  streamEvent.audioPlayed);
++                  streamEvent.audioPlayed, streamEvent.streamId);
+   }));
+ }
+ 
+@@ -203,15 +203,16 @@ void SDKComponent::HandleMessage(const Vision::RobotRenamedEnrolledFace& msg)
+   gi->Broadcast(ExternalMessageRouter::Wrap(renamedMsg));
+ }
+ 
+-void SDKComponent::HandleStreamStatusEvent(SDKAudioStreamingState streamStatusId, int audioFramesReceived, int audioFramesPlayed) {
++void SDKComponent::HandleStreamStatusEvent(SDKAudioStreamingState streamStatusId, int audioFramesReceived, int audioFramesPlayed, uint32_t streamId) {
+   auto* gi = _robot->GetGatewayInterface();
+-  LOG_INFO("SDKComponent::HandleStreamStatusEvent","Received audio playback stream state %u received %u, played %u",
+-            (int)streamStatusId, audioFramesReceived, audioFramesPlayed);
++  LOG_INFO("SDKComponent::HandleStreamStatusEvent","Received audio playback stream state %u received %u, played %u, my-vector stream %u",
++            (int)streamStatusId, audioFramesReceived, audioFramesPlayed, streamId);
+   switch (streamStatusId) {
+     case SDKAudioStreamingState::Completed:
+     {
+       //we're done, send message back to Gateway
+       auto* msg = new external_interface::ExternalAudioStreamResponse(new external_interface::ExternalAudioStreamPlaybackComplete());
++      msg->set_stream_id(streamId); // my-vector sdk-audio-prepare-race: the gateway matches it to its stream
+       gi->Broadcast(ExternalMessageRouter::WrapResponse(msg));
+     }
+     break;
+@@ -220,6 +221,7 @@ void SDKComponent::HandleStreamStatusEvent(SDKAudioStreamingState streamStatusId
+     {
+       //failed due to potential buffer overrun situation (sending audio too fast) send message back to Gateway
+       auto* msg = new external_interface::ExternalAudioStreamResponse(new external_interface::ExternalAudioStreamBufferOverrun());
++      msg->set_stream_id(streamId);
+       gi->Broadcast(ExternalMessageRouter::WrapResponse(msg));
+     }
+     break;
+@@ -230,6 +232,7 @@ void SDKComponent::HandleStreamStatusEvent(SDKAudioStreamingState streamStatusId
+     {
+       //failed due to potential buffer overrun situation (sending audio too fast) send message back to Gateway
+       auto* msg = new external_interface::ExternalAudioStreamResponse(new external_interface::ExternalAudioStreamPlaybackFailure());
++      msg->set_stream_id(streamId);
+       gi->Broadcast(ExternalMessageRouter::WrapResponse(msg));
+     }
+     break;
+@@ -730,7 +733,8 @@ void SDKComponent::HandleAudioStreamPrepareRequest(const AnkiEvent<external_inte
+ 
+   msg.audio_volume = (u16) volume;
+   msg.audio_rate = (u16) rate;
+-  LOG_INFO("SDKComponent.HandleAudioStreamPrepareRequest", "SDK Passing prepare audio stream frame rate %d volume %d", rate, volume);
++  msg.stream_id = event.GetData().external_audio_stream_prepare().stream_id(); // my-vector sdk-audio-prepare-race
++  LOG_INFO("SDKComponent.HandleAudioStreamPrepareRequest", "SDK Passing prepare audio stream frame rate %d volume %d, my-vector stream %u", rate, volume, msg.stream_id);
+ 
+   // Send request to animation process
+   const Result result = _robot->SendMessage(RobotInterface::EngineToRobot(std::move(msg)));
+@@ -745,12 +749,14 @@ void SDKComponent::HandleAudioStreamChunkRequest(const AnkiEvent<external_interf
+   const std::string samplesStr = event.GetData().external_audio_stream_chunk().audio_chunk_samples();
+   RobotInterface::ExternalAudioChunk msg;
+   msg.audio_chunk_size = (u16)event.GetData().external_audio_stream_chunk().audio_chunk_size_bytes();
++  msg.stream_id = event.GetData().external_audio_stream_chunk().stream_id(); // my-vector sdk-audio-prepare-race
+   LOG_INFO("SDKComponent.HandleAudioStreamChunkRequest", "SDKPassing audio_chunk_size %d", msg.audio_chunk_size);
+ 
+   if (!ANKI_VERIFY(msg.audio_chunk_size <= 1024,
+           "SDKComponent.HandleAudioStreamChunkRequest","Invalid audio playback chunk size %u sent", msg.audio_chunk_size)) {
+       auto* gi = _robot->GetGatewayInterface();
+       auto* msg = new external_interface::ExternalAudioStreamResponse(new external_interface::ExternalAudioStreamPlaybackFailure());
++      msg->set_stream_id(event.GetData().external_audio_stream_chunk().stream_id());
+       gi->Broadcast(ExternalMessageRouter::WrapResponse(msg));
+       return;
+   }
+@@ -760,6 +766,7 @@ void SDKComponent::HandleAudioStreamChunkRequest(const AnkiEvent<external_interf
+           (long)samplesStr.length(), msg.audio_chunk_size)) {
+       auto* gi = _robot->GetGatewayInterface();
+       auto* msg = new external_interface::ExternalAudioStreamResponse(new external_interface::ExternalAudioStreamPlaybackFailure());
++      msg->set_stream_id(event.GetData().external_audio_stream_chunk().stream_id());
+       gi->Broadcast(ExternalMessageRouter::WrapResponse(msg));
+       return;
+   }
+@@ -777,6 +784,7 @@ void SDKComponent::HandleAudioStreamChunkRequest(const AnkiEvent<external_interf
+ void SDKComponent::HandleAudioStreamCompleteRequest(const AnkiEvent<external_interface::GatewayWrapper>& event)
+ {
+   RobotInterface::ExternalAudioComplete msg;
++  msg.stream_id = event.GetData().external_audio_stream_complete().stream_id(); // my-vector sdk-audio-prepare-race
+ 
+   // Send request to animation process
+   const Result result = _robot->SendMessage(RobotInterface::EngineToRobot(std::move(msg)));
+@@ -789,6 +797,7 @@ void SDKComponent::HandleAudioStreamCompleteRequest(const AnkiEvent<external_int
+ void SDKComponent::HandleAudioStreamCancelRequest(const AnkiEvent<external_interface::GatewayWrapper>& event)
+ {
+   RobotInterface::ExternalAudioCancel msg;
++  msg.stream_id = event.GetData().external_audio_stream_cancel().stream_id(); // my-vector sdk-audio-prepare-race
+ 
+   // Send request to animation process
+   const Result result = _robot->SendMessage(RobotInterface::EngineToRobot(std::move(msg)));
+diff --git a/engine/components/sdkComponent.h b/engine/components/sdkComponent.h
+index d9074235..902b9c3d 100644
+--- a/engine/components/sdkComponent.h
++++ b/engine/components/sdkComponent.h
+@@ -114,7 +114,7 @@ private:
+   void HandleAudioStreamChunkRequest(const AnkiEvent<external_interface::GatewayWrapper>& event);
+   void HandleAudioStreamCompleteRequest(const AnkiEvent<external_interface::GatewayWrapper>& event);
+   void HandleAudioStreamCancelRequest(const AnkiEvent<external_interface::GatewayWrapper>& event);
+-  void HandleStreamStatusEvent(SDKAudioStreamingState streamStatusId, int audioFramesReceived, int audioFramesPlayed);
++  void HandleStreamStatusEvent(SDKAudioStreamingState streamStatusId, int audioFramesReceived, int audioFramesPlayed, uint32_t streamId);
+   void SetMasterVolume(const AnkiEvent<external_interface::GatewayWrapper>& event);
+   void SetCameraSettings(const AnkiEvent<external_interface::GatewayWrapper>& event);
+ };
+diff --git a/robot/clad/src/clad/robotInterface/messageEngineToRobot.clad b/robot/clad/src/clad/robotInterface/messageEngineToRobot.clad
+index 2ffbca19..fd2a59e8 100644
+--- a/robot/clad/src/clad/robotInterface/messageEngineToRobot.clad
++++ b/robot/clad/src/clad/robotInterface/messageEngineToRobot.clad
+@@ -696,13 +696,15 @@ message AcousticTestEnabled {
+ //
+ message ExternalAudioPrepare {
+   uint_16 audio_volume,
+-  uint_16 audio_rate
++  uint_16 audio_rate,
++  uint_32 stream_id               // my-vector sdk-audio-prepare-race: the gateway's stream number
+ }
+ 
+ //
+ // Sent from engine to robot (anim process) to stream audio data to the robot speaker
+ //
+ message ExternalAudioChunk {
++  uint_32 stream_id,              // my-vector sdk-audio-prepare-race: the gateway's stream number (first: CPPLite needs it 4-aligned)
+   uint_16 audio_chunk_size,       //size in bytes
+   uint_16 audio_chunk_data[512]   //16-bit little-endian data
+ }
+@@ -711,12 +713,14 @@ message ExternalAudioChunk {
+ // Sent from engine to robot (anim process) to signal end of streaming data
+ //
+ message ExternalAudioComplete {
++  uint_32 stream_id               // my-vector sdk-audio-prepare-race: the gateway's stream number
+ }
+ 
+ //
+ // Sent from engine to robot (anim process) to cancel streaming audio playback
+ //
+ message ExternalAudioCancel {
++  uint_32 stream_id               // my-vector sdk-audio-prepare-race: the gateway's stream number
+ }
+ 
+ // Because we're running low on message tags, expand this enum and message as we add more settings
+diff --git a/robot/clad/src/clad/robotInterface/messageFromAnimProcess.clad b/robot/clad/src/clad/robotInterface/messageFromAnimProcess.clad
+index 31633b17..4ef68dd3 100644
+--- a/robot/clad/src/clad/robotInterface/messageFromAnimProcess.clad
++++ b/robot/clad/src/clad/robotInterface/messageFromAnimProcess.clad
+@@ -94,6 +94,7 @@ message RobotAvailable
+ // Results/status of AudioStreamPlayback added for SDK
+ message AudioStreamStatusEvent
+ {
++  uint_32 streamId,  // my-vector sdk-audio-prepare-race: the stream this status belongs to (first: CPPLite needs it 4-aligned)
+   uint_32 audioReceived,
+   uint_32 audioPlayed,
+   SDKAudioStreamingState streamResultID
+diff --git a/tools/protobuf/gateway/public/messages.proto b/tools/protobuf/gateway/public/messages.proto
+index 669b1873..60f7025b 100644
+--- a/tools/protobuf/gateway/public/messages.proto
++++ b/tools/protobuf/gateway/public/messages.proto
+@@ -1044,20 +1044,24 @@ message AudioFeedResponse {
+ message ExternalAudioStreamPrepare {
+   uint32 audio_frame_rate = 1;    // 8000 - 16025
+   uint32 audio_volume = 2;        // 0 - 100
++  uint32 stream_id = 3;  // my-vector sdk-audio-prepare-race: the gateway's number for this stream (client value ignored)
+ }
+ 
+ // Send chunk of audio data to stream on robot
+ message ExternalAudioStreamChunk {
+   uint32 audio_chunk_size_bytes = 1;  //current engine maximum of 1024 bytes
+   bytes audio_chunk_samples = 2;      //16-bit little-endian PCM audio data
++  uint32 stream_id = 3;  // my-vector sdk-audio-prepare-race: the gateway's number for this stream (client value ignored)
+ }
+ 
+ // Send notification of last chunk of audio sent to robot
+ message ExternalAudioStreamComplete {
++  uint32 stream_id = 1;  // my-vector sdk-audio-prepare-race: the gateway's number for this stream (client value ignored)
+ }
+ 
+ // Cancel a playing external robot audio stream
+ message ExternalAudioStreamCancel {
++  uint32 stream_id = 1;  // my-vector sdk-audio-prepare-race: the gateway's number for this stream (client value ignored)
+ }
+ 
+ // Request to stream audio to the robot
+@@ -1091,6 +1095,7 @@ message ExternalAudioStreamResponse {
+     ExternalAudioStreamBufferOverrun audio_stream_buffer_overrun = 2;
+     ExternalAudioStreamPlaybackFailure audio_stream_playback_failyer = 3;
+   }
++  uint32 stream_id = 4;  // my-vector sdk-audio-prepare-race: the stream this status belongs to
+ }
+ 
+ enum MasterVolumeLevel {

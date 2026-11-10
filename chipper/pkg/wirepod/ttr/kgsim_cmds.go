@@ -384,9 +384,11 @@ func DoSayText_OpenAI(robot *vector.Vector, input string) error {
 
 func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector.Vector, stopStop chan bool) {
 	stopImaging := false
+	stopped := make(chan struct{}) // my-vector: closed with stopImaging, ends the speak loop's wait (fork_followup.go forkNextChunkUntil)
 	go func() {
 		for range stopStop {
 			stopImaging = true
+			close(stopped) // my-vector
 			break
 		}
 	}()
@@ -436,7 +438,7 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 		)
 	}()
 	// encode to base64
-	reqBase64 := base64.StdEncoding.EncodeToString(resp.Data)
+	reqBase64 := base64.StdEncoding.EncodeToString(forkPhotoData(resp, robot, &stopImaging)) // my-vector: a failed capture speaks the V8 line, no vision call (fork_vision.go)
 
 	// add image to messages
 	msgs = append(msgs, openai.ChatCompletionMessage{
@@ -497,7 +499,7 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 	if stopImaging {
 		return
 	}
-	defer forkCameraReq(&aireq, &c)()
+	defer forkCameraReq(&aireq, &c, robot.Cfg.SerialNo)()
 	stream, err := c.CreateChatCompletionStream(ctx, aireq)
 	if err != nil {
 		if strings.Contains(err.Error(), "does not exist") && vars.APIConfig.Knowledge.Provider == "openai" {
@@ -513,6 +515,7 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 			}
 		} else {
 			logger.Println("LLM error: " + err.Error())
+			forkVisionDown(robot) // my-vector: one native line (fork_vision.go)
 			return
 		}
 	}
@@ -537,6 +540,9 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 					}
 				}
 				isDone = true
+				if forkPhotoEmpty(fullRespSlice, speakReady) { // my-vector: an empty reply indexed [0] (fork_vision.go)
+					return
+				}
 				newStr := fullRespSlice[0]
 				for i, str := range fullRespSlice {
 					if i == 0 {
@@ -549,7 +555,8 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 					extraBit := strings.TrimPrefix(fullRespText, newStr)
 					fullRespSlice = append(fullRespSlice, extraBit)
 				}
-				if vars.APIConfig.Knowledge.SaveChat {
+				forkPhotoWake(speakReady)                                          // my-vector: a lost non-blocking send left the speak loop waiting forever (fork_vision.go)
+				if !forkPhotoRemember(msgs, newStr, robot.Cfg.SerialNo, stopped) { // my-vector: (ask, answer) with or without SaveChat, never the image message nor an interrupted answer (fork_vision.go)
 					Remember(msgs[len(msgs)-1],
 						openai.ChatCompletionMessage{
 							Role:    openai.ChatMessageRoleAssistant,
@@ -564,7 +571,11 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 
 			if err != nil {
 				logger.Println("Stream error: " + err.Error())
+				forkPhotoFailed(&isDone, speakReady) // my-vector: the speak loop waited forever (fork_vision.go)
 				return
+			}
+			if len(response.Choices) == 0 { // my-vector: a choice-less chunk (usage) indexed [0]
+				continue
 			}
 			cut = cut || response.Choices[0].FinishReason == openai.FinishReasonLength // my-vector
 			fullfullRespText = fullfullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
@@ -584,26 +595,19 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 		if stopImaging {
 			return
 		}
-		respSlice := fullRespSlice
-		if len(respSlice)-1 < numInResp {
-			if !isDone {
-				logger.Println("Waiting for more content from LLM...")
-				for range speakReady {
-					respSlice = fullRespSlice
-					break
-				}
-			} else {
-				break
-			}
+		chunk, ok := forkNextChunkUntil(func() []string { return fullRespSlice }, func() bool { return isDone }, numInResp, speakReady, stopped) // my-vector: re-checks after every wake, ends on a stop (fork_followup.go)
+		if !ok {
+			break
 		}
-		logger.Println(respSlice[numInResp])
-		acts := GetActionsFromString(respSlice[numInResp])
+		logger.Println(chunk)
+		acts := forkPhotoActs(GetActionsFromString(chunk)) // my-vector: no nested photo (fork_vision.go)
 		PerformActions(msgs, acts, robot, stopStop)
 		numInResp = numInResp + 1
 		if stopImaging {
 			return
 		}
 	}
+	forkPhotoUnsaid(numInResp, stopped, robot) // my-vector: nothing spoken → the V8 line (fork_vision.go)
 }
 
 func DoNewRequest(robot *vector.Vector) {

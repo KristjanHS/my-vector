@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
@@ -32,10 +33,10 @@ const (
 	lineX = "Example replies, for style only:\n" +
 		"Q: Kuidas prille puhastada? → A: Pühi neid seebivee ja pehme lapiga, paberrätik kriimustab.\n" +
 		"Q: Kas sulle meeldib vihm? → A: Jah, kuivas toas on krabinat mõnus kuulata. Kas sina oled vihma sõber?"
-	// personaE is the saved persona with lineP, in Estonian.
-	personaE = "Sa oled Vector, mänguline ja lõbus, aga mitte tüütu kaaslasrobot. Vasta ühe kuni kolme lühikese suulise lausega " +
-		"voolava jutuna, kui just rohkem ei paluta, nagu räägiksid; sinu sõnad loetakse ette kõnesünteesiga. " +
-		"Aeg-ajalt küsi ise vastu. Alusta vastuseid eri moodi ja ära kasuta kulunud fraase."
+	// personaE is prompt's personaEt (the live Estonian persona) with its length sentence swapped for lineP's.
+	personaE = "Sa oled Vector: mänguline, uudishimulik ja soe seltsirobot. Vasta ühe kuni kolme lühikese suulise lausega, " +
+		"kui just rohkem ei paluta. Su vastused peaksid voolama nagu loomulik kõne. " +
+		"Alusta vastuseid eri moodi, ilma sisutühjade fraasideta nagu „Hea küsimus!“. Esita vahel ka ise üks küsimus, aga mitte iga kord."
 	headerD = "Cutting Knowledge Date: December 2023\n{now}"
 	fenceF  = "Background about the user, shown in every chat and irrelevant to almost every ask. " +
 		"Use it only when they ask about themselves, their family or home; otherwise never mention it."
@@ -202,32 +203,37 @@ func combine(parts []promptArm) (promptArm, error) {
 	return c, nil
 }
 
-// promptBase is the isolated store before any arm: its bytes, the live ollama template and the saved about-me.
+// promptBase is the isolated store before any arm: its bytes, the live template per Ollama brain and the saved about-me.
 type promptBase struct {
 	raw    []byte
 	exists bool
-	tmpl   string
+	tmpl   map[string]string
 	about  string
 	tokens []string
 }
 
 func readBase(tokens []string) (promptBase, error) {
-	b := promptBase{tokens: tokens}
+	b := promptBase{tmpl: map[string]string{}, tokens: tokens}
 	raw, err := os.ReadFile(prompt.Path())
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return b, err
 	}
 	b.raw, b.exists = raw, err == nil
 	s := prompt.Load()
-	b.tmpl, b.about = s.Live(prompt.Ollama), s.About
+	for _, l := range lang.Supported {
+		b.tmpl[prompt.OllamaFor(l)] = s.Live(prompt.OllamaFor(l))
+	}
+	b.about = s.About
 	return b, nil
 }
 
 // check applies each arm once (a tempt-like ask) and restores the base, so a bad arm fails before any call.
 func (b promptBase) check(pas []promptArm) error {
 	for _, pa := range pas {
-		if err := b.apply(pa, ask{Kind: "tempt"}); err != nil {
-			return err
+		for _, l := range lang.Supported {
+			if err := b.apply(pa, ask{Lang: l, Kind: "tempt"}); err != nil {
+				return err
+			}
 		}
 	}
 	return b.apply(promptArm{id: "0"}, ask{})
@@ -249,7 +255,7 @@ func (b promptBase) apply(pa promptArm, a ask) error {
 	}
 	var tmpl, about *string
 	if pa.tmpl != nil {
-		t, err := pa.tmpl(b.tmpl)
+		t, err := pa.tmpl(b.tmpl[prompt.OllamaFor(a.Lang)])
 		if err != nil {
 			return fmt.Errorf("arm %s: %w", pa.id, err)
 		}
@@ -263,7 +269,7 @@ func (b promptBase) apply(pa promptArm, a ask) error {
 	if tmpl == nil && about == nil {
 		return nil
 	}
-	if err := prompt.Save(prompt.Ollama, tmpl, about); err != nil {
+	if err := prompt.Save(prompt.OllamaFor(a.Lang), tmpl, about, nil); err != nil {
 		return fmt.Errorf("arm %s: %w", pa.id, err)
 	}
 	return nil

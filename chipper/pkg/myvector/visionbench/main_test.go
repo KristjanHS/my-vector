@@ -5,6 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
 )
 
 func TestScore(t *testing.T) {
@@ -52,5 +56,20 @@ func TestLoadChecklist(t *testing.T) {
 		if _, err := loadChecklist(write(t, c.list, photos...)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err %v, want it to name %q", name, err, c.want)
 		}
+	}
+}
+
+func TestArmPrompt(t *testing.T) {
+	a, b := armSystem("a"), armSystem("b")
+	if !strings.Contains(a, prompt.SpeechBlock(prompt.OllamaEt)) || strings.Contains(a, prompt.LangLine(prompt.Ollama, lang.Estonian)) {
+		t.Errorf("arm a is not the et persona render:\n%s", a)
+	}
+	if !strings.Contains(b, prompt.LangLine(prompt.Ollama, lang.Estonian)) || strings.Contains(b, prompt.SpeechBlock(prompt.OllamaEt)) {
+		t.Errorf("arm b is not the English persona + Estonian line:\n%s", b)
+	}
+	r := relayRequest(llm.Target{Provider: llm.Ollama, Model: "apertus-estllm:8b"}, "A white cup on a desk.")
+	if len(r.Messages) != 2 || !strings.Contains(r.Messages[1].Content, "A white cup on a desk.") ||
+		!strings.Contains(r.Messages[0].Content, prompt.SpeechBlock(prompt.OllamaEt)) || r.Messages[1].MultiContent != nil {
+		t.Errorf("arm c hop 2 is not text-only to the et brain with hop 1 inside: %+v", r.Messages)
 	}
 }

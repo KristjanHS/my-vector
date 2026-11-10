@@ -18,3 +18,4 @@
 0018-dark-off.patch
 0019-sdk-audio-orphan.patch
 0020-followup-no-ready.patch
+0021-sdk-audio-prepare-race.patch
