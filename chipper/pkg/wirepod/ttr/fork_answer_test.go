@@ -177,7 +177,7 @@ func TestForkEndKGLoop(t *testing.T) {
 	for name, c := range map[string]struct {
 		isKG, stopped, looping bool
 	}{
-		"unstarted": {true, false, true}, // start closed unsent: the searching anim still loops
+		"unstarted": {true, false, true}, // start closed unsent: the forkWait face still loops
 		"started":   {true, true, false}, // the speak loop already stopped it
 		"not KG":    {false, false, false},
 	} {
