@@ -16,14 +16,14 @@ table inet wirepod_guard {
 	set allowed6 {
 		type ipv6_addr; flags interval
 	}
-	# Own devices over Tailscale (phone: S24 FE), matched with iifname tailscale0 so a LAN host can't pose as a 100.x address
+	# Own devices over Tailscale (phone: S24 FE; Vector), matched with iifname tailscale0 so a LAN host can't pose as a 100.x address
 	set tailnet4 {
 		type ipv4_addr; flags interval
-		elements = { 192.0.2.53 }
+		elements = { 192.0.2.53, 192.0.2.112 }
 	}
 	set tailnet6 {
 		type ipv6_addr; flags interval
-		elements = { 2001:db8::1 }
+		elements = { 2001:db8::1, 2001:db8::2 }
 	}
 	chain input {
 		type filter hook input priority filter; policy accept;
