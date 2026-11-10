@@ -333,7 +333,7 @@ func KnowledgeGraphResponseIG(req *vtt.IntentGraphRequest, spokenText string, qu
 		QueryText:    queryText,
 		CommandType:  pb.RobotMode_VOICE_COMMAND.String(),
 	}
-	
+
 	if err := req.Stream.Send(&intentGraphSend); err != nil {
 		return err
 	}
