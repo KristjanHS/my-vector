@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Install tailscaled on the robot as a boot unit (plan D2/D4/D5): the binaries fetch.sh unpacked into <main>/robot/work/tailscale/
 # go to TS_DIR when their sha256 differs, TS_UNIT is written + enabled + started, then `tailscale up` runs only while the node is
-# not logged in and TS_AUTHKEY exists (else WARN). The key reaches the robot on ssh stdin into /run, never in argv (D4).
+# not logged in and TS_AUTHKEY exists (else WARN). The key reaches the robot on ssh stdin into /run, never in argv (D4). The unit owns the
+# OUTPUT -o tailscale0 ACCEPT pair (D13: base OUTPUT is policy DROP).
 # Usage: robot/tailscale/apply.sh   idempotent; settings.sh runs it before netguard (D6). Exit 0 = applied (or WARN printed), 1 = FAIL, 2 = SETUP.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -47,8 +48,12 @@ After=mount-data.service
 [Service]
 Type=notify
 RuntimeDirectory=tailscale
+ExecStartPre=/bin/sh -c 'iptables -C OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null || iptables -I OUTPUT -o tailscale0 -j ACCEPT'
+ExecStartPre=/bin/sh -c 'ip6tables -C OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null || ip6tables -I OUTPUT -o tailscale0 -j ACCEPT'
 ExecStart=$TS_DIR/tailscaled --statedir=$TS_DIR/state/ --socket=$sock --port=41641 --tun=tailscale0
 ExecStopPost=$TS_DIR/tailscaled --cleanup
+ExecStopPost=-/bin/sh -c 'while iptables -D OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null; do :; done'
+ExecStopPost=-/bin/sh -c 'while ip6tables -D OUTPUT -o tailscale0 -j ACCEPT 2>/dev/null; do :; done'
 Restart=on-failure
 RestartSec=5
 

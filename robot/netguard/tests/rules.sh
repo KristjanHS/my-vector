@@ -18,24 +18,24 @@ chmod +x "$tmp/bin/iptables"; cp "$tmp/bin/iptables" "$tmp/bin/ip6tables"
 run() { bash "$robot/netguard/rules.sh" "$@" >"$tmp/ng.sh" && : >"$tmp/log" && LOG=$tmp/log PATH="$tmp/bin:$PATH" sh -e "$tmp/ng.sh"; }
 v4() { grep '^iptables -A MYVECTOR_IN_NEW' "$tmp/log" | sed 's/^iptables -A MYVECTOR_IN_NEW //'; }
 
-run 192.0.2.249 10.0.0.7 || die "render/run failed"
+run 192.0.2.249 41641 || die "render/run failed"
 want='-m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
--p tcp --dport 22 -j ACCEPT
--s 192.0.2.249 -j ACCEPT
--s 10.0.0.7 -j ACCEPT
+-s 192.0.2.249 -p tcp --dport 22 -j ACCEPT
+-p udp --dport 41641 -j ACCEPT
 -p udp --sport 67 --dport 68 -j ACCEPT
 -p icmp --icmp-type echo-request -j ACCEPT
 -j DROP'
-[[ $(v4) == "$want" ]] || die "v4 rules (N2 order, DROP last): got
+[[ $(v4) == "$want" ]] || die "v4 rules (D8 order, DROP last): got
 $(v4)"
 want6='-m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 -p ipv6-icmp -j ACCEPT
--p tcp --dport 22 -j ACCEPT
 -p udp --dport 546 -j ACCEPT
+-p udp --dport 41641 -j ACCEPT
 -j DROP'
 got6=$(grep '^ip6tables -A MYVECTOR_IN_NEW' "$tmp/log" | sed 's/^ip6tables -A MYVECTOR_IN_NEW //')
 [[ $got6 == "$want6" ]] || die "v6 rules: got
 $got6"
+grep -E 'tailscale0|OUTPUT' "$tmp/ng.sh" "$tmp/log" && die "names OUTPUT/tailscale0 (D13 is TS_UNIT's)"
 # every allow rule (both families) lands before the first hook change
 first_hook=$(grep -n ' -I INPUT ' "$tmp/log"); first_hook=${first_hook%%$'\n'*} first_hook=${first_hook%%:*}
 last_add=$(grep -n ' -A MYVECTOR_IN_NEW ' "$tmp/log" | tail -1 | cut -d: -f1)
@@ -47,14 +47,14 @@ done
 grep -E ' -P | -A INPUT | -I INPUT| -D INPUT' "$tmp/log" | grep -v -- ' -i wlan0 -j MYVECTOR_IN' && die "touched the INPUT policy or a non-wlan0 hook"
 grep -E -- ' -[io] ' "$tmp/log" | grep -v -- '-i wlan0' && die "matched an interface other than wlan0"
 
-FAKE_NO_CONNTRACK=1 run 192.0.2.249 || die "no-conntrack run failed"
+FAKE_NO_CONNTRACK=1 run 192.0.2.249 41641 || die "no-conntrack run failed"
 grep -qx 'iptables -A MYVECTOR_IN_NEW -m state --state ESTABLISHED,RELATED -j ACCEPT' "$tmp/log" || die "no -m state fallback without conntrack"
 
 : >"$tmp/log"; LOG=$tmp/log PATH="$tmp/bin:$PATH" sh -e "$tmp/ng.sh" stop || die "stop failed"
 grep -qx 'iptables -D INPUT -i wlan0 -j MYVECTOR_IN' "$tmp/log" && ! grep -q ' -A ' "$tmp/log" || die "stop: no unhook, or it added rules"
 
-for bad in '' 192.168.1 2001:db8::1 'http://192.0.2.249'; do
-  rc=0; bash "$robot/netguard/rules.sh" ${bad:+"$bad"} >/dev/null 2>&1 || rc=$?
-  ((rc == 2)) || die "allowlist [$bad]: exit $rc, want 2"
+for bad in '' 192.0.2.249 '192.168.1 41641' '2001:db8::1 41641' 'http://192.0.2.249 41641' '192.0.2.249 0' '192.0.2.249 x' '192.0.2.249 41641 10.0.0.7'; do
+  rc=0; read -ra args <<<"$bad"; bash "$robot/netguard/rules.sh" "${args[@]}" >/dev/null 2>&1 || rc=$?
+  ((rc == 2)) || die "args [$bad]: exit $rc, want 2"
 done
 echo "netguard rules host test PASS"
