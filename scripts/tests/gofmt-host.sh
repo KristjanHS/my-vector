@@ -3,7 +3,7 @@
 # whose refs/remotes/upstream/main holds one clean and one unformatted "upstream" file.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$here/../../../.git")")
+main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$here/../../.git")")
 tmp=$(mktemp -d "$main/robot/work/gofmt-test.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 die() { echo "FAIL: gofmt host test: $*" >&2; exit 1; }
@@ -40,7 +40,16 @@ git -C "$r" checkout -q -- up_dirty.go; rm -f "$r"/{syn.go,k.go,x.go.bak}; rm -r
 # --- gate
 gc fork-clean # clean.go = good (unchanged); up_dirty.go is unformatted but upstream-only
 "$gate" "$r" >/dev/null || die "gate red on a clean fork with an untouched unformatted upstream file"
-printf %s "$bad" >"$r/bash_edit.go" # untracked, as a sed/heredoc edit leaves it
+printf %s "$bad" >"$r/clean.go" # first sed -i on an upstream file: tracked, modified, unstaged (index still = merge-base)
+o=$("$gate" "$r" 2>&1) && die "gate green on an unstaged unformatted edit"; [[ $o == *clean.go* ]] || die "gate did not name clean.go: $o"
+git -C "$r" checkout -q -- clean.go
+# upstream/main moves ahead (fetched, not merged) and touches up_dirty.go: the merge-base, not upstream/main, is the base
+old=$(git -C "$r" rev-parse upstream/main); git -C "$r" checkout -q --detach "$old"
+printf '%s// upstream later\n' "$bad" >"$r/up_dirty.go"; gc upstream-ahead
+git -C "$r" update-ref refs/remotes/upstream/main HEAD; git -C "$r" checkout -q -
+"$gate" "$r" >/dev/null || die "gate red on an unmerged upstream change (diffed against upstream/main, not the merge-base)"
+git -C "$r" update-ref refs/remotes/upstream/main "$old"
+printf %s "$bad" >"$r/bash_edit.go" # untracked, as a heredoc/redirect leaves a new file
 o=$("$gate" "$r" 2>&1) && die "gate green on an unformatted untracked file"; [[ $o == *bash_edit.go* ]] || die "gate did not name it: $o"
 printf '%s// fork\n' "$bad" >"$r/up_dirty.go"; rm "$r/bash_edit.go"; gc fork-dirty # fork edits the upstream file, commits it unformatted
 git -C "$r" checkout -q upstream/main -- up_dirty.go # working tree back at upstream: only --head HEAD still sees the dirty edit
