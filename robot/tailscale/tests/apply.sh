@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Host test of robot/tailscale/apply.sh (make check): ssh runs the robot half locally against ETC_ROOT; the "pushed" fake tailscale
-# answers status from $ETC_ROOT/ts-state and copies the key file `up` reads to $ETC_ROOT/seen-key.
+# answers status from $ETC_ROOT/ts-state and copies the key file `up` reads to $ETC_ROOT/seen-key. The session comes from FAKE_SRC
+# (default PC_LAN_IP); a tailnet source must not restart a running tailscaled.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")
@@ -15,7 +16,7 @@ printf '%s\n' "$*" >>"$ETC_ROOT/argv"
 while (($#)); do case $1 in -i | -o | -O) shift 2 ;; root@*) shift; break ;; *) shift ;; esac; done
 cmd=$*
 ph=$(sed -n 's/^PHASE=\([a-z]*\) .*/\1/p' <<<"$cmd"); echo "ssh ${ph:-raw}" >>"$ETC_ROOT/calls"
-exec sh -c "$cmd"
+SSH_CLIENT="${FAKE_SRC:-192.0.2.1} 50000 22" exec sh -c "$cmd"
 EOF
 cat >"$tmp/bin/mount" <<'EOF'
 #!/bin/sh
@@ -49,7 +50,7 @@ EOF
 printf '#!/bin/sh\necho tailscaled\n' >"$tmp/work/tailscaled"
 chmod +x "$tmp/bin/"* "$tmp/work/"*
 : >"$tmp/sshkey"
-printf '%s\n' ROBOT_ESN=0 ROBOT_IP=192.0.2.9 ROBOT_SERVER=x "ROBOT_KEY=$tmp/sshkey" >"$tmp/robot.env"
+printf '%s\n' ROBOT_ESN=0 ROBOT_IP=100.64.0.9 ROBOT_LAN_IP=192.0.2.9 PC_LAN_IP=192.0.2.1 ROBOT_SERVER=x "ROBOT_KEY=$tmp/sshkey" >"$tmp/robot.env"
 key=tskey-auth-zzTEST0secret
 printf '%s\n' "$key" >"$tmp/authkey"
 fresh() { local r=$tmp/$1; mkdir -p "$r/proc" "$r/etc"; echo "/dev/root / ext4 ro 0 0" >"$r/proc/mounts"; echo "$r"; }
@@ -57,6 +58,12 @@ run() { # <root> <authkey path> [work]
   env ETC_ROOT="$1" PATH="$tmp/bin:$PATH" ROBOT_ENV="$tmp/robot.env" TS_AUTHKEY="$2" TS_WORK="${3:-$tmp/work}" "$here/../apply.sh" 2>&1
 }
 calls() { grep -vE '^ssh (check|unit)$' "$1/calls" | paste -sd'|'; }
+ts_src=100.64.0.7 # the laptop's tailnet IP
+held() { # <root> <what>: a tailnet run refused before any push or unit phase
+  local out; out=$(FAKE_SRC=$ts_src run "$1" "$tmp/authkey") || die "$2 over the tailnet: $out"
+  [[ $out == *"WARN: tailscale: tailscaled upgrade needs LAN (ssh from $ts_src,"*"ROBOT_IP=192.0.2.9/"*"ROBOT_ENV="* && -z $(calls "$1") ]] &&
+    ! grep -q '^ssh unit$' "$1/calls" || die "$2 over the tailnet: out=[$out] calls=[$(cat "$1/calls")], want WARN + no push/unit"
+}
 
 r=$(fresh nobin)
 if out=$(run "$r" "$tmp/authkey" "$tmp/empty"); then die "no binaries passed: $out"; fi
@@ -85,13 +92,24 @@ grep -q -- '--hostname=vector --advertise-tags=tag:vector --accept-dns=false --n
 want='ssh raw|ssh raw|systemctl daemon-reload|systemctl enable|systemctl start|ssh raw|ssh up|up'
 [[ $(calls "$r" | sed 's/|up [^|]*/|up/') == "$want" ]] || die "first run calls [$(calls "$r")], want [$want]"
 
-: >"$r/calls"
-out=$(run "$r" "$tmp/authkey") || die "2nd run: $out"
-[[ $out != *changed* && $out == *"logged in (Running)"* && -z $(calls "$r") ]] || die "2nd run wrote: out=[$out] calls=[$(calls "$r")]"
+: >"$r/calls" # nothing changed: a tailnet session passes as before
+out=$(FAKE_SRC=$ts_src run "$r" "$tmp/authkey") || die "2nd run: $out"
+[[ $out != *changed* && $out != *WARN* && $out == *"logged in (Running)"* && -z $(calls "$r") ]] || die "2nd run wrote: out=[$out] calls=[$(calls "$r")]"
 
 : >"$r/calls"; printf '#!/bin/sh\necho tailscaled v2\n' >"$tmp/work/tailscaled"
+held "$r" "new binary"
+! cmp -s "$r/data/myvector/tailscale/tailscaled" "$tmp/work/tailscaled" || die "new binary over the tailnet: pushed"
+: >"$r/calls"
 out=$(run "$r" "$tmp/authkey") || die "new binary: $out"
 [[ $(calls "$r") == 'ssh raw|systemctl restart' ]] || die "new binary calls [$(calls "$r")], want one push + restart"
+
+: >"$r/calls"; echo 'Environment=OLD=1' >>"$r/$unit"
+held "$r" "unit change"
+grep -qx 'Environment=OLD=1' "$r/$unit" || die "unit change over the tailnet: unit rewritten"
+: >"$r/calls"
+out=$(run "$r" "$tmp/authkey") || die "unit change: $out"
+[[ $(calls "$r") == 'systemctl daemon-reload|systemctl enable|systemctl restart' ]] && ! grep -q OLD "$r/$unit" ||
+  die "unit change calls [$(calls "$r")], want reload + enable + restart"
 
 r=$(fresh stopped); echo Stopped >"$r/ts-state"
 out=$(run "$r" "$tmp/authkey") || die "Stopped: $out"

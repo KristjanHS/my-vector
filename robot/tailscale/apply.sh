@@ -2,7 +2,8 @@
 # Install tailscaled on the robot as a boot unit (plan D2/D4/D5): the binaries fetch.sh unpacked into <main>/robot/work/tailscale/
 # go to TS_DIR when their sha256 differs, TS_UNIT is written + enabled + started, then `tailscale up` runs only while the node is
 # not logged in and TS_AUTHKEY exists (else WARN). The key reaches the robot on ssh stdin into /run, never in argv (D4). The unit owns the
-# OUTPUT -o tailscale0 ACCEPT pair (D13: base OUTPUT is policy DROP).
+# OUTPUT -o tailscale0 ACCEPT pair (D13: base OUTPUT is policy DROP). A new binary or unit text while tailscaled runs needs a restart, whose
+# ExecStopPost cuts a tailnet ssh session with nothing to bring it back: unless ssh comes from PC_LAN_IP, the run WARNs and installs nothing.
 # Usage: robot/tailscale/apply.sh   idempotent; settings.sh runs it before netguard (D6). Exit 0 = applied (or WARN printed), 1 = FAIL, 2 = SETUP.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -22,23 +23,12 @@ done
 remote() {
   local phase=$1; shift
   # shellcheck disable=SC2029 # the VARs expand on the client: the point
-  cat "$here/../lib/etc.sh" - <<'EOF' | ssh "${ssh_opts[@]}" "root@$ip" "PHASE=$phase TS_DIR=$ts_dir RUN_KEY=$run_key $* sh -s"
+  cat "$here/../lib/etc.sh" - <<'EOF' | ssh "${ssh_opts[@]}" "root@$ip" "PHASE=$phase TS_DIR=$ts_dir RUN_KEY=$run_key PC_LAN='${PC_LAN_IP:-}' $* sh -s"
 set -e
 unit=/etc/systemd/system/myvector-tailscaled.service sock=/run/tailscale/tailscaled.sock
 d=$ETC_ROOT$TS_DIR
 state() { "$d/tailscale" --socket="$sock" status --json 2>/dev/null | sed -n 's/^[[:space:]]*"BackendState": "\([A-Za-z]*\)".*/\1/p' | head -n 1; }
-case $PHASE in
-check) # SUMS="<name>=<sha256> …": prints the names whose robot copy differs
-  need=
-  for kv in $SUMS; do
-    [ "$(sha256sum "$d/${kv%%=*}" 2>/dev/null | cut -d' ' -f1)" = "${kv#*=}" ] || need="$need ${kv%%=*}"
-  done
-  echo "need:$need" ;;
-unit) # [NEWBIN=1]: unit per D5, enabled, running; prints state=<BackendState>
-  if pidof tailscaled >/dev/null && ! systemctl is-active -q myvector-tailscaled; then
-    echo "FAIL: a tailscaled runs outside myvector-tailscaled (hand-run spike?): stop it first"; exit 1
-  fi
-  etc_put $unit "[Unit]
+text="[Unit]
 Description=my-vector tailscaled: tailnet path to the PC (robot/tailscale)
 After=network-pre.target myvector-netguard.service
 RequiresMountsFor=/data
@@ -59,6 +49,23 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target"
+case $PHASE in
+check) # SUMS="<name>=<sha256> …": prints `need:<names whose robot copy differs>`, plus ` hold:<ssh source>` when that or a unit
+  # change would restart a running tailscaled from a session not from PC_LAN (the tailnet: ExecStopPost cuts it, nothing restores it)
+  need= hold=
+  for kv in $SUMS; do
+    [ "$(sha256sum "$d/${kv%%=*}" 2>/dev/null | cut -d' ' -f1)" = "${kv#*=}" ] || need="$need ${kv%%=*}"
+  done
+  if systemctl is-active -q myvector-tailscaled && { [ -n "$need" ] || [ "$(cat "$ETC_ROOT$unit" 2>/dev/null)" != "$text" ]; }; then
+    src=${SSH_CLIENT%% *}
+    [ -n "$PC_LAN" ] && [ "$src" = "$PC_LAN" ] || hold=" hold:${src:-unknown}"
+  fi
+  echo "need:$need$hold" ;;
+unit) # [NEWBIN=1]: unit per D5, enabled, running; prints state=<BackendState>
+  if pidof tailscaled >/dev/null && ! systemctl is-active -q myvector-tailscaled; then
+    echo "FAIL: a tailscaled runs outside myvector-tailscaled (hand-run spike?): stop it first"; exit 1
+  fi
+  etc_put $unit "$text"
   if [ -n "$ETC_CHANGED" ] || ! systemctl is-enabled -q myvector-tailscaled 2>/dev/null; then
     etc_rw; systemctl daemon-reload; systemctl enable myvector-tailscaled 2>/dev/null; etc_ro
     echo "tailscale: installed myvector-tailscaled.service"
@@ -82,8 +89,15 @@ EOF
 sums=
 for b in tailscale tailscaled; do sums+="$b=$(sha256sum "$work/$b" | cut -d' ' -f1) "; done
 out=$(remote check "SUMS='$sums'") || die "check: $out"
+if [[ $out == *" hold:"* ]]; then # restart over the tailnet = lock-out risk: refuse, install nothing, let settings.sh carry on
+  lan=${ROBOT_LAN_IP:-<ROBOT_LAN_IP>}
+  echo "WARN: tailscale: tailscaled upgrade needs LAN (ssh from ${out##* hold:}, not PC_LAN_IP ${PC_LAN_IP:-unset}); nothing installed: from the LAN run" \
+    "sed 's/^ROBOT_IP=.*/ROBOT_IP=$lan/' $env_file >$robot_dir/work/robot-lan.env && ROBOT_ENV=$robot_dir/work/robot-lan.env $here/apply.sh"
+  exit 0
+fi
 newbin=
-for b in ${out#need:}; do
+need=${out#need:}
+for b in $need; do
   # shellcheck disable=SC2016 # expands on the robot
   ssh "${ssh_opts[@]}" "root@$ip" 'd=${ETC_ROOT:-}'"$ts_dir/$b"'; mkdir -p "${d%/*}" && cat >"$d.new" && chmod 755 "$d.new" && mv -f "$d.new" "$d"' \
     <"$work/$b" || die "push $b failed"
