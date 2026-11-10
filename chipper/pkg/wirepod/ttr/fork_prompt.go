@@ -178,7 +178,7 @@ func forkCameraReq(r *openai.ChatCompletionRequest, cl **openai.Client, esn stri
 	if !ok && llm.IsOllama(kg) {
 		brain, bok = llm.Target{Provider: llm.Ollama, BaseURL: kg.Endpoint, Model: kg.Model}, true
 	}
-	if v.Ollama() && !(bok && brain.Ollama()) {
+	if v.Ollama() { // also an Ollama brain's own tier: a photo answer's prompt (PhotoCommands)
 		forkOllamaTier(r, esn, l)
 	}
 	if !v.Ollama() || (bok && brain.Ollama() && brain.Model == v.Model) { // same model: unloading it only forces a cold reload

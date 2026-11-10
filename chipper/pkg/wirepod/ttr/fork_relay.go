@@ -69,8 +69,8 @@ func (f *forkRelay) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	q, qi := forkRelayQuestion(msgs)
 	tr.Note("question (last user message before the photo)", q)
-	ask, d0 := f.hop0(req.Context(), tr, q)
-	if qi >= 0 { // hop 1 gets the question once, in English, on the photo message
+	ask, d0, carried := f.hop0(req.Context(), tr, q)
+	if qi >= 0 && carried { // hop 1 gets the question once, in English, on the photo message
 		msgs = append(msgs[:qi:qi], msgs[qi+1:]...)
 		body["messages"] = msgs
 	}
@@ -109,11 +109,16 @@ func (f *forkRelay) fail(hop int, err error) error {
 	return fmt.Errorf("camera relay hop %d failed", hop) // fixed text: DoGetImage retries on a "does not exist" error
 }
 
-// hop0 is q in English on the still-loaded brain, or forkRelayAsk when q is empty or the hop fails (R4, R11).
-func (f *forkRelay) hop0(ctx context.Context, tr *relay.Trace, q string) (string, time.Duration) {
+// hop0 is q in English on the still-loaded brain, or forkRelayAsk when q is empty, a bare photo phrase or the hop fails
+// (R4, R11); carried: the ask stands for q (translated or bare), so hop 1 can drop q's message.
+func (f *forkRelay) hop0(ctx context.Context, tr *relay.Trace, q string) (string, time.Duration, bool) {
 	if strings.TrimSpace(q) == "" {
 		tr.Note("hop 0 skipped (no question)", "vision ask = "+forkRelayAsk)
-		return forkRelayAsk, 0
+		return forkRelayAsk, 0, false
+	}
+	if forkPhotoBare(lang.Estonian, q) {
+		tr.Note("hop 0 skipped (bare photo phrase)", "vision ask = "+forkRelayAsk)
+		return forkRelayAsk, 0, true
 	}
 	t0 := time.Now()
 	en, _, err := f.chat(ctx, tr, "hop 0 to English", relay.ToEnglish(f.brain, q))
@@ -124,9 +129,9 @@ func (f *forkRelay) hop0(ctx context.Context, tr *relay.Trace, q string) (string
 		}
 		f.fail(0, err)
 		tr.Note("hop 0 failed", "vision ask = "+forkRelayAsk)
-		return forkRelayAsk, d
+		return forkRelayAsk, d, false
 	}
-	return en, d
+	return en, d, true
 }
 
 // hop1 forwards the photo request to the vision model unstreamed, ask as the photo message's first text part (R3, R4);
