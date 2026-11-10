@@ -175,11 +175,14 @@ type settingsReply struct {
 	SlowMin float64             `json:"slowMin"`
 	SlowMax float64             `json:"slowMax"`
 	// LLM is each language's effective brain (llm.Effective); Defaults is the same with no saved profiles.
-	LLM       map[string]llm.Profile `json:"llm"`
-	Defaults  map[string]llm.Profile `json:"defaults"`
-	OllamaURL string                 `json:"ollamaUrl"`
-	ClaudeKey string                 `json:"claudeKey"` // llm.Mask: never the full key
-	KGEnabled bool                   `json:"kgEnabled"`
+	LLM      map[string]llm.Profile `json:"llm"`
+	Defaults map[string]llm.Profile `json:"defaults"`
+	// Vision is each language's camera model (llm.EffectiveVision); VisionDefaults is the same with none saved.
+	Vision         map[string]llm.Profile `json:"vision"`
+	VisionDefaults map[string]llm.Profile `json:"visionDefaults"`
+	OllamaURL      string                 `json:"ollamaUrl"`
+	ClaudeKey      string                 `json:"claudeKey"` // llm.Mask: never the full key
+	KGEnabled      bool                   `json:"kgEnabled"`
 	// LLMSaved is false until the page first saves "llm"; till then Knowledge (provider model) is the brain.
 	LLMSaved  bool   `json:"llmSaved"`
 	Knowledge string `json:"knowledge"`
@@ -233,8 +236,9 @@ func (q *searchRequest) config() search.Config {
 type settingsRequest struct {
 	Settings
 	Lang string `json:"lang"`
-	// LLM, OllamaURL and ClaudeKey are saved by llm.Save when any is present; absent keeps; ClaudeKey "" clears.
+	// LLM, Vision, OllamaURL and ClaudeKey are saved by llm.Save when any is present; absent keeps; ClaudeKey "" clears.
 	LLM       map[string]llm.Profile `json:"llm"`
+	Vision    map[string]llm.Profile `json:"vision"`
 	OllamaURL *string                `json:"ollama_url"`
 	ClaudeKey *string                `json:"claude_key"`
 	Search    *searchRequest         `json:"search"`
@@ -243,7 +247,7 @@ type settingsRequest struct {
 }
 
 func (q *settingsRequest) llmChanged() bool {
-	return q.LLM != nil || q.OllamaURL != nil || q.ClaudeKey != nil
+	return q.LLM != nil || q.Vision != nil || q.OllamaURL != nil || q.ClaudeKey != nil
 }
 
 // llmConfig is the saved llm.Config with q's fields over it.
@@ -251,6 +255,9 @@ func (q *settingsRequest) llmConfig() llm.Config {
 	c := llm.Load()
 	if q.LLM != nil {
 		c.Profiles = q.LLM
+	}
+	if q.Vision != nil {
+		c.Vision = q.Vision
 	}
 	if q.OllamaURL != nil {
 		c.OllamaURL = *q.OllamaURL
@@ -361,7 +368,8 @@ func SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	profiles, url := llm.Effective(c, kg)
 	defaults, _ := llm.Effective(llm.Config{LegacyETModel: c.LegacyETModel}, kg)
 	json.NewEncoder(w).Encode(settingsReply{Settings: Current(), Lang: lang.Current(), Langs: lang.Supported, Voices: voices,
-		SlowMin: SlowMin, SlowMax: SlowMax, LLM: profiles, Defaults: defaults, OllamaURL: url, ClaudeKey: llm.Mask(c.ClaudeKey), KGEnabled: vars.APIConfig.Knowledge.Enable,
+		SlowMin: SlowMin, SlowMax: SlowMax, LLM: profiles, Defaults: defaults,
+		Vision: llm.EffectiveVision(c), VisionDefaults: llm.EffectiveVision(llm.Config{}), OllamaURL: url, ClaudeKey: llm.Mask(c.ClaudeKey), KGEnabled: vars.APIConfig.Knowledge.Enable,
 		LLMSaved: c.Profiles != nil, Knowledge: strings.TrimSpace(kg.Provider + " " + kg.Model),
 		PushError: pushErr, IntentError: intentErr, Search: currentSearch(), MemoryModel: memory.Model()})
 }

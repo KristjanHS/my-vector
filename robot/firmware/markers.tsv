@@ -77,3 +77,15 @@
 0020-followup-no-ready.patch	src	engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp	(kMuteKnowledgeReady && !_readyTTSWrapper.IsValid())
 0020-followup-no-ready.patch	src	engine/aiComponent/behaviorComponent/behaviors/knowledgeGraph/behaviorKnowledgeGraphQuestion.cpp	my-vector.FollowUpReady
 0020-followup-no-ready.patch	bin	lib/libcozmo_engine.so	my-vector.FollowUpReady
+0021-sdk-audio-prepare-race.patch	src	tools/protobuf/gateway/public/messages.proto	uint32 stream_id = 4;  // my-vector sdk-audio-prepare-race
+0021-sdk-audio-prepare-race.patch	src	robot/clad/src/clad/robotInterface/messageEngineToRobot.clad	uint_32 stream_id               // my-vector sdk-audio-prepare-race
+0021-sdk-audio-prepare-race.patch	src	robot/clad/src/clad/robotInterface/messageFromAnimProcess.clad	uint_32 streamId,  // my-vector sdk-audio-prepare-race
+0021-sdk-audio-prepare-race.patch	src	cloud/cloud/message_handler.go	myVectorStampAudioRequest(request, st.id)
+0021-sdk-audio-prepare-race.patch	src	cloud/cloud/message_handler.go	my-vector.SdkAudioOrphan: status of stream %d not sent on stream %d
+0021-sdk-audio-prepare-race.patch	bin	bin/vic-cloud	my-vector.SdkAudioOrphan: status of stream %d not sent on stream %d
+0021-sdk-audio-prepare-race.patch	src	engine/components/sdkComponent.cpp	msg.stream_id = event.GetData().external_audio_stream_cancel().stream_id();
+0021-sdk-audio-prepare-race.patch	src	engine/components/sdkComponent.cpp	played %u, my-vector stream %u
+0021-sdk-audio-prepare-race.patch	bin	lib/libcozmo_engine.so	played %u, my-vector stream %u
+0021-sdk-audio-prepare-race.patch	src	animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp	IsPreparedStream("Cancel", msg.stream_id, false)
+0021-sdk-audio-prepare-race.patch	src	animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp	dropped: stream %u is prepared
+0021-sdk-audio-prepare-race.patch	bin	bin/vic-anim	dropped: stream %u is prepared

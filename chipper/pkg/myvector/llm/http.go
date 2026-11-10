@@ -10,6 +10,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -46,6 +47,7 @@ type ClaudeModel struct {
 
 type ollamaList struct {
 	Models []string `json:"models"`
+	Vision []string `json:"vision"` // the Models whose /api/tags capabilities hold "vision", VisionAllowed only
 	Error  string   `json:"error,omitempty"`
 }
 
@@ -110,18 +112,24 @@ func getJSON(url string, timeout time.Duration, hdr map[string]string, v any) er
 	return json.NewDecoder(io.LimitReader(resp.Body, ListMaxBody)).Decode(v)
 }
 
-func listOllama(base string) ([]string, error) {
+func listOllama(base string) (ollamaList, error) {
 	var b struct {
-		Models []struct{ Name string } `json:"models"`
+		Models []struct {
+			Name         string   `json:"name"`
+			Capabilities []string `json:"capabilities"`
+		} `json:"models"`
 	}
 	if err := getJSON(base+"/api/tags", TagsTimeout, nil, &b); err != nil {
-		return nil, fmt.Errorf("ollama: %w", err)
+		return ollamaList{}, fmt.Errorf("ollama: %w", err)
 	}
-	ms := []string{}
+	l := ollamaList{Models: []string{}, Vision: []string{}}
 	for _, m := range b.Models {
-		ms = append(ms, m.Name)
+		l.Models = append(l.Models, m.Name)
+		if slices.Contains(m.Capabilities, "vision") && VisionAllowed(m.Name) {
+			l.Vision = append(l.Vision, m.Name)
+		}
 	}
-	return ms, nil
+	return l, nil
 }
 
 func listClaude(key string) ([]ClaudeModel, error) {
@@ -147,7 +155,7 @@ func keyID(k string) string {
 	return hex.EncodeToString(s[:])[:8]
 }
 
-// ModelsHandler serves GET ModelsAPI[?refresh=1]: the Ollama and Claude model lists, fetched concurrently.
+// ModelsHandler serves GET ModelsAPI[?refresh=1]: the Ollama (all + vision) and Claude model lists, fetched concurrently.
 func ModelsHandler(kg func() KG) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -162,17 +170,17 @@ func ModelsHandler(kg func() KG) http.HandlerFunc {
 			Ollama ollamaList `json:"ollama"`
 			Claude claudeList `json:"claude"`
 		}
-		out.Ollama.Models, out.Claude.Models = []string{}, []ClaudeModel{}
+		out.Ollama.Models, out.Ollama.Vision, out.Claude.Models = []string{}, []string{}, []ClaudeModel{}
 		var wg sync.WaitGroup
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ms, err := cached("ollama:"+base, refresh, func() ([]string, error) { return listOllama(base) })
+			l, err := cached("ollama:"+base, refresh, func() (ollamaList, error) { return listOllama(base) })
 			if err != nil {
 				out.Ollama.Error = err.Error()
 				return
 			}
-			out.Ollama.Models = ms
+			out.Ollama = l
 		}()
 		if out.Claude.KeySet = c.ClaudeKey != ""; out.Claude.KeySet {
 			wg.Add(1)

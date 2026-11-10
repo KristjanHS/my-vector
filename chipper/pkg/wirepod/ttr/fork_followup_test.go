@@ -189,6 +189,18 @@ func TestForkFollowUp(t *testing.T) {
 			t.Errorf("%s: chain armed %v, want %v", c.name, armed, c.want)
 		}
 	}
+	robot := &vector.Vector{}
+	_, istop, end := forkInterruptBot(robot, make(chan bool, 1))
+	istop <- true
+	for forkSpeakCtx(robot).Err() == nil {
+		time.Sleep(time.Millisecond)
+	}
+	forkChain.Reset("fu-cut")
+	fired = 0
+	if forkFollowUp(robot, decided(&yes), "fu-cut", false) || fired != 0 {
+		t.Errorf("follow-up fired after an interrupt cut the speech")
+	}
+	end()
 	esn := "fu-cap"
 	forkChain.Reset(esn)
 	for i := 0; i < followup.Max; i++ {
@@ -218,13 +230,26 @@ func TestForkFollowUp(t *testing.T) {
 	}
 }
 
-// TestForkBegin: F2/B1 — an armed knowledge request counts, any other request resets, a blank one resets and skips.
+// TestForkBegin: F2/B1 — an armed knowledge request counts, any other request resets, a blank one resets and skips;
+// every knowledge skip cuts streamingKG's "bla bla" placeholder, an answered request leaves it to forkBControl.
 func TestForkBegin(t *testing.T) {
 	esn := "fu-begin"
+	oldCut := forkKGCut
+	t.Cleanup(func() { forkKGCut = oldCut })
+	cuts := 0
+	forkKGCut = func(_ string, hold func()) error { cuts++; hold(); return nil }
 	begin := func(isKG bool, text string) bool {
+		before := cuts
 		turn, skip := forkBegin(esn, isKG, text)
 		if turn == nil || cap(turn) != 1 {
 			t.Fatalf("forkBegin(%v, %q): turn %v, want a buffered forkTurn", isKG, text, turn)
+		}
+		want := 0
+		if skip {
+			want = 1
+		}
+		if cuts-before != want {
+			t.Errorf("forkBegin(%v, %q): skip %v, %d placeholder cuts, want %d", isKG, text, skip, cuts-before, want)
 		}
 		return skip
 	}
@@ -239,6 +264,9 @@ func TestForkBegin(t *testing.T) {
 	arm()
 	if begin(false, "dance") || forkChain.Count(esn) != 0 || forkChain.Begin(esn, forkNow()) {
 		t.Errorf("intent request: count %d, want the chain reset", forkChain.Count(esn))
+	}
+	if begin(false, "") {
+		t.Error("blank intent request: skipped, want it left to the intent path (!isKG wins)")
 	}
 	arm()
 	if !begin(true, "  ") || forkChain.Count(esn) != 0 || forkChain.Begin(esn, forkNow()) {

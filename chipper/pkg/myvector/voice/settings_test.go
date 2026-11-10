@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/quiet"
@@ -369,7 +371,8 @@ func TestSettingsPage(t *testing.T) {
 	// the page picks each language's LLM from both providers and shows a rolled-back switch
 	for _, want := range []string{`<optgroup label="Local (Ollama)"`, `<optgroup label="Claude API"`, `"` + llm.ModelsAPI + `"`, `"` + llm.TestAPI + `"`,
 		`claude_key = ""`, `!cur.llmSaved`, `if (s.intentError)`, `+ s.intentError`,
-		`<option value="off">`, `label="Claude API — sends transcripts to Anthropic"`, `memory_model: memoryChoice()`, `fillMemory(s.memoryModel)`} {
+		`<option value="off">`, `label="Claude API — sends transcripts to Anthropic"`, `memory_model: memoryChoice()`, `fillMemory(s.memoryModel)`,
+		`id="vision_en-US"`, `id="vision_et-EE"`, `label="Claude API — sends the photo to Anthropic"`, `fillVision(l, s.vision[l])`, `vision: Object.fromEntries`} {
 		if !strings.Contains(w.Body.String(), want) {
 			t.Errorf("page lacks %s", want)
 		}
@@ -646,5 +649,70 @@ func TestSettingsMemory(t *testing.T) {
 	}
 	if got := get(); got != "ollama:qwen3:8b" {
 		t.Fatalf("a rejected POST changed memory_model: %q", got)
+	}
+}
+
+func TestSettingsVision(t *testing.T) {
+	tempSettings(t)
+	const key = "sk-ant-0123456789abcdefWxYz"
+	get := func() settingsReply {
+		t.Helper()
+		var got settingsReply
+		if w := serve(http.MethodGet, "", ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil {
+			t.Fatalf("GET: %d %s", w.Code, w.Body)
+		}
+		return got
+	}
+	post := func(extra string) *httptest.ResponseRecorder {
+		return serve(http.MethodPost, "application/json", `{"lang":"en-US","t1":"cori","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1`+extra+`}`)
+	}
+	local := map[string]llm.Profile{lang.English: {Provider: llm.Ollama, Model: llm.DefaultVisionEN}, lang.Estonian: {Provider: llm.Ollama, Model: llm.DefaultVisionET}}
+	if got := get(); !reflect.DeepEqual(got.Vision, local) || !reflect.DeepEqual(got.VisionDefaults, local) {
+		t.Fatalf("GET unsaved: vision %v defaults %v, want %v", got.Vision, got.VisionDefaults, local)
+	}
+	for _, bad := range []string{`{"en-US":{"provider":"claude","model":"claude-haiku-5-5"}}`, `{"en-US":{"provider":"openai","model":"gpt-x"}}`} {
+		if w := post(`,"vision":` + bad); w.Code != 400 || !strings.HasPrefix(w.Body.String(), "vision ") {
+			t.Fatalf("POST vision %s: %d %q, want 400 vision …", bad, w.Code, w.Body)
+		}
+	}
+	if c := llm.Load(); c.Vision != nil {
+		t.Fatalf("a rejected POST saved vision %v", c.Vision)
+	}
+	want := map[string]llm.Profile{lang.English: {Provider: llm.Claude, Model: "claude-haiku-5-5"}, lang.Estonian: {Provider: llm.Ollama, Model: "llava:7b"}}
+	if w := post(`,"claude_key":"` + key + `","vision":{"en-US":{"provider":"claude","model":"claude-haiku-5-5"},"et-EE":{"provider":"ollama","model":"llava:7b"}}`); w.Code != 200 {
+		t.Fatalf("POST vision: %d %s", w.Code, w.Body)
+	}
+	if got := get(); !reflect.DeepEqual(got.Vision, want) || !reflect.DeepEqual(got.VisionDefaults, local) {
+		t.Fatalf("GET after save: vision %v defaults %v", got.Vision, got.VisionDefaults)
+	}
+	if w := post(`,"llm":{"en-US":{"provider":"ollama","model":"qwen3.5:4b"}}`); w.Code != 200 || !reflect.DeepEqual(llm.Load().Vision, want) {
+		t.Fatalf("POST without vision: %d, vision %v, want kept %v", w.Code, llm.Load().Vision, want)
+	}
+	if w := post(`,"claude_key":""`); w.Code != 400 || llm.Load().ClaudeKey != key { // en-US camera still uses Claude
+		t.Fatalf("clearing the key under a Claude camera: %d, want 400", w.Code)
+	}
+}
+
+// A gemma4 camera saved before the D2 ban must not show on the page nor block a brain-only POST.
+func TestSettingsVisionBanned(t *testing.T) {
+	tempSettings(t)
+	if err := conf.Update(lang.Path(), map[string]any{"vision": map[string]llm.Profile{lang.Estonian: {Provider: llm.Ollama, Model: "gemma4:e4b"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var got settingsReply
+	if w := serve(http.MethodGet, "", ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil {
+		t.Fatalf("GET: %d %s", w.Code, w.Body)
+	}
+	if want := (llm.Profile{Provider: llm.Ollama, Model: llm.DefaultVision(lang.Estonian)}); got.Vision[lang.Estonian] != want {
+		t.Fatalf("GET saved gemma4: et-EE vision %v, want %v", got.Vision[lang.Estonian], want)
+	}
+	post := func(extra string) *httptest.ResponseRecorder {
+		return serve(http.MethodPost, "application/json", `{"lang":"en-US","t1":"cori","t2":"cori","t1_et":"mari","t2_et":"mari","slow":1`+extra+`}`)
+	}
+	if w := post(`,"llm":{"en-US":{"provider":"ollama","model":"qwen3.5:4b"}}`); w.Code != 200 {
+		t.Fatalf("POST brain only under a saved gemma4 camera: %d %s", w.Code, w.Body)
+	}
+	if w := post(`,"vision":{"et-EE":{"provider":"ollama","model":"gemma4:e4b"}}`); w.Code != 400 || !strings.HasPrefix(w.Body.String(), "vision ") {
+		t.Fatalf("POST gemma4 vision: %d %q, want 400 vision …", w.Code, w.Body)
 	}
 }

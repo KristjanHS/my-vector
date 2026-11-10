@@ -19,6 +19,7 @@ type fakeAPI struct {
 	tags, models atomic.Int32
 	tagsFail     atomic.Bool
 	tagsSlow     chan struct{} // non-nil: /api/tags waits on it
+	tagsBody     atomic.Value  // a string replacing the default /api/tags body
 	ping         atomic.Value  // the last chat request body
 	*httptest.Server
 }
@@ -37,6 +38,10 @@ func newFakeAPI(t *testing.T, slow bool) *fakeAPI {
 			}
 			if f.tagsFail.Load() {
 				http.Error(w, "down", 500)
+				return
+			}
+			if b, ok := f.tagsBody.Load().(string); ok {
+				io.WriteString(w, b)
 				return
 			}
 			io.WriteString(w, `{"models":[{"name":"qwen3.5:4b"},{"name":"estllm:x"}]}`)
@@ -74,6 +79,7 @@ func noKG() KG { return KG{} }
 func getModels(t *testing.T, query string) (out struct {
 	Ollama struct {
 		Models []string
+		Vision []string
 		Error  string
 	}
 	Claude struct {
@@ -124,6 +130,23 @@ func TestLLMModelsCache(t *testing.T) {
 	}
 	if got := getModels(t, ""); f.tags.Load() != 4 || got.Claude.KeySet || f.models.Load() != 3 || len(got.Claude.Models) != 0 {
 		t.Fatalf("after Save without key: tags %d models %d, %+v", f.tags.Load(), f.models.Load(), got.Claude)
+	}
+}
+
+func TestModelsVision(t *testing.T) {
+	tempPath(t)
+	clearCache()
+	f := newFakeAPI(t, false)
+	if err := Save(Config{OllamaURL: f.URL}); err != nil {
+		t.Fatal(err)
+	}
+	f.tagsBody.Store(`{"models":[{"name":"qwen3.5:4b","capabilities":["completion","vision"]},{"name":"estllm:x","capabilities":["completion","tools"]},{"name":"gemma4:e4b","capabilities":["vision"]}]}`)
+	if got := getModels(t, ""); strings.Join(got.Ollama.Models, ",") != "qwen3.5:4b,estllm:x,gemma4:e4b" || strings.Join(got.Ollama.Vision, ",") != "qwen3.5:4b" {
+		t.Fatalf("with capabilities: %+v", got.Ollama)
+	}
+	f.tagsBody.Store(`{"models":[{"name":"qwen3.5:4b"},{"name":"estllm:x"}]}`)
+	if got := getModels(t, "?refresh=1"); len(got.Ollama.Models) != 2 || got.Ollama.Vision == nil || len(got.Ollama.Vision) != 0 {
+		t.Fatalf("no capabilities: %+v, want vision [] (not null)", got.Ollama)
 	}
 }
 

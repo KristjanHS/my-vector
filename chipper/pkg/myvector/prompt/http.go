@@ -40,6 +40,7 @@ type brainReply struct {
 type reply struct {
 	Brains         map[string]brainReply `json:"brains"`
 	About          string                `json:"about"`
+	AboutEt        string                `json:"about_et"` // OllamaEt's about-me; empty uses About
 	AboutCap       int                   `json:"about_cap"`
 	Tags           []string              `json:"tags"`
 	Required       []string              `json:"required"`
@@ -49,12 +50,12 @@ type reply struct {
 
 func current() reply {
 	s, err := load()
-	r := reply{Brains: map[string]brainReply{}, About: s.About, AboutCap: AboutCap, Tags: KnownTags, Required: RequiredTags,
+	r := reply{Brains: map[string]brainReply{}, About: s.About, AboutEt: s.AboutEt, AboutCap: AboutCap, Tags: KnownTags, Required: RequiredTags,
 		UpstreamIgnore: UpstreamPrompt() != ""}
 	if err != nil {
 		r.LoadError = err.Error()
 	}
-	for _, b := range []string{Claude, Ollama} {
+	for _, b := range Brains {
 		t, saved := s.Templates[b]
 		if !saved {
 			t = Default(b)
@@ -70,6 +71,7 @@ type apiRequest struct {
 	Brain    string  `json:"brain"`
 	Template *string `json:"template"` // save: absent leaves it as is
 	About    *string `json:"about"`    // save: absent leaves it as is
+	AboutEt  *string `json:"about_et"` // save: absent leaves it as is
 	Version  int     `json:"version"`
 }
 
@@ -77,14 +79,14 @@ func (q *apiRequest) valid() error {
 	if !slices.Contains([]string{"save", "reset", "restore"}, q.Action) {
 		return errors.New("action: save, reset or restore")
 	}
-	if q.Brain != Claude && q.Brain != Ollama {
-		return fmt.Errorf("brain: %s or %s", Claude, Ollama)
+	if !Known(q.Brain) {
+		return fmt.Errorf("brain: one of %v", Brains)
 	}
 	return nil
 }
 
-// APIHandler serves API: GET reads; POST application/json {action, brain, template and/or about | version} saves the
-// template and/or about-me, resets or restores a version, then replies as GET. A rejected template, about-me or version is a 400.
+// APIHandler serves API: GET reads; POST application/json {action, brain, template, about and/or about_et | version} saves
+// the template and/or about-mes, resets or restores a version, then replies as GET. A rejected template, about-me or version is a 400.
 func APIHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -96,7 +98,7 @@ func APIHandler(w http.ResponseWriter, r *http.Request) {
 		var err error
 		switch q.Action {
 		case "save":
-			err = Save(q.Brain, q.Template, q.About)
+			err = Save(q.Brain, q.Template, q.About, q.AboutEt)
 		case "reset":
 			err = Reset(q.Brain)
 		case "restore":
@@ -123,12 +125,13 @@ type previewRequest struct {
 	Brain    string `json:"brain"`
 	Template string `json:"template"`
 	About    string `json:"about"`
+	AboutEt  string `json:"about_et"` // used by OllamaEt when set
 	Lang     string `json:"lang"`
 }
 
 func (q *previewRequest) valid() error {
-	if q.Brain != Claude && q.Brain != Ollama {
-		return fmt.Errorf("brain: %s or %s", Claude, Ollama)
+	if !Known(q.Brain) {
+		return fmt.Errorf("brain: one of %v", Brains)
 	}
 	if q.Lang == "" {
 		q.Lang = lang.Current()
@@ -146,8 +149,8 @@ type previewReply struct {
 	Error    string   `json:"error,omitempty"` // what Save would reject
 }
 
-// PreviewHandler serves PreviewAPI: POST application/json {brain, template, about, lang} renders the unsaved template
-// with Sample data and that about-me, and reports its tokens, the brain's budget, the appended tags and any Save error.
+// PreviewHandler serves PreviewAPI: POST application/json {brain, template, about, about_et, lang} renders the unsaved
+// template with Sample data and brain's about-me (userFor), and reports its tokens, the brain's budget, the appended tags and any Save error.
 func PreviewHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
@@ -159,11 +162,18 @@ func PreviewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	full, appended := Complete(q.Template)
-	v := Sample(q.Lang)
-	v.User = UserBlock(q.About)
+	v := Sample(q.Brain, q.Lang)
+	v.User = userFor(q.Brain, q.About, q.AboutEt)
 	text := Render(full, v)
 	p := previewReply{Text: text, Tokens: Estimate(text), Budget: Budget(q.Brain), Appended: appended}
-	if err := Validate(q.Brain, q.Template, q.About); err != nil {
+	err := CheckAbout(q.About)
+	if err == nil {
+		err = CheckAbout(q.AboutEt)
+	}
+	if err == nil {
+		err = validate(q.Brain, q.Template, v.User)
+	}
+	if err != nil {
 		p.Error = err.Error()
 	}
 	w.Header().Set("Content-Type", "application/json")

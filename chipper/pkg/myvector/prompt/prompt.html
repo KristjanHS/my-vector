@@ -37,7 +37,7 @@
       font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
     a { color: var(--accent); }
-    .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 32px; }
+    .wrap { padding: 0 16px 32px; }
     .top { position: sticky; top: 0; z-index: 1; background: var(--bg); border-bottom: 1px solid var(--border); }
     .bar { display: flex; align-items: center; gap: 12px; padding: 12px 0; }
     .bar h1 { flex: 1; margin: 0; font-size: 18px; font-weight: 600; }
@@ -69,6 +69,8 @@
     .card > h2 { margin: 0; padding: 12px 16px 0; font-size: 15px; font-weight: 600; }
     .body { padding: 12px 16px 16px; display: grid; gap: 14px; }
     .field { display: grid; gap: 4px; }
+    /* auto grid tracks grow to a nowrap child's full width (a long saved version): cap them at the card */
+    .body, .field, .versions { grid-template-columns: minmax(0, 1fr); }
     .field > .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
     .field label, .field .lab { font-size: 13px; font-weight: 600; color: var(--muted); }
     .hint { font-size: 13px; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
@@ -106,7 +108,8 @@
     <section class="card">
       <div class="tabs" role="tablist" id="tabs">
         <button type="button" role="tab" data-brain="claude">Claude</button>
-        <button type="button" role="tab" data-brain="ollama">Ollama</button>
+        <button type="button" role="tab" data-brain="ollama">Ollama en</button>
+        <button type="button" role="tab" data-brain="ollama-et">Ollama et</button>
       </div>
       <div class="body">
         <div class="field">
@@ -116,8 +119,7 @@
           <p class="hint">Click a tag to insert it. Outlined tags are required: one left out is added at the end.</p>
         </div>
         <div class="field">
-          <div class="head"><span class="lab">Preview</span>
-            <select id="plang" aria-label="Preview language"><option value="et-EE">Eesti</option><option value="en-US">English</option></select></div>
+          <div class="head"><span class="lab">Preview</span></div>
           <meter id="meter" min="0" low="0" optimum="0"></meter>
           <p class="hint" id="tokens"></p>
           <pre id="preview"></pre>
@@ -131,9 +133,13 @@
     <section class="card">
       <h2>About me</h2>
       <div class="body">
-        <div class="field">
-          <div class="head"><label for="about">Shared by both brains as {user}</label><span class="hint" id="count"></span></div>
+        <div class="field" id="aboutField">
+          <div class="head"><label for="about">Claude and Ollama en (and Ollama et while the eesti one is empty), as {user}</label><span class="hint" id="count"></span></div>
           <textarea id="about" rows="3"></textarea>
+        </div>
+        <div class="field" id="aboutEtField" hidden>
+          <div class="head"><label for="aboutEt">About me (eesti) — Ollama et only; empty uses the English one</label><span class="hint" id="countEt"></span></div>
+          <textarea id="aboutEt" rows="3" lang="et"></textarea>
         </div>
       </div>
     </section>
@@ -161,8 +167,10 @@
 
     const tmplDirty = () => !!cur && $("tmpl").value !== cur.brains[brain].template;
     const aboutDirty = () => !!cur && $("about").value.trim() !== cur.about.trim();
+    const aboutEtDirty = () => !!cur && $("aboutEt").value.trim() !== cur.about_et.trim();
+    const keepAbouts = () => ({ about: aboutDirty(), aboutEt: aboutEtDirty() });
 
-    // keep.tmpl / keep.about leave that textarea's unsaved text in place.
+    // keep.tmpl / keep.about / keep.aboutEt leave that textarea's unsaved text in place.
     function show(keep = {}) {
       const b = cur.brains[brain];
       document.querySelectorAll("#tabs button").forEach((t) => t.setAttribute("aria-selected", t.dataset.brain === brain));
@@ -172,11 +180,14 @@
         code.textContent = (i === 0 && b.saved && v === b.template ? "live · " : "") + v.replace(/\s+/g, " ");
         btn.type = "button"; btn.textContent = "Restore";
         btn.onclick = () => (!tmplDirty() || confirm("Discard unsaved template changes?")) &&
-          post({ action: "restore", brain, version: i }, "Restored", { about: aboutDirty() });
+          post({ action: "restore", brain, version: i }, "Restored", keepAbouts());
         li.append(code, btn); return li;
       }));
       if (!(b.versions || []).length) $("versions").innerHTML = '<li class="hint">None yet: the built-in template is live.</li>';
       if (!keep.about) $("about").value = cur.about;
+      if (!keep.aboutEt) $("aboutEt").value = cur.about_et;
+      $("aboutEtField").hidden = brain !== "ollama-et";
+      $("aboutField").hidden = brain === "ollama-et"; // each tab shows only the about-me its brain uses
       const notes = [];
       if (cur.load_error) notes.push("The saved prompt file didn't load, so the built-in templates are shown and saving is refused: " + cur.load_error);
       if (cur.upstream_prompt_ignored) notes.push("Wire-pod's own “LLM prompt” setting is ignored: this page's template is used instead.");
@@ -196,18 +207,23 @@
     }
 
     function count() {
-      const n = [...$("about").value.trim()].length;
-      $("count").textContent = `${n} / ${cur.about_cap}`;
-      $("count").className = "hint" + (n > cur.about_cap ? " err" : "");
+      for (const [area, out] of [["about", "count"], ["aboutEt", "countEt"]]) {
+        const n = [...$(area).value.trim()].length;
+        $(out).textContent = `${n} / ${cur.about_cap}`;
+        $(out).className = "hint" + (n > cur.about_cap ? " err" : "");
+      }
     }
 
-    function marks() { $("save").classList.toggle("dirty", tmplDirty() || aboutDirty()); }
+    function marks() { $("save").classList.toggle("dirty", tmplDirty() || aboutDirty() || aboutEtDirty()); }
     function edited() { marks(); clearTimeout(timer); timer = setTimeout(preview, 250); }
+
+    // The tab sets the preview language; Claude (both languages) gets none, so the server uses the robot's current one.
+    const previewLang = { ollama: "en-US", "ollama-et": "et-EE" };
 
     async function preview() {
       try {
         const p = await call("/myvector/api/prompt/preview",
-          { brain, template: $("tmpl").value, about: $("about").value, lang: $("plang").value });
+          { brain, template: $("tmpl").value, about: $("about").value, about_et: $("aboutEt").value, lang: previewLang[brain] });
         $("preview").textContent = p.text;
         Object.assign($("meter"), { max: p.budget, high: p.budget * 0.9, value: Math.min(p.tokens, p.budget) });
         $("tokens").textContent = `≈ ${p.tokens} / ${p.budget} tokens` + (p.appended && p.appended.length ? ` · added at the end: ${p.appended.join(" ")}` : "");
@@ -226,22 +242,21 @@
       const b = e.target.dataset && e.target.dataset.brain;
       if (!b || b === brain) return;
       if (tmplDirty() && !confirm("Discard unsaved template changes?")) return;
-      brain = b; show({ about: true });
+      brain = b; show({ about: true, aboutEt: true });
     };
     $("tmpl").oninput = edited;
-    $("about").oninput = () => { count(); edited(); };
-    $("plang").onchange = preview;
-    // The one Save sends whichever of the template and about-me changed; the server checks and writes them together.
+    $("about").oninput = $("aboutEt").oninput = () => { count(); edited(); };    // The one Save sends whichever of the template and about-mes changed; the server checks and writes them together.
     $("save").onclick = () => {
       const body = { action: "save", brain };
       if (tmplDirty()) body.template = $("tmpl").value;
       if (aboutDirty()) body.about = $("about").value;
-      if (!("template" in body || "about" in body)) return status("No changes to save");
+      if (aboutEtDirty()) body.about_et = $("aboutEt").value;
+      if (!("template" in body || "about" in body || "about_et" in body)) return status("No changes to save");
       post(body, "Saved");
     };
-    addEventListener("beforeunload", (e) => { if (tmplDirty() || aboutDirty()) { e.preventDefault(); e.returnValue = ""; } });
+    addEventListener("beforeunload", (e) => { if (tmplDirty() || aboutDirty() || aboutEtDirty()) { e.preventDefault(); e.returnValue = ""; } });
     $("reset").onclick = () => confirm(`Use the built-in ${brain} template?`) &&
-      post({ action: "reset", brain }, "Reset to built-in", { about: aboutDirty() });
+      post({ action: "reset", brain }, "Reset to built-in", keepAbouts());
     call("/myvector/api/prompt").then((r) => { cur = r; show(); }).catch((e) => status("Load failed: " + e.message, "err"));
 
     // Memory card (M22): text only via textContent — facts and diary quote the user's speech.
@@ -250,7 +265,7 @@
     function memRow(text, sub, id, what) {
       const del = el("button", { type: "button", textContent: "Delete" });
       del.onclick = () => confirm(`Delete this ${what}? It is never shown or sent to a model again.`) && memPost({ action: "remove", id }, "Deleted");
-      return el("li", {}, el("span", { style: "flex:1;min-width:0" }, text, el("br"), el("span", { className: "hint", textContent: sub })), del);
+      return el("li", {}, el("span", { style: "flex:1;min-width:0;overflow-wrap:anywhere" }, text, el("br"), el("span", { className: "hint", textContent: sub })), del);
     }
     function showMemory(m) {
       const ran = m.last_run && !m.last_run.startsWith("0001");
