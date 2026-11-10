@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # gofmt gate: every Go file the fork adds or changes vs the upstream merge-base (working tree: untracked .go too) is gofmt-clean.
-# Upstream files the fork never touched are not checked. Catches what .claude/hooks/gofmt-edited.sh can't: Bash/sed edits,
-# and a fork file committed unformatted (the hook then skips it on every later edit).
+# Upstream files the fork never touched are not checked; one it touches is checked whole (format on first edit, ruled 2026-11-10 —
+# same rule as .claude/hooks/gofmt-edited.sh). Catches what the hook can't: Bash/sed edits.
 # Usage: gofmt.sh [repo] [--head rev tree]   default repo = this checkout; --head checks that commit (tree = its archive copy).
 set -euo pipefail
 repo=${1:-$(cd "$(dirname "$0")/../.." && pwd)}
@@ -15,5 +15,5 @@ if [[ -z $rev ]]; then files+=$'\n'$("${g[@]}" ls-files --others --exclude-stand
 mapfile -t list < <(grep -v '^$' <<<"$files" | sort -u)
 ((${#list[@]})) || { echo "gofmt OK: no fork Go files"; exit 0; }
 bad=$(cd "$dir" && "$gofmt" -l -- "${list[@]}")
-[[ -z $bad ]] || { echo "FAIL: gofmt: not gofmt-clean (gofmt -w them): $bad" >&2; exit 1; }
+[[ -z $bad ]] || { echo "FAIL: gofmt: not gofmt-clean (gofmt -w them; a first-edited upstream file also gets \"whole file gofmt-ed\" on its scripts/upstream-drift.sh line): $bad" >&2; exit 1; }
 echo "gofmt OK: ${#list[@]} fork Go files"

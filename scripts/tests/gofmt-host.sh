@@ -16,6 +16,7 @@ git init -q "$r"
 gc() { git -C "$r" add -A && git -C "$r" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "$1"; }
 printf %s "$good" >"$r/clean.go"; printf %s "$bad" >"$r/up_dirty.go"; gc upstream
 git -C "$r" update-ref refs/remotes/upstream/main HEAD
+export CLAUDE_PROJECT_DIR=$r # the hook's repo scope (inside a Claude session this is set to the real checkout)
 
 # run_hook FILE [ENV...]: feed the hook an Edit payload from an unrelated cwd; sets $out
 run_hook() { local f=$1; shift; out=$(cd / && jq -cn --arg f "$f" '{tool_name:"Edit",tool_input:{file_path:$f}}' | env "$@" bash "$hook" 2>&1) || die "hook exit $? on $f: $out"; }
@@ -25,8 +26,14 @@ is() { [[ $(<"$1") == "$(printf %s "$2")" ]]; } # both sides lose trailing newli
 printf %s "$bad" >"$r/clean.go"; run_hook "$r/clean.go"
 is "$r/clean.go" "$good" && [[ $out == *reformatted* ]] || die "clean-at-HEAD file not formatted: $out"
 run_hook "$r/clean.go"; [[ -z $out ]] || die "already formatted file still reported: $out"
-printf '%s// edit\n' "$bad" >"$r/up_dirty.go"; run_hook "$r/up_dirty.go"
-is "$r/up_dirty.go" "$bad// edit" && [[ -z $out ]] || die "unformatted-at-HEAD (upstream) file touched: $out"
+printf '%s// edit\n' "$bad" >"$r/up_dirty.go"; run_hook "$r/up_dirty.go" # format on first edit, even unformatted at HEAD
+is "$r/up_dirty.go" "$("$gofmt" <"$r/up_dirty.go")" && [[ $out == *reformatted* ]] || die "unformatted-at-HEAD (upstream) file not formatted: $out"
+# other repos' files: gitignored path, a nested clone inside it, a file outside the repo
+mkdir -p "$r/work/clone" "$tmp/out"; echo work/ >"$r/.gitignore"; git -C "$r/work/clone" init -q
+for f in "$r/work/ign.go" "$r/work/clone/up.go" "$tmp/out/x.go"; do
+  printf %s "$bad" >"$f"; run_hook "$f"; is "$f" "$bad" && [[ -z $out ]] || die "other repo's file touched: $f $out"
+done
+rm -rf "$r/work" "$r/.gitignore"
 mkdir -p "$r/new dir"; printf %s "$bad" >"$r/new dir/new.go"; run_hook "$r/new dir/new.go"
 is "$r/new dir/new.go" "$good" || die "untracked file not formatted: $out"
 printf %s "$bad" >"$r/x.go.bak"; run_hook "$r/x.go.bak"; is "$r/x.go.bak" "$bad" || die "non-.go file touched"
