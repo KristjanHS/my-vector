@@ -22,6 +22,13 @@ die() { # once the units are up ($up), a failing check also reports a unit that 
   exit 1
 }
 setup() { echo "SETUP: $*" >&2; exit 2; }
+# botinfo_hint <botSdkInfo.json> <esn> <ip>: names wire-pod's stored ip_address for <esn> when it is not <ip>; silent on a match,
+# no entry or an unreadable file. wire-pod moves it only on the robot's own jdocs calls, so a ROBOT_IP move (tailnet) leaves it stale.
+botinfo_hint() {
+  local stored
+  stored=$(jq -r --arg e "${2,,}" '.robots[]? | select((.esn // "" | ascii_downcase) == $e) | .ip_address // empty' "$1" 2>/dev/null | head -n 1) || return 0
+  [[ -z $stored || $stored == "$3" ]] || echo "wire-pod has $2 at $stored, robot.env ROBOT_IP=$3: set ip_address in $1 to $3, then make start"
+}
 ok() { echo "ok: $* (+$SECONDS s)"; }
 step_n=0
 step() { echo "== [$((++step_n))/$steps] $*  (+${SECONDS} s)"; } # progress header before each stage
@@ -87,7 +94,12 @@ step "wire-pod link"
 # P1: wire-pod reaches the robot within 20 s (else the setup, not the firmware, is broken).
 end=$((SECONDS + 20))
 until [[ $(curl -s -m 20 "$server/api-sdk/conn_test?serial=$esn" || true) == success ]]; do
-  ((SECONDS < end)) || setup "wire-pod at $server has no link to $esn (conn_test)"; sleep 2
+  if ((SECONDS >= end)); then # wire-pod's main-checkout botSdkInfo.json (vars/fork_paths.go BotInfoPath)
+    hint=$(botinfo_hint "${robot_dir%/robot}/secrets/server/jdocs/botSdkInfo.json" "$esn" "$ip")
+    [[ -z $hint ]] || echo "SETUP: $hint" >&2
+    setup "wire-pod at $server has no link to $esn (conn_test)"
+  fi
+  sleep 2
 done
 ok "wire-pod conn_test"
 # P1: an SDK call through wire-pod works within 60 s. conn_test answers from wire-pod's cached robot connection without an
