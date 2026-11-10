@@ -5,12 +5,12 @@ vision model, with no new capture.
 
 | id | ruling | edit site |
 |---|---|---|
-| F1 | Keep the last photo per robot: JPEG bytes + capture time + its lang; replaced by every capture | `chipper/pkg/myvector/` new store, set where `DoGetImage` gets `forkPhotoData` |
-| F2 | Fresh = last photo answer (new or reused) ≤ 120 s ago (`forkPhotoKeep`), so a follow-up chain keeps the photo; stale or absent → today's path, no reuse | same store |
-| F6 | Every photo turn (new or reused) ends in follow-up listening, whatever the reply's "?" rule says; an utterance heard in that listen goes to F4 with the kept photo even without an F3 word | `forkFollowUp` decision (`fork_followup.go`) + F3 check |
+| F1 | Keep the last photo per robot: JPEG bytes + capture time + its lang; replaced by every capture | new `chipper/pkg/myvector/photo` store, set in `forkPhotoCapture` |
+| F2 | Fresh = last photo answer (new or reused) ≤ 120 s ago (`photo.Keep`), so a follow-up chain keeps the photo; stale or absent → today's path, no reuse | same store |
+| F6 | Every photo answer (phrase, reuse, brain `getImage`) that was spoken listens again under `forkMax`; failed capture / V8 / interrupt → no listen. An utterance heard in a photo-armed listen goes to F4 even without an F3 word | `forkPhotoTurn` + `forkFollowUp` share `forkListen` (`fork_followup.go`) |
 | F3 | Follow-up = utterance names the picture: et `pilt/pildi/pildil/pildile/pildilt/pildis/foto/fotol/fotolt/fotos`, en `picture/photo/image`, whole words via `forkPhotoWords`; a photo phrase (`forkPhotoAsk`) still takes a NEW photo | `fork_vision.go` beside `forkPhotoAsk` |
-| F4 | Fresh + follow-up → `forkPhotoTurn`-style seam with no countdown, no mirror mode, no shutter; same relay (hop 0 translates the specific question — never bare), same `forkPhotoRemember` | `fork_vision.go` `forkPhotoTurn` / `forkPhotoShot` |
-| F5 | Trace the reuse turn like any relay turn; trace.md notes "reused photo from <stamp>" | `fork_relay.go` / `relay.Trace` |
+| F4 | Fresh + follow-up → `forkPhotoShot` with param `kept`: "Vaatan." stays, no countdown/mirror/shutter; same relay, same `forkPhotoRemember` | `DoGetImage` capture block → `forkPhotoCapture` (one hook, `upstream-drift.sh`) |
+| F5 | The relay trace of a photo whose bytes equal the previous one notes "reused photo from <stamp>" | `relay.Trace.savePhoto` |
 
 Falsifiers:
 - `go test ./pkg/wirepod/ttr -run 'PhotoFollow'` (from chipper/): fresh+follow-up → one vision chat carrying the stored bytes, zero `CaptureSingleImage`; stale → no reuse; photo phrase → new capture.
