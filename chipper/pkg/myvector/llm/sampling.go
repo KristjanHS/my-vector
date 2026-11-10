@@ -15,7 +15,7 @@ type Sampling struct {
 }
 
 // families: model-card values for chat with thinking off (docs/model-prompt-formats.md); apertus is
-// chainprobe arm S (follow-up-listening plan P8). top_k can't go over /v1 (Modelfile: qwen3.5 20, gemma4 64).
+// chainprobe arm S (2026-11-07-follow-up-listening.md (docs/plans/) P8). top_k can't go over /v1 (Modelfile: qwen3.5 20, gemma4 64).
 var families = []Sampling{
 	{"qwen3.5", 0.7, 0.8, 1.5},
 	{"gemma4", 1, 0.95, 0},

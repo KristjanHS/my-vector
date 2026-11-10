@@ -194,6 +194,9 @@ func forkMax(esn string) int {
 }
 
 func forkDecideNow(t llm.Target, ask, reply string) bool {
+	if t.Ollama() && followup.ByRule(t.Model) {
+		return followup.Rule(reply)
+	}
 	r := openai.ChatCompletionRequest{Model: t.Model, Messages: []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: followup.Prompt},
 		{Role: openai.ChatMessageRoleUser, Content: followup.User(ask, reply)}}}

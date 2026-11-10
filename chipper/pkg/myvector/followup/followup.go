@@ -27,6 +27,25 @@ const (
 	NoSpeech = 0.6
 )
 
+// RuleModels are Ollama model-name prefixes (after any "namespace/") whose decider is Rule, not an LLM call
+// (2026-11-07-follow-up-listening.md (docs/plans/) 6.4).
+var RuleModels = []string{"apertus"}
+
+// ByRule reports whether model decides by Rule.
+func ByRule(model string) bool {
+	m := strings.ToLower(model)
+	m = m[strings.LastIndex(m, "/")+1:]
+	for _, p := range RuleModels {
+		if strings.HasPrefix(m, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// Rule is the no-LLM decider: YES iff the spoken reply contains a question mark.
+func Rule(reply string) bool { return strings.Contains(reply, "?") }
+
 var noSpeech sync.Map // ESN -> its last transcript's no_speech
 
 // SetNoSpeech records esn's last transcript score (et-stt "no_speech").
