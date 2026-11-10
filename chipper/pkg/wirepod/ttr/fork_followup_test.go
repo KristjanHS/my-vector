@@ -231,25 +231,29 @@ func TestForkFollowUp(t *testing.T) {
 }
 
 // TestForkBegin: F2/B1 — an armed knowledge request counts, any other request resets, a blank one resets and skips;
-// every knowledge skip cuts streamingKG's "bla bla" placeholder, an answered request leaves it to forkBControl.
+// every knowledge skip cuts streamingKG's "bla bla" placeholder, every intent-graph skip sends one noaudio intent.
 func TestForkBegin(t *testing.T) {
 	esn := "fu-begin"
-	oldCut := forkKGCut
-	t.Cleanup(func() { forkKGCut = oldCut })
-	cuts := 0
+	oldCut, oldNoAudio := forkKGCut, forkNoAudio
+	t.Cleanup(func() { forkKGCut, forkNoAudio = oldCut, oldNoAudio })
+	cuts, noAudio := 0, 0
 	forkKGCut = func(_ string, hold func()) error { cuts++; hold(); return nil }
+	forkNoAudio = func(interface{}) { noAudio++ }
 	begin := func(isKG bool, text string) bool {
-		before := cuts
-		turn, skip := forkBegin(esn, isKG, text)
+		cutsBefore, noAudioBefore := cuts, noAudio
+		turn, skip := forkBegin(nil, esn, isKG, text)
 		if turn == nil || cap(turn) != 1 {
 			t.Fatalf("forkBegin(%v, %q): turn %v, want a buffered forkTurn", isKG, text, turn)
 		}
-		want := 0
-		if skip {
-			want = 1
+		wantCuts, wantNoAudio := 0, 0
+		if skip && isKG {
+			wantCuts = 1
+		} else if skip {
+			wantNoAudio = 1
 		}
-		if cuts-before != want {
-			t.Errorf("forkBegin(%v, %q): skip %v, %d placeholder cuts, want %d", isKG, text, skip, cuts-before, want)
+		if cuts-cutsBefore != wantCuts || noAudio-noAudioBefore != wantNoAudio {
+			t.Errorf("forkBegin(%v, %q): skip %v, %d cuts, %d noaudio, want %d, %d", isKG, text, skip,
+				cuts-cutsBefore, noAudio-noAudioBefore, wantCuts, wantNoAudio)
 		}
 		return skip
 	}
@@ -282,10 +286,28 @@ func TestForkBegin(t *testing.T) {
 	if begin(true, "mis on oecd?") || forkChain.Count(esn) != 2 {
 		t.Errorf("spoken follow-up: want it answered, count %d", forkChain.Count(esn))
 	}
+	arm()
+	followup.SetNoSpeech(esn, 0.7)
+	if !begin(true, "tere.") {
+		t.Error("armed follow-up at 0.7: want skip (NoSpeech, not WakeNoSpeech)")
+	}
 	forkChain.Reset(esn)
 	followup.SetNoSpeech(esn, 0.94)
-	if begin(true, "tere.") {
-		t.Error("unarmed knowledge request (\"I have a question\"): no-speech must not skip it")
+	if !begin(true, "tere.") || forkChain.Count(esn) != 0 {
+		t.Error("unarmed knowledge request (\"I have a question\") at 0.94: want skip (silent-wake-gate S5)")
+	}
+	followup.SetNoSpeech(esn, 0.7)
+	if begin(true, "mis on oecd?") {
+		t.Error("unarmed knowledge request at 0.7: want it answered")
+	}
+	arm()
+	followup.SetNoSpeech(esn, 0.9)
+	if !begin(false, "aitäh.") || forkChain.Count(esn) != 0 {
+		t.Error("silent wake (intent-graph) at 0.9: want skip, noaudio and the chain reset (silent-wake-gate S2)")
+	}
+	followup.SetNoSpeech(esn, 0.7)
+	if begin(false, "teine, palun.") {
+		t.Error("intent-graph wake at 0.7: want it answered")
 	}
 }
 
