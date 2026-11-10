@@ -155,3 +155,101 @@ func TestForkWaitHook(t *testing.T) {
 		}
 	}
 }
+
+func stubStreamSay(t *testing.T) chan string {
+	said, old := make(chan string, 1), forkStreamSay
+	forkStreamSay = func(_, text string) error { said <- text; return nil }
+	t.Cleanup(func() { forkStreamSay = old })
+	return said
+}
+
+func within(t *testing.T, done chan struct{}, d time.Duration, what string) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(d):
+		t.Fatalf("%s within %s", what, d)
+	}
+}
+
+// A stream error before the first sentence: the turn gets false, the wait stops, the error line is said.
+func TestForkStreamFailedBeforeFirstSentence(t *testing.T) {
+	shortWaitGap(t)
+	said := stubStreamSay(t)
+	b := &waitBot{controlBot: &controlBot{hang: true}}
+	robot := &vector.Vector{Conn: b}
+	start, stop := make(chan bool), make(chan bool)
+	end := forkBControl(robot, context.Background(), start, stop, "00e7")
+	defer end()
+	stopLooping, ready := false, make(chan bool)
+	forkWait(robot, forkWaitSearch, &stopLooping, ready)
+	b.waitPlays(t, 3)
+	successIntent, hooked := make(chan bool), make(chan struct{})
+	var isDone bool
+	go func() {
+		forkStreamFailed(true, "00e7", nil, successIntent, &isDone, make(chan string), &stopLooping, ready, stop)
+		close(hooked)
+	}()
+	select {
+	case is := <-successIntent:
+		if is {
+			t.Fatal("successIntent true on a failed stream")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("the turn still waits on successIntent 1s after the stream failed")
+	}
+	end() // the turn's return
+	within(t, hooked, 2*time.Second, "forkStreamFailed returned")
+	assertWaitEnded(t, b)
+	select {
+	case s := <-said:
+		if !strings.Contains(s, "error") {
+			t.Errorf("said %q, want the LLM error line", s)
+		}
+	default:
+		t.Error("no LLM error line said")
+	}
+}
+
+// A stream error after the first sentence: the speak loop, waiting for chunk 1, ends; no successIntent send.
+func TestForkStreamFailedAfterFirstSentence(t *testing.T) {
+	chunks, speakReady := []string{"Hello."}, make(chan string)
+	var isDone bool
+	ended := make(chan bool, 1)
+	go func() {
+		_, ok := forkNextChunk(func() []string { return chunks }, func() bool { return isDone }, 1, speakReady)
+		ended <- ok
+	}()
+	time.Sleep(20 * time.Millisecond) // the loop waits on speakReady
+	stopLooping, hooked := false, make(chan struct{})
+	go func() {
+		forkStreamFailed(true, "00e8", chunks, make(chan bool), &isDone, speakReady, &stopLooping, make(chan bool), make(chan bool))
+		close(hooked)
+	}()
+	within(t, hooked, time.Second, "forkStreamFailed returned (it must not send successIntent or stop)")
+	select {
+	case ok := <-ended:
+		if ok {
+			t.Error("speak loop got a chunk past the failure")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("speak loop still waits 2s after the stream failed")
+	}
+}
+
+// Both kgsim.go stream-failure returns call the hook.
+func TestForkStreamFailedHook(t *testing.T) {
+	src, err := os.ReadFile("kgsim.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, line := range strings.Split(string(src), "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "//") && strings.Contains(line, "forkStreamFailed(isKG, esn, fullRespSlice, successIntent, &isDone, speakReady, &kgStopLooping, kgReadyToAnswer, stop)") {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Errorf("kgsim.go calls forkStreamFailed %d times, want 2 (Recv error + choice-less chunk)", n)
+	}
+}

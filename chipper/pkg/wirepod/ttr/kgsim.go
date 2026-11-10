@@ -358,11 +358,13 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 
 			if err != nil {
 				logger.Println("Stream error: " + err.Error())
+				forkStreamFailed(isKG, esn, fullRespSlice, successIntent, &isDone, speakReady, &kgStopLooping, kgReadyToAnswer, stop) // my-vector: the turn hung, the wait looped (fork_wait.go)
 				return
 			}
 
 			if len(response.Choices) == 0 {
 				logger.Println("Empty response")
+				forkStreamFailed(isKG, esn, fullRespSlice, successIntent, &isDone, speakReady, &kgStopLooping, kgReadyToAnswer, stop) // my-vector: as above
 				return
 			}
 			cut = cut || response.Choices[0].FinishReason == openai.FinishReasonLength // my-vector
