@@ -16,12 +16,11 @@ import (
 // Monthly hard caps per provider, UTC month (W5).
 const (
 	CapTavily    = 900
-	CapOllama    = 900
 	CapSearxng   = 3000
 	CapOpenMeteo = 3000
 )
 
-var Caps = map[string]int{"tavily": CapTavily, "ollama": CapOllama, "searxng": CapSearxng, "open-meteo": CapOpenMeteo}
+var Caps = map[string]int{"tavily": CapTavily, "searxng": CapSearxng, "open-meteo": CapOpenMeteo}
 
 // Cache TTL per class and size (W6).
 const (

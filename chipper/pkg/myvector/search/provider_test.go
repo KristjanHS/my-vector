@@ -41,7 +41,6 @@ func TestProviders(t *testing.T) {
 		set  func(url string) func()
 	}{
 		{"tavily", func(string) Provider { return Tavily{Key: "K1"} }, func(u string) func() { o := TavilyURL; TavilyURL = u; return func() { TavilyURL = o } }},
-		{"ollama", func(string) Provider { return Ollama{Key: "K2"} }, func(u string) func() { o := OllamaURL; OllamaURL = u; return func() { OllamaURL = o } }},
 		{"searxng", func(u string) Provider { return Searxng{URL: u + "/"} }, func(string) func() { return func() {} }},
 	}
 	for _, c := range cases {
@@ -67,8 +66,7 @@ func TestProviders(t *testing.T) {
 				t.Errorf("searxng request %s auth %q query %v", s.method, s.auth, s.query)
 			}
 		default:
-			key := map[string]string{"tavily": "K1", "ollama": "K2"}[c.name]
-			if s.method != "POST" || s.auth != "Bearer "+key || s.body["query"] != "kas homme sajab?" || s.body["max_results"] != float64(2) {
+			if s.method != "POST" || s.auth != "Bearer K1" || s.body["query"] != "kas homme sajab?" || s.body["max_results"] != float64(2) {
 				t.Errorf("%s request %s auth %q body %v", c.name, s.method, s.auth, s.body)
 			}
 		}
@@ -78,24 +76,14 @@ func TestProviders(t *testing.T) {
 func TestProvidersErrorStatus(t *testing.T) {
 	for _, status := range []int{401, 429, 500} {
 		srv, _ := fakeProvider(t, status, `{"error":"no"}`)
-		oldT, oldO := TavilyURL, OllamaURL
-		TavilyURL, OllamaURL = srv.URL, srv.URL
-		for _, p := range []Provider{Tavily{Key: "SECRET"}, Ollama{Key: "SECRET"}, Searxng{URL: srv.URL}} {
+		oldT := TavilyURL
+		TavilyURL = srv.URL
+		for _, p := range []Provider{Tavily{Key: "SECRET"}, Searxng{URL: srv.URL}} {
 			rs, err := p.Search(context.Background(), "q", "et-EE", 3)
 			if err == nil || rs != nil || strings.Contains(err.Error(), "SECRET") {
 				t.Errorf("%s status %d: results %v err %v; want an error without the key", p.Name(), status, rs, err)
 			}
 		}
-		TavilyURL, OllamaURL = oldT, oldO
-	}
-}
-
-func TestOllamaMaxResultsCap(t *testing.T) {
-	srv, s := fakeProvider(t, 200, `{"results":[]}`)
-	old := OllamaURL
-	OllamaURL = srv.URL
-	defer func() { OllamaURL = old }()
-	if _, err := (Ollama{Key: "K"}).Search(context.Background(), "q", "en-US", 25); err != nil || s.body["max_results"] != float64(10) {
-		t.Errorf("max_results %v err %v; want the API ceiling 10", s.body["max_results"], err)
+		TavilyURL = oldT
 	}
 }

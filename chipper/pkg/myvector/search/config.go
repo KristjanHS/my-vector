@@ -18,14 +18,13 @@ import (
 
 const DefaultSearxngURL = "http://127.0.0.1:8888"
 
-// DefaultOrder is the W8 fallback order (row B1); ollama is left out: its web search is 402 on the free tier.
+// DefaultOrder is the W8 fallback order (row B1). Ollama web search was removed: it is paid-only (402).
 var DefaultOrder = []string{"tavily", "searxng"}
 
 // Config is "search" in myvectorConfig.json (W12).
 type Config struct {
-	Provider     string `json:"provider"` // auto (or ""), off, tavily, ollama, searxng
+	Provider     string `json:"provider"` // auto (or ""), off, tavily, searxng
 	TavilyKey    string `json:"tavily_key"`
-	OllamaKey    string `json:"ollama_key"`
 	SearxngURL   string `json:"searxng_url"`
 	WeatherPlace string `json:"weather_place"`
 }
@@ -46,14 +45,14 @@ func LoadConfig() Config {
 }
 
 // Providers is the W12 provider select.
-var Providers = []string{"auto", "off", "tavily", "ollama", "searxng"}
+var Providers = []string{"auto", "off", "tavily", "searxng"}
 
 // Validate checks a Config for Save.
 func Validate(c Config) error {
 	if c.Provider != "" && !slices.Contains(Providers, c.Provider) {
 		return fmt.Errorf("search.provider: one of %v", Providers)
 	}
-	for name, k := range map[string]string{"tavily_key": c.TavilyKey, "ollama_key": c.OllamaKey} {
+	for name, k := range map[string]string{"tavily_key": c.TavilyKey} {
 		if len(k) > 200 || strings.IndexFunc(k, func(r rune) bool { return r <= ' ' || r > '~' }) >= 0 {
 			return fmt.Errorf("search.%s: printable ASCII, no whitespace, at most 200 characters", name)
 		}
@@ -69,7 +68,7 @@ func Validate(c Config) error {
 
 // Save validates c and writes it as "search", keys and URL trimmed.
 func Save(c Config) error {
-	c.TavilyKey, c.OllamaKey = strings.TrimSpace(c.TavilyKey), strings.TrimSpace(c.OllamaKey)
+	c.TavilyKey = strings.TrimSpace(c.TavilyKey)
 	c.SearxngURL, c.WeatherPlace = strings.TrimRight(strings.TrimSpace(c.SearxngURL), "/"), strings.TrimSpace(c.WeatherPlace)
 	if err := Validate(c); err != nil {
 		return err
@@ -88,7 +87,7 @@ type Use struct {
 func Usage(now time.Time) []Use {
 	st := current()
 	var us []Use
-	for _, p := range []string{"tavily", "ollama", "searxng", "open-meteo"} {
+	for _, p := range []string{"tavily", "searxng", "open-meteo"} {
 		us = append(us, Use{p, st.UsedThisMonth(p, now), Caps[p]})
 	}
 	return us
@@ -99,8 +98,6 @@ func (c Config) ProviderFor(name string) (Provider, bool) {
 	switch name {
 	case "tavily":
 		return Tavily{c.TavilyKey}, c.TavilyKey != ""
-	case "ollama":
-		return Ollama{c.OllamaKey}, c.OllamaKey != ""
 	case "searxng":
 		return Searxng{c.SearxngURL}, c.SearxngURL != ""
 	}

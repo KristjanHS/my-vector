@@ -20,20 +20,15 @@ type Provider interface {
 // Endpoints; vars so tests point them at httptest.
 var (
 	TavilyURL = "https://api.tavily.com/search"
-	OllamaURL = "https://ollama.com/api/web_search"
 )
 
 // Tavily searches api.tavily.com with a bearer key; it has no language parameter.
 type Tavily struct{ Key string }
 
-// Ollama searches ollama.com's web_search with an account key; it has no language parameter.
-type Ollama struct{ Key string }
-
 // Searxng searches a self-hosted SearXNG at URL (format=json must be enabled).
 type Searxng struct{ URL string }
 
 func (Tavily) Name() string  { return "tavily" }
-func (Ollama) Name() string  { return "ollama" }
 func (Searxng) Name() string { return "searxng" }
 
 type hit struct {
@@ -97,18 +92,6 @@ func (p Tavily) Search(ctx context.Context, query, _ string, n int) ([]Result, e
 	var r struct{ Results []hit }
 	body := map[string]any{"query": query, "max_results": n, "search_depth": "basic"}
 	if err := postBearer(ctx, TavilyURL, p.Key, body, &r); err != nil {
-		return nil, err
-	}
-	return results(r.Results, n), nil
-}
-
-func (p Ollama) Search(ctx context.Context, query, _ string, n int) ([]Result, error) {
-	var r struct{ Results []hit }
-	m := n
-	if m > 10 {
-		m = 10 // the API's max_results ceiling
-	}
-	if err := postBearer(ctx, OllamaURL, p.Key, map[string]any{"query": query, "max_results": m}, &r); err != nil {
 		return nil, err
 	}
 	return results(r.Results, n), nil
