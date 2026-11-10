@@ -64,9 +64,14 @@ func TestForkPhotoAsk(t *testing.T) {
 		row{lang.Estonian, "mis veel pildil on?", false},
 		row{lang.Estonian, "tee mulle kohvi", false},
 		row{lang.English, "what is new today", false},
+		row{lang.Estonian, "tee mulle pilt", true},
+		row{lang.Estonian, "mis sa sellest pildist arvad?", false},
+		row{lang.Estonian, "kas pildil on tee?", false},
+		row{lang.English, "is there another cup in the picture?", false},
+		row{lang.Estonian, "kas pildil olev telefon on uus?", false},
 	)
-	if len(rows) != 3*10+24 {
-		t.Fatalf("%d rows, want 54 (10 phrases × 3 + 24)", len(rows))
+	if len(rows) != 3*10+29 {
+		t.Fatalf("%d rows, want 59 (10 phrases × 3 + 29)", len(rows))
 	}
 	for _, r := range rows {
 		if got := forkPhotoAsk(r.l, r.text); got != r.hit {
