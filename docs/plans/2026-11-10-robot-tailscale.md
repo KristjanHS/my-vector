@@ -1,6 +1,6 @@
 # Robot Tailscale (option D: spike, then productise)
 
-Status: planned 2026-11-10. Executes item 3 of §Recommended plan in `2026-11-07-public-wifi-security.md (docs/plans/)`
+Status: Stage 1 done 2026-11-10 (robot-ts 192.0.2.112, laptop-ts 192.0.2.105); Stage 2 next. Executes item 3 of §Recommended plan in `2026-11-07-public-wifi-security.md (docs/plans/)`
 (§D. Tunnel on the robot itself) and extends the netguard shipped by `2026-11-07-wifi-baseline-hardening.md (docs/plans/)`.
 `[USER]` = a live run on the robot, server or admin console: Claude asks first, never runs it unasked. `[SOUND]` = makes
 robot sound: `robot/quiet/quiet.sh status` ≠ 3 right before it, ask, note the start time, then `robot/quiet/scan.sh '<start>'`
@@ -22,7 +22,7 @@ rewrite of the lines it supersedes inside Stage 4, not a seam move ahead of it.
 | D4 | Auth key lives at `TS_AUTHKEY` (mode 600); it reaches the robot only on ssh stdin into `/run`, is used as `--auth-key=file:<run path>` and deleted in the same phase; never in laptop argv. | `secrets/README.md` row; `scripts/tests/secrets.sh` check-ignore list |
 | D5 | Boot unit `TS_UNIT` via `etc_put` + daemon-reload + enable: `After=network-pre.target myvector-netguard.service`, `RequiresMountsFor=/data`, `Restart=on-failure`, `WantedBy=multi-user.target`. `apply.sh` runs `tailscale up` only when not logged in and `TS_AUTHKEY` exists, else `WARN:`. | `robot/tailscale/apply.sh` |
 | D6 | Extends K6: `settings.sh` order … → epod → **tailscale** → netguard (tailnet path exists before wlan0 closes); `ship.sh` `ls-tree` list gains `robot/tailscale`. | `robot/firmware/{settings.sh,ship.sh}` |
-| D7 | Supersedes N1 (address split): hosts pin = host of `ROBOT_TTS_URL`, which moves to the laptop tailnet IP (the robot's TTS fetch goes over the tunnel too); wlan0 SSH allow = `PC_LAN_IP`; `ROBOT_IP` = robot tailnet IP, `ROBOT_LAN_IP` = its wlan0 address (reach checks). All four in `robot/robot.env`; missing or non-IPv4 → SETUP 2. ⚠ hedge: the docker deploy's rsync `:1873` reaching `ROBOT_IP` over WSL `tailscale0`. | `robot/netguard/apply.sh`; `robot/robot.env.example` |
+| D7 | Supersedes N1 (address split): hosts pin = host of `ROBOT_TTS_URL`, which moves to the laptop tailnet IP (the robot's TTS fetch goes over the tunnel too); wlan0 SSH allow = `PC_LAN_IP`; `ROBOT_IP` = robot tailnet IP, `ROBOT_LAN_IP` = its wlan0 address (reach checks). All four in `robot/robot.env`; missing or non-IPv4 → SETUP 2. The docker deploy reaches `ROBOT_IP` `:22`/`:1873` over WSL `tailscale0` (1.3 probe, D13 egress live). | `robot/netguard/apply.sh`; `robot/robot.env.example` |
 | D8 | Supersedes N2 for the D shape (no more tcp 22 from anyone, no more all-ports from `pc_ip`). `MYVECTOR_IN` (still jumped from `INPUT -i wlan0` only) v4: ESTABLISHED,RELATED; tcp 22 `-s PC_LAN_IP`; udp `--dport TS_PORT`; udp 67→68; icmp echo-request; DROP. v6: ESTABLISHED,RELATED; ipv6-icmp; udp 546; udp `--dport TS_PORT`; DROP (no v6 :22: the PC is v4-only on the LAN). | `robot/netguard/rules.sh` |
 | D9 | `tailscale0` gets no `MYVECTOR_IN` hook: the WireOS base `INPUT` (policy DROP) accepts its listed ports (22, 443, 1873, 8888–8889, …) on any interface; the D3 ACL is the tailnet gate. | — |
 | D13 | Base `OUTPUT` is policy DROP (egress only `lo`/`wlan0`/`tether`): netguard renders `-A OUTPUT -o tailscale0 -j ACCEPT` (v4+v6) and its `undo` removes it. Spike (1.3 → 2.x): `[USER]` adds the same pair by hand, runtime only. | `robot/netguard/rules.sh` |
@@ -60,6 +60,7 @@ Focus: `robot/tailscale/fetch.sh` (new); `secrets/`.
 ## Stage 2 — spike gate (D12)
 
 Focus: `robot/tailscale/soak.sh` (new, `silent=1`); `scripts/wire-pod-guard.nft`; a scratch `robot/work/robot.env.ts`.
+Precondition (a robot reboot drops both): `pidof tailscaled` and `iptables -S OUTPUT | grep -q tailscale0` on the robot, else redo 1.3's start + the D13 pair.
 
 | slice | edit sites | falsifier (red demo first) | verify |
 |---|---|---|---|
@@ -89,7 +90,7 @@ Focus: `robot/netguard/{apply.sh,rules.sh,tests/}`; `robot/robot.env.example`; `
 | 4.1 | D7 inputs + SETUP checks; example gains `PC_LAN_IP`, `ROBOT_LAN_IP` and the tailnet comments on `ROBOT_IP`/`ROBOT_TTS_URL` | `robot/netguard/tests/hosts.sh`: pin = `ROBOT_TTS_URL` host while `PC_LAN_IP` differs; missing `PC_LAN_IP` → exit 2. Red: pin from `PC_LAN_IP` → FAIL | `make check` |
 | 4.2 | `rules.sh <ssh-from-ipv4> <ts-port>` renders D8 | `robot/netguard/tests/rules.sh` (fake iptables argv): D8 order, DROP last; the only tcp 22 rule carries `-s <ssh-from>`; no all-ports `-s … -j ACCEPT`; udp `TS_PORT` on v4+v6; v6 has no tcp 22; `INPUT` never names `tailscale0`; D13 `OUTPUT -o tailscale0 -j ACCEPT` on v4+v6, removed by `undo`. Red: render 22 without `-s` → FAIL | `make check` |
 | 4.3 | D10 in `fw`/`--selftest`/`confirm`; `NETGUARD_OK` = `PC_LAN_IP` | `robot/netguard/tests/apply.sh` (fake ssh/curl per address): LAN `:8888` 200 after apply → undo, no `confirm`; decoy phase with LAN ssh still accepted → FAIL; tailnet ssh down → refuse before `arm`; `SSH_CLIENT` neither IP → refuse. Red: skip the tailnet pre-check → FAIL | `make check` |
-| 4.4 | `[USER]` silent: `robot/robot.env` per D7 (`ROBOT_IP`=robot-ts, `ROBOT_LAN_IP`, `PC_LAN_IP`, `ROBOT_TTS_URL`=`http://<laptop-ts>:8091`) | `robot/netguard/apply.sh` exit 0 with the pin on laptop-ts; robot voice file url host = laptop-ts | — |
+| 4.4 | `[USER]` silent: `robot/robot.env` per D7 (`ROBOT_IP`=robot-ts, `ROBOT_LAN_IP`, `PC_LAN_IP`, `ROBOT_TTS_URL`=`http://<laptop-ts>:8091`); `~/.ssh/known_hosts` gains robot-ts with the LAN entry's key (BatchMode refuses an unknown IP) | `robot/netguard/apply.sh` exit 0 with the pin on laptop-ts; robot voice file url host = laptop-ts | — |
 | 4.5 | D11: drop the robot LAN IP from `allowed4`; commit; `[USER]` `make server-pin` | `scripts/tests/guard.sh`; `! sudo nft list set inet wirepod_guard allowed4 \| grep -q 192.0.2.76` | `make check` |
 
 ## Stage 5 — full verify + live e2e
