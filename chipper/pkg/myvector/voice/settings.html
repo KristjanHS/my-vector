@@ -202,16 +202,12 @@
         <div class="body">
           <div class="field">
             <label for="search_provider">Provider</label>
-            <select id="search_provider"><option value="auto">Auto (Tavily, then SearXNG)</option><option value="off">Off</option><option value="tavily">Tavily</option><option value="ollama">Ollama</option><option value="searxng">SearXNG</option></select>
+            <select id="search_provider"><option value="auto">Auto (Tavily, then SearXNG)</option><option value="off">Off</option><option value="tavily">Tavily</option><option value="searxng">SearXNG</option></select>
           </div>
           <div class="field">
             <label for="tavily_key">Tavily API key</label>
             <div class="inline"><input type="password" id="tavily_key" autocomplete="off" spellcheck="false" maxlength="200" /><button type="button" data-clear="tavily_key">Clear</button></div>
-          </div>
-          <div class="field">
-            <label for="ollama_key">Ollama API key</label>
-            <div class="inline"><input type="password" id="ollama_key" autocomplete="off" spellcheck="false" maxlength="200" /><button type="button" data-clear="ollama_key">Clear</button></div>
-            <p class="hint">Leave a key blank to keep it.</p>
+            <p class="hint">Leave the key blank to keep it.</p>
           </div>
           <div class="field">
             <label for="searxng_url">SearXNG URL</label>
@@ -360,7 +356,7 @@
       clearKey = false;
       const q = s.search;
       $("search_provider").value = q.provider;
-      for (const [id, k] of [["tavily_key", q.tavilyKey], ["ollama_key", q.ollamaKey]]) Object.assign($(id), { value: "", placeholder: k || "not set" });
+      for (const [id, k] of [["tavily_key", q.tavilyKey]]) Object.assign($(id), { value: "", placeholder: k || "not set" });
       $("searxng_url").value = q.searxngUrl;
       $("weather_place").value = q.weatherPlace;
       $("searchUsage").textContent = "This month: " + q.usage.map((u) => `${u.provider} ${u.used} / ${u.cap}`).join(" · ");
@@ -443,7 +439,7 @@
       if (clearKey) extra.claude_key = "";
       else if ($("claude_key").value.trim()) extra.claude_key = $("claude_key").value.trim();
       extra.search = { provider: $("search_provider").value, searxng_url: $("searxng_url").value, weather_place: $("weather_place").value };
-      for (const id of ["tavily_key", "ollama_key"]) {
+      for (const id of ["tavily_key"]) {
         if (clearSearch.has(id)) extra.search[id] = "";
         else if ($(id).value.trim()) extra.search[id] = $(id).value.trim();
       }

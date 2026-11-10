@@ -571,31 +571,34 @@ func TestSettingsSearch(t *testing.T) {
 		json.Unmarshal(w.Body.Bytes(), &got)
 		return w, got
 	}
-	const tavily, ollama = "tvly-dev-0123456789abcdefWXYZ", "ollama-0123456789abcdefQRST"
-	w, got := post(`{"provider":"tavily","tavily_key":"` + tavily + `","ollama_key":"` + ollama + `","searxng_url":"http://127.0.0.1:9999/","weather_place":"Tartu"}`)
+	const tavily = "tvly-dev-0123456789abcdefWXYZ"
+	w, got := post(`{"provider":"tavily","tavily_key":"` + tavily + `","searxng_url":"http://127.0.0.1:9999/","weather_place":"Tartu"}`)
 	if w.Code != 200 {
 		t.Fatalf("POST: %d %s", w.Code, w.Body)
 	}
-	if strings.Contains(w.Body.String(), tavily) || strings.Contains(w.Body.String(), ollama) {
+	if strings.Contains(w.Body.String(), tavily) {
 		t.Fatalf("reply carries a full key: %s", w.Body)
 	}
-	want := searchReply{Provider: "tavily", TavilyKey: "tvly-de…WXYZ", OllamaKey: "ollama-…QRST", SearxngURL: "http://127.0.0.1:9999", WeatherPlace: "Tartu"}
-	if g := got.Search; g.Provider != want.Provider || g.TavilyKey != want.TavilyKey || g.OllamaKey != want.OllamaKey ||
-		g.SearxngURL != want.SearxngURL || g.WeatherPlace != want.WeatherPlace || len(g.Usage) != 4 {
-		t.Fatalf("search reply %+v, want %+v + 4 usage rows", g, want)
+	want := searchReply{Provider: "tavily", TavilyKey: "tvly-de…WXYZ", SearxngURL: "http://127.0.0.1:9999", WeatherPlace: "Tartu"}
+	if g := got.Search; g.Provider != want.Provider || g.TavilyKey != want.TavilyKey ||
+		g.SearxngURL != want.SearxngURL || g.WeatherPlace != want.WeatherPlace || len(g.Usage) != 3 {
+		t.Fatalf("search reply %+v, want %+v + 3 usage rows", g, want)
 	}
 
-	_, got = post(`{"tavily_key":""}`) // absent fields keep, "" clears
-	if g := got.Search; g.TavilyKey != "" || g.OllamaKey != want.OllamaKey || g.Provider != "tavily" || g.WeatherPlace != "Tartu" {
-		t.Fatalf("after clearing tavily_key: %+v", g)
+	_, got = post(`{"weather_place":"Tallinn"}`) // absent fields keep
+	if g := got.Search; g.TavilyKey != want.TavilyKey || g.Provider != "tavily" || g.WeatherPlace != "Tallinn" {
+		t.Fatalf("after setting weather_place: %+v", g)
 	}
 	w = serve(http.MethodGet, "", "")
 	json.Unmarshal(w.Body.Bytes(), &got)
-	if strings.Contains(w.Body.String(), ollama) || got.Search.OllamaKey != want.OllamaKey {
+	if strings.Contains(w.Body.String(), tavily) || got.Search.TavilyKey != want.TavilyKey {
 		t.Fatalf("GET search %+v", got.Search)
 	}
+	if _, got = post(`{"tavily_key":""}`); got.Search.TavilyKey != "" || got.Search.Provider != "tavily" { // "" clears
+		t.Fatalf("after clearing tavily_key: %+v", got.Search)
+	}
 
-	for _, bad := range []string{`{"provider":"brave"}`, `{"tavily_key":"has space"}`, `{"searxng_url":"ftp://x"}`, `{"weather_place":"a\nb"}`, `{"x":1}`} {
+	for _, bad := range []string{`{"provider":"ollama"}`, `{"ollama_key":"k"}`, `{"provider":"brave"}`, `{"tavily_key":"has space"}`, `{"searxng_url":"ftp://x"}`, `{"weather_place":"a\nb"}`, `{"x":1}`} {
 		if w, _ := post(bad); w.Code != 400 {
 			t.Errorf("search %s: %d, want 400", bad, w.Code)
 		}

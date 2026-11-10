@@ -27,8 +27,8 @@ func TestQuota(t *testing.T) {
 	if s.Take("tavily", nov) {
 		t.Fatalf("Take %d = true, want false (capped)", CapTavily+1)
 	}
-	if !s.Take("ollama", nov) {
-		t.Fatal("ollama capped by tavily's count")
+	if !s.Take("searxng", nov) {
+		t.Fatal("searxng capped by tavily's count")
 	}
 	dec := nov.Add(2 * time.Hour) // 2026-12-01 01:00 UTC
 	if !s.Take("tavily", dec) {
