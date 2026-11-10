@@ -1,6 +1,6 @@
 # Tailscale recovery — plan B per failure
 
-Since the robot-tailscale plan (`docs/plans/2026-11-10-robot-tailscale.md`, option D), Vector reaches wire-pod
+Since the robot-tailscale plan (`2026-11-10-robot-tailscale.md (docs/plans/)`, option D), Vector reaches wire-pod
 **only** over the tailnet: `escapepod.local` is pinned to the laptop's tailnet IP, the laptop guard drops the
 robot's LAN IP, and the robot's wlan0 firewall (netguard, D8) accepts only ssh from `PC_LAN_IP`. So a tailnet
 failure means no voice. This page lists each failure, how to tell, what heals by itself, and the plan B.
