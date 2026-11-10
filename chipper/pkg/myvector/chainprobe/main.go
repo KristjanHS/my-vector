@@ -1,11 +1,11 @@
 // Command chainprobe replays a follow-up chain through the real chat request path (CreateAIReq → forkAIReq splices
 // the per-ESN remembered chat) without the robot, per arm × rep, one JSON line per call.
 //
-//	go run ./pkg/myvector/chainprobe -chain c.json [-chained] [-arms 0,S,Q,P,E] [-reps 5] [-brain ollama:model] -out o.jsonl   # from chipper/
+//	go run ./pkg/myvector/chainprobe -chain c.json [-chained] [-arms 0,S,Q,P,E] [-reps 5] [-brain ollama:model] [-temp 0.4 -topp 0.9] -out o.jsonl   # from chipper/
 //
 // c.json: {"lang":"et-EE","history":[{"user":…,"assistant":…}],"turns":["ja.","mida?"]}. Each rep starts from the
-// history alone; -chained remembers each turn's own reply before the next turn. Arms: 0 = as saved; S = temperature
-// 0.4, top_p 0.9 (routeprobe's S); Q = the saved ollama template without "Now and then ask a question back.";
+// history alone; -chained remembers each turn's own reply before the next turn. Arms: 0 = as saved; S = -temp, -topp
+// (default 0.4, 0.9: routeprobe's S); Q = the saved ollama template without "Now and then ask a question back.";
 // P = the saved ollama template with lineP (no speaking as the person, no invented past) right after that line;
 // E = the et EstLLM brain. Like routeprobe, nothing under secrets/server/ is written (temp copies), web search is off.
 package main
@@ -71,8 +71,10 @@ func main() {
 	reps := flag.Int("reps", 1, "reps per arm")
 	brain := flag.String("brain", "", "provider:model for the chain language's profile (not arm E)")
 	out := flag.String("out", "", "JSONL output file (appended)")
+	temp := flag.Float64("temp", 0.4, "arm S temperature")
+	topP := flag.Float64("topp", 0.9, "arm S top_p")
 	flag.Parse()
-	if *chainFile == "" || *out == "" || *reps < 1 {
+	if *chainFile == "" || *out == "" || *reps < 1 || *temp <= 0 || *topP <= 0 {
 		flag.Usage()
 		os.Exit(2)
 	}
@@ -132,7 +134,7 @@ func main() {
 		lang.Path = func() string { return basePath }
 		switch arm {
 		case "S":
-			s := llm.Sampling{Family: "probe-S", Temperature: 0.4, TopP: 0.9}
+			s := llm.Sampling{Family: "probe-S", Temperature: float32(*temp), TopP: float32(*topP)}
 			llm.ProbeSampling = func(provider, _ string) (llm.Sampling, bool) { return s, provider != llm.Claude }
 		case "Q":
 			t := strings.Replace(baseTmpl, lineQ, "", 1)
