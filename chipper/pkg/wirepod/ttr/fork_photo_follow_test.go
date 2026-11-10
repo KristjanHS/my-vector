@@ -1,9 +1,13 @@
 package wirepod_ttr
 
 import (
+	"encoding/base64"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
 )
 
 const followESN = "00e60001"
@@ -47,6 +51,7 @@ func TestForkPhotoFollowReuse(t *testing.T) {
 	if c, f := r.counts(); c != 1 || f != 1 {
 		t.Fatalf("photo turn: captures %d, listens %d, want 1 and 1", c, f)
 	}
+	kept := base64.StdEncoding.EncodeToString([]byte{0xff, 0xd8, 0xff, 1}) // capture 1's bytes, not a re-capture's
 	for i, ask := range []struct {
 		text  string
 		armed bool
@@ -64,8 +69,8 @@ func TestForkPhotoFollowReuse(t *testing.T) {
 			t.Errorf("%q: captures %d, want the first photo's 1 only", ask.text, c)
 		}
 		v := r.visionBodies()
-		if len(v) != 2+i || !strings.Contains(v[len(v)-1], "/9j/") {
-			t.Errorf("%q: vision chats %d, want %d, the last carrying the kept JPEG", ask.text, len(v), 2+i)
+		if len(v) != 2+i || !strings.Contains(v[len(v)-1], kept) {
+			t.Errorf("%q: vision chats %d, want %d, the last carrying the kept JPEG %s", ask.text, len(v), 2+i, kept)
 		}
 		if brain, _ := r.chats(); !strings.Contains(strings.Join(brain, "\n"), ask.text) {
 			t.Errorf("%q: no relay hop 0 on the follow-up text", ask.text)
@@ -132,5 +137,31 @@ func TestForkPhotoFollowListen(t *testing.T) {
 	}
 	if _, f := r2.counts(); f != 0 {
 		t.Errorf("failed capture listened again (%d)", f)
+	}
+}
+
+// F6: an intent-graph answer during a photo-armed listen ends the chain and the photo listen, so the next knowledge
+// request is no follow-up and does not reuse the photo; a skipped request ends the photo listen too.
+func TestForkPhotoFollowIntentEnds(t *testing.T) {
+	r := usePhotoRig(t)
+	old, dir := memory.Path, t.TempDir()
+	memory.Path = func() string { return filepath.Join(dir, "myvectorMemory.json") }
+	t.Cleanup(func() { memory.Path = old })
+	photoAnswered(t, r)
+	if _, f := r.counts(); f != 1 {
+		t.Fatalf("photo turn listens %d, want 1", f)
+	}
+	forkIntentPass(followESN, "intent_clock_time", "mis kell on")
+	if forkPhotos.TakeListen(followESN) {
+		t.Error("intent-graph answer left the photo listen set")
+	}
+	forkPhotos.Listen(followESN, true) // re-set, so the next check fails on a surviving chain alone
+	if _, skip := forkBegin(followESN, true, "kus on tass?"); skip || forkChain.Count(followESN) != 0 || forkPhotoTurn(nil, followESN, true, "kus on tass?") {
+		t.Errorf("after an intent-graph answer: skip %v, chain %d, or the photo was reused", skip, forkChain.Count(followESN))
+	}
+
+	forkPhotos.Listen(followESN, true)
+	if _, skip := forkBegin(followESN, true, " "); !skip || forkPhotos.TakeListen(followESN) {
+		t.Errorf("blank request: skip %v, or its photo listen survived", skip)
 	}
 }

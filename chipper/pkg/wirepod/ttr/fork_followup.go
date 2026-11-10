@@ -53,6 +53,11 @@ func forkAfterReply(turn forkTurn, esn string, isKG bool, ask, reply string) {
 // takes no forkBControl, so each skip cuts streamingKG's placeholder or the robot speaks it ("bla bla bla").
 func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
 	turn = make(forkTurn, 1)
+	defer func() { // a skipped request ends a photo-armed listen too (F6)
+		if skip {
+			forkPhotos.TakeListen(esn)
+		}
+	}()
 	forkPhotos.TakeTurn(esn) // a photo answer from an earlier, unfinished turn never forces this one's listen
 	p := followup.TakeNoSpeech(esn)
 	switch {
@@ -76,6 +81,14 @@ func forkBegin(esn string, isKG bool, text string) (turn forkTurn, skip bool) {
 		}
 	}
 	return turn, false
+}
+
+// forkIntentPass is IntentPass's hook once esn is set: a memory episode, and an intent-graph answer ends the
+// follow-up chain and the photo listen (photo-followup F6), so a later knowledge request never reuses either.
+func forkIntentPass(esn, intentThing, speechText string) {
+	forkCaptureIntent(esn, intentThing, speechText)
+	forkChain.Reset(esn)
+	forkPhotos.TakeListen(esn)
 }
 
 // forkKGSilence cuts streamingKG's placeholder with nothing said in its place (forkKGSwitch cuts its own).
