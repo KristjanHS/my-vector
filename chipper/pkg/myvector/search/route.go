@@ -24,10 +24,12 @@ func (c Class) String() string {
 	return [...]string{"none", "weather", "live", "recent"}[c]
 }
 
-// gap in a phrase matches 0..maxGap tokens ("is * open" = "is rimi open").
+// gap in a phrase matches 0..maxGap tokens ("is * open" = "is rimi open"); a phrase led by start matches only at
+// the sentence's first token.
 const (
 	gap    = "*"
 	maxGap = 4
+	start  = "^"
 )
 
 // table holds cues: exact tokens, token prefixes (Estonian stems), and token phrases (with gap wildcards).
@@ -47,7 +49,11 @@ func (t table) has(toks []string) bool {
 			}
 		}
 		for _, ph := range t.phrases {
-			if matchAt(toks[i:], ph) {
+			if ph[0] == start {
+				if i == 0 && matchAt(toks, ph[1:]) {
+					return true
+				}
+			} else if matchAt(toks[i:], ph) {
 				return true
 			}
 		}
@@ -79,13 +85,14 @@ func words(s ...string) [][]string {
 	return out
 }
 
-// cues is one language's router. weather/live fire alone; weatherWeak (words with a non-weather sense: "soe
+// cues is one language's router. weather/live/command fire alone (command: an ask to search; never a head move
+// like "look up a bit" or chit-chat like "let's find out"); weatherWeak (words with a non-weather sense: "soe
 // tee", "snow white") fires only beside a weatherCtx token; liveWeak and recent never fire beside a self
 // pronoun ("can you open your eyes", "kes on sinu lemmik"). recent also needs minRecent non-deictic tokens
 // after its phrase ("kes on ta", "who's there", "mis juhtus?" are chit-chat).
 type cues struct {
-	weather, weatherWeak, live, liveWeak, recent table
-	weatherCtx, self, deictic                    []string
+	weather, weatherWeak, live, liveWeak, recent, command table
+	weatherCtx, self, deictic                             []string
 }
 
 const minRecent = 2
@@ -120,6 +127,10 @@ var tables = map[string]cues{
 				"kui palju * maksab", "kui palju * maksavad", "mis * maksab", "mis * maksavad"),
 		},
 		recent: table{phrases: words("kes on", "kes oli", "mis * juhtus", "mis * toimub", "mis * toimus")},
+		command: table{
+			exact:   []string{"otsi", "otsige", "guugelda", "googelda", "guugeldage", "googeldage"},
+			phrases: words("vaata * järele", "uuri * välja", "leia * netist", "leia * internetist"),
+		},
 		self: []string{"sa", "sina", "sinu", "su", "sind", "sul", "sulle", "sinuga", "sinust", "ma", "mina", "minu",
 			"mu", "mind", "mul", "mulle", "minuga", "minust", "me", "meie", "meil", "meile", "te", "teie", "teil"},
 		deictic: []string{"ta", "tema", "see", "too", "seal", "siin", "nad", "nemad", "selle", "sellega", "sellest",
@@ -145,6 +156,11 @@ var tables = map[string]cues{
 				"cost of"),
 		},
 		recent: table{phrases: words("who is", "who's", "who was", "what happened", "what's happening", "what is happening")},
+		command: table{
+			exact: []string{"search", "google"},
+			phrases: words("look up the * of", "look it up", "look that up", "look this up", "look them up",
+				"^ find out", "can you find out", "could you find out", "please find out"),
+		},
 		self: []string{"you", "your", "yours", "yourself", "i", "me", "my", "mine", "myself", "we", "us", "our",
 			"ours", "i'm", "i've", "i'd", "i'll", "you're", "you've", "you'd", "you'll", "we're", "we've", "we'd",
 			"we'll"},
@@ -153,11 +169,20 @@ var tables = map[string]cues{
 }
 
 // Route classifies the sentence by lang's cues (English for any other lang); Weather wins over Live over Recent.
+// Only a None falls back to the English cues (STT writes English speech in English in any mode): an et Live beats an
+// en Weather, and the en cues' self guard misses Estonian pronouns.
 func Route(sentence, l string) Class {
-	c, ok := tables[l]
-	if !ok {
-		c = tables[lang.English]
+	if _, ok := tables[l]; !ok {
+		l = lang.English
 	}
+	if k := route(sentence, l); k != None || l == lang.English {
+		return k
+	}
+	return route(sentence, lang.English)
+}
+
+func route(sentence, l string) Class {
+	c := tables[l]
 	toks := strings.FieldsFunc(strings.ToLower(strings.ReplaceAll(sentence, "’", "'")), func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '\''
 	})
@@ -168,7 +193,7 @@ func Route(sentence, l string) Class {
 	switch {
 	case c.weather.has(toks) || etIlma(l, toks) || !self && c.weatherWeak.has(toks) && in(c.weatherCtx):
 		return Weather
-	case c.live.has(toks) || !self && c.liveWeak.has(toks):
+	case c.live.has(toks) || c.command.has(toks) || !self && c.liveWeak.has(toks):
 		return Live
 	case !self && c.recentAsk(toks):
 		return Recent

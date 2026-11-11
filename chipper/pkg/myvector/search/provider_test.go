@@ -47,7 +47,7 @@ func TestProviders(t *testing.T) {
 		srv, s := fakeProvider(t, 200, providerFixture)
 		restore := c.set(srv.URL)
 		p := c.mk(srv.URL)
-		rs, err := p.Search(context.Background(), "kas homme sajab?", "et-EE", 2)
+		rs, err := p.Search(context.Background(), Query{Text: "kas homme sajab?"}, "et-EE", 2)
 		restore()
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
@@ -62,14 +62,31 @@ func TestProviders(t *testing.T) {
 		}
 		switch c.name {
 		case "searxng":
-			if s.method != "GET" || s.auth != "" || s.query["language"][0] != "et" || s.query["format"][0] != "json" || s.query["q"][0] != "kas homme sajab?" {
+			if s.method != "GET" || s.auth != "" || s.query["language"][0] != "et" || len(s.query["categories"]) > 0 || s.query["format"][0] != "json" || s.query["q"][0] != "kas homme sajab?" {
 				t.Errorf("searxng request %s auth %q query %v", s.method, s.auth, s.query)
 			}
 		default:
-			if s.method != "POST" || s.auth != "Bearer K1" || s.body["query"] != "kas homme sajab?" || s.body["max_results"] != float64(2) {
+			if s.method != "POST" || s.auth != "Bearer K1" || s.body["query"] != "kas homme sajab?" || s.body["max_results"] != float64(2) || s.body["topic"] != nil {
 				t.Errorf("%s request %s auth %q body %v", c.name, s.method, s.auth, s.body)
 			}
 		}
+	}
+}
+
+func TestProvidersNews(t *testing.T) {
+	srv, s := fakeProvider(t, 200, providerFixture)
+	old := TavilyURL
+	TavilyURL = srv.URL
+	defer func() { TavilyURL = old }()
+	q := Query{Text: "semiconductor stocks", News: true}
+	if _, err := (Tavily{Key: "K"}).Search(context.Background(), q, "et-EE", 3); err != nil || s.body["topic"] != "news" || s.body["time_range"] != "week" {
+		t.Errorf("tavily news body %v err %v", s.body, err)
+	}
+	if _, err := (Searxng{URL: srv.URL}).Search(context.Background(), q, "et-EE", 3); err != nil || s.query["categories"][0] != "news" || s.query["time_range"][0] != "week" || s.query["language"][0] != "en" {
+		t.Errorf("searxng news query %v err %v", s.query, err)
+	}
+	if _, err := (Searxng{URL: srv.URL}).Search(context.Background(), Query{Text: "q"}, "en-US", 3); err != nil || s.query["language"][0] != "en" {
+		t.Errorf("searxng en non-news query %v err %v, want language=en (Q3)", s.query, err)
 	}
 }
 
@@ -79,7 +96,7 @@ func TestProvidersErrorStatus(t *testing.T) {
 		oldT := TavilyURL
 		TavilyURL = srv.URL
 		for _, p := range []Provider{Tavily{Key: "SECRET"}, Searxng{URL: srv.URL}} {
-			rs, err := p.Search(context.Background(), "q", "et-EE", 3)
+			rs, err := p.Search(context.Background(), Query{Text: "q"}, "et-EE", 3)
 			if err == nil || rs != nil || strings.Contains(err.Error(), "SECRET") {
 				t.Errorf("%s status %d: results %v err %v; want an error without the key", p.Name(), status, rs, err)
 			}

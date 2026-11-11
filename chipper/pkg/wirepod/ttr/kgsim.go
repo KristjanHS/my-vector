@@ -226,10 +226,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 	if err != nil {
 		return "", err
 	}
-	if isKG {
-		defer forkBControl(robot, ctx, start, stop, esn)()               // my-vector: one answer per robot, a second waits (fork_answer.go)
-		forkWait(robot, forkWaitSearch, &kgStopLooping, kgReadyToAnswer) // my-vector: silent wait face, no searching-loop sfx (fork_wait.go)
-	}
+	defer forkWaitStart(req, robot, ctx, start, stop, esn, transcribedText, isKG, &kgStopLooping, kgReadyToAnswer)() // my-vector: intent (wake-word), control, silent wait face (fork_wait.go)
 	var fullRespText string
 	var fullfullRespText string
 	var fullRespSlice []string
@@ -257,7 +254,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 
 	aireq := CreateAIReq(transcribedText, esn, false, isKG)
 
-	stream, err := c.CreateChatCompletionStream(ctx, aireq)
+	stream, err := forkLLMStream(c, ctx, aireq, esn) // my-vector: a templated et weather reply skips the LLM (fork_canned.go)
 	if err != nil {
 		log.Printf("Error creating chat completion stream: %v", err)
 		if strings.Contains(err.Error(), "does not exist") && vars.APIConfig.Knowledge.Provider == "openai" {
@@ -325,6 +322,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 					break
 				}
 				isDone = true
+				forkSignalIntent(successIntent) // my-vector: the split's sends are non-blocking; an instant canned reply can beat the range (fork_canned.go)
 				// if fullRespSlice != fullRespText, add that missing bit to fullRespSlice
 				newStr := fullRespSlice[0]
 				for i, str := range fullRespSlice {
@@ -368,6 +366,7 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 				return
 			}
 			cut = cut || response.Choices[0].FinishReason == openai.FinishReasonLength // my-vector
+			forkFirstToken(esn, response.Choices[0].Delta.Content)                     // my-vector: TTFT log (fork_wait.go)
 
 			fullfullRespText = fullfullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
 			fullRespText = fullRespText + removeSpecialCharacters(response.Choices[0].Delta.Content)
@@ -391,18 +390,12 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 	}()
 	for is := range successIntent {
 		if is {
-			if !isKG {
-				IntentPass(req, "intent_greeting_hello", transcribedText, map[string]string{}, false)
-			}
-			break
+			break // my-vector: a wake-word turn's intent went out at forkWaitStart (fork_wait.go)
 		} else {
 			return "", errors.New("llm returned no response")
 		}
 	}
 	time.Sleep(time.Millisecond * 200)
-	if !isKG {
-		defer forkBControl(robot, ctx, start, stop, esn)() // my-vector: one answer per robot, a second waits (fork_answer.go)
-	}
 	interrupted := false
 	ibot, istop, endInterrupt := forkInterruptBot(robot, stop) // my-vector: the interrupter's stream and stopStop rangers end with the answer; its stop cuts the speech (fork_interrupt.go)
 	defer close(stopStop)
@@ -423,12 +416,11 @@ func StreamingKGSim(req interface{}, esn string, transcribedText string, isKG bo
 	var stopTTSLoop bool
 	TTSLoopStopped := make(chan bool)
 	for range start {
-		if isKG {
-			kgStopLooping = true
-			for range kgReadyToAnswer {
-				break
-			}
-		} else {
+		kgStopLooping = true // my-vector: both turn kinds wait (fork_wait.go forkWaitStart)
+		for range kgReadyToAnswer {
+			break
+		}
+		if !isKG {
 			time.Sleep(time.Millisecond * 300)
 		}
 		robot.Conn.PlayAnimation(

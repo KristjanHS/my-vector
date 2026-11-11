@@ -384,17 +384,20 @@ func DoSayText_OpenAI(robot *vector.Vector, input string) error {
 
 func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector.Vector, stopStop chan bool) {
 	stopImaging := false
+	look := forkLookFor(robot)     // my-vector: this call's look wait (fork_wait.go)
+	defer look.End()               // my-vector: every return ends it
 	stopped := make(chan struct{}) // my-vector: closed with stopImaging, ends the speak loop's wait (fork_followup.go forkNextChunkUntil)
 	go func() {
 		for range stopStop {
 			stopImaging = true
 			close(stopped) // my-vector
+			go look.End()  // my-vector: an interrupt ends the look wait (fork_wait.go)
 			break
 		}
 	}()
 	logger.Println("Get image here...")
 	// get image
-	resp, ok := forkPhotoCapture(robot, param, &stopImaging) // my-vector: mirror, countdown, capture, shutter — or the kept photo (fork_vision.go)
+	resp, ok := forkPhotoCapture(robot, param, &stopImaging, look) // my-vector: mirror, countdown, capture, shutter — or the kept photo (fork_vision.go)
 	if !ok {
 		return
 	}
@@ -476,7 +479,7 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 			}
 		} else {
 			logger.Println("LLM error: " + err.Error())
-			forkVisionDown(robot) // my-vector: one native line (fork_vision.go)
+			forkVisionDown(robot, look) // my-vector: one native line (fork_vision.go)
 			return
 		}
 	}
@@ -563,14 +566,14 @@ func DoGetImage(msgs []openai.ChatCompletionMessage, param string, robot *vector
 			break
 		}
 		logger.Println(chunk)
-		acts := forkPhotoActs(GetActionsFromString(chunk)) // my-vector: no nested photo (fork_vision.go)
+		acts := forkPhotoActs(GetActionsFromString(chunk), look) // my-vector: no nested photo; ends the look wait (fork_vision.go)
 		PerformActions(msgs, acts, robot, stopStop)
 		numInResp = numInResp + 1
 		if stopImaging {
 			return
 		}
 	}
-	forkPhotoUnsaid(numInResp, stopped, robot) // my-vector: nothing spoken → the V8 line (fork_vision.go)
+	forkPhotoUnsaid(numInResp, stopped, robot, look) // my-vector: nothing spoken → the V8 line (fork_vision.go)
 }
 
 func DoNewRequest(robot *vector.Vector) {

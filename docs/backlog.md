@@ -1,10 +1,12 @@
 # Backlog
 
 ## OWED[USER]
+- Search trigger live (`archive/2026-11-11-search-trigger-fixes.md` (docs/plans/)): `make ship`, quiet ≠ 3, ask before sound; in et mode en "search for news about semiconductors", then "otsi seda" → `journalctl -u wire-pod --since '<t>' | grep -c 'myvector: search topic'` ≥ 1, no 10 s timeout; `robot/quiet/scan.sh '<t>'`.
 - Camera et relay live (`2026-11-10-camera-et-relay.md` (docs/plans/) 3.1): `make ship`, quiet status ≠ 3, ask before sound; et "mida sa näed?" + "mis värvi mu särk on?" → Estonian answer to each, ~5 s; `journalctl -u wire-pod --since '<t>' | grep -c 'camera relay '` ≥ 1; `robot/quiet/scan.sh '<t>'`.
 - Vision phrase trigger live (`archive/2026-11-08-vision-setting.md` (docs/plans/) 5.2): `make ship`, quiet status ≠ 3, ask before sound; et "mida sa näed?" + en "what do you see?" → robot says "Vaatan." / "Let me look." then describes; `journalctl -u wire-pod --since '<t>' | grep -c 'myvector vision: phrase ask'` = 2; `robot/quiet/scan.sh '<t>'`. Pass also closes camera-et-relay 3.1.
 - Photo follow-up live (`2026-11-10-photo-followup.md` (docs/plans/) Live row): `make ship`, quiet ≠ 3, ask before sound; "mida sa näed", then while he listens "kus pildi peal asub rulli keeratud joogamatt?" → no countdown, says left; then "tee uus pilt" → countdown.
 - Silent wake gate live (`2026-11-10-silent-wake-gate.md` (docs/plans/) S1): set wake sensitivity 0.75 in the wire-pod UI, `make ship`; next false wake → `journalctl -u wire-pod | grep 'silent wake'` hits, robot silent; a real request still answered.
+- Silent wait live (`archive/2026-11-10-silent-wait-visuals.md` (docs/plans/) 2b, 3, 4): ship firmware `0022` + `make ship`; quiet ≠ 3, ask before sound; `anim.sh` kg searching −99; a KG, a wake-word and a photo turn each show a wait face with 0 s above −45 dBFS until the answer (W8; follow-up still arms); `robot/quiet/scan.sh '<t>'`.
 - Ollama et split (`2026-11-10-ollama-et-prompt.md` (docs/plans/)): `make ship`; `/myvector/prompt` Ollama et tab shows only the "About me (eesti)" box; in et ask Vector to sing — the persona dropped `SingEt`, a refusal re-opens it.
 
 - Follow-up listening live (`2026-11-07-follow-up-listening.md` (docs/plans/) 6.1, 7.3): `make ship`, restart wire-pod; "ask me a riddle" → answer → chain, "dance" mid-chain goes to the LLM, et once; silent P4 rerun: no "Ready", no answered turn (`journalctl -u wire-pod | grep follow-up`).
@@ -31,5 +33,7 @@
 - Ship speed rung 2 live (`2026-11-08-ship-speed.md` (docs/plans/) 2.3 + Target): 3 server-lane `make ship` → its settings-gap awk ≤ 6 s per log and the Target one-liner (median push ≤ 33 s) exit 0; missed → pick rung 3 from that plan.
 
 ## Assistant-owed
+
+- W11 answer face (`archive/2026-11-10-silent-wait-visuals.md` (docs/plans/) W11, user-ruled A): with commands on, play `TTSLoopAnimation` while he answers, paused during an LLM `{{playAnimation}}` cue; `anim.sh` its clips first.
 
 

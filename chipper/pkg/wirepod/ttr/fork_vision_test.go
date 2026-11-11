@@ -564,7 +564,7 @@ func TestForkPhotoAskHook(t *testing.T) {
 		{"kgsim_cmds.go", "func DoGetImage(", "\n\t// add image to messages", "\n\treqBase64 := base64.StdEncoding.EncodeToString(forkPhotoData(resp, robot, &stopImaging))"},
 		{"kgsim_cmds.go", "func DoGetImage(", "\n\t\t\t\t\tRemember(msgs[len(msgs)-1],", "\n\t\t\t\tif !forkPhotoRemember(msgs, newStr, robot.Cfg.SerialNo, stopped) {"},
 		{"kgsim_cmds.go", "func DoGetImage(", "\n\t\t\t\t\tisDone = true", "\n\t\t\t\tforkPhotoAnswered(fullRespSlice, robot.Cfg.SerialNo, stopped)"},
-		{"matchIntentSend.go", "func IntentPass(", "\n\t// intercept if not intent graph", "\n\tforkIntentPass(esn, intentThing, speechText)"},
+		{"matchIntentSend.go", "func IntentPass(", "\n\t// intercept if not intent graph", "\n\tif forkIntentPass(req, esn, intentThing, speechText) {"},
 	} {
 		b, err := os.ReadFile(h.file)
 		if err != nil {

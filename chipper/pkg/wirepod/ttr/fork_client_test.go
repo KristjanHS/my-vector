@@ -244,7 +244,7 @@ func TestForkDoGetImageHooks(t *testing.T) {
 	s := string(b)
 	body := s[strings.Index(s, "func DoGetImage("):]
 	body = body[:strings.Index(body, "\nfunc ")]
-	for _, h := range []string{"logger.Println(\"LLM error: \" + err.Error())\n\t\t\tforkVisionDown(robot)", "forkPhotoActs(GetActionsFromString("} {
+	for _, h := range []string{"logger.Println(\"LLM error: \" + err.Error())\n\t\t\tforkVisionDown(robot, look)", "forkPhotoActs(GetActionsFromString("} {
 		if !strings.Contains(body, h) {
 			t.Errorf("DoGetImage lacks %q", h)
 		}
@@ -336,7 +336,7 @@ func TestForkCameraOllamaDown(t *testing.T) {
 	if _, err := c.CreateChatCompletionStream(context.Background(), r); err == nil {
 		t.Fatal("stream on a 500 Ollama: no error")
 	}
-	forkVisionDown(nil)
+	forkVisionDown(nil, nil)
 	done()
 	if local.path != "/v1/chat/completions" || cl.path != "" || strings.Join(said, "|") != "Ma ei näe praegu." {
 		t.Errorf("local %q claude %q said %q", local.path, cl.path, said)
