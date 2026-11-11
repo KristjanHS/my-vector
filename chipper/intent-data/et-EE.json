@@ -5,6 +5,6 @@
  {"name": "intent_clock_settimer_extend", "keyphrases": ["taimer*"], "requiresexact": false},
  {"name": "intent_clock_time", "keyphrases": ["mis kell", "palju kell", "kell on", "kellaaeg*"], "requiresexact": false},
  {"name": "intent_weather_extend", "keyphrases": ["ilm", "ilmateade*", "ilmaennustus*", "ilmaprognoos*"], "requiresexact": false},
- {"name": "intent_photo_take_extend", "keyphrases": ["pildista*", "tee pilt*", "tee üks pilt*", "tee minust pilt*", "tee foto*", "tee selfi*"], "requiresexact": false},
+ {"name": "intent_photo_take_extend", "keyphrases": ["pildista*", "tee üks pilt*", "tee minust pilt*", "tee selfi*"], "requiresexact": false},
  {"name": "intent_knowledge_promptquestion", "keyphrases": ["mul on küsimus", "mul on üks küsimus", "räägime"], "requiresexact": false}
 ]
