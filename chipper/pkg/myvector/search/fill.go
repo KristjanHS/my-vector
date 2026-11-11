@@ -100,8 +100,9 @@ func chain(c Config) []Provider {
 }
 
 // Fill is the {search} block for sentence after the user's prev asks (newest first): a fresh cached block, else
-// Weather from Open-Meteo or Live / Recent over chain (one shared Timeout; a news ask races the chain under NewsTimeout and merges,
-// search-news-quality Q4); "" for class None or Live / Recent with provider off, Unavailable when every lookup failed.
+// Weather from Open-Meteo or Live / Recent over chain under one Timeout (a news ask races the chain under NewsTimeout
+// and merges, search-news-quality Q4/N9); "" for class None or Live / Recent with provider off, Unavailable when
+// every lookup failed.
 func Fill(sentence string, prev []string, l, brain string, zone *time.Location) string {
 	class := Route(sentence, l)
 	c := LoadConfig()
