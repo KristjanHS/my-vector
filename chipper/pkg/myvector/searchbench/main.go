@@ -58,8 +58,18 @@ var arms = []arm{
 	{"N1", func(a string) search.Query { return search.Query{Text: search.Keywords(a)} }, false},
 	{"N1+N3", func(a string) search.Query { return search.Query{Text: search.Keywords(a), News: search.IsNews(a)} }, false},
 	{"N1+N3+N7", func(a string) search.Query {
-		return search.Query{Text: search.English(search.Keywords(a)), News: search.IsNews(a)}
+		q := search.Query{Text: search.Keywords(a), News: search.IsNews(a)}
+		if q.News {
+			q.Text = search.English(q.Text)
+		}
+		return q
 	}, true},
+}
+
+// gateWords are the words production's N6 gate (search.look) matches results against: the keywords plus English.
+func gateWords(ask string) string {
+	k := search.Keywords(ask)
+	return k + " " + search.English(k)
 }
 
 const newsJudgePrompt = `You grade web search results for a voice robot that answers a spoken Estonian news ask. Today is %s.
@@ -176,7 +186,7 @@ func bench(p search.Provider, st *search.State, key, model string, asks []string
 		}
 		if !st.Take(p.Name(), time.Now()) {
 			r.errors++
-			fmt.Fprintf(os.Stderr, "%s: capped\n", p.Name())
+			fmt.Fprintf(os.Stderr, "%s %s: capped\n", p.Name(), r.arm)
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -184,12 +194,15 @@ func bench(p search.Provider, st *search.State, key, model string, asks []string
 		rs, err := p.Search(ctx, sq, lang.Estonian, search.SnippetsClaude)
 		cancel()
 		ms = append(ms, time.Since(start).Milliseconds())
+		if err == nil && a != nil && a.name != "verbatim" {
+			rs = search.Relevant(rs, gateWords(q)) // score what production keeps (N6)
+		}
 		if err == nil && len(rs) == 0 {
 			err = errors.New("no results")
 		}
 		if err != nil {
 			r.errors++
-			fmt.Fprintf(os.Stderr, "%s %q: %v\n", p.Name(), q, err)
+			fmt.Fprintf(os.Stderr, "%s %s %q: %v\n", p.Name(), r.arm, q, err)
 			continue
 		}
 		if !r.judged {
@@ -197,7 +210,7 @@ func bench(p search.Provider, st *search.State, key, model string, asks []string
 		}
 		s, err := judge(key, model, q, rs, a != nil)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "judge %s %q: %v\n", p.Name(), q, err)
+			fmt.Fprintf(os.Stderr, "judge %s %s %q: %v\n", p.Name(), r.arm, q, err)
 			r.judged = false // one failed judgement voids the row: "-", never picked
 			continue
 		}
@@ -278,6 +291,10 @@ func printNews(rows []row) {
 				g += " ✓"
 			}
 		}
-		fmt.Printf("%s | %s | %s | %s | %s | %d | %d\n", r.name, r.arm, rel, dated, g, r.medianMS, r.errors)
+		late := ""
+		if r.medianMS > search.Timeout.Milliseconds() {
+			late = " > timeout"
+		}
+		fmt.Printf("%s | %s | %s | %s | %s | %d%s | %d\n", r.name, r.arm, rel, dated, g, r.medianMS, late, r.errors)
 	}
 }

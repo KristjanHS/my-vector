@@ -139,7 +139,7 @@ apertus-estllm:8b, `/v1/chat/completions` 0.4/0.9/300, the captured live et prom
 | N15 | blind judge, refusals / wrong: etsent 0/8, 2/8; etdemo 0/8, 1/8; etshort (temp 0) 0/8, 0/8 on 2 distinct replies, then `weather-held` 8 new asks 0/8, 3/8 (+ 2/8 cut off) | template stays; no weather LLM change ships |
 | N16 | blind judge, refusals / made-up on `semi`: facts 0/8, 2/8; xq 1/8, 7/8; shot0 0/8, 8/8 | no arm clears < 2/8; nothing ships |
 | Q8 | lower-case STT (`preqs/fork_stt.go` `strings.ToLower`); held-out 32 asks: A (wider list) 0/20 needless skips, 3/12 wrong-town keeps; B (place-case ending + stop list) and C (A or B) 9/20 needless skips | A: `etTowns` + countries, regions, more towns; drop the capital-letter check (`namesOtherPlace`) |
-| N9 | `searchbench -news`, 5 asks, gain vs verbatim: Tavily N1+N3 +0.80 at median 4751 ms (> `search.Timeout`); SearXNG N1+N3+N7 −0.20, 2/5 empty | **[USER DECISION]** owed: how news asks get Tavily's hits inside the deadline, or what SearXNG gets |
+| N9 | `searchbench -news`, 5 asks, gain vs verbatim: Tavily N1+N3 +0.80 at fresh-run median 4751 ms (> `search.Timeout`); SearXNG N1+N3+N7 +0.00 after the N6 gate, 2/5 empty | **[USER DECISION]** owed: how news asks get Tavily's hits inside the deadline, or what SearXNG gets |
 
 ## Order (thin slice first)
 
