@@ -19,3 +19,4 @@
 0019-sdk-audio-orphan.patch
 0020-followup-no-ready.patch
 0021-sdk-audio-prepare-race.patch
+0022-silent-wait.patch
