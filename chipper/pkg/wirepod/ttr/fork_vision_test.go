@@ -70,8 +70,8 @@ func TestForkPhotoAsk(t *testing.T) {
 		row{lang.English, "is there another cup in the picture?", false},
 		row{lang.Estonian, "kas pildil olev telefon on uus?", false},
 	)
-	if len(rows) != 3*12+29 {
-		t.Fatalf("%d rows, want 65 (12 phrases × 3 + 29)", len(rows))
+	if len(rows) != 3*15+29 {
+		t.Fatalf("%d rows, want 74 (15 phrases × 3 + 29)", len(rows))
 	}
 	for _, r := range rows {
 		if got := forkPhotoAsk(r.l, r.text); got != r.hit {

@@ -150,6 +150,7 @@ func TestForkIntentsEstonian(t *testing.T) {
 		"Tee pilt.":                           "",
 		"Tee pilti!":                          "",
 		"Tee foto.":                           "",
+		"Tee pilte.":                          "",
 		"Mul on küsimus.":                     "intent_knowledge_promptquestion",
 		"Kohv ilma suhkruta.":                 "",
 		"Mis on maailma kõrgeim mägi?":        "",

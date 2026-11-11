@@ -97,8 +97,8 @@ func forkBegin(req interface{}, esn string, isKG bool, text string) (turn forkTu
 
 var forkIntentSent sync.Map // esn → the request its last intent answered
 
-// forkIntentPass is IntentPass's hook once esn is set: a memory episode, and an intent-graph answer ends the
-// follow-up chain and the photo listen (photo-followup F6), so a later knowledge request never reuses either.
+// forkIntentPass is IntentPass's hook once esn is set: a memory episode; an intent-graph answer ends the follow-up
+// chain and the photo listen (photo-followup F6); intent_photo_take_extend starts forkNativePhoto's poll (N1).
 // skip: an intent_system_unmatched on a request already answered (W6: the wake-word intent precedes its LLM error).
 func forkIntentPass(req interface{}, esn, intentThing, speechText string) (skip bool) {
 	if prev, ok := forkIntentSent.Load(esn); ok && req != nil && prev == req && intentThing == "intent_system_unmatched" {

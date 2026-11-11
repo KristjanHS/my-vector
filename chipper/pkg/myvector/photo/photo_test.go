@@ -52,3 +52,15 @@ func TestTakeTurnAndListen(t *testing.T) {
 		t.Fatal("a non-photo arm keeps the photo listen")
 	}
 }
+
+func TestPutFresh(t *testing.T) {
+	var s Store
+	t0 := time.Unix(1000, 0)
+	s.PutFresh("e", []byte{3}, "et-EE", t0)
+	if sh, ok := s.Fresh("e", t0.Add(Keep)); !ok || sh.JPEG[0] != 3 || sh.Lang != "et-EE" {
+		t.Fatalf("fresh at Keep = %v %v", sh, ok)
+	}
+	if s.TakeTurn("e") {
+		t.Fatal("PutFresh counts as this turn's photo answer")
+	}
+}
