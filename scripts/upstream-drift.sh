@@ -21,7 +21,8 @@ allowed_edits=(
   chipper/pkg/initwirepod/startserver.go # non-android TLS pair = vars.CertPath/KeyPath (fork_paths.go: secrets/server/certs), was ../certs; EPConfig pair = forkEpodCert() (fork_epod.go)
   .dockerignore                          # + secrets, certs (never bake keys into an image)
   chipper/pkg/logger/logger.go           # LogUI/LogTray update the log globals under forkLogMu (fork_logger.go) — goroutines logged concurrently (race)
-  chipper/pkg/wirepod/config-ws/webserver.go # get_logs/get_debug_logs read via logger.ForkLogList/ForkLogTrayList (fork_logger.go)
+  chipper/pkg/wirepod/config-ws/webserver.go # get_logs/get_debug_logs read via logger.ForkLogList/ForkLogTrayList (fork_logger.go); ListenAndServe(":"+vars.WebPort, forkWebHandler()) (fork_webauth.go, webauth)
+  chipper/pkg/wirepod/sdkapp/server.go   # ListenAndServe(":80", forkWebHandler()) (fork_webauth.go, webauth); whole file gofmt-ed 2026-11-11
   chipper/pkg/wirepod/ttr/intentparam.go # names_username_extend face hint dials via robotconn.Get (myvector/robotconn), was vector.New per use
   setup.sh                               # certs dir ./certs -> ./secrets/server/certs (fork_paths.go)
 )

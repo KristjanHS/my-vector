@@ -5,6 +5,13 @@ import "os"
 // SecretsDir holds wire-pod's private state (apiConfig, fork settings, jdocs, session certs, TLS certs); relative to cwd chipper/.
 const SecretsDir = "../secrets/server"
 
+// Web-UI auth (myvector/webauth): store, generated password, scripts' `curl -H @` header line.
+var (
+	WebAuthPath       = SecretsDir + "/webauth.json"
+	WebPasswordPath   = "../secrets/webui-password"
+	WebAuthHeaderPath = "../secrets/wirepod-auth.header"
+)
+
 func init() {
 	if Packaged { // Init joins these onto UserConfigDir: keep upstream's relative names there
 		return

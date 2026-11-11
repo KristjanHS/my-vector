@@ -410,7 +410,7 @@ func StartWebServer() {
 	}
 	http.Handle("/", DisableCachingAndSniffing(webRoot))
 	fmt.Printf("Starting webserver at port " + vars.WebPort + " (http://localhost:" + vars.WebPort + ")\n")
-	if err := http.ListenAndServe(":"+vars.WebPort, nil); err != nil {
+	if err := http.ListenAndServe(":"+vars.WebPort, forkWebHandler()); err != nil {
 		logger.Println("Error binding to " + vars.WebPort + ": " + err.Error())
 		if vars.Packaged {
 			logger.ErrMsg("FATAL: Wire-pod was unable to bind to port " + vars.WebPort + ". Another process is likely using it. Exiting.")
