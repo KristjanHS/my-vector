@@ -108,6 +108,33 @@ func SpeechBlock(brain string) string {
 		"and no markdown, emoji or lists."
 }
 
+// SearchWrap heads brain's filled {search} block; the Ollama brains also get the usage rule (search-news-quality N5).
+func SearchWrap(brain string) string {
+	switch brain {
+	case OllamaEt:
+		return "Värsked veebitulemused (kuupäev, allikas): vasta nende põhjal 2–3 lausega, nimeta allikas ja kuupäev. " +
+			"Kui need ei vasta küsimusele, ütle, et ei leidnud sobivat vastust. Ära ütle, et sa ei saa otsida."
+	case Ollama:
+		return "Fresh web results (date, source): answer from them in 2–3 sentences, naming the source and date. " +
+			"If they don't answer the question, say you found nothing fitting. Never say you can't search."
+	}
+	return "Live web results for the user's question:"
+}
+
+// NoSearch fills an Ollama brain's empty {search} block (search-trigger-fixes F4); Claude's stays empty. No "don't
+// repeat your previous reply" clause: replay copied turn 1 verbatim 2/3 with it, 1/3 without (R5).
+func NoSearch(brain string) string {
+	switch brain {
+	case OllamaEt:
+		return "Sul pole praegu otsingutulemusi ja sa ei saa ise internetist otsida. Kui küsitakse värskeid andmeid (uudised, hinnad, " +
+			"tulemused), ütle ühe lausega, et sa ei saanud seda järele vaadata; ära paku otsimist ega loetle."
+	case Ollama:
+		return "You have no web results now and can't browse. If asked for live facts (news, prices, results), say in one sentence " +
+			"that you couldn't look it up; no offer to search and no list."
+	}
+	return ""
+}
+
 // Commands is brain's {commands} block; emotions = playAnimationWI's ParamChoices. Command names and emotions stay
 // English in every language: the reply parser matches them. No newVoiceRequest: forkFollowUp listens again (F5).
 func Commands(brain, emotions string) string {

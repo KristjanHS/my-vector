@@ -44,10 +44,37 @@ type entry struct {
 type State struct {
 	mu     sync.Mutex
 	path   string
-	Month  string           `json:"month"`
-	Used   map[string]int   `json:"used"`
-	Cache  map[string]entry `json:"cache"`
-	Places map[string]Place `json:"places"`
+	Month  string            `json:"month"`
+	Used   map[string]int    `json:"used"`
+	Cache  map[string]entry  `json:"cache"`
+	Places map[string]Place  `json:"places"`
+	memo   map[string]memoFC // weather place → its last forecast, RAM only (N11 template + {search} block share one fetch)
+}
+
+type memoFC struct {
+	p  Place
+	f  Forecast
+	at time.Time
+}
+
+// memoGet is place's forecast fetched within TTLWeather of now.
+func (s *State) memoGet(place string, now time.Time) (Place, Forecast, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.memo[place]
+	if !ok || now.Sub(m.at) >= TTLWeather {
+		return Place{}, Forecast{}, false
+	}
+	return m.p, m.f, true
+}
+
+func (s *State) memoPut(place string, p Place, f Forecast, now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.memo == nil {
+		s.memo = map[string]memoFC{}
+	}
+	s.memo[place] = memoFC{p, f, now}
 }
 
 // Open loads path; a missing or corrupt file starts empty.

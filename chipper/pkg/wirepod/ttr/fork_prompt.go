@@ -73,7 +73,11 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 		last := r.Messages[len(r.Messages)-1].Content
 		memory.MarkLLM(esn, last)
 		memory.Touch()
-		r.Messages[0].Content = forkSystem(esn, last, l, brain, forkSearch(last, l, brain, forkBotZone(esn)), false)
+		prev := forkPrevAsks(esn) // once: the search and the opener judge the same follow-up topic
+		block := forkSearching(esn, last, l, brain, prev)
+		r.Messages[0].Content = forkSystem(esn, last, l, brain, block, false)
+		forkCannedSet(esn, last, l, brain) // after the search: its forecast memo serves the template (fork_canned.go)
+		forkPrefillSet(esn, last, l, brain, block, prev)
 		if os.Getenv("DEBUG_PRINT_PROMPT") == "true" {
 			logger.Println(r.Messages[0].Content)
 		}
@@ -85,6 +89,9 @@ func forkAIReq(r openai.ChatCompletionRequest, esn string, isKG bool) openai.Cha
 func forkSystem(esn, last, l, brain, search string, photo bool) string {
 	s := prompt.Load()
 	facts, diary := forkMemory(esn, last, brain)
+	if search == "" && !photo {
+		search = prompt.NoSearch(brain)
+	}
 	return prompt.Render(s.Live(brain), prompt.Vars{
 		Now:      prompt.Now(l, forkNow(), forkBotZone(esn)),
 		Lang:     prompt.LangLine(brain, l),

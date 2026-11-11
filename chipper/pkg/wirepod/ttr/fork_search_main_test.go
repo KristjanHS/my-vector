@@ -14,7 +14,7 @@ import (
 // TestMain stubs forkSearch to "" and points the weather endpoints at a closed port so no ttr test reaches the
 // network, the search state and memory store at temp files, and the stream-port console at a closed port.
 func TestMain(m *testing.M) {
-	forkSearch = func(sentence, l, brain string, zone *time.Location) string { return "" }
+	forkSearch = func(sentence string, prev []string, l, brain string, zone *time.Location) string { return "" }
 	search.GeocodeURL, search.ForecastURL, forkWeatherAPIForecastURL = "http://127.0.0.1:1", "http://127.0.0.1:1", "http://127.0.0.1:1"
 	dir, _ := os.MkdirTemp("", "ttr-search-state")
 	search.StatePath = func() string { return dir + "/myvectorSearch.json" }
@@ -29,7 +29,7 @@ func TestForkSearchStubbed(t *testing.T) {
 	if reflect.ValueOf(forkSearch).Pointer() == reflect.ValueOf(search.Fill).Pointer() {
 		t.Fatal("forkSearch is the live search.Fill: ttr tests could reach the network")
 	}
-	if got := forkSearch("mis ilm homme on?", "et-EE", "ollama", time.UTC); got != "" {
+	if got := forkSearch("mis ilm homme on?", nil, "et-EE", "ollama", time.UTC); got != "" {
 		t.Errorf("default forkSearch = %q, want \"\"", got)
 	}
 }

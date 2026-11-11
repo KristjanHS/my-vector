@@ -145,13 +145,20 @@ func wmo(code int) string {
 // deg rounds °C to an int, so -0.4 reads 0, not -0.
 func deg(v float64) int { return int(math.Round(v)) }
 
-// WeatherBlock is the English {search} block for f at place: now, then today, tomorrow and the third day.
+// WeatherBlock is the English {search} block for f at place: now, then today, tomorrow and the third day (only
+// the days every daily array covers).
 func WeatherBlock(place string, f Forecast) string {
 	c := f.Current
 	var b strings.Builder
 	fmt.Fprintf(&b, "Live weather in %s (Open-Meteo):\nNow: %d°C, %s, wind %.0f km/h.", place, deg(c.Temp), wmo(c.Code), c.Wind)
 	d := f.Daily
-	for i, day := range d.Time {
+	n := len(d.Time)
+	for _, l := range []int{len(d.Min), len(d.Max), len(d.Code), len(d.Precip)} {
+		if l < n {
+			n = l
+		}
+	}
+	for i, day := range d.Time[:n] {
 		label := day
 		switch i {
 		case 0:

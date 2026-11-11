@@ -5,21 +5,26 @@ import "testing"
 func TestParseScore(t *testing.T) {
 	for _, c := range []struct {
 		in      string
+		news    bool
 		want    score
 		wantErr bool
 	}{
-		{`{"relevance": 3, "et": 1}`, score{3, 1}, false},
-		{"```json\n{\"relevance\":0,\"et\":0}\n```", score{0, 0}, false},
-		{`not json`, score{}, true},
-		{`{"relevance": 2`, score{}, true},
-		{`{"relevance": 4, "et": 1}`, score{}, true},
-		{`{"relevance": -1, "et": 0}`, score{}, true},
-		{`{"relevance": 2, "et": 2}`, score{}, true},
-		{`{"relevance": 2}`, score{}, true},
+		{`{"relevance": 3, "et": 1}`, false, score{Relevance: 3, ET: 1}, false},
+		{"```json\n{\"relevance\":0,\"et\":0}\n```", false, score{}, false},
+		{`not json`, false, score{}, true},
+		{`{"relevance": 2`, false, score{}, true},
+		{`{"relevance": 4, "et": 1}`, false, score{}, true},
+		{`{"relevance": -1, "et": 0}`, false, score{}, true},
+		{`{"relevance": 2, "et": 2}`, false, score{}, true},
+		{`{"relevance": 2}`, false, score{}, true},
+		{`{"relevance": 2, "dated": 1}`, false, score{}, true},
+		{`{"relevance": 2, "dated": 1}`, true, score{Relevance: 2, Dated: 1}, false},
+		{`{"relevance": 2, "et": 1}`, true, score{}, true},
+		{`{"relevance": 3, "dated": 2}`, true, score{}, true},
 	} {
-		got, err := parseScore(c.in)
+		got, err := parseScore(c.in, c.news)
 		if (err != nil) != c.wantErr || got != c.want {
-			t.Errorf("parseScore(%q) = %v, %v; want %v, err %v", c.in, got, err, c.want, c.wantErr)
+			t.Errorf("parseScore(%q, news=%v) = %v, %v; want %v, err %v", c.in, c.news, got, err, c.want, c.wantErr)
 		}
 	}
 }

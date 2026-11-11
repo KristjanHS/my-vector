@@ -1,6 +1,8 @@
 package search
 
 import (
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
@@ -58,6 +60,33 @@ func TestRoute(t *testing.T) {
 		{"millal pood kinni läheb", et, Live},
 		{"kui palju bensiin maksab?", et, Live},
 		{"latest football results", en, Live},
+		// Command cues fire past the self guard, with no object block (R1); "otsin" is not "otsi".
+		{"otsi viimase pakkumise pealt, number kolm.", et, Live},
+		{"otsi mulle uudiseid kiipidest", et, Live},
+		{"vaata palun järele, millal Rimi avatakse", et, Live},
+		{"otsi kuubik", et, Live},
+		{"otsin prille", et, None},
+		{"search for semiconductor news", en, Live},
+		{"can you look it up for me?", en, Live},
+		{"look up at me", en, None},
+		{"look up", en, None},
+		{"look up the opening hours of Rimi", en, Live},
+		{"look up the population of Estonia", en, Live},
+		{"look that up", en, Live},
+		{"look up a little", en, None},
+		{"look up a bit", en, None},
+		{"look up the ceiling", en, None},
+		{"look up, what is that?", en, None},
+		{"look up, where is the ball", en, None},
+		{"can you look up when Rimi opens", en, None}, // no object pronoun or "the * of": a head move reads the same
+		{"find out who runs Bolt", en, Live},
+		{"can you find out when Rimi opens?", en, Live},
+		{"let's find out what happens", en, None},
+		{"you'll find out soon", en, None},
+		{"i want to find out if you can dance", en, None},
+		// An et turn falls back to the English cues (F2).
+		{"search for present news about semiconductors related financial.", et, Live},
+		{"what's the weather tomorrow?", et, Weather},
 		{"who won the election?", en, Live},
 		{"kas sa oled soe", et, None},
 		{"mul on külm", et, None},
@@ -99,5 +128,26 @@ func TestRoute(t *testing.T) {
 		if got := Route(c.s, c.l); got != c.want {
 			t.Errorf("Route(%q, %s) = %v, want %v", c.s, c.l, got, c.want)
 		}
+	}
+}
+
+// The English fallback adds no hit to an Estonian sentence (testdata/et_corpus.txt: route_test, probe and bench sets).
+func TestRouteEnglishFallbackCorpus(t *testing.T) {
+	b, err := os.ReadFile("testdata/et_corpus.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if Route("kas sa tead mis google on", lang.Estonian) != Live || route("kas sa tead mis google on", lang.Estonian) != None {
+		t.Error("control: an English command cue in an et sentence must reach Live only through the fallback")
+	}
+	n := 0
+	for _, s := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		n++
+		if got, et := Route(s, lang.Estonian), route(s, lang.Estonian); got != et {
+			t.Errorf("%q: fallback %v, Estonian cues %v", s, got, et)
+		}
+	}
+	if n < 150 {
+		t.Fatalf("corpus has %d sentences, want ≥150", n)
 	}
 }

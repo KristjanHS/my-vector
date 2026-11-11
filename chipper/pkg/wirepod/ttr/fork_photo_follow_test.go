@@ -170,7 +170,7 @@ func TestForkPhotoFollowIntentEnds(t *testing.T) {
 	if _, f := r.counts(); f != 1 {
 		t.Fatalf("photo turn listens %d, want 1", f)
 	}
-	forkIntentPass(followESN, "intent_clock_time", "mis kell on")
+	forkIntentPass(nil, followESN, "intent_clock_time", "mis kell on")
 	if forkPhotos.TakeListen(followESN) {
 		t.Error("intent-graph answer left the photo listen set")
 	}

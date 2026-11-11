@@ -33,7 +33,9 @@ func IntentPass(req interface{}, intentThing string, speechText string, intentPa
 		esn = req2.Device
 		isIntentGraph = true
 	}
-	forkIntentPass(esn, intentThing, speechText) // my-vector: memory episode + follow-up chain end (fork_followup.go)
+	if forkIntentPass(req, esn, intentThing, speechText) { // my-vector: memory episode + follow-up chain end; skip = already answered (fork_followup.go)
+		return nil, nil
+	}
 
 	// intercept if not intent graph but intent graph is enabled
 	if !isIntentGraph && vars.APIConfig.Knowledge.IntentGraph && intentThing == "intent_system_unmatched" {

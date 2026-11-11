@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
@@ -95,10 +96,10 @@ func chain(c Config) []Provider {
 	return ps
 }
 
-// Fill is the {search} block for sentence: a fresh cached block, else Weather from Open-Meteo or Live / Recent
-// over chain (one shared Timeout); "" for class None or Live / Recent with provider off, Unavailable when
-// every lookup failed.
-func Fill(sentence, l, brain string, zone *time.Location) string {
+// Fill is the {search} block for sentence after the user's prev asks (newest first): a fresh cached block, else
+// Weather from Open-Meteo or Live / Recent over chain (one shared Timeout; a news ask races the chain and merges,
+// search-news-quality Q4); "" for class None or Live / Recent with provider off, Unavailable when every lookup failed.
+func Fill(sentence string, prev []string, l, brain string, zone *time.Location) string {
 	class := Route(sentence, l)
 	c := LoadConfig()
 	if class == None || (class != Weather && c.Provider == "off") {
@@ -106,37 +107,42 @@ func Fill(sentence, l, brain string, zone *time.Location) string {
 	}
 	st := current()
 	start := time.Now()
-	key := sentence // web blocks are sized per brain (W9); the weather block is not
-	if class != Weather {
-		key = brain + " " + sentence
+	q, topic := followQuery(sentence, prev, l)
+	// Web blocks are sized per brain (W9). Weather skips the persisted block cache: its RAM forecast memo is the cache,
+	// and the lookup keeps it warm for WeatherReply's memo-only read (N12).
+	key := brain + " " + topic + " " + sentence
+	if topic != "" && class != Weather {
+		logf("myvector: search topic", topic)
 	}
-	if b, ok := st.Get(class, key, start); ok {
-		logf("myvector: search", class.String(), "cache", "ok", time.Since(start).Milliseconds())
-		return b
+	if class != Weather {
+		if b, ok := st.Get(class, key, start); ok {
+			logf("myvector: search", class.String(), "cache", "ok", time.Since(start).Milliseconds())
+			return b
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	defer cancel()
 	var block string
-	if class == Weather {
-		block = attempt(ctx, class, "open-meteo", func() (string, error) { return weather(ctx, st, weatherPlace(c, zone)) })
-	} else {
+	switch {
+	case class == Weather:
+		block = attempt(ctx, class, "open-meteo", func() (string, error) { return weather(ctx, st, weatherPlace(c, zone), zone) })
+	case q.News:
+		block = Block(brain, race(ctx, class, st, chain(c), q, l))
+	default:
 		for _, p := range chain(c) {
 			if ctx.Err() != nil {
 				logf("myvector: search", class.String(), p.Name(), "timeout", time.Since(start).Milliseconds())
 				break
 			}
 			block = attempt(ctx, class, p.Name(), func() (string, error) {
-				if !st.Take(p.Name(), time.Now()) {
-					return "", errCapped
-				}
-				rs, err := p.Search(ctx, sentence, l, SnippetsClaude)
+				rs, err := look(ctx, st, p, q, l)
 				if err != nil {
 					return "", err
 				}
 				if b := Block(brain, rs); b != "" {
 					return b, nil
 				}
-				return "", errors.New("no results")
+				return "", errNoResults
 			})
 			if block != "" {
 				break
@@ -146,8 +152,81 @@ func Fill(sentence, l, brain string, zone *time.Location) string {
 	if block == "" {
 		return Unavailable(l)
 	}
-	st.Put(class, key, block, time.Now())
+	if class != Weather {
+		st.Put(class, key, block, time.Now())
+	}
 	return block
+}
+
+var errNoResults = errors.New("no results")
+
+// look is one provider's search after its quota Take; SearXNG gets English(q) on an et-EE news ask (Q3). Results
+// sharing no stem with the query are dropped, and a set left empty is "no results" (search-news-quality N6).
+func look(ctx context.Context, st *State, p Provider, q Query, l string) ([]Result, error) {
+	if !st.Take(p.Name(), time.Now()) {
+		return nil, errCapped
+	}
+	words := q.Text
+	if l == lang.Estonian { // either provider may answer an et ask in English
+		words += " " + English(q.Text)
+	}
+	if p.Name() == "searxng" && l == lang.Estonian && q.News {
+		q.Text = English(q.Text)
+	}
+	rs, err := p.Search(ctx, q, l, SnippetsClaude)
+	if err != nil {
+		return nil, err
+	}
+	if kept := Relevant(rs, words); len(kept) < len(rs) {
+		logf("myvector: search relevance", p.Name(), "dropped", len(rs)-len(kept), "of", len(rs))
+		rs = kept
+	}
+	if len(rs) == 0 {
+		return nil, errNoResults
+	}
+	return rs, nil
+}
+
+// race runs every provider at once until ctx ends and merges their results (Q4).
+func race(ctx context.Context, class Class, st *State, ps []Provider, q Query, l string) []Result {
+	sets := make([][]Result, len(ps))
+	var wg sync.WaitGroup
+	for i, p := range ps {
+		wg.Add(1)
+		go func(i int, p Provider) {
+			defer wg.Done()
+			attempt(ctx, class, p.Name(), func() (string, error) {
+				rs, err := look(ctx, st, p, q, l)
+				sets[i] = rs
+				return "ok", err
+			})
+		}(i, p)
+	}
+	wg.Wait()
+	return merge(sets...)
+}
+
+// merge interleaves sets in order (first of each, then second, …), dropping repeated URLs (a result without a URL
+// is always kept).
+func merge(sets ...[]Result) []Result {
+	var out []Result
+	seen := map[string]bool{}
+	for i := 0; ; i++ {
+		more := false
+		for _, s := range sets {
+			if i >= len(s) {
+				continue
+			}
+			more = true
+			if u := strings.TrimRight(s[i].URL, "/"); u == "" || !seen[u] {
+				seen[u] = true
+				out = append(out, s[i])
+			}
+		}
+		if !more {
+			return out
+		}
+	}
 }
 
 // attempt runs one provider's lookup and logs its W14 line.
@@ -171,17 +250,35 @@ func attempt(ctx context.Context, class Class, name string, look func() (string,
 	return block
 }
 
-func weather(ctx context.Context, st *State, place string) (string, error) {
+// weather is place's WeatherBlock from today on (a memo fetched before midnight starts at yesterday, N12), else
+// from the forecast's first day when today isn't among its days.
+func weather(ctx context.Context, st *State, place string, zone *time.Location) (string, error) {
+	p, f, err := weatherData(ctx, st, place)
+	if err != nil {
+		return "", err
+	}
+	if g, ok := fromToday(f, placeToday(p, zone, weatherClock())); ok {
+		f = g
+	}
+	return WeatherBlock(p.Name, f), nil
+}
+
+// weatherData is place's geocode + forecast, from st's memo when fresh.
+func weatherData(ctx context.Context, st *State, place string) (Place, Forecast, error) {
 	if place == "" {
-		return "", errors.New("no weather place: set search.weather_place")
+		return Place{}, Forecast{}, errors.New("no weather place: set search.weather_place")
+	}
+	if p, f, ok := st.memoGet(place, time.Now()); ok {
+		return p, f, nil
 	}
 	p, err := geocode(ctx, st, place)
 	if err != nil {
-		return "", err
+		return Place{}, Forecast{}, err
 	}
 	f, err := forecast(ctx, st, p.Lat, p.Lon)
 	if err != nil {
-		return "", err
+		return Place{}, Forecast{}, err
 	}
-	return WeatherBlock(p.Name, f), nil
+	st.memoPut(place, p, f, time.Now())
+	return p, f, nil
 }

@@ -24,16 +24,20 @@ import (
 var forkVisionSay = forkSayText
 
 // forkVisionDown is DoGetImage's stream-create error hook (plan vision-setting V8): one native line, never a retry.
-func forkVisionDown(robot *vector.Vector) {
+// look (nil = none) ends before it speaks (W12).
+func forkVisionDown(robot *vector.Vector, look *forkLook) {
 	line := "I can't see right now."
 	if lang.Current() == lang.Estonian {
 		line = "Ma ei näe praegu."
 	}
+	look.End()
 	forkVisionSay(line, robot)
 }
 
-// forkPhotoActs drops a photo answer's getImage actions (V15): one photo per ask.
-func forkPhotoActs(acts []RobotAction) []RobotAction {
+// forkPhotoActs drops a photo answer's getImage actions (V15): one photo per ask. Each chunk passes here before
+// PerformActions speaks it, so the first one ends the look wait (W12).
+func forkPhotoActs(acts []RobotAction, look *forkLook) []RobotAction {
+	look.End()
 	out := acts[:0:0]
 	for _, a := range acts {
 		if a.Action != ActionGetImage {
@@ -123,7 +127,7 @@ var forkPhotoRobot = func(esn string) (*vector.Vector, error) {
 	return nil, errors.New("robot " + esn + " unknown")
 }
 
-// forkPhotoIntent answers a non-KG turn's intent request as StreamingKGSim's first sentence does; a var so tests fake it.
+// forkPhotoIntent answers a non-KG turn's intent request as forkWaitStart does on a wake-word turn; a var so tests fake it.
 var forkPhotoIntent = IntentPass
 
 // forkPhotos is each robot's last photo (2026-11-10-photo-followup.md (docs/plans/) F1, F2, F6).
@@ -246,11 +250,12 @@ func forkPhotoShot(robot *vector.Vector, l string, msgs []openai.ChatCompletionM
 
 // forkPhotoCapture is DoGetImage's capture: param forkPhotoKept with a fresh photo returns it with no mirror,
 // countdown or shutter (F4); otherwise upstream's capture, kept for follow-ups (F1). false = stopped mid-countdown.
-func forkPhotoCapture(robot *vector.Vector, param string, stop *bool) (*vectorpb.CaptureSingleImageResponse, bool) {
+func forkPhotoCapture(robot *vector.Vector, param string, stop *bool, look *forkLook) (*vectorpb.CaptureSingleImageResponse, bool) {
 	esn := robot.Cfg.SerialNo
 	if param == forkPhotoKept {
 		if s, ok := forkPhotos.Fresh(esn, forkNow()); ok {
 			logger.Println("myvector vision: kept photo " + s.Lang + ", taken " + forkNow().Sub(s.Taken).Round(time.Second).String() + " ago")
+			look.Start(nil)
 			return &vectorpb.CaptureSingleImageResponse{Data: s.JPEG}, true
 		}
 	}
@@ -267,11 +272,16 @@ func forkPhotoCapture(robot *vector.Vector, param string, stop *bool) (*vectorpb
 	}
 	resp, _ := robot.Conn.CaptureSingleImage(context.Background(), &vectorpb.CaptureSingleImageRequest{EnableHighResolution: true})
 	robot.Conn.EnableMirrorMode(context.Background(), &vectorpb.EnableMirrorModeRequest{Enable: false})
-	go robot.Conn.PlayAnimation(context.Background(), &vectorpb.PlayAnimationRequest{
-		Animation: &vectorpb.Animation{Name: "anim_photo_shutter_01"}, Loops: 1,
-	})
+	shutter := make(chan struct{})
+	go func() {
+		defer close(shutter)
+		robot.Conn.PlayAnimation(context.Background(), &vectorpb.PlayAnimationRequest{
+			Animation: &vectorpb.Animation{Name: "anim_photo_shutter_01"}, Loops: 1,
+		})
+	}()
 	if resp != nil && len(resp.Data) > 0 {
 		forkPhotos.Put(esn, resp.Data, lang.Current(), forkNow())
+		look.Start(shutter) // W12: the look face from the shutter's end until he answers
 	}
 	return resp, true
 }
@@ -282,7 +292,7 @@ func forkPhotoData(resp *vectorpb.CaptureSingleImageResponse, robot *vector.Vect
 	if resp == nil || len(resp.Data) == 0 {
 		logger.Println("myvector vision: capture failed")
 		*stop = true
-		forkVisionDown(robot)
+		forkVisionDown(robot, nil) // no data: no look started
 		return nil
 	}
 	return resp.Data
@@ -312,14 +322,14 @@ func forkPhotoEmpty(chunks []string, speakReady chan string) bool {
 
 // forkPhotoUnsaid is DoGetImage's speak-loop end: a reply that spoke no sentence (empty, or a stream error before its
 // first) gets the V8 line, unless an interrupt ended the loop.
-func forkPhotoUnsaid(spoken int, stopped <-chan struct{}, robot *vector.Vector) {
+func forkPhotoUnsaid(spoken int, stopped <-chan struct{}, robot *vector.Vector, look *forkLook) {
 	select {
 	case <-stopped:
 		return
 	default:
 	}
 	if spoken == 0 {
-		forkVisionDown(robot)
+		forkVisionDown(robot, look)
 	}
 }
 
