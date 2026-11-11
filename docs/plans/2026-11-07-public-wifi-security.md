@@ -165,6 +165,7 @@ this. The same goes for `tailscale funnel` (the guard file already warns: serve/
    Otherwise → C.
 4. **Defence in depth (from A), if wanted:** our own server cert pinned in firmware (closes T2 even on the home LAN),
    HTTPS or a shared-secret header for TTS `:8091` (T5), and auth on the web API (T4).
+   → plan (T4 only, user picked 2026-11-11): `2026-11-11-webui-auth.md (docs/plans/)`.
 
 ## Open questions for the user
 
