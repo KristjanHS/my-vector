@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -46,24 +47,29 @@ var newsAsks = []string{
 	"mis juhtus täna börsil",
 }
 
-// arm is one query shape: verbatim, N1 keywords, N1+N3 news mode, N1+N3+N7 English (SearXNG only, Q3/Q4).
+// arm is one query shape: verbatim, N1 keywords, N1+N3 news mode, N1+N3+N7 English (SearXNG only, Q3/Q4), and
+// +fb: an emptied news set retried as N1 keywords, as search.look does (N9).
 type arm struct {
 	name      string
 	q         func(ask string) search.Query
 	onlySearx bool
+	fallback  bool
+}
+
+func englishNews(a string) search.Query {
+	q := search.Query{Text: search.Keywords(a), News: search.IsNews(a)}
+	if q.News {
+		q.Text = search.English(q.Text)
+	}
+	return q
 }
 
 var arms = []arm{
-	{"verbatim", func(a string) search.Query { return search.Query{Text: a} }, false},
-	{"N1", func(a string) search.Query { return search.Query{Text: search.Keywords(a)} }, false},
-	{"N1+N3", func(a string) search.Query { return search.Query{Text: search.Keywords(a), News: search.IsNews(a)} }, false},
-	{"N1+N3+N7", func(a string) search.Query {
-		q := search.Query{Text: search.Keywords(a), News: search.IsNews(a)}
-		if q.News {
-			q.Text = search.English(q.Text)
-		}
-		return q
-	}, true},
+	{"verbatim", func(a string) search.Query { return search.Query{Text: a} }, false, false},
+	{"N1", func(a string) search.Query { return search.Query{Text: search.Keywords(a)} }, false, false},
+	{"N1+N3", func(a string) search.Query { return search.Query{Text: search.Keywords(a), News: search.IsNews(a)} }, false, false},
+	{"N1+N3+N7", englishNews, true, false},
+	{"N1+N3+N7+fb", englishNews, true, true},
 }
 
 // gateWords are the words production's N6 gate (search.look) matches results against: the keywords plus English.
@@ -173,6 +179,17 @@ func median(ms []int64) int64 {
 }
 
 // bench runs every ask through p as a's query (nil a: the ask verbatim, general mode).
+// search1 is one provider call for ask as sq, with production's N6 gate on every arm but verbatim.
+func search1(p search.Provider, sq search.Query, ask string, a *arm) ([]search.Result, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	rs, err := p.Search(ctx, sq, lang.Estonian, search.SnippetsClaude)
+	if err == nil && a != nil && a.name != "verbatim" {
+		rs = search.Relevant(rs, gateWords(ask))
+	}
+	return rs, err
+}
+
 func bench(p search.Provider, st *search.State, key, model string, asks []string, a *arm) row {
 	r := row{name: p.Name(), judged: key != ""}
 	if a != nil {
@@ -189,14 +206,12 @@ func bench(p search.Provider, st *search.State, key, model string, asks []string
 			fmt.Fprintf(os.Stderr, "%s %s: capped\n", p.Name(), r.arm)
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		start := time.Now()
-		rs, err := p.Search(ctx, sq, lang.Estonian, search.SnippetsClaude)
-		cancel()
-		ms = append(ms, time.Since(start).Milliseconds())
-		if err == nil && a != nil && a.name != "verbatim" {
-			rs = search.Relevant(rs, gateWords(q)) // score what production keeps (N6)
+		rs, err := search1(p, sq, q, a)
+		if err == nil && len(rs) == 0 && a != nil && a.fallback && sq.News && st.Take(p.Name(), time.Now()) {
+			rs, err = search1(p, search.Query{Text: search.Keywords(q)}, q, a)
 		}
+		ms = append(ms, time.Since(start).Milliseconds())
 		if err == nil && len(rs) == 0 {
 			err = errors.New("no results")
 		}
@@ -227,6 +242,7 @@ func main() {
 	names := flag.String("providers", strings.Join(search.DefaultOrder, ","), "comma-separated providers")
 	model := flag.String("judge", "claude-haiku-5-5", "Claude judge model")
 	news := flag.Bool("news", false, "score the news asks per query arm (N9) instead of the general queries")
+	only := flag.String("arms", "", "with -news: comma-separated arm names to run (default all)")
 	flag.Parse()
 	lang.Path = func() string { return *config }
 	cfg, key := search.LoadConfig(), llm.Load().ClaudeKey
@@ -246,7 +262,7 @@ func main() {
 			continue
 		}
 		for i := range arms {
-			if !arms[i].onlySearx || p.Name() == "searxng" {
+			if (!arms[i].onlySearx || p.Name() == "searxng") && (*only == "" || slices.Contains(strings.Split(*only, ","), arms[i].name)) {
 				rows = append(rows, bench(p, st, key, *model, newsAsks, &arms[i]))
 			}
 		}
@@ -291,8 +307,11 @@ func printNews(rows []row) {
 				g += " ✓"
 			}
 		}
-		late := ""
-		if r.medianMS > search.Timeout.Milliseconds() {
+		late, limit := "", search.Timeout
+		if strings.Contains(r.arm, "N3") { // news arms race under NewsTimeout (N9)
+			limit = search.NewsTimeout
+		}
+		if r.medianMS > limit.Milliseconds() {
 			late = " > timeout"
 		}
 		fmt.Printf("%s | %s | %s | %s | %s | %d%s | %d\n", r.name, r.arm, rel, dated, g, r.medianMS, late, r.errors)

@@ -351,13 +351,49 @@ func TestFillNewsRace(t *testing.T) {
 		t.Errorf("et non-news turn: searxng got %q, want the et keywords in Estonian (Q3)", g)
 	}
 
-	old := Timeout
-	Timeout = 50 * time.Millisecond
-	t.Cleanup(func() { Timeout = old })
-	slow, _ := recorder(t, tav, 200*time.Millisecond)
+	old, oldNews := Timeout, NewsTimeout
+	Timeout, NewsTimeout = 50*time.Millisecond, 300*time.Millisecond
+	t.Cleanup(func() { Timeout, NewsTimeout = old, oldNews })
+	late, _ := recorder(t, tav, 100*time.Millisecond) // past Timeout, inside NewsTimeout (N9)
+	chainConfig(t, "auto", late, sURL)
+	if got := Fill(turn1, nil, lang.Estonian, prompt.Claude, nil); !strings.Contains(got, "T1") {
+		t.Errorf("tavily past Timeout: Fill = %q, want its hits inside NewsTimeout", got)
+	}
+	slow, _ := recorder(t, tav, 600*time.Millisecond)
 	chainConfig(t, "auto", slow, sURL)
 	if got := Fill(turn1, nil, lang.Estonian, prompt.Claude, nil); !strings.Contains(got, "S1") || strings.Contains(got, "T1") {
 		t.Errorf("slow tavily: Fill = %q, want SearXNG's hits alone", got)
+	}
+}
+
+// TestFillNewsFallback: SearXNG's news set left empty by the N6 gate is retried once as the et keywords without
+// news mode (search-news-quality N9); a kept news set is not retried.
+func TestFillNewsFallback(t *testing.T) {
+	const junk = `{"results":[{"title":"Räägime asjast","url":"https://youtube.com/1","content":"YouTube"}]}`
+	const hit = `{"results":[{"title":"Pooljuhtide aktsiad langesid","url":"https://err.ee/1","content":"finantsuudiseid aktsiaturge"}]}`
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.RawQuery)
+		if r.URL.Query().Get("categories") == "news" {
+			w.Write([]byte(junk))
+			return
+		}
+		w.Write([]byte(hit))
+	}))
+	t.Cleanup(srv.Close)
+	tav, _ := fakeSearch(t, 200, junk, 0)
+	chainConfig(t, "searxng", tav, srv.URL)
+	if b := Fill(turn1, nil, lang.Estonian, prompt.Ollama, nil); !strings.Contains(b, "Pooljuhtide aktsiad") || strings.Contains(b, "Räägime") {
+		t.Errorf("emptied news set: Fill = %q, want the keyword fallback's hit", b)
+	}
+	if len(got) != 2 || !strings.Contains(got[1], "language=et") || strings.Contains(got[1], "categories=") || !strings.Contains(got[1], "semikontaktorstide") {
+		t.Errorf("searxng got %q, want the news query then the et keywords without news mode", got)
+	}
+
+	kept, keptGot := recorder(t, `{"results":[{"title":"Chip stocks","url":"https://a.com/1","content":"semiconductor financial news"}]}`, 0)
+	chainConfig(t, "searxng", tav, kept)
+	if b := Fill(turn1, nil, lang.Estonian, prompt.Ollama, nil); !strings.Contains(b, "Chip stocks") || len(keptGot()) != 1 {
+		t.Errorf("kept news set: Fill = %q, searxng got %q, want it without a retry", b, keptGot())
 	}
 }
 
@@ -383,13 +419,22 @@ func TestFillFollowUp(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	chainConfig(t, "tavily", srv.URL, srv.URL) // a news ask races both providers
+	news := func() []string {                  // the N9 keyword fallback has no time_range
+		var out []string
+		for _, b := range bodies {
+			if strings.Contains(b, "time_range") {
+				out = append(out, b)
+			}
+		}
+		return out
+	}
 	const follow = "otsi viimase pakkumise pealt, number kolm."
 	Fill(follow, []string{incident}, lang.Estonian, prompt.Ollama, nil)
-	if len(bodies) != 2 || !strings.Contains(bodies[0], "semiconductors") || !strings.Contains(bodies[1], "semiconductor") {
+	if n := news(); len(n) != 2 || !strings.Contains(n[0]+n[1], "semiconductors") {
 		t.Fatalf("follow-up after the 08:27 ask sent %q, want one query with the topic", bodies)
 	}
 	Fill(follow, []string{"otsi Nvidia aktsia hinda"}, lang.Estonian, prompt.Ollama, nil)
-	if len(bodies) != 4 || !strings.Contains(strings.ToLower(bodies[2]+bodies[3]), "nvidia") {
+	if n := news(); len(n) != 4 || !strings.Contains(strings.ToLower(n[2]+n[3]), "nvidia") {
 		t.Errorf("the same follow-up on another topic sent %q, want a second, uncached query", bodies)
 	}
 }
