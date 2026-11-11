@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
@@ -79,5 +80,27 @@ func TestForkProbeSpoken(t *testing.T) {
 		if got := forkProbeSpoken(c.answer, c.cut, rep); got != c.want {
 			t.Errorf("%s: %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+// A templated et weather turn answers the probe with its canned reply and no LLM call.
+func TestForkProbeLLMCanned(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++ }))
+	t.Cleanup(srv.Close)
+	lang.UseForTest(t, lang.Estonian)
+	useKnowledge(t, "custom", ollamaEndpoint, "qwen3.5:4b")
+	vars.APIConfig.Knowledge.Enable, vars.APIConfig.Knowledge.IntentGraph = true, true
+	useBotClock(t, "Europe/Tallinn")
+	saveLLM(t, lang.Estonian, llm.Config{OllamaURL: srv.URL, Profiles: map[string]llm.Profile{lang.Estonian: {Provider: llm.Ollama, Model: "qwen3.5:4b"}}})
+	oldS, oldW := forkSearch, forkWeatherTemplate
+	t.Cleanup(func() { forkSearch, forkWeatherTemplate = oldS, oldW; forkCanned.Delete("esn") })
+	forkSearch = func(string, []string, string, string, *time.Location) string { return "" }
+	forkWeatherTemplate = func(string, string, func(string) string, *time.Location) (string, bool) {
+		return "Homme on Tallinnas kaks kraadi sooja.", true
+	}
+	res, err := ForkProbeLLMFull(context.Background(), "kas homme sajab?", "esn")
+	if err != nil || res.RawAnswer != "Homme on Tallinnas kaks kraadi sooja." || calls != 0 {
+		t.Errorf("probe = %+v, %v after %d LLM calls; want the canned reply, no call", res, err, calls)
 	}
 }

@@ -95,7 +95,17 @@ func ForkProbeLLMFull(ctx context.Context, transcribedText, esn string) (ForkPro
 	}
 	r := CreateAIReq(transcribedText, esn, false, false)
 	r.Stream = false
-	rep := forkRepeatFilter(esn) // the stream goroutine's G2 snapshot: the chat before this turn
+	rep := forkRepeatFilter(esn)             // the stream goroutine's G2 snapshot: the chat before this turn
+	r, opener, pre := forkPrefillFor(r, esn) // forkLLMStream's news-ask opener (fork_prefill.go)
+	if pre {
+		res.Target += " (prefill " + opener + ")"
+	}
+	if cs, ok := forkCannedStreamFor(r, esn); ok { // forkLLMStream's templated weather turn: no LLM call
+		res.Target += " (weather template, no LLM)"
+		res.Finish, res.RawAnswer = string(openai.FinishReasonStop), cs.text
+		res.Answer = forkProbeSpoken(removeSpecialCharacters(res.RawAnswer), false, rep)
+		return res, nil
+	}
 	start := time.Now()
 	resp, err := c.CreateChatCompletion(ctx, r)
 	res.Dur = time.Since(start)
@@ -108,6 +118,9 @@ func ForkProbeLLMFull(ctx context.Context, transcribedText, esn string) (ForkPro
 	}
 	res.Finish = string(resp.Choices[0].FinishReason)
 	res.RawAnswer = resp.Choices[0].Message.Content
+	if pre {
+		res.RawAnswer = forkJoinOpener(opener, res.RawAnswer)
+	}
 	res.Reasoning = resp.Choices[0].Message.ReasoningContent
 	var raw struct {
 		Choices []struct {

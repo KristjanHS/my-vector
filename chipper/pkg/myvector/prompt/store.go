@@ -48,7 +48,7 @@ func Budget(brain string) int {
 // SearchBudget is the token ceiling for brain's {search} block (plan web-search W9).
 func SearchBudget(brain string) int {
 	if IsOllama(brain) {
-		return 300
+		return 340 // the N5 usage rule counts inside the block (search-news-quality Q5)
 	}
 	return 800
 }

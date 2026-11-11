@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
 	"sync"
 	"testing"
 	"time"
@@ -69,6 +70,7 @@ func TestForkPromptEnglishNow(t *testing.T) {
 	r := CreateAIReq("what day is it", "esn", false, true)
 	want := prompt.Render(prompt.Default(prompt.Ollama), prompt.Vars{
 		Now: "It is Saturday, 7 November 2026, 16:43 (Asia/Tokyo).", Speech: prompt.SpeechBlock(prompt.Ollama),
+		Search: prompt.NoSearch(prompt.Ollama),
 	})
 	if r.Model != "qwen3.5:4b" || r.Messages[0].Content != want {
 		t.Errorf("English request: model %q, prompt %q", r.Model, r.Messages[0].Content)
@@ -200,7 +202,7 @@ func TestForkPromptReplyCapProfile(t *testing.T) {
 func TestForkPhotoActs(t *testing.T) {
 	acts := GetActionsFromString("{{playAnimationWI||happy}} I see a cup. {{getImage||front}} Nice!")
 	var kinds []int
-	for _, a := range forkPhotoActs(acts) {
+	for _, a := range forkPhotoActs(acts, nil) {
 		kinds = append(kinds, a.Action)
 	}
 	if fmt.Sprint(kinds) != fmt.Sprint([]int{ActionPlayAnimationWI, ActionSayText, ActionSayText}) {
@@ -331,7 +333,7 @@ func TestForkAIReqSearch(t *testing.T) {
 	t.Cleanup(func() { forkSearch = old })
 	var got []string
 	block := ""
-	forkSearch = func(sentence, l, brain string, zone *time.Location) string {
+	forkSearch = func(sentence string, prev []string, l, brain string, zone *time.Location) string {
 		got = []string{sentence, l, brain, zone.String()}
 		return block
 	}
@@ -343,13 +345,17 @@ func TestForkAIReqSearch(t *testing.T) {
 	if want := prompt.Render(prompt.Default(prompt.OllamaEt), prompt.Vars{
 		Now:  "Praegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn).",
 		Lang: prompt.LangLine(prompt.OllamaEt, lang.Estonian), Speech: prompt.SpeechBlock(prompt.OllamaEt),
-	}); empty != want {
-		t.Errorf("empty search left residue:\n%q\nwant\n%q", empty, want)
+		Search: prompt.NoSearch(prompt.OllamaEt),
+	}); empty != want || prompt.NoSearch(prompt.OllamaEt) == "" || prompt.NoSearch(prompt.Claude) != "" {
+		t.Errorf("an empty search renders other than NoSearch (Ollama only):\n%q\nwant\n%q", empty, want)
 	}
 
 	block = "Live weather in Tallinn (Open-Meteo):\nNow: 3°C, overcast, wind 9 km/h."
-	if c := CreateAIReq("mis ilm homme on?", "esn", false, true).Messages[0].Content; !strings.Contains(c, block) {
-		t.Errorf("search block missing from the system prompt: %q", c)
+	if c := CreateAIReq("mis ilm homme on?", "esn", false, true).Messages[0].Content; !strings.Contains(c, block) || strings.Contains(c, prompt.NoSearch(prompt.OllamaEt)) {
+		t.Errorf("search block missing, or NoSearch beside it, in the system prompt: %q", c)
+	}
+	if c := forkSystem("esn", "mida sa näed?", lang.Estonian, prompt.OllamaEt, "", true); strings.Contains(c, prompt.NoSearch(prompt.OllamaEt)) {
+		t.Errorf("a photo answer's prompt carries NoSearch: %q", c)
 	}
 }
 
@@ -373,6 +379,7 @@ func TestForkAIReqMemory(t *testing.T) {
 	if want := prompt.Render(prompt.Default(prompt.OllamaEt), prompt.Vars{
 		Now:  "Praegu on laupäev, 7. november 2026, kell 9:43 (Europe/Tallinn).",
 		Lang: prompt.LangLine(prompt.OllamaEt, lang.Estonian), Speech: prompt.SpeechBlock(prompt.OllamaEt),
+		Search: prompt.NoSearch(prompt.OllamaEt),
 	}); empty != want {
 		t.Errorf("empty memory left residue:\n%q\nwant\n%q", empty, want)
 	}

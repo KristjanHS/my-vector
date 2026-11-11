@@ -62,6 +62,11 @@ func TestWeather(t *testing.T) {
 	if got := WeatherBlock("Tallinn", f); got != want {
 		t.Errorf("WeatherBlock =\n%s\nwant\n%s", got, want)
 	}
+	short := f
+	short.Daily.Min, short.Daily.Precip = f.Daily.Min[:2], f.Daily.Precip[:1]
+	if got := WeatherBlock("Tallinn", short); got != want[:strings.Index(want, "\nTomorrow")] {
+		t.Errorf("WeatherBlock(unequal daily arrays) =\n%s\nwant only the days every array covers", got)
+	}
 
 	fakeMeteo(t, 200, `{}`)
 	if _, err := Geocode(ctx, "Nowhere"); err == nil {

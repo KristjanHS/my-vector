@@ -3,7 +3,7 @@
 **Goal**: whenever the robot waits on wire-pod (web search, LLM reply, vision model, any other slow fetch), his screen
 shows a visual that fits the wait, such as "searching" or "thinking", and he makes **no sound** until the answer starts.
 The wake chime before the wait and the spoken answer after it stay as they are.
-**Status**: 🔨 Stage 2b code done 2026-11-11 (unshipped; USER ship + sound check owed); Stage 3 next.
+**Status**: ✅ SHIPPED (code through a264235, 2026-11-11); robot ship + Stage 2b/3/4 live checks → `docs/backlog.md` §OWED[USER] "Silent wait live"; W11 answer face → §Assistant-owed.
 
 ## Today (audit 2026-11-10)
 
@@ -27,12 +27,13 @@ Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS)
 | W3 | Face (user 11-10): `anim_avs_think_loop_01` (−99) for every kind until C; search face `anim_knowledgegraph_searching_01` only after C; look face unpicked (think until then). Out: `explorer_planning_idle_01`, `rtsound_oncharger_observe_front_01`, `eyepose_curious` (blank face), `lookatdevice_icon` (−18.3) | `fork_wait.go` |
 | W4 | One wait loop for every path: `forkWait(robot, kind)` with `kind` ∈ {search, think, look}, changeable while it runs. It ends before `TTSGetinAnimation`, on the LLM-error path (`KGSim` error line), and on an interrupt | new `chipper/pkg/wirepod/ttr/fork_wait.go`; `kgsim.go` loop → one `forkWait` call (drift-listed) |
 | W5 | Kind switches: `forkSearch` start → search; search done / LLM stream open → think; photo turn after "Let me look." → look | hook in `fork_prompt.go` around `forkSearch`; `fork_vision.go` |
-| W6 | Wake-word turns (`!isKG`) get the wait too: send `IntentPass(intent_greeting_hello)` + `forkBControl` at stream open, not at the first sentence (as `forkPhotoTurn` does). `[AUDIT]` that an early intent doesn't cut vic-engine's listen or the follow-up arm (`fork_followup.go`) | `kgsim.go` `StreamingKGSim` |
+| W6 | Wake-word turns (`!isKG`) get the wait too, think face until W5 (user 11-11): `IntentPass(intent_greeting_hello)` + `forkBControl` at wait start (`forkPhotoTurn`'s order); a later `intent_system_unmatched` on that request sends nothing | `fork_wait.go` `forkWaitStart`; `forkIntentPass` |
 | W7 | Out of scope: weather and other intent-path answers (no LLM wait) | — |
 | W8 | Done = wait window (end of speech → getout start, else first TTS sample) has 0 s above −45 dBFS, visual on screen throughout; getout keeps its sound (user 2026-11-10) | Stage 4 |
 | W9 | Getout no louder than speech at the same master (user 11-10): holds today, no change. Falsifier: `anim.sh` getout loud50ms ≤ `pcvoice.sh` stock loud50ms | — |
 | W10 | KG loop: clip posts `Play__Robot_Vic_Sfx__Knowledge_Graph_Searching_Loop_Play`, getout posts `Stop__…_Searching_Loop_Stop`. Console `PostAudioEvent` Stop every 0.2 s on obj 4 and obj 1: loop survives (`loopstop.sh`, after −42.5). Next: (C) drop that Play in vic-anim, or getout-to-stop; user hears it in every KG wait | `0022-silent-wait.patch` / `fork_wait.go` |
 | W11 | Answer face (A, user 11-10): `commands_enable` on skips `TTSLoopAnimation`, so the face is blank while he answers. Play the loop with commands on, paused while an LLM `{{playAnimation}}` cue plays; first `anim.sh` `anim_tts_loop_02` + `anim_knowledgegraph_answer_01` silent | `kgsim.go` TTS loop (drift-listed) |
+| W12 | Stage 4 contract (user 11-11): every wait opens on think; search face only while `Fill` runs (back to think when it returns), so a no-lookup KG turn never shows it. Photo (re-asked 11-11: the pre-"Let me look." gap is ~0 s once control lands, and a think wait would delay that line by up to a clip): no wait face before "Let me look." or during countdown/mirror/shutter (camera owns the face); look from shutter done (kept photo: at capture) to the first vision sentence, a fallback line, or DoGetImage's return. Look face: measure `anim_meetvictor_lookface_timeout_01` (sound test, ask first); adopt only if −99 and it fits, else think + backlog. Seam: per-esn registry for StreamingKGSim's wait (`forkSearching` sets it); the photo look is a per-DoGetImage `forkLook` handle (review of b1c4568: an esn registry let a later turn's wait shadow it, leaving the look looping), ended on interrupt too. Its End waits for the in-flight clip (≤ one clip, bounded 3 s) before the first vision sentence | `fork_wait.go`, `fork_prompt.go`, `fork_vision.go` |
 
 ## Checklist
 
@@ -55,14 +56,17 @@ Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS)
 - [ ] USER: ship firmware; `anim.sh` kg searching −99 during and after (sound test → ask first, `scan.sh` after).
 
 ### Stage 3: wake-word path (W6)
-- [ ] Early `IntentPass` + control; unit test the order (intent → control → wait → getin); live check that follow-up still arms.
+- [x] `forkWaitStart` (intent → control → think wait) for both kinds; unit test intent first, think face, M4 no intent episode, the unspoken-turn end and the unmatched skip.
+- [ ] USER live (sound test → ask first): follow-up still arms; the first-sentence −10 burst does not move into the wait (W8).
 
 ### Stage 4: per-kind visuals (W5) + photo (W4 look)
-- [ ] Kind switches at search start/end and in the photo turn; unit test the switch order.
+- [x] Kind switches per W12: registry (`forkWaits`), `forkSearching`, photo look wait (`forkLookStart`, ends in `forkPhotoActs`/`forkVisionDown`/DoGetImage defer); `TestForkSearchingFace`, `TestForkLookWait`.
+- [x] Look face: `anim.sh` `anim_meetvictor_lookface_timeout_01` base:shipped 11-11 = peak −18.7, loud50ms −27.6 (loud; scan clean) → look stays think (W12 rule).
 - [ ] Live W8 check per kind (sound test → ask first, `scan.sh` after).
 
 ### Backlog (re-pick after each stage)
 - W3-B drawn face frames.
+- A silent look face (lookface_timeout_01 is −18.7); candidates need `anim.sh` first.
 - W11 answer-face loop.
 - Same wait for the relay/camera path (`fork_relay.go`) if it has a visible gap.
 
