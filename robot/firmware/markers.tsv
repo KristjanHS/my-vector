@@ -89,3 +89,6 @@
 0021-sdk-audio-prepare-race.patch	src	animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp	IsPreparedStream("Cancel", msg.stream_id, false)
 0021-sdk-audio-prepare-race.patch	src	animProcess/src/cozmoAnim/audio/sdkAudioComponent.cpp	dropped: stream %u is prepared
 0021-sdk-audio-prepare-race.patch	bin	bin/vic-anim	dropped: stream %u is prepared
+0022-silent-wait.patch	src	animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp	CONSOLE_VAR( bool, kMyVectorSilentWait, "Audio.Controller", true );
+0022-silent-wait.patch	src	animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp	IsMutedWaitLoop( AudioMetaData::GameEvent::EnumToString
+0022-silent-wait.patch	bin	bin/vic-anim	my-vector.SilentWait

@@ -2,6 +2,9 @@ package wirepod_ttr
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"sync"
@@ -149,10 +152,75 @@ func TestForkWaitHook(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i, line := range strings.Split(string(src), "\n") {
-			if !strings.HasPrefix(strings.TrimSpace(line), "//") && strings.Contains(line, `"anim_knowledgegraph_searching_01"`) {
-				t.Errorf("%s:%d plays anim_knowledgegraph_searching_01 (its loop sfx outlives the wait, W10)", f.Name(), i+1)
+			face := f.Name() == "fork_wait.go" && strings.HasPrefix(line, "const forkWaitSearchFace = ")
+			if !face && !strings.HasPrefix(strings.TrimSpace(line), "//") && strings.Contains(line, `"anim_knowledgegraph_searching_01"`) {
+				t.Errorf("%s:%d plays anim_knowledgegraph_searching_01 outside forkWaitFace (loop sfx without 0022, W10)", f.Name(), i+1)
 			}
 		}
+	}
+}
+
+// Search shows the searching face only when the robot reports MyVectorSilentWait on; think and look never do.
+func TestForkWaitSearchFaceOnlyOnSilentRobot(t *testing.T) {
+	shortWaitGap(t)
+	old := forkSilentWaitOn
+	t.Cleanup(func() { forkSilentWaitOn = old })
+	for _, on := range []bool{true, false} {
+		forkSilentWaitOn = func(esn string) bool { return on && esn == "00e6" }
+		for _, kind := range []forkWaitKind{forkWaitSearch, forkWaitThink, forkWaitLook} {
+			b := &waitBot{controlBot: &controlBot{}}
+			robot := &vector.Vector{Conn: b}
+			robot.Cfg.SerialNo = "00e6"
+			stopLooping, ready := false, make(chan bool)
+			forkWait(robot, kind, &stopLooping, ready)
+			b.waitPlays(t, 3)
+			stopLooping = true
+			receiveReady(t, ready)
+			want := "anim_avs_think_loop_01"
+			if on && kind == forkWaitSearch {
+				want = "anim_knowledgegraph_searching_01"
+			}
+			for _, name := range b.played() {
+				if name != want {
+					t.Fatalf("silent=%v kind=%d played %q, want only %q", on, kind, name, want)
+				}
+			}
+		}
+	}
+}
+
+// Only an exact "true" from vic-anim's console turns the searching face on; a missing var, error or timeout reads off.
+func TestForkSilentWaitRead(t *testing.T) {
+	old := forkSilentWaitTimeout
+	forkSilentWaitTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { forkSilentWaitTimeout = old })
+	for _, c := range []struct {
+		body   string
+		status int
+		delay  time.Duration
+		want   bool
+	}{
+		{"true<br>\n", 200, 0, true},
+		{"false<br>\n", 200, 0, false},
+		{"Variable not found<br>\n", 200, 0, false},
+		{"true<br>\n", 500, 0, false},
+		{"true<br>\n", 200, 200 * time.Millisecond, false},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/consolevarget" || r.URL.Query().Get("key") != "MyVectorSilentWait" {
+				t.Errorf("console got %s, want /consolevarget?key=MyVectorSilentWait", r.URL)
+			}
+			time.Sleep(c.delay)
+			w.WriteHeader(c.status)
+			io.WriteString(w, c.body)
+		}))
+		if got := forkSilentWaitRead(srv.URL); got != c.want {
+			t.Errorf("body %q status %d delay %v: read %v, want %v", c.body, c.status, c.delay, got, c.want)
+		}
+		srv.Close()
+	}
+	if forkSilentWaitRead("http://127.0.0.1:1") {
+		t.Error("an unreachable console read on")
 	}
 }
 

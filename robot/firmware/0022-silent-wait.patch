@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Kristjan Sillmann <kristjan.h.s@gmail.com>
+Date: Wed, 11 Nov 2026 06:54:44 +0200
+Subject: [PATCH] silent-wait
+
+vic-anim (plan 2026-11-10-silent-wait-visuals W2-C, W10): CozmoAudioController drops
+Play__Robot_Vic_Sfx__Knowledge_Graph_Searching_Loop_Play at post time (both PostAudioEvent overloads), so
+anim_knowledgegraph_searching_01 shows its face with no loop sfx; the getout's Stop still posts. Console var
+Audio.Controller MyVectorSilentWait (default true) restores the loop live; wire-pod reads it and plays the
+searching face only while it is on. Logs my-vector.SilentWait.
+---
+ .../src/cozmoAnim/audio/cozmoAudioController.cpp | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp b/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
+index 9e35b495..ce0b6b6d 100644
+--- a/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
++++ b/animProcess/src/cozmoAnim/audio/cozmoAudioController.cpp
+@@ -92,6 +92,16 @@ bool IsMutedEyeChime( const char* eventName )
+   return false;
+ }
+ 
++// my-vector silent-wait W10: the KG searching clip's loop sfx is dropped at post time; its getout Stop still posts.
++// wire-pod reads this var (consolevarget key=MyVectorSilentWait) and plays the searching face only while it is on.
++CONSOLE_VAR( bool, kMyVectorSilentWait, "Audio.Controller", true );
++
++bool IsMutedWaitLoop( const char* eventName )
++{
++  return kMyVectorSilentWait && nullptr != eventName &&
++         0 == fnmatch( "Play__Robot_Vic_Sfx__Knowledge_Graph_Searching_Loop_Play", eventName, 0 );
++}
++
+ // Null-safe wrapper for Anki::AudioMetaData::EnumToString()
+ std::string ToString(Anki::AudioMetaData::GameObjectType v)
+ {
+@@ -417,6 +427,7 @@ CozmoAudioController::CozmoAudioController( const Anim::AnimContext* context )
+     SetParameter( ToAudioParameterId( APT::Robot_Vic_Volume_Animation ), 0.1f, kInvalidAudioGameObject );
+     PRINT_NAMED_WARNING("my-vector.SpeechVolume", "Robot_Vic_Volume_Animation=0.1");
+     PRINT_NAMED_WARNING("my-vector.EyeChimes", "MuteEyeChimes=%d", kMuteEyeChimes ? 1 : 0);
++    PRINT_NAMED_WARNING("my-vector.SilentWait", "MyVectorSilentWait=%d", kMyVectorSilentWait ? 1 : 0);
+   }
+   if (sThis == nullptr) {
+     sThis = this;
+@@ -627,7 +638,7 @@ AudioPlayingId CozmoAudioController::PostAudioEvent( const std::string& eventNam
+                                                      AudioGameObject gameObjectId,
+                                                      AudioCallbackContext* callbackContext )
+ {
+-  if ( IsMutedEyeChime( eventName.c_str() ) ) {
++  if ( IsMutedEyeChime( eventName.c_str() ) || IsMutedWaitLoop( eventName.c_str() ) ) {
+     Util::SafeDelete( callbackContext );
+     return kInvalidAudioPlayingId;
+   }
+@@ -659,7 +670,8 @@ AudioPlayingId CozmoAudioController::PostAudioEvent( AudioEventId eventId,
+                                                      AudioCallbackContext* callbackContext )
+ {
+   using GenericEvent = AudioMetaData::GameEvent::GenericEvent;
+-  if ( IsMutedEyeChime( AudioMetaData::GameEvent::EnumToString( static_cast<GenericEvent>( eventId ) ) ) ) {
++  if ( IsMutedEyeChime( AudioMetaData::GameEvent::EnumToString( static_cast<GenericEvent>( eventId ) ) ) ||
++       IsMutedWaitLoop( AudioMetaData::GameEvent::EnumToString( static_cast<GenericEvent>( eventId ) ) ) ) {
+     Util::SafeDelete( callbackContext );
+     return kInvalidAudioPlayingId;
+   }

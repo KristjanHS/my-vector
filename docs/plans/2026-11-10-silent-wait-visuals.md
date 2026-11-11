@@ -3,7 +3,7 @@
 **Goal**: whenever the robot waits on wire-pod (web search, LLM reply, vision model, any other slow fetch), his screen
 shows a visual that fits the wait, such as "searching" or "thinking", and he makes **no sound** until the answer starts.
 The wake chime before the wait and the spoken answer after it stay as they are.
-**Status**: 🔨 Stage 2 done 2026-11-10 (KG wait = think face, unshipped); Stage 2b next.
+**Status**: 🔨 Stage 2b code done 2026-11-11 (unshipped; USER ship + sound check owed); Stage 3 next.
 
 ## Today (audit 2026-11-10)
 
@@ -50,8 +50,9 @@ Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS)
 - [x] `make check`; commit. User ships (`make syncwt`, `make ship`).
 
 ### Stage 2b: firmware `0022` (W2-C, W10)
-- [ ] vic-anim drops `Play__Robot_Vic_Sfx__Knowledge_Graph_Searching_Loop_Play`; `fork_wait.go` search face → `anim_knowledgegraph_searching_01`.
-- [ ] Ship firmware; `anim.sh` kg searching −99 during and after (sound test → ask first, `scan.sh` after).
+- [x] vic-anim drops `Play__Robot_Vic_Sfx__Knowledge_Graph_Searching_Loop_Play` while `kMyVectorSilentWait` (default on); local `build-v.sh` green, export, `markers.tsv` rows.
+- [x] `fork_wait.go`: search face `anim_knowledgegraph_searching_01` only when `consolevarget?key=MyVectorSilentWait` says on; off/missing/error → think (user 11-11).
+- [ ] USER: ship firmware; `anim.sh` kg searching −99 during and after (sound test → ask first, `scan.sh` after).
 
 ### Stage 3: wake-word path (W6)
 - [ ] Early `IntentPass` + control; unit test the order (intent → control → wait → getin); live check that follow-up still arms.
@@ -71,5 +72,5 @@ Probes: `robot/volume-probe/anim.sh` (per-anim dBFS), `idle.sh` (s > −45 dBFS)
 - Live: W1's baseline capture is loud (shows the check can fail); after the change the same capture shows 0 s above −45 dBFS.
 
 ## Rollback
-C: consolevar `kMyVectorSilentWait` off, or redeploy
+C: `:8889/consolevarset?key=MyVectorSilentWait&value=false` (wire-pod falls back to the think face), or redeploy
 without `0022`. wire-pod: revert `fork_wait.go` and the `kgsim.go` call.
