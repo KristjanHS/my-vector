@@ -1,6 +1,6 @@
 # Web-UI auth on :80 / :8080 (T4)
 
-Status: planned, not started. Executes item 4 of `2026-11-07-public-wifi-security.md (docs/plans/)` §Recommended plan,
+Status: Stages 1–2 committed (not shipped — no `make ship`/`make server-pin` before Stage 3.2); next Stage 3.1. Executes item 4 of `2026-11-07-public-wifi-security.md (docs/plans/)` §Recommended plan,
 T4 part only ("auth on the web API"). Out of scope: TTS :8091, chipper gRPC :443/:8084 (and its private `/ok` mux),
 hotspot/router. The nft guard (`scripts/wire-pod-guard.nft`) stays as the outer layer. Every `[USER]` step is a live run:
 Claude asks first. A step that makes robot sound runs only after `robot/quiet/quiet.sh status` ≠ 3 and the user's yes,
