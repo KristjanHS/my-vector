@@ -17,7 +17,7 @@ allowed_edits=(
   chipper/pkg/wirepod/ttr/words2num.go   # words2num input = forkTimerText(...) — et-EE timer forms (fork_timer.go); whole file gofmt-ed 2026-11-10 (fork edits it often — expect whitespace conflicts on upstream merges)
   chipper/pkg/wirepod/ttr/weather.go     # weatherParser apiLocation = forkWeatherLocation(...) — et-EE city word; getWeather returns forkGetWeather(...) first — weatherapi forecast + Open-Meteo race (fork_weather.go)
   chipper/pkg/wirepod/preqs/server.go    # sttHandler = forkMicCapture(forkSTTRouter(...)) — wake-turn start stamp + mic capture (fork_miccap.go) + et-EE STT router (fork_stt.go)
-  chipper/webroot/index.html             # nav links to the fork pages /myvector/voice (myvector/voice), /myvector/prompt (myvector/prompt) and /myvector/wifi (myvector/wifi)
+  chipper/webroot/index.html             # nav links to the fork pages /myvector/voice (myvector/voice), /myvector/prompt (myvector/prompt) and /myvector/wifi (myvector/wifi), and the /myvector/logout link (myvector/webauth)
   chipper/pkg/initwirepod/startserver.go # non-android TLS pair = vars.CertPath/KeyPath (fork_paths.go: secrets/server/certs), was ../certs; EPConfig pair = forkEpodCert() (fork_epod.go)
   .dockerignore                          # + secrets, certs (never bake keys into an image)
   chipper/pkg/logger/logger.go           # LogUI/LogTray update the log globals under forkLogMu (fork_logger.go) — goroutines logged concurrently (race)
