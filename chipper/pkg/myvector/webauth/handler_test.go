@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +27,10 @@ func testGuard(t *testing.T) (*guard, *Store) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "*")
 		w.Write([]byte("stub"))
+	})
+	stub.HandleFunc("/api/nowrite", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
 	})
 	return newGuard(s, stub), s
 }
@@ -106,7 +111,8 @@ func TestHandlerTable(t *testing.T) {
 }
 
 func TestSafeNext(t *testing.T) {
-	for in, want := range map[string]string{"/a?b=1": "/a?b=1", "//evil": "/", `/\evil`: "/", "http://evil": "/", "": "/", "evil": "/"} {
+	for in, want := range map[string]string{"/a?b=1": "/a?b=1", "//evil": "/", `/\evil`: "/", "http://evil": "/", "": "/", "evil": "/",
+		`/./\evil.com`: "/", "/\t/evil.com": "/", "/\n/evil.com": "/", "/\x7f": "/", "/a/..//evil": "/a/..//evil"} {
 		if got := safeNext(in); got != want {
 			t.Errorf("safeNext(%q) = %q, want %q", in, got, want)
 		}
@@ -121,6 +127,10 @@ func TestAPIDropsCORS(t *testing.T) {
 	}
 	if w.Body.String() != "stub" {
 		t.Errorf("body %q", w.Body.String())
+	}
+	w = g.do(req{target: "/api/nowrite", hdr: map[string]string{"Authorization": "Bearer " + testTok}})
+	if v := w.Result().Header.Get("Access-Control-Allow-Origin"); v != "" {
+		t.Errorf("/api/ handler that never wrote keeps CORS: %q", v)
 	}
 	w = g.do(req{target: "/ok"})
 	if w.Header().Get("Access-Control-Allow-Origin") != "*" {
@@ -158,6 +168,10 @@ func TestLoginSetsStrictCookie(t *testing.T) {
 	w = g.do(req{method: "POST", target: LoginPath, body: loginForm(testPW, "//evil"), hdr: map[string]string{"Origin": "http://localhost:8080"}})
 	if w.Header().Get("Location") != "/" {
 		t.Errorf("login next //evil → %q", w.Header().Get("Location"))
+	}
+	w = g.do(req{method: "POST", target: LoginPath, body: loginForm(testPW, `/./\evil.com`), hdr: map[string]string{"Origin": "http://localhost:8080"}})
+	if w.Header().Get("Location") != "/" {
+		t.Errorf(`login next /./\evil.com → %q`, w.Header().Get("Location"))
 	}
 	w = g.do(req{method: "POST", target: LoginPath, body: loginForm(testPW, "/"), hdr: map[string]string{"Origin": "http://evil.example"}})
 	if w.Code != 403 || len(w.Result().Cookies()) != 0 {
@@ -231,5 +245,42 @@ func TestLogoutClearsCookie(t *testing.T) {
 	}
 	if len(c) != 1 || c[0].Name != CookieName || !strings.Contains(w.Header().Get("Set-Cookie"), "Max-Age=0") {
 		t.Errorf("logout Set-Cookie %q", w.Header().Get("Set-Cookie"))
+	}
+}
+
+func TestLoginParallelLimit(t *testing.T) {
+	g, _ := testGuard(t)
+	g.sem = make(chan struct{}, 64) // isolate the limiter from load shedding
+	own := map[string]string{"Origin": "http://localhost:8080"}
+	var wg sync.WaitGroup
+	codes := make(chan int, LoginFailMax+20)
+	for i := 0; i < LoginFailMax+20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes <- g.do(req{method: "POST", target: LoginPath, body: loginForm("bad", "/"), hdr: own}).Code
+		}()
+	}
+	wg.Wait()
+	close(codes)
+	tried := 0
+	for c := range codes {
+		if c != 429 {
+			tried++
+		}
+	}
+	if tried > LoginFailMax {
+		t.Errorf("%d parallel guesses got a password check, want <= %d", tried, LoginFailMax)
+	}
+}
+
+func TestLoginBusy(t *testing.T) {
+	g, _ := testGuard(t)
+	for i := 0; i < LoginConcurrent; i++ {
+		g.sem <- struct{}{}
+	}
+	w := g.do(req{method: "POST", target: LoginPath, body: loginForm(testPW, "/"), hdr: map[string]string{"Origin": "http://localhost:8080"}})
+	if w.Code != 429 || w.Header().Get("Retry-After") != "1" {
+		t.Errorf("login with %d checks in flight: %d, want 429", LoginConcurrent, w.Code)
 	}
 }
