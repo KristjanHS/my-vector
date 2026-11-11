@@ -1,5 +1,7 @@
 # Native photo follow-up — ask about a photo taken with "pildista" / "take a selfie"
 
+Status: ✅ SHIPPED (code on main; live check → `docs/backlog.md` §OWED[USER])
+
 Goal: after the robot's own `intent_photo_take_extend` photo, "hey vector, mis pildi peal on?" is answered from THAT
 photo by the vision model (2026-11-10-photo-followup.md (docs/plans/) store + kept-photo path), with no new capture.
 
