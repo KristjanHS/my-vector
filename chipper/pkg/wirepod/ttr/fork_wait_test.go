@@ -133,7 +133,7 @@ func TestForkWaitStopsOnInterrupt(t *testing.T) {
 	assertWaitEnded(t, b)
 }
 
-// kgsim.go's isKG branch is the one forkWait call; no non-comment line of the package plays the searching loop.
+// kgsim.go's isKG branch is the one forkWait call; no non-comment line names the searching anim but forkWaitSearchFace.
 func TestForkWaitHook(t *testing.T) {
 	b, err := os.ReadFile("kgsim.go")
 	if err != nil {

@@ -6,7 +6,7 @@ Subject: [PATCH] silent-wait
 vic-anim (plan 2026-11-10-silent-wait-visuals W2-C, W10): CozmoAudioController drops
 Play__Robot_Vic_Sfx__Knowledge_Graph_Searching_Loop_Play at post time (both PostAudioEvent overloads), so
 anim_knowledgegraph_searching_01 shows its face with no loop sfx; the getout's Stop still posts. Console var
-Audio.Controller MyVectorSilentWait (default true) restores the loop live; wire-pod reads it and plays the
+Audio.Controller MyVectorSilentWait (default true; false restores the loop live); wire-pod reads it and plays the
 searching face only while it is on. Logs my-vector.SilentWait.
 ---
  .../src/cozmoAnim/audio/cozmoAudioController.cpp | 16 ++++++++++++++--
