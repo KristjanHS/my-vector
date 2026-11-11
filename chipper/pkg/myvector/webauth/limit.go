@@ -10,6 +10,7 @@ const (
 	LoginWindow     = 15 * time.Minute
 	LoginFailGlobal = 30 // all IPs per LoginWindow
 	MaxLoginBody    = 4 << 10
+	LoginConcurrent = 4 // parallel bcrypt checks; more → 429
 )
 
 type limiter struct {
@@ -28,8 +29,9 @@ func recent(ts []time.Time, now time.Time) []time.Time {
 	return ts[i:]
 }
 
-// wait is how long ip must wait before its next try; 0 = allowed.
-func (l *limiter) wait(ip string, now time.Time) time.Duration {
+// try reserves a login attempt for ip, counted as a failure until forgive; >0 = refused, wait that long.
+// Check and record share one lock, so parallel posts cannot all pass before any failure lands.
+func (l *limiter) try(ip string, now time.Time) time.Duration {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.global = recent(l.global, now)
@@ -48,12 +50,9 @@ func (l *limiter) wait(ip string, now time.Time) time.Duration {
 			d = g
 		}
 	}
-	return d
-}
-
-func (l *limiter) fail(ip string, now time.Time) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	if d > 0 {
+		return d
+	}
 	l.perIP[ip] = append(l.perIP[ip], now)
 	l.global = append(l.global, now)
 	if len(l.perIP) > 4096 { // spray of IPs: keep the map bounded
@@ -63,4 +62,22 @@ func (l *limiter) fail(ip string, now time.Time) {
 			}
 		}
 	}
+	return 0
+}
+
+// forgive drops the attempt try(ip, now) reserved (a successful login).
+func (l *limiter) forgive(ip string, now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.perIP[ip] = dropLast(l.perIP[ip], now)
+	l.global = dropLast(l.global, now)
+}
+
+func dropLast(ts []time.Time, t time.Time) []time.Time {
+	for i := len(ts) - 1; i >= 0; i-- {
+		if ts[i].Equal(t) {
+			return append(ts[:i], ts[i+1:]...)
+		}
+	}
+	return ts
 }

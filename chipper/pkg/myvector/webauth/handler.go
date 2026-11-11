@@ -41,11 +41,12 @@ type guard struct {
 	store *Store // nil = fail closed
 	next  http.Handler
 	lim   *limiter
+	sem   chan struct{} // bcrypt checks in flight
 	now   func() time.Time
 }
 
 func newGuard(s *Store, next http.Handler) *guard {
-	return &guard{store: s, next: next, lim: newLimiter(), now: time.Now}
+	return &guard{store: s, next: next, lim: newLimiter(), sem: make(chan struct{}, LoginConcurrent), now: time.Now}
 }
 
 func (g *guard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -93,10 +94,13 @@ func (g *guard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *guard) serve(w http.ResponseWriter, r *http.Request) {
-	if strings.HasPrefix(r.URL.Path, "/api/") {
-		w = &stripCORS{ResponseWriter: w}
+	if !strings.HasPrefix(r.URL.Path, "/api/") {
+		g.next.ServeHTTP(w, r)
+		return
 	}
-	g.next.ServeHTTP(w, r)
+	sc := &stripCORS{ResponseWriter: w}
+	g.next.ServeHTTP(sc, r)
+	sc.strip() // a handler that never wrote: net/http sends the headers after we return
 }
 
 // exempt: the robot's own unauthenticated calls (D5). Login/logout are routed by ServeHTTP.
@@ -117,9 +121,18 @@ func (g *guard) unauthorized(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "unauthorized", http.StatusUnauthorized)
 }
 
-// safeNext keeps a same-site local path, anything else (//host, /\host, absolute URLs) becomes "/".
+// safeNext keeps a local path; anything a browser could resolve off-site (//, any \, control bytes that
+// browsers strip, a scheme or host) becomes "/".
 func safeNext(n string) string {
-	if !strings.HasPrefix(n, "/") || strings.HasPrefix(n, "//") || strings.HasPrefix(n, `/\`) {
+	if !strings.HasPrefix(n, "/") || strings.HasPrefix(n, "//") || strings.Contains(n, `\`) {
+		return "/"
+	}
+	for i := 0; i < len(n); i++ {
+		if n[i] < 0x20 || n[i] == 0x7f {
+			return "/"
+		}
+	}
+	if u, err := url.Parse(n); err != nil || u.Scheme != "" || u.Host != "" {
 		return "/"
 	}
 	return n

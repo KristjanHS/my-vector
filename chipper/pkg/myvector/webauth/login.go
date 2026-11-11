@@ -34,7 +34,15 @@ func (g *guard) login(w http.ResponseWriter, r *http.Request) {
 		ip = r.RemoteAddr
 	}
 	now := g.now()
-	if d := g.lim.wait(ip, now); d > 0 {
+	select {
+	case g.sem <- struct{}{}:
+		defer func() { <-g.sem }()
+	default: // bcrypt checks already in flight: shed load, don't queue CPU
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "login busy — try again", http.StatusTooManyRequests)
+		return
+	}
+	if d := g.lim.try(ip, now); d > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int(d.Seconds()+0.999)))
 		http.Error(w, "too many failed logins — try again later", http.StatusTooManyRequests)
 		return
@@ -46,10 +54,10 @@ func (g *guard) login(w http.ResponseWriter, r *http.Request) {
 	}
 	next := safeNext(r.PostForm.Get("next"))
 	if !g.store.CheckPassword(r.PostForm.Get("password")) {
-		g.lim.fail(ip, now)
 		g.page(w, http.StatusUnauthorized, next, "Wrong password.")
 		return
 	}
+	g.lim.forgive(ip, now)
 	g.setSession(w, now)
 	http.Redirect(w, r, next, http.StatusSeeOther)
 }
