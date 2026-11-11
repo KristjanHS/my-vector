@@ -2,11 +2,15 @@ package wirepod_ttr
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/fforchino/vector-go-sdk/pkg/vector"
 	"github.com/fforchino/vector-go-sdk/pkg/vectorpb"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/listen"
 )
 
 type forkWaitKind int32
@@ -17,12 +21,40 @@ const (
 	forkWaitLook
 )
 
-// forkWaitAnim is each kind's face (W2-A, W3): all think (−99 dBFS) until 0022 lets search
-// play anim_knowledgegraph_searching_01, whose clip starts a loop sfx only its getout stops (W10).
+// forkWaitAnim is each kind's face (W3): think (−99 dBFS); search plays forkWaitSearchFace only on a silent robot.
 var forkWaitAnim = map[forkWaitKind]string{
 	forkWaitSearch: "anim_avs_think_loop_01",
 	forkWaitThink:  "anim_avs_think_loop_01",
 	forkWaitLook:   "anim_avs_think_loop_01",
+}
+
+// forkWaitSearchFace's clip starts a loop sfx only its getout stops (W10); firmware 0022 drops it while MyVectorSilentWait.
+const forkWaitSearchFace = "anim_knowledgegraph_searching_01"
+
+func forkWaitFace(kind forkWaitKind, silent bool) string {
+	if kind == forkWaitSearch && silent {
+		return forkWaitSearchFace
+	}
+	return forkWaitAnim[kind]
+}
+
+var forkSilentWaitTimeout = 500 * time.Millisecond
+
+// forkSilentWaitOn: the robot's vic-anim console reads MyVectorSilentWait "true" (0022); any miss or error = false.
+var forkSilentWaitOn = func(esn string) bool {
+	ip := forkRobotIP(esn)
+	return ip != "" && forkSilentWaitRead(listen.ConsoleURL(ip))
+}
+
+func forkSilentWaitRead(console string) bool {
+	c := http.Client{Timeout: forkSilentWaitTimeout}
+	r, err := c.Get(console + "/consolevarget?key=MyVectorSilentWait")
+	if err != nil {
+		return false
+	}
+	defer r.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(r.Body, 64))
+	return err == nil && r.StatusCode == http.StatusOK && strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(string(b)), "<br>")) == "true"
 }
 
 var forkWaitGap = time.Second / 3 // upstream's pause between two plays of the KG loop
@@ -38,9 +70,10 @@ func forkWait(robot *vector.Vector, kind forkWaitKind, stopLooping *bool, ready 
 	w := &forkWaiter{}
 	w.Set(kind)
 	go func() {
+		silent := robot.Cfg.SerialNo != "" && forkSilentWaitOn(robot.Cfg.SerialNo)
 		for !*stopLooping {
 			robot.Conn.PlayAnimation(context.Background(), &vectorpb.PlayAnimationRequest{
-				Animation: &vectorpb.Animation{Name: forkWaitAnim[forkWaitKind(atomic.LoadInt32(&w.kind))]},
+				Animation: &vectorpb.Animation{Name: forkWaitFace(forkWaitKind(atomic.LoadInt32(&w.kind)), silent)},
 				Loops:     1,
 			})
 			time.Sleep(forkWaitGap)
