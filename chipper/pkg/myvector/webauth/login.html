@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wire-pod login</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #f4f4f5; color: #18181b; margin: 0;
+         display: flex; min-height: 100vh; align-items: center; justify-content: center; }
+  form { background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 1px 4px #0002;
+         width: min(20rem, calc(100vw - 2rem)); box-sizing: border-box; }
+  h1 { font-size: 1.25rem; margin: 0 0 1rem; }
+  input, button { font: inherit; width: 100%; box-sizing: border-box; padding: .6rem; margin-top: .5rem; }
+  button { background: #2563eb; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+  .msg { color: #b91c1c; margin: .5rem 0 0; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #18181b; color: #f4f4f5; }
+    form { background: #27272a; }
+    input { background: #3f3f46; color: #f4f4f5; border: 1px solid #52525b; }
+  }
+</style>
+</head>
+<body>
+<form method="post" action="{{.Action}}">
+  <h1>wire-pod</h1>
+  <label for="pw">Password</label>
+  <input id="pw" name="password" type="password" autocomplete="current-password" autofocus required>
+  <input type="hidden" name="next" value="{{.Next}}">
+  <button type="submit">Log in</button>
+  {{if .Msg}}<p class="msg">{{.Msg}}</p>{{end}}
+</form>
+</body>
+</html>
