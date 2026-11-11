@@ -30,7 +30,7 @@ var forkDroppedKeyphrases = map[string][]string{
 
 // Command phrases that replace the dropped bare nouns.
 var forkAddedKeyphrases = map[string][]string{
-	"intent_photo_take_extend":     {"take a photo", "take a picture", "take a selfie", "take my picture", "take a pic"},
+	"intent_photo_take_extend":     {"take a selfie", "take my picture", "take a pic"}, // "take a photo/picture" → vision (native-photo N4)
 	"intent_clock_time":            {"what's the time", "whats the time", "tell me the time"},
 	"intent_names_username_extend": {"^mu nimi on", "^minu nimi on"},
 }

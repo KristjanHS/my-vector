@@ -49,7 +49,7 @@ func forkPhotoActs(acts []RobotAction, look *forkLook) []RobotAction {
 
 // forkPhotoPhrases per language (V16, V16a): anywhere matches inside the utterance, start only at its start.
 var forkPhotoPhrases = map[string]struct{ anywhere, start []string }{
-	lang.Estonian: {[]string{"mida sa näed", "mis sa näed", "tee pilt", "tee foto"}, []string{"vaata"}},
+	lang.Estonian: {[]string{"mida sa näed", "mis sa näed", "tee pilt", "tee pilti", "tee foto", "tee fotot"}, []string{"vaata"}},
 	lang.English:  {[]string{"what do you see", "what can you see", "take a picture", "take a photo"}, []string{"look at"}},
 }
 

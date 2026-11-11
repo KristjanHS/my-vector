@@ -366,7 +366,7 @@ func TestForkRelayBarePhrase(t *testing.T) {
 
 func TestForkPhotoBare(t *testing.T) {
 	for text, want := range map[string]bool{
-		"Mida sa näed?": true, "mis sa näed": true, "Hei Vektor, tee foto!": true, "vektor vaata": true,
+		"Mida sa näed?": true, "mis sa näed": true, "Hei Vektor, tee foto!": true, "vektor vaata": true, "tee pilti": true, "Tee fotot.": true,
 		"mida sa näed laual?": false, "vaata seda tassi": false, "tee pilt ja ütle värv": false, "": false,
 	} {
 		if got := forkPhotoBare(lang.Estonian, text); got != want {
