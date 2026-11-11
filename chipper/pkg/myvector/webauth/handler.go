@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
 const (
@@ -14,8 +16,8 @@ const (
 	LogoutPath = "/myvector/logout"
 )
 
-// DefaultPaths is what Handler loads; set before the first Handler call.
-var DefaultPaths Paths
+// DefaultPaths is what Handler loads (tests point it at a temp dir before the first call).
+var DefaultPaths = Paths{Auth: vars.WebAuthPath, Password: vars.WebPasswordPath, Header: vars.WebAuthHeaderPath}
 
 var (
 	once   sync.Once
