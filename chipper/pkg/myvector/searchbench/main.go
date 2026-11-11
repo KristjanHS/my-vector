@@ -178,7 +178,6 @@ func median(ms []int64) int64 {
 	return ms[len(ms)/2]
 }
 
-// bench runs every ask through p as a's query (nil a: the ask verbatim, general mode).
 // search1 is one provider call for ask as sq, with production's N6 gate on every arm but verbatim.
 func search1(p search.Provider, sq search.Query, ask string, a *arm) ([]search.Result, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -190,6 +189,7 @@ func search1(p search.Provider, sq search.Query, ask string, a *arm) ([]search.R
 	return rs, err
 }
 
+// bench runs every ask through p as a's query (nil a: the ask verbatim, general mode).
 func bench(p search.Provider, st *search.State, key, model string, asks []string, a *arm) row {
 	r := row{name: p.Name(), judged: key != ""}
 	if a != nil {

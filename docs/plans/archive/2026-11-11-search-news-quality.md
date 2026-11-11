@@ -2,7 +2,7 @@
 
 **Goal**: "find news about X that affects stocks" (et or en, including a follow-up like "search what you just said")
 gives the brain 2–3 dated, on-topic news hits. The robot answers from them and never says it can't search.
-**Status**: 🔨 Q1–Q5 ruled; slices 1 (N1+N7+N3+Q4), 2 (N5) and 3 (N2 = search-trigger-fixes F5, its R6–R8) committed; N12 committed; N11 committed (news-ask prefill); N13–N16/Q10 replays run and ruled; Q8 A and N6 committed; N4 closed by Q15; N9 ruled (Q16) and committed — **next: archive; N8 + N10 → `docs/backlog.md`**. Builds on `2026-11-11-search-trigger-fixes.md (docs/plans/)` (F5 lives there).
+**Status**: ✅ SHIPPED (code; live check → `docs/backlog.md` §OWED[USER] "Search news live"). Q1–Q5 ruled; slices 1 (N1+N7+N3+Q4), 2 (N5) and 3 (N2 = search-trigger-fixes F5, its R6–R8) committed; N12 committed; N11 committed (news-ask prefill); N13–N16/Q10 replays run and ruled; Q8 A and N6 committed; N4 closed by Q15; N9 ruled (Q16) and committed; N8 + N10 → `docs/backlog.md` §Assistant-owed. Builds on `2026-11-11-search-trigger-fixes.md (docs/plans/)` (F5 lives there).
 
 ## Incident 2026-11-11 09:31–09:32 (et-EE mode, brain `apertus-estllm:8b`, provider Tavily)
 

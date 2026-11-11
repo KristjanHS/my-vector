@@ -381,10 +381,10 @@ func TestFillNewsFallback(t *testing.T) {
 		w.Write([]byte(hit))
 	}))
 	t.Cleanup(srv.Close)
-	tav, _ := fakeSearch(t, 200, junk, 0)
+	tav, nTav := fakeSearch(t, 200, junk, 0)
 	chainConfig(t, "searxng", tav, srv.URL)
-	if b := Fill(turn1, nil, lang.Estonian, prompt.Ollama, nil); !strings.Contains(b, "Pooljuhtide aktsiad") || strings.Contains(b, "Räägime") {
-		t.Errorf("emptied news set: Fill = %q, want the keyword fallback's hit", b)
+	if b := Fill(turn1, nil, lang.Estonian, prompt.Ollama, nil); !strings.Contains(b, "Pooljuhtide aktsiad") || strings.Contains(b, "Räägime") || *nTav != 1 {
+		t.Errorf("emptied news set: Fill = %q, tavily %d calls; want the keyword fallback's hit and tavily never retried", b, *nTav)
 	}
 	if len(got) != 2 || !strings.Contains(got[1], "language=et") || strings.Contains(got[1], "categories=") || !strings.Contains(got[1], "semikontaktorstide") {
 		t.Errorf("searxng got %q, want the news query then the et keywords without news mode", got)
@@ -411,15 +411,20 @@ func TestMerge(t *testing.T) {
 }
 
 func TestFillFollowUp(t *testing.T) {
+	var mu sync.Mutex
 	var bodies []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
 		bodies = append(bodies, r.URL.RawQuery+string(b))
+		mu.Unlock()
 		w.Write([]byte(providerFixture))
 	}))
 	t.Cleanup(srv.Close)
 	chainConfig(t, "tavily", srv.URL, srv.URL) // a news ask races both providers
 	news := func() []string {                  // the N9 keyword fallback has no time_range
+		mu.Lock()
+		defer mu.Unlock()
 		var out []string
 		for _, b := range bodies {
 			if strings.Contains(b, "time_range") {
@@ -430,7 +435,7 @@ func TestFillFollowUp(t *testing.T) {
 	}
 	const follow = "otsi viimase pakkumise pealt, number kolm."
 	Fill(follow, []string{incident}, lang.Estonian, prompt.Ollama, nil)
-	if n := news(); len(n) != 2 || !strings.Contains(n[0]+n[1], "semiconductors") {
+	if n := news(); len(n) != 2 || !strings.Contains(n[0], "semiconductor") || !strings.Contains(n[1], "semiconductor") {
 		t.Fatalf("follow-up after the 08:27 ask sent %q, want one query with the topic", bodies)
 	}
 	Fill(follow, []string{"otsi Nvidia aktsia hinda"}, lang.Estonian, prompt.Ollama, nil)

@@ -1,6 +1,8 @@
 # Backlog
 
 ## OWED[USER]
+- Search news live (`archive/2026-11-11-search-news-quality.md` (docs/plans/) Q16): `make ship`, quiet ≠ 3, ask before sound; et "otsi uudiseid Nvidia aktsia kohta" → `journalctl -u wire-pod --since '<t>' | grep 'myvector: search'` shows `tavily ok` < 5000 ms; `robot/quiet/scan.sh '<t>'`.
+- Rule: keep the "Värskete uudiste järgi" opener (`forkPrefillSet`) when a news block holds only SearXNG's undated keyword-fallback hits (Tavily late/capped)?
 - Search trigger live (`archive/2026-11-11-search-trigger-fixes.md` (docs/plans/)): `make ship`, quiet ≠ 3, ask before sound; in et mode en "search for news about semiconductors", then "otsi seda" → `journalctl -u wire-pod --since '<t>' | grep -c 'myvector: search topic'` ≥ 1, no 10 s timeout; `robot/quiet/scan.sh '<t>'`.
 - Camera et relay live (`2026-11-10-camera-et-relay.md` (docs/plans/) 3.1): `make ship`, quiet status ≠ 3, ask before sound; et "mida sa näed?" + "mis värvi mu särk on?" → Estonian answer to each, ~5 s; `journalctl -u wire-pod --since '<t>' | grep -c 'camera relay '` ≥ 1; `robot/quiet/scan.sh '<t>'`.
 - Vision phrase trigger live (`archive/2026-11-08-vision-setting.md` (docs/plans/) 5.2): `make ship`, quiet status ≠ 3, ask before sound; et "mida sa näed?" + en "what do you see?" → robot says "Vaatan." / "Let me look." then describes; `journalctl -u wire-pod --since '<t>' | grep -c 'myvector vision: phrase ask'` = 2; `robot/quiet/scan.sh '<t>'`. Pass also closes camera-et-relay 3.1.
@@ -33,6 +35,9 @@
 - Ship speed rung 2 live (`2026-11-08-ship-speed.md` (docs/plans/) 2.3 + Target): 3 server-lane `make ship` → its settings-gap awk ≤ 6 s per log and the Target one-liner (median push ≤ 33 s) exit 0; missed → pick rung 3 from that plan.
 
 ## Assistant-owed
+
+- ⚠ Voice fallback sends "" to TTS (`myvector voice fallback: tts 400 … non-empty string required`, search-news-quality C7) · `pkg/myvector/voice` · a unit test of the emptied sentence → no TTS call (`systematic-debugging` first).
+- STT domain hints (search-news-quality N8): faster-whisper `hotwords`/`initial_prompt` with market terms · `et-stt/server.py` · FLEURS et_ee WER no worse and "semikonduktor" heard in a recorded ask.
 
 - W11 answer face (`archive/2026-11-10-silent-wait-visuals.md` (docs/plans/) W11, user-ruled A): with commands on, play `TTSLoopAnimation` while he answers, paused during an LLM `{{playAnimation}}` cue; `anim.sh` its clips first.
 
