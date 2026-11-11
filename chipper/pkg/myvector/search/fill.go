@@ -14,6 +14,9 @@ import (
 // Timeout bounds the whole Fill on the voice path (plan W10).
 var Timeout = 2500 * time.Millisecond
 
+// NewsTimeout replaces Timeout on a news ask: Tavily's news mode answers in 3.4–4.8 s (search-news-quality N9).
+var NewsTimeout = 5000 * time.Millisecond
+
 var logf = logger.Println
 
 // weatherPlace is c.WeatherPlace up to any comma (Open-Meteo geocodes a bare name: "Tartu, Estonia" →
@@ -97,7 +100,7 @@ func chain(c Config) []Provider {
 }
 
 // Fill is the {search} block for sentence after the user's prev asks (newest first): a fresh cached block, else
-// Weather from Open-Meteo or Live / Recent over chain (one shared Timeout; a news ask races the chain and merges,
+// Weather from Open-Meteo or Live / Recent over chain (one shared Timeout; a news ask races the chain under NewsTimeout and merges,
 // search-news-quality Q4); "" for class None or Live / Recent with provider off, Unavailable when every lookup failed.
 func Fill(sentence string, prev []string, l, brain string, zone *time.Location) string {
 	class := Route(sentence, l)
@@ -120,7 +123,11 @@ func Fill(sentence string, prev []string, l, brain string, zone *time.Location) 
 			return b
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+	d := Timeout
+	if q.News && class != Weather {
+		d = NewsTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
 	var block string
 	switch {
@@ -160,9 +167,21 @@ func Fill(sentence string, prev []string, l, brain string, zone *time.Location) 
 
 var errNoResults = errors.New("no results")
 
-// look is one provider's search after its quota Take; SearXNG gets English(q) on an et-EE news ask (Q3). Results
-// sharing no stem with the query are dropped, and a set left empty is "no results" (search-news-quality N6).
+// look is lookOnce, plus one retry of an empty SearXNG news set as the same keywords without news mode
+// (search-news-quality N9).
 func look(ctx context.Context, st *State, p Provider, q Query, l string) ([]Result, error) {
+	rs, err := lookOnce(ctx, st, p, q, l)
+	if errors.Is(err, errNoResults) && q.News && p.Name() == "searxng" {
+		logf("myvector: search fallback", p.Name(), "keywords")
+		q.News = false
+		return lookOnce(ctx, st, p, q, l)
+	}
+	return rs, err
+}
+
+// lookOnce is one provider's search after its quota Take; SearXNG gets English(q) on an et-EE news ask (Q3). Results
+// sharing no stem with the query are dropped, and a set left empty is "no results" (search-news-quality N6).
+func lookOnce(ctx context.Context, st *State, p Provider, q Query, l string) ([]Result, error) {
 	if !st.Take(p.Name(), time.Now()) {
 		return nil, errCapped
 	}
