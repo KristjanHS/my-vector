@@ -2,7 +2,7 @@
 
 **Goal**: "find news about X that affects stocks" (et or en, including a follow-up like "search what you just said")
 gives the brain 2–3 dated, on-topic news hits. The robot answers from them and never says it can't search.
-**Status**: 🔨 Q1–Q5 ruled; slices 1 (N1+N7+N3+Q4), 2 (N5) and 3 (N2 = search-trigger-fixes F5, its R6–R8) committed; N12 committed; N11 committed (news-ask prefill); N13–N16/Q10 replays run and ruled; Q8 A and N6 committed; N4 closed by Q15; N9 run — **next: the N9 [USER DECISION]**. Builds on `2026-11-11-search-trigger-fixes.md (docs/plans/)` (F5 lives there).
+**Status**: 🔨 Q1–Q5 ruled; slices 1 (N1+N7+N3+Q4), 2 (N5) and 3 (N2 = search-trigger-fixes F5, its R6–R8) committed; N12 committed; N11 committed (news-ask prefill); N13–N16/Q10 replays run and ruled; Q8 A and N6 committed; N4 closed by Q15; N9 ruled (Q16) and committed — **next: archive; N8 + N10 → `docs/backlog.md`**. Builds on `2026-11-11-search-trigger-fixes.md (docs/plans/)` (F5 lives there).
 
 ## Incident 2026-11-11 09:31–09:32 (et-EE mode, brain `apertus-estllm:8b`, provider Tavily)
 
@@ -103,6 +103,7 @@ parameters:
 | Q13 | N6 match: news/time/ask words (`cueWord`) never count, and a query of only those keeps every result; a ≥ `matchRunes` word's stem may sit inside a result word or its first `matchRunes`−1 start one, a shorter one (≥ `minMatchRunes`) must start one; et asks also match `English(q)` | `search.Relevant`, `search.look` |
 | Q14 | N6 drops single off-topic results from a passing set too, before `Block` trims to the snippet count | `search.look` |
 | Q15 | N4 ships only at no-worse replay AND ≤ 0.3 s paired added median latency (5 fresh asks); measured +0.34 s → N4 closed, no code | — |
+| Q16 | N9: news asks race under `NewsTimeout` 5 s; an N6-emptied SearXNG news set retries once as the N1 keywords without news mode (`-arms verbatim,N1+N3+N7,N1+N3+N7+fb`: 0/5 empty, 2.40 vs 1.80) | `search.Fill`, `search.look`, `searchbench` |
 
 ### N11 opener replay (2026-11-11, `python3 -I scripts/n11-prefill-replay.py 4`)
 
@@ -139,7 +140,7 @@ apertus-estllm:8b, `/v1/chat/completions` 0.4/0.9/300, the captured live et prom
 | N15 | blind judge, refusals / wrong: etsent 0/8, 2/8; etdemo 0/8, 1/8; etshort (temp 0) 0/8, 0/8 on 2 distinct replies, then `weather-held` 8 new asks 0/8, 3/8 (+ 2/8 cut off) | template stays; no weather LLM change ships |
 | N16 | blind judge, refusals / made-up on `semi`: facts 0/8, 2/8; xq 1/8, 7/8; shot0 0/8, 8/8 | no arm clears < 2/8; nothing ships |
 | Q8 | lower-case STT (`preqs/fork_stt.go` `strings.ToLower`); held-out 32 asks: A (wider list) 0/20 needless skips, 3/12 wrong-town keeps; B (place-case ending + stop list) and C (A or B) 9/20 needless skips | A: `etTowns` + countries, regions, more towns; drop the capital-letter check (`namesOtherPlace`) |
-| N9 | `searchbench -news`, 5 asks, gain vs verbatim: Tavily N1+N3 +0.80 at fresh-run median 4751 ms (> `search.Timeout`); SearXNG N1+N3+N7 +0.00 after the N6 gate, 2/5 empty | **[USER DECISION]** owed: how news asks get Tavily's hits inside the deadline, or what SearXNG gets |
+| N9 | `searchbench -news`, 5 asks, gain vs verbatim: Tavily N1+N3 +0.80 at fresh-run median 4751 ms (> `search.Timeout`); SearXNG N1+N3+N7 +0.00 after the N6 gate, 2/5 empty | Q16 |
 
 ## Order (thin slice first)
 
@@ -149,7 +150,7 @@ apertus-estllm:8b, `/v1/chat/completions` 0.4/0.9/300, the captured live et prom
 4. **N11 (prio 1)**: the brain denies searching despite results; before every item below. Shipped in code (news asks).
 5. **N6**: relevance gate (per provider, before the merge). Shipped in code (`search.Relevant` in `look`).
 6. **N4**: closed by Q15.
-7. **N9**: bench run; its [USER DECISION] row gates the next step.
+7. **N9**: ruled Q16. Shipped in code (`NewsTimeout`, SearXNG keyword fallback in `look`).
 8. Backlog: N8, N10.
 
 Run `make check` per slice. Re-run the incident's two turns as a routeprobe replay after slices 1–3. Ship on the user's ask.
