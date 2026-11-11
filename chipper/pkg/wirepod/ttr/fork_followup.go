@@ -108,6 +108,9 @@ func forkIntentPass(req interface{}, esn, intentThing, speechText string) (skip 
 	forkCaptureIntent(esn, intentThing, speechText)
 	forkChain.Reset(esn)
 	forkPhotos.TakeListen(esn)
+	if intentThing == "intent_photo_take_extend" {
+		go forkNativePhoto(esn, lang.Current())
+	}
 	return false
 }
 
