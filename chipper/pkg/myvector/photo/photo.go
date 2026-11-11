@@ -50,6 +50,14 @@ func (s *Store) Put(esn string, jpeg []byte, lang string, now time.Time) {
 	e.shot, e.answered = Shot{JPEG: jpeg, Taken: now, Lang: lang}, time.Time{}
 }
 
+// PutFresh stores a photo already shown to the user (native photo, N3): fresh from now, not answered this turn.
+func (s *Store) PutFresh(esn string, jpeg []byte, lang string, now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.get(esn)
+	e.shot, e.answered = Shot{JPEG: jpeg, Taken: now, Lang: lang}, now
+}
+
 // Answered marks esn's photo answered at now: fresh again, and answered this turn.
 func (s *Store) Answered(esn string, now time.Time) {
 	s.mu.Lock()
