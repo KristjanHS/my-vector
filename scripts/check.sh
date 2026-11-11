@@ -62,6 +62,7 @@ opt secrets "$dir"/scripts/tests/secrets.sh "$repo" "${head[@]}" ${head[0]:+"$di
 opt quiet-guard "$dir"/robot/quiet/tests/guard.sh
 opt quiet-scan "$dir"/robot/quiet/tests/scan.sh
 opt check-runner "$dir"/scripts/tests/check-runner.sh
+opt webauth-wired "$dir"/scripts/tests/webauth-wired.sh
 opt gofmt "$dir"/scripts/tests/gofmt.sh "$repo" "${head[@]}" ${head[0]:+"$dir"}
 opt gofmt-host "$dir"/scripts/tests/gofmt-host.sh
 job go-sdkapp sh -c 'cd "$1/chipper" && go vet ./pkg/wirepod/sdkapp/ && go test -run Fork ./pkg/wirepod/sdkapp/' sh "$dir"
