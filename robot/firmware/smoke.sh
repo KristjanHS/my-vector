@@ -104,7 +104,7 @@ done
 ok "wire-pod conn_test"
 # P1: an SDK call through wire-pod works within 60 s. conn_test answers from wire-pod's cached robot connection without an
 # RPC; a connection made before the deploy restarted vic-cloud kept failing (connection refused) ~13 s after the robot's
-# :443 was open again (2026-11-07, baed0e1), so retry the real call the docked check uses.
+# :443 was open again (2026-11-07, 74dddce), so retry the real call the docked check uses.
 end=$((SECONDS + 60)) w0=$SECONDS
 until b=$(curl -s -m 20 "$server/api-sdk/get_battery?serial=$esn" || true); [[ $b == *'"battery_volts"'* ]]; do
   ((SECONDS < end)) || die "SDK via wire-pod: get_battery failing after 60 s: ${b:0:200}"; sleep 2

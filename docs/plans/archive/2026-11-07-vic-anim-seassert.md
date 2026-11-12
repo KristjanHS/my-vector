@@ -4,9 +4,9 @@ Status: ✅ **DONE 2026-11-07** — `robot/firmware/0012-se-isinff-bridge.patch`
 
 ## Background
 
-`make ship` b70e53a (2026-11-07 11:53) failed its smoke test: vic-anim died ~13 s after the deploy restart with
+`make ship` eaf543d (2026-11-07 11:53) failed its smoke test: vic-anim died ~13 s after the deploy restart with
 `SeAssert: ../../../se_lib/nrgainv.c:191`, then SIGILL (exit status 246). The robot's fault-code-handler restarted
-anki-robot.target ~15 s later and it recovered. 3rd hit: ship 44a8b57 (19:20), not pushed.
+anki-robot.target ~15 s later and it recovered. 3rd hit: ship 1fb54ab (19:20), not pushed.
 
 The user suspected same-day changes. User's options round: A = smoke tolerates this one signature, B = do nothing and
 re-ship, **C = dig deeper with robot restarts (chosen; the power-on sound on each restart is accepted).**

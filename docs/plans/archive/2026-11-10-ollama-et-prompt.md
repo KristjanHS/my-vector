@@ -1,6 +1,6 @@
 # Ollama et/en prompt split + et sing line
 
-Status: ✅ SHIPPED to main (b262b6d..26af1b4); `make ship` + live check owed (`docs/backlog.md` §OWED[USER]).
+Status: ✅ SHIPPED to main (699fed0..699fed0); `make ship` + live check owed (`docs/backlog.md` §OWED[USER]).
 
 Evidence: `2026-11-07-follow-up-listening.md` (docs/plans/) rows P11–P14; implement in a fresh session (qimpag).
 

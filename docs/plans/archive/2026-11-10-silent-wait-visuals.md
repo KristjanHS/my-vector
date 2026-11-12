@@ -3,7 +3,7 @@
 **Goal**: whenever the robot waits on wire-pod (web search, LLM reply, vision model, any other slow fetch), his screen
 shows a visual that fits the wait, such as "searching" or "thinking", and he makes **no sound** until the answer starts.
 The wake chime before the wait and the spoken answer after it stay as they are.
-**Status**: ✅ SHIPPED (code through a264235, 2026-11-11); robot ship + Stage 2b/3/4 live checks → `docs/backlog.md` §OWED[USER] "Silent wait live"; W11 answer face → §Assistant-owed.
+**Status**: ✅ SHIPPED (code through d519c9c, 2026-11-11); robot ship + Stage 2b/3/4 live checks → `docs/backlog.md` §OWED[USER] "Silent wait live"; W11 answer face → §Assistant-owed.
 
 ## Today (audit 2026-11-10)
 

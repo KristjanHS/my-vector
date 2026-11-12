@@ -4,12 +4,12 @@ Status: ✅ SHIPPED — rung 2 on main (2.1 C6, 2.2 L1+C4+T2, check + review gre
 
 Goal: cut the wall-clock time of every next `make ship` as far as possible. Audit only; nothing implemented.
 Method: Value Stream Mapping of `robot/firmware/ship.sh` (steps, waits, handoffs), then Muda (waste) per step.
-Evidence: the 21 kept ship logs, a live timestamped tail of ship `28a8cd3` (14:44:41 → 14:48:05), a
+Evidence: the 21 kept ship logs, a live timestamped tail of ship `4e53838` (14:44:41 → 14:48:05), a
 `bash -x` timestamp trace of `scripts/check.sh --head`, the wire-pod journal, `.ninja_log`, and SSH timings.
 
 ## 1. Current state (measured)
 
-Typical full ship: **2m20s – 3m50s** (median ≈ 2m45s over 13 green runs). Run `28a8cd3` (server + robot-script change, no firmware change), ≈ 3m25s:
+Typical full ship: **2m20s – 3m50s** (median ≈ 2m45s over 13 green runs). Run `4e53838` (server + robot-script change, no firmware change), ≈ 3m25s:
 
 | # | Step | Time | Value-add for this commit? | Notes |
 |---|------|-----:|---|---|
@@ -78,7 +78,7 @@ IDs are for picking; savings are per ship, estimated from the measurements above
 - **A1 Change-scoped ship lanes.** Diff the shipped sha against the sha the robot/server last received (record it: robot `/data/myvector/shipped-sha` + local `robot/work/shipped-firmware-tip`) and run only the lanes touched:
   `firmware` (patches/series/pin) → build + deploy + full smoke; `robot-scripts` → settings.sh only; `server` → restart + server-side smoke; `docs` → check stamp + push.
   Save **≈ 120 s on a server-only ship**; docs-only ship → seconds. Risk: a robot left on a different firmware (reflash, manual deploy) — mitigate by reading the robot's `/anki/etc/revision` (or the marker) instead of trusting a local record; `SHIP_FULL=1` override.
-- **A2 Skip the deploy when nothing differs.** Even within the firmware lane: `rsync --dry-run --itemize-changes` (or a manifest hash of `_build/.../dist` vs a hash stored on the robot) → if empty, don't stop/start `anki-robot.target`. Also find why `lib/libc++.so.1` is re-sent on unchanged firmware (seen in `28a8cd3` and `0580cf3`'s logs) (install step rewrites it → content or mtime churn) and stop it. Save ≈ 30 s deploy + ≈ 19 s smoke boot wait.
+- **A2 Skip the deploy when nothing differs.** Even within the firmware lane: `rsync --dry-run --itemize-changes` (or a manifest hash of `_build/.../dist` vs a hash stored on the robot) → if empty, don't stop/start `anki-robot.target`. Also find why `lib/libc++.so.1` is re-sent on unchanged firmware (seen in `4e53838` and `7231884`'s logs) (install step rewrites it → content or mtime churn) and stop it. Save ≈ 30 s deploy + ≈ 19 s smoke boot wait.
 - **A3 Green-check stamp.** `make check` (and syncwt's gate) writes `robot/work/check-pass/<tree-sha>` on success; `ship.sh` skips step 2 when HEAD's tree id (`git rev-parse <sha>^{tree}`) has a stamp. Same tree = same inputs, so it is exact, not a heuristic (venvs/toolchain are outside the tree — key the stamp on their versions too, or expire stamps after N hours). Save **≈ 65 s** whenever check already ran (the normal flow, per the run-make-check-before-finishing habit).
 - **A4 Skip the firmware build when the tip is already built.** Stamp `robot/work/firmware-built/<tip>` after a green `check-static --built`; if `tip` matches and `_build` is untouched, skip step 7–8. Save ≈ 32 s on firmware-lane-but-same-tip reruns (e.g. re-ship after a smoke flake).
 
