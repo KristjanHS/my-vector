@@ -76,7 +76,7 @@ func forkListen(req interface{}, voiceText, botSerial string) bool {
 
 // forkKGSwitch is forkQuiet + forkListen for any knowledge-graph turn (follow-up, "I have a question",
 // {{newVoiceRequest}}), which never reaches ProcessTextAll: a match is handled here and the LLM call is skipped.
-// No wake word leads the turn, so "shut up" must match exactly, as overheard speech does (4b91012 ruling).
+// No wake word leads the turn, so "shut up" must match exactly, as overheard speech does (6e69164 ruling).
 func forkKGSwitch(esn, text string) bool {
 	if phrase, ok := quiet.MatchExact(text); ok {
 		now := time.Now()

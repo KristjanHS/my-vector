@@ -7,8 +7,8 @@ Question: for `gemma4:e4b-it-qat` and `qwen3.5:4b`, which et-EE camera prompt gi
 
 | id | ruling | edit site |
 |---|---|---|
-| B1 | Arm `a` (today, fe19969): system `Render(Default(OllamaEt), Sample(OllamaEt, et))`, user "Mida sa näed?" + photo → Estonian answer. | `visionbench` |
-| B2 | Arm `b` (pre-fe19969 shape): system `Render(Default(Ollama), Sample(Ollama, et))` (English persona + "Answer in Estonian…"), user "Mida sa näed?" + photo. | `visionbench` |
+| B1 | Arm `a` (today, 699fed0): system `Render(Default(OllamaEt), Sample(OllamaEt, et))`, user "Mida sa näed?" + photo → Estonian answer. | `visionbench` |
+| B2 | Arm `b` (pre-699fed0 shape): system `Render(Default(Ollama), Sample(Ollama, et))` (English persona + "Answer in Estonian…"), user "Mida sa näed?" + photo. | `visionbench` |
 | B3 | Arm `c` (relay, reopens V1): hop 1 = the en-US run (English prompt, "What do you see?", scored on `en` words); hop 2 = the saved et-EE brain (`llm.Resolve(c, et, kg)`), text only. | `visionbench` |
 | B4 | Hop 2 system `Render(Default(<brain tier>), Sample(<brain tier>, et))`; user `"Kaamera nägi (inglise keeles): <hop 1>\n\nMida sa näed?"`. Latency = hop 1 + hop 2. | `visionbench` |
 | B5 | Budget: 5 photos × 2 models × (a, b, c hop 1, c hop 2 cold, c hop 2 warm) = 50 calls, 1 rep (probe-runs-small). No robot, no audio. | — |

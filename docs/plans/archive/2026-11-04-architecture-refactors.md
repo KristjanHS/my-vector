@@ -16,7 +16,7 @@ risk removed per hour of work.
 
 | step | owner | time | source |
 |---|---|---|---|
-| edit patch in the clone, export, commit, review | assistant | ~5–30 min | commit times `256710d`→`5db5e9c`, `717da29`→`8363175` |
+| edit patch in the clone, export, commit, review | assistant | ~5–30 min | commit times `dd0a00b`→`dd0a00b`, `0574715`→`67f184b` |
 | `make syncwt` + `make ship` | USER (hand-off) | waits for the user | `robot/firmware/ship.sh` |
 | build | ship | cold 21.5 min / incremental 1.5 min | `robot/work/build-v.log`, `build-lift-lock.log` |
 | deploy, services up, push | ship | ≤3 min wait | `ship.sh` `all_up` |
