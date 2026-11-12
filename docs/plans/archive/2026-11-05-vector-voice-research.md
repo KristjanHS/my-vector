@@ -1,6 +1,6 @@
 # Vector voice: research every way to a softer, clearer voice
 
-**Status**: ✅ SHIPPED — B1–B4 + R21–R23 live (fafae82); B5 verify moved to `2026-11-05-vector-voice-verify.md` (docs/plans/).
+**Status**: ✅ SHIPPED — B1–B4 + R21–R23 live (381bf77); B5 verify moved to `2026-11-05-vector-voice-verify.md` (docs/plans/).
 **Want**: easier on the ear and easier to understand than the stock robot voice; user leans to a soft female voice.
 
 ## Rulings (2026-11-05 questions round)

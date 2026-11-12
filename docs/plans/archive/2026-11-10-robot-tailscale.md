@@ -1,6 +1,6 @@
 # Robot Tailscale (option D: spike, then productise)
 
-Status: ✅ SHIPPED 2026-11-10 (17faa88 shipped; Stage 5 green: selftest, 5.2 e2e + voice turn + 30-min soak, review fixes 3cee61f 58001cb dbeeef9). Recovery runbook: `docs/tailscale-recovery.md`. Executes item 3 of §Recommended plan in `2026-11-07-public-wifi-security.md (docs/plans/)`
+Status: ✅ SHIPPED 2026-11-10 (0a9df86 shipped; Stage 5 green: selftest, 5.2 e2e + voice turn + 30-min soak, review fixes 51ef66c e38e9d7 feea361). Recovery runbook: `docs/tailscale-recovery.md`. Executes item 3 of §Recommended plan in `2026-11-07-public-wifi-security.md (docs/plans/)`
 (§D. Tunnel on the robot itself) and extends the netguard shipped by `2026-11-07-wifi-baseline-hardening.md (docs/plans/)`.
 `[USER]` = a live run on the robot, server or admin console: Claude asks first, never runs it unasked. `[SOUND]` = makes
 robot sound: `robot/quiet/quiet.sh status` ≠ 3 right before it, ask, note the start time, then `robot/quiet/scan.sh '<start>'`

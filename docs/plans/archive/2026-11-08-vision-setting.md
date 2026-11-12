@@ -1,6 +1,6 @@
 # Vision setting + local vision bench
 
-Status: ✅ SHIPPED to main 2026-11-10 (1.1–4.1, 3.3 V16/V16a/V18 315d927 + review fixes a06f0ac, 48f0899; V17/3.4 dropped). Only 5.2 live is USER-owed → `docs/backlog.md` §OWED[USER]. et prompt shape → 2026-11-10-vision-et-prompt-bench.md (docs/plans/). Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 5, row V.
+Status: ✅ SHIPPED to main 2026-11-10 (1.1–4.1, 3.3 V16/V16a/V18 699fed0 + review fixes 699fed0, 699fed0; V17/3.4 dropped). Only 5.2 live is USER-owed → `docs/backlog.md` §OWED[USER]. et prompt shape → 2026-11-10-vision-et-prompt-bench.md (docs/plans/). Parent: 2026-11-07-system-prompt-redesign.md (docs/plans/) rung 5, row V.
 
 ## Rulings
 
@@ -44,6 +44,6 @@ ttr / sdkapp tests run under `make check` only when named `TestFork*` (`-run For
 | 3.3 | V16 + V16a + V18. Proof `TestForkPhotoAsk` table: each listed phrase in both languages hits (case, "?" and "!" folded), "vaatame" / "looking good" / "no vaata, mul on küsimus" / "can you look at the weather" miss, "Vector, vaata siia" / "Vector, what do you see?" hit; `TestForkPhotoAskCamera`: a listed et ask reaches the vision fake with the brain fake's getImage hop skipped and the V18 line spoken first; `scripts/upstream-drift.sh` green. | `ttr/fork_vision.go`, `ttr/fork_*_test.go`, KG entry in `ttr/`, `scripts/upstream-drift.sh` |
 | 3.4 | DROPPED with V17. | — |
 | 4.1 | V9 page + API. Proof `TestModelsVision`: tags fixture with `capabilities` → vision subset; no `capabilities` → empty. `TestSettingsVision`: POST round trip; absent keeps; Claude without key → 400; unknown provider → 400. | `llm/http.go`, `http_test.go`, `voice/settings.go`, `settings.html`, `voice/settings_test.go` |
-| 5.1 | Done — `make check` green at 48f0899. | — |
+| 5.1 | Done — `make check` green at 699fed0. | — |
 | 5.2 | OWED[USER]. Live e2e after USER `make ship` (quiet status ≠ 3, ask first): vision = local default; et "mida sa näed?" + en "what do you see?". Also `grep -c 'myvector vision: phrase ask'` = 2 (no brain getImage hop). Falsifier: `journalctl -u wire-pod --since '<t>' \| grep -c 'camera et-EE relay → qwen3.5:4b\|camera en-US → ollama qwen3.5:4b'` = 2; `robot/quiet/scan.sh '<t>'`. Pass also closes camera-et-relay 3.1. | — |
-| 5.3 | Done — reviewed bd9da54..315d927 + a narrow concurrency re-review of a06f0ac, fixes 48f0899. Was: `code-reviewer` subagent on the 3.3 commit range (1.1–4.1 reviewed, fixes 6067f04). | — |
+| 5.3 | Done — reviewed 699fed0..699fed0 + a narrow concurrency re-review of 699fed0, fixes 699fed0. Was: `code-reviewer` subagent on the 3.3 commit range (1.1–4.1 reviewed, fixes 699fed0). | — |

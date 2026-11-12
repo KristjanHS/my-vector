@@ -1,7 +1,7 @@
 # Firmware test suite: static checks in `make check`, on-robot smoke after deploy
 
 **Goal**: a firmware change that breaks a patch or a main function fails a command — static in seconds (`make check`), live in ~30 s (`make robot-test`, and `make ship` before its push).
-**Status**: ✅ SHIPPED 2026-11-04 (708736b) — make check + smoke gate in ship; live PASS on 2708401. Left: user eyeballs the face + first gated ship (docs/backlog.md §OWED[USER]). Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
+**Status**: ✅ SHIPPED 2026-11-04 (dd0a00b) — make check + smoke gate in ship; live PASS on dd0a00b. Left: user eyeballs the face + first gated ship (docs/backlog.md §OWED[USER]). Scope: no host unit tests, no Anki gtests; nothing moves the wheels.
 
 ## Refactor first
 
@@ -57,6 +57,6 @@ Every check gets a red demo: mutate → command exits non-zero → restore by re
 - [x] 3.3 W2 ship gate + RF3 delete; `total` step count updated; `NO_DEPLOY=1 make ship` still stops after the build. Done: smoke step replaces the units step 1:1, so `total` stays 5 + 3; the `--no-deploy` exit sits before the edit (unchanged; ship is user-run). Snapshot copy of smoke.sh resolves the main checkout (checked).
 
 ### Stage 4: full verify
-- [x] `make check` green; code review in a fresh sub-agent. Done: 2 Important fixed in 708736b (S5 allowlist, SSH loss = setup); live PASS.
+- [x] `make check` green; code review in a fresh sub-agent. Done: 2 Important fixed in dd0a00b (S5 allowlist, SSH loss = setup); live PASS.
 - [x] `make robot-test` → PASS in ≤ 60 s (44 s, run by Claude); [moved to backlog] user: eyeball the solid face during `fork_face`; robot still on the contacts.
 - [ ] User: next `make ship` runs the smoke gate before the push.
