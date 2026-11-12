@@ -16,7 +16,7 @@ between packages, and a few oversized functions.
 
 ## Rulings
 
-Asked 2026-11-12, one round, no notes on any answer.
+Asked 2026-11-12, two rounds (R1–R4 sweep, R5–R8 qimpag), no notes on any answer.
 
 | # | Class | Default policy | Ruling | Scope / exemptions |
 |---|---|---|---|---|
@@ -24,6 +24,10 @@ Asked 2026-11-12, one round, no notes on any answer.
 | R2 | regrowth guards (lint gates) | lint-rule promotion | Shell and Go | `shellcheck -x` at warning, `go vet` + staticcheck on fork Go. No ruff gate. |
 | R3 | swallowed-exception | judge+ask | Fail and log | Gate scripts die when a feed command fails. Go loaders log a parse failure once and keep the defaults. |
 | R4 | repo-helper-reimplementation in web pages and config reads | judge+ask | Both | `conf.Read` plus a `myvector/webkit` helper package. Touches settings pages while web-auth Stage 3 is open. |
+| R5 | order against 2026-11-11-webui-auth.md | — | Sweep first, all of it | Stages 1→5 in plan order; web-auth Stage 3.1 resumes only after Stage 5. No `make ship` in between. |
+| R6 | Stage 4.1 guard | — | Add gocognit gate | `gocognit -over 25` on fork production Go in `scripts/check.sh`; probes and tests excluded; SKIP when the tool cannot run. |
+| R7 | `voice.stream` in an unattended chain | — | Refactor, listen owed | Host tests only (`fakebot`, `voice_test.go`), own commit; live listen → `docs/backlog.md` §OWED[USER]. |
+| R8 | Stage 3.3 eyeball | — | Land it, eyeball owed | Chain does not stop; the three-page look → `docs/backlog.md` §OWED[USER]. |
 
 Not asked, so held at report-only: Python `test-smells`, `unused-knobs`, `inefficient-logic`,
 `stdlib-reinvention`, `protected-member-access` (see Report-only hints).
@@ -94,7 +98,7 @@ Not asked, so held at report-only: Python `test-smells`, `unused-knobs`, `ineffi
   `myvectorConfig.json` silently reads as defaults.
 - Op: `extract`. `conf.Read(path string, v any) error` beside the existing `conf.Update`. A missing file stays
   silent. A parse failure is logged once per file modification time (`myvector: bad config: <path>: <err>`),
-  and callers keep their current defaults. `memory.configBytes` stays as the test seam or moves into `conf`.
+  and callers keep their current defaults. `memory.configBytes` stays as the test seam (5 test sites fake it).
 - Guard: Go test in `conf/conf_test.go`: a corrupt file logs exactly once across two reads and logs again after
   the file changes.
 - Gate: refactor gate. Characterize `llm.Load`, `memory.Model`, `search.LoadConfig` on missing, empty, corrupt
@@ -175,8 +179,8 @@ Not asked, so held at report-only: Python `test-smells`, `unused-knobs`, `ineffi
 - Guard: Go test in `webkit` covering the wrong content type, an oversized body, bad JSON and a failing
   `valid`; plus the family test from 3.1 extended to `decode` and `PageHandler`.
 - Gate: refactor gate. Existing handler tests in `prompt`, `voice` and `wifi` stay read-only.
-- Sequence: these files are wired through `webauth.Handler`. Land this either before web-auth Stage 3.1 starts
-  or after Stage 5 closes, never in the middle of a web-auth slice. `webauth/login.html` is not touched.
+- Sequence (R5): lands before web-auth Stage 3.1 starts. These files are wired through `webauth.Handler`;
+  `webauth/login.html` is not touched.
 
 ### Stage 3.3 — shared page CSS (R4)
 
@@ -187,7 +191,8 @@ Not asked, so held at report-only: Python `test-smells`, `unused-knobs`, `ineffi
   because it renders before auth.
 - Guard: Go test that each served page contains the base rules exactly once and that no base rule text is left
   in the three source files.
-- Gate: refactor gate, plus an eyeball of the three pages (the only pure-visual step in this plan).
+- Gate: refactor gate. R8: the eyeball of the three pages is not run by the chain; add one
+  `docs/backlog.md` §OWED[USER] line in the slice's commit and continue.
 - Also here: JS helpers `call` (3 pages), `post` and `show` (2 pages). Judge when the slice opens; move them
   only if the bodies match.
 
@@ -213,10 +218,10 @@ Not asked, so held at report-only: Python `test-smells`, `unused-knobs`, `ineffi
 
 - Sites: `voice.stream` (49), `memory.runESN` (32), `search.Fill` (29), `prompt.Save` (26)
 - Op: `extract`, one function per commit.
-- Guard: open decision. A watermark needs gocognit in the Go job, which R2 did not cover. Ask before adding it;
-  without it this slice ships no guard.
-- Gate: refactor gate. `voice.stream` is the robot audio path: characterize with `fakebot` and the existing
-  `voice_test.go` only, no robot sound test without asking (robot sound lock).
+- Guard (R6): `gocognit -over 25` job in `scripts/check.sh` over fork production Go (no `*/main.go` probes, no
+  `_test.go`), pinned via `go run`; pick a version that builds on go 1.22, SKIP rule as 2.1. Must-fail demo.
+- Gate: refactor gate. R7: `voice.stream` is split last, in its own commit, on `fakebot` and `voice_test.go`
+  only; no robot sound test (sound lock); add the live listen to `docs/backlog.md` §OWED[USER] in that commit.
 - Done when: each function scores 25 or less and the package tests are unchanged and green.
 
 ### Stage 4.2 — `robot/firmware/check-static.sh` (90)
