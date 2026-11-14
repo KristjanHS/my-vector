@@ -1,5 +1,7 @@
 # Own README replacing upstream wire-pod's — portfolio slot 2 spec
 
+- **Status:** ✅ SHIPPED 2026-11-14
+
 - **Source:** dotfiles `docs/plans/2026-11-14-agentic-portfolio-prep.md` slot 2 item 3 (P13) + §5.3 template.
 - **Run:** `/qimpag docs/plans/2026-11-14-readme-spec.md` from this repo's cwd. README-only; robot video + trails are slot 6.
 
