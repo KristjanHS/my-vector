@@ -10,7 +10,7 @@ my-vector gives the Anki (now Digital Dream Labs) [Vector](https://web.archive.o
 - **PC voices** — Vector speaks LLM answers and its built-in lines through a local TTS service (Kokoro and Piper voices, Estonian voices included), falling back to the robot's own voice when the service is down (`tts/`, `chipper/pkg/myvector/voice`).
 - **Estonian speech recognition** — a faster-whisper STT service runs TalTech's Estonian model on the GPU, with an English model for English; the language is switched from the web UI (`et-stt/`, `chipper/pkg/myvector/lang`).
 - **Live answers** — weather, news and other current questions are routed to web search (Tavily, or a local SearXNG) and a weather forecast before the LLM answers (`chipper/pkg/myvector/search`).
-- **Picture questions** — "what is in this picture?" asks describe what Vector's camera sees, and follow-up questions reuse the last photo (`chipper/pkg/myvector/photo`).
+- **Picture questions** — ask "what is in this picture?" and Vector describes what its camera sees; follow-up questions reuse the last photo (`chipper/pkg/myvector/photo`).
 
 ## Quickstart
 
@@ -19,6 +19,8 @@ The PC side runs from the [Makefile](Makefile); `make help` lists every target. 
 ## How it was built
 
 <!-- TODO: stats block (slot 4 generator) + one hand-written paragraph -->
+
+Method and agent configuration: [claudeconf](https://github.com/KristjanHS/claudeconf).
 
 ## Base: wire-pod
 
