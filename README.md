@@ -1,28 +1,42 @@
-# wire-pod
+# my-vector
 
-`wire-pod` is fully-featured server software for the Anki (now Digital Dream Labs) [Vector](https://web.archive.org/web/20190417120536if_/https://www.anki.com/en-us/vector) robot. It was created thanks to Digital Dream Labs' [open-sourced code](https://github.com/digital-dream-labs/chipper).
+my-vector gives the Anki (now Digital Dream Labs) [Vector](https://web.archive.org/web/20190417120536if_/https://www.anki.com/en-us/vector) robot a large-language-model brain, PC-generated voices and Estonian speech recognition. It is built on top of [wire-pod](https://github.com/kercre123/wire-pod), the open-source Vector server.
 
-It allows voice commands to work with any Vector 1.0 or 2.0 for no fee, including regular production robots.
+<!-- TODO: 30-second robot video (slot 6) -->
 
-## Installation
+## What my-vector adds
 
-The installation guide exists on the wiki: [Installation guide](https://github.com/kercre123/wire-pod/wiki/Installation)
+- **LLM answers** — each language picks its own brain, a local Ollama model or Claude, configured from the web UI (`chipper/pkg/myvector/llm`, trial notes in [docs/llm-trials.md](docs/llm-trials.md)).
+- **PC voices** — Vector speaks LLM answers and its built-in lines through a local TTS service (Kokoro and Piper voices, Estonian voices included), falling back to the robot's own voice when the service is down (`tts/`, `chipper/pkg/myvector/voice`).
+- **Estonian speech recognition** — a faster-whisper STT service runs TalTech's Estonian model on the GPU, with an English model for English; the language is switched from the web UI (`et-stt/`, `chipper/pkg/myvector/lang`).
+- **Live answers** — weather, news and other current questions are routed to web search (Tavily, or a local SearXNG) and a weather forecast before the LLM answers (`chipper/pkg/myvector/search`).
+- **Picture questions** — "what is in this picture?" asks describe what Vector's camera sees, and follow-up questions reuse the last photo (`chipper/pkg/myvector/photo`).
 
-## Wiki
+## Quickstart
 
-Check out the [wiki](https://github.com/kercre123/wire-pod/wiki) for more information on what wire-pod is, a guide on how to install wire-pod, troubleshooting, how to develop for it, and for some generally helpful tips.
+The PC side runs from the [Makefile](Makefile); `make help` lists every target. In short: set up and enable the TTS and STT services (`make tts-setup`, `make tts-enable`, `make stt-setup`, `make stt-enable`), then install wire-pod as a service with `make daemon-enable` and start it with `make start`. The robot still needs wire-pod's own setup first — see [Base: wire-pod](#base-wire-pod).
 
-## Donate
+## How it was built
 
-If you want to :P
+<!-- TODO: stats block (slot 4 generator) + one hand-written paragraph -->
 
-[![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/kercre123)
+## Base: wire-pod
+
+my-vector is a fork of `wire-pod`, fully-featured server software for Vector created thanks to Digital Dream Labs' [open-sourced code](https://github.com/digital-dream-labs/chipper). wire-pod lets voice commands work with any Vector 1.0 or 2.0 for no fee, including regular production robots.
+
+- Installation: wire-pod's [installation guide](https://github.com/kercre123/wire-pod/wiki/Installation)
+- Wiki: the [wire-pod wiki](https://github.com/kercre123/wire-pod/wiki) covers what wire-pod is, installing it, troubleshooting, developing for it, and general tips
 
 ## Credits
 
-- [Digital Dream Labs](https://github.com/digital-dream-labs) for open sourcing chipper and creating escape pod (which made this possible)
+- [wire-pod](https://github.com/kercre123/wire-pod) by [Kerigan Creighton (kercre123)](https://github.com/kercre123) — the server my-vector is built on
+- [Digital Dream Labs](https://github.com/digital-dream-labs) for open sourcing chipper and creating escape pod (which made wire-pod possible)
 - [bliteknight](https://github.com/bliteknight) for making wire-pod more accessible with his easy-to-use pre-setup Linux boxes
 - [dietb](https://github.com/dietb) for rewriting chipper and giving tips
 - [fforchino](https://github.com/fforchino) for adding many features such as localization and multilanguage, and for helping out
 - [xanathon](https://github.com/xanathon) for the publicity and web interface help
 - Anyone who has opened an issue and/or created a pull request for wire-pod
+
+## License
+
+MIT — see [LICENSE](LICENSE) (upstream wire-pod copyright retained).
