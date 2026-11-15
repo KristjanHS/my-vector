@@ -12,7 +12,7 @@ settings_lib=$(dirname "${BASH_SOURCE[0]}")/../scripts/lib/settings.sh
 [[ -f $settings_lib ]] || settings_lib=${robot_dir%/robot}/scripts/lib/settings.sh # a robot/-only test copy: the main checkout's
 # shellcheck source=scripts/lib/settings.sh
 . "$settings_lib" || { echo "SETUP: no $settings_lib" >&2; exit 2; }
-settings_load --no-defaults # public placeholders never reach the robot: an unset key stays empty -> SETUP
+settings_load --no-defaults || exit 2 # public placeholders never reach the robot: an unset key stays empty -> SETUP; an invalid layer line -> exit 2
 env_file=${ROBOT_ENV:-$robot_dir/robot.env}
 [[ -f $env_file ]] ||
   { echo "SETUP: no $env_file; cp robot/robot.env.example robot/robot.env and fill it in" >&2; exit 2; }
