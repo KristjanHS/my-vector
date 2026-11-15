@@ -42,7 +42,7 @@ is_allowed() {
   return 1
 }
 
-# Working tree vs the merge-base, so uncommitted edits count too. --no-renames splits a rename into a
+# Working tree vs the upstream base (merge-base, or scripts/upstream-base when newer), so uncommitted edits count too. --no-renames splits a rename into a
 # delete (of the upstream path) plus an add, so both halves are checked. A failed diff aborts via set -e.
 changes=$(mktemp)
 trap 'rm -f "$changes"' EXIT
