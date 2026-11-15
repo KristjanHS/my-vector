@@ -1,7 +1,7 @@
 #!/usr/sbin/nft -f
-# Loaded by scripts/load-guard.sh (the pinned commit's copy) for wire-pod + myvector-tts; an nft error stops the service. :80/:8080 serve the same
-# unauthenticated API (LLM key included), :8091 the TTS service, :443/:8084 chipper (STT, jdocs, SDK), :8093 the robot mic stream (raw PCM, no token): only this PC and the allowed*/tailnet* sets reach them. Add a device, then commit + `make server-pin`:
-# LAN devices -> allowed4/6; Tailscale devices -> tailnet4/6 (tailscale0 only; re-check `tailscale status` after a device re-auths — its address can change).
+# Loaded by scripts/load-guard.sh (the pinned commit's copy, after scripts/guard-nft.sh prepends the $KEY defines) for wire-pod + myvector-tts; an nft error stops the service. :80/:8080 serve the same
+# unauthenticated API (LLM key included), :8091 the TTS service, :443/:8084 chipper (STT, jdocs, SDK), :8093 the robot mic stream (raw PCM, no token): only this PC and the allowed*/tailnet* sets reach them. Add a device to settings.env, then `make server-pin`:
+# LAN devices -> allowed4/6; Tailscale devices -> tailnet4/6 via a $KEY (tailscale0 only; re-check `tailscale status` after a device re-auths — its address can change).
 # Never `tailscale serve`/`funnel` these ports: that proxy connects via lo and so bypasses every address check.
 # The ports are hardcoded in `guarded`: a WEBSERVER_PORT override in source.sh needs the same change here.
 table inet wirepod_guard
@@ -18,11 +18,11 @@ table inet wirepod_guard {
 	# Own devices over Tailscale (phone: S24 FE; Vector), matched with iifname tailscale0 so a LAN host can't pose as a 100.x address
 	set tailnet4 {
 		type ipv4_addr; flags interval
-		elements = { 192.0.2.53, 192.0.2.112 }
+		elements = { $PHONE_TAILNET_IP, $ROBOT_IP }
 	}
 	set tailnet6 {
 		type ipv6_addr; flags interval
-		elements = { 2001:db8::1, 2001:db8::2 }
+		elements = { $PHONE_TAILNET_IP6, $ROBOT_IP6 }
 	}
 	chain input {
 		type filter hook input priority filter; policy accept;
