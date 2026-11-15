@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gofmt gate: every Go file the fork adds or changes vs the upstream merge-base (working tree: untracked .go too) is gofmt-clean.
+# gofmt gate: every Go file the fork adds or changes vs the upstream base (scripts/lib/upstream-base.sh) (working tree: untracked .go too) is gofmt-clean.
 # Upstream files the fork never touched are not checked; one it touches is checked whole (format on first edit, ruled 2026-11-10 —
 # same rule as .claude/hooks/gofmt-edited.sh). Catches what the hook can't: Bash/sed edits.
 # Usage: gofmt.sh [repo] [--head rev tree]   default repo = this checkout; --head checks that commit (tree = its archive copy).
