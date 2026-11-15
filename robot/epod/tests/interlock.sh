@@ -2,6 +2,7 @@
 # Host test of robot/epod/interlock.sh (make check): a fake `openssl s_client` serves a chosen leaf; verify is real openssl.
 # Plus: ship.sh and clone_ready (restarts.sh -d, catch.sh -d) run it, failing, before their first robot step.
 set -euo pipefail
+export DOTFILES_DIR=/nonexistent MY_VECTOR_OVERLAY_DIR=/nonexistent # never this host's settings layers
 here=$(cd "$(dirname "$0")" && pwd)
 robot=$(cd "$here/../.." && pwd)
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$robot/../.git")")

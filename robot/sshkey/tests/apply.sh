@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Host test of robot/sshkey/apply.sh (make check): a fake ssh runs the robot half locally against a temp ETC_ROOT and admits a key only if its blob is in an authorized_keys there.
 set -euo pipefail
+export DOTFILES_DIR=/nonexistent MY_VECTOR_OVERLAY_DIR=/nonexistent # never this host's settings layers
 here=$(cd "$(dirname "$0")" && pwd)
 robot=$(cd "$here/../.." && pwd)
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$robot/../.git")")

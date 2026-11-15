@@ -11,7 +11,7 @@ epod_dir=${MYVECTOR_EPOD_DIR:-${robot_dir%/robot}/secrets/epod}
 settings_lib=$(dirname "${BASH_SOURCE[0]}")/../scripts/lib/settings.sh
 [[ -f $settings_lib ]] || settings_lib=${robot_dir%/robot}/scripts/lib/settings.sh # a robot/-only test copy: the main checkout's
 # shellcheck source=scripts/lib/settings.sh
-. "$settings_lib"
+. "$settings_lib" || { echo "SETUP: no $settings_lib" >&2; exit 2; }
 settings_load --no-defaults # public placeholders never reach the robot: an unset key stays empty -> SETUP
 env_file=${ROBOT_ENV:-$robot_dir/robot.env}
 [[ -f $env_file ]] ||
