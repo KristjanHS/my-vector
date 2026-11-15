@@ -14,11 +14,20 @@
 //     not a restart either: its ActiveEnter does not move.
 //   - An event at a time in [start-Slack, end+Slack] (inclusive) of any ship window is exempt. Days are the local date
 //     of the EVENT, so a poll after a gap books a restart on the day it happened.
-//   - A ship in progress (ShipActive file < ActiveMaxAge old): the restart diff is skipped and the snapshot is not
-//     advanced, so the next poll diffs from the older one once the window line exists. An older marker (a ship killed
-//     before its EXIT trap) is ignored.
-//   - A failed poll writes nothing. A successful one sets today's tailnet: down is sticky for the day, up otherwise.
-//     The snapshot is saved only after every ledger update succeeded.
+//   - A ship in progress (ShipActive file < ActiveMaxAge old): the poll writes nothing at all, neither tailnet nor
+//     restarts nor snapshot, so a mid-deploy probe (tailscale0 not up yet) cannot mark the day down, and the next poll
+//     diffs from the older snapshot once the window line exists. An older marker (a ship killed before its EXIT trap)
+//     is ignored.
+//   - The probe goes over env.sh's $ip (the robot's tailnet address). If it fails, it is retried once over
+//     $ROBOT_LAN_IP (the env.sh settings layers or robot.env; unset, or equal to $ip, = no retry): a LAN answer is used
+//     with tailnet forced down, so the tailnet column means "the PC-robot tailnet link and the robot's tailscale0 both
+//     up". Both failing (or the answer not parsing) writes nothing.
+//   - A successful poll sets today's tailnet: down is sticky for the day, up otherwise. The snapshot is saved only after
+//     every ledger update succeeded.
+//
+// Known limits:
+//   - All restarts of a unit since the last poll are booked at its latest ActiveEnter time, so a crash followed by an
+//     exempt ship restart in the same poll interval is lost (exempt with the ship).
 //
 // Nothing identifying is stored: the state holds boot_id, robot clock/uptime and vic-* unit names + counters.
 package usagepoll
@@ -232,8 +241,9 @@ type Poller struct {
 	StatePath   string
 	WindowsPath string
 	ActivePath  string
-	Probe       func(context.Context) (string, error)
-	Now         func() time.Time // its Location is the ledger's local day
+	Probe       func(context.Context) (string, error) // over the tailnet
+	LANProbe    func(context.Context) (string, error) // the fallback when Probe fails; nil = none
+	Now         func() time.Time                      // its Location is the ledger's local day
 }
 
 // Default is wire-pod's poller: the ledger and paths from vars (cwd chipper/), the probe over ssh.
@@ -244,22 +254,37 @@ func Default() *Poller {
 		WindowsPath: vars.ShipWindowsPath,
 		ActivePath:  vars.ShipActivePath,
 		Probe:       SSHProbe,
+		LANProbe:    SSHProbeLAN,
 		Now:         time.Now,
 	}
 }
 
-// Poll probes the robot once and applies the result (package doc). An error means nothing was written, except when a
+// Poll probes the robot (over the LAN only if the tailnet probe fails) and applies the result (package doc). An error means nothing was written, except when a
 // ledger update failed part-way: then the snapshot is not saved, and the next poll re-applies the diff.
 func (p *Poller) Poll(ctx context.Context) error {
 	out, err := p.Probe(ctx)
+	viaLAN := false
 	if err != nil {
-		return err
+		if p.LANProbe == nil {
+			return err
+		}
+		lanOut, lanErr := p.LANProbe(ctx)
+		if lanErr != nil {
+			return fmt.Errorf("%v; LAN retry: %v", err, lanErr)
+		}
+		out, viaLAN = lanOut, true
 	}
 	cur, err := Parse(out)
 	if err != nil {
 		return err
 	}
+	if viaLAN {
+		cur.Tailnet = false // the robot answered, but not over the tailnet
+	}
 	now := p.Now()
+	if p.shipActive(now) {
+		return nil // nothing at all: the window line does not exist yet, and a mid-deploy tailnet state is not the day's
+	}
 	// Tailnet first: it is idempotent, so a retry after a failed restart update repeats it harmlessly.
 	if err := p.Ledger.Update(usage.Day(now), func(r *usage.Row) {
 		if !cur.Tailnet {
@@ -269,9 +294,6 @@ func (p *Poller) Poll(ctx context.Context) error {
 		}
 	}); err != nil {
 		return err
-	}
-	if p.shipActive(now) {
-		return nil // the window line does not exist yet: diff from the older snapshot next time
 	}
 	days := Diff(p.loadState(), cur, p.windows(), Slack, now.Location())
 	keys := make([]string, 0, len(days))
@@ -389,19 +411,33 @@ func (p *Poller) safePoll(ctx context.Context) (err error) {
 	return p.Poll(ctx)
 }
 
-// SSHProbe runs Script on the robot over robot/env.sh's ssh lane (its key, options and mux), from wire-pod's cwd.
-// silent=1 (unexported) skips env.sh's sound-lock guard: the probe makes no sound.
-func SSHProbe(ctx context.Context) (string, error) {
+// probeCmd sources robot/env.sh ($1) and runs Script ($2) as root on the robot: over $ip, or with $3 = lan over
+// $ROBOT_LAN_IP (exit 2 when it is unset or equal to $ip: no distinct LAN lane). silent=1 (unexported) skips env.sh's
+// sound-lock guard: the probe makes no sound. ServerAlive ends a half-open link's ssh within ~10 s.
+const probeCmd = `declare +x silent=1; . "$1" || exit
+h=$ip
+if [[ $3 == lan ]]; then
+  h=${ROBOT_LAN_IP:-}
+  [[ -n $h && $h != "$ip" ]] || { echo "no ROBOT_LAN_IP distinct from ROBOT_IP" >&2; exit 2; }
+fi
+ssh "${ssh_opts[@]}" -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "root@$h" "$2"`
+
+// SSHProbe runs Script on the robot over robot/env.sh's ssh lane (its key, options and mux) to $ip, from wire-pod's cwd.
+func SSHProbe(ctx context.Context) (string, error) { return sshProbe(ctx, "tailnet") }
+
+// SSHProbeLAN is SSHProbe over $ROBOT_LAN_IP.
+func SSHProbeLAN(ctx context.Context) (string, error) { return sshProbe(ctx, "lan") }
+
+func sshProbe(ctx context.Context, lane string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, Timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "bash", "-c",
-		`declare +x silent=1; . "$1" && ssh "${ssh_opts[@]}" "root@$ip" "$2"`, "_", vars.RobotEnvPath, Script)
+	cmd := exec.CommandContext(ctx, "bash", "-c", probeCmd, "_", vars.RobotEnvPath, Script, lane)
 	cmd.WaitDelay = time.Second // an orphaned ssh holding the output pipe must not outlive the timeout
 	var out, errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errOut
 	err := cmd.Run()
 	if ctx.Err() != nil {
-		return "", fmt.Errorf("robot probe: no answer in %v", Timeout)
+		return "", fmt.Errorf("robot probe (%s): no answer in %v", lane, Timeout)
 	}
 	if err != nil {
 		msg := strings.TrimSpace(errOut.String())
@@ -410,9 +446,9 @@ func SSHProbe(ctx context.Context) (string, error) {
 		}
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return "", fmt.Errorf("robot probe: exit %d: %s", exit.ExitCode(), msg)
+			return "", fmt.Errorf("robot probe (%s): exit %d: %s", lane, exit.ExitCode(), msg)
 		}
-		return "", fmt.Errorf("robot probe: %v", err)
+		return "", fmt.Errorf("robot probe (%s): %v", lane, err)
 	}
 	return out.String(), nil
 }
