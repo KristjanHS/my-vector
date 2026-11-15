@@ -4,6 +4,7 @@
 # (stub ssh/curl). SKIP without g++ or the victor clone (jsoncpp).
 # Usage: pc-voice.sh   (env: VICTOR_SRC; PC_VOICE_LIVE=<voice> adds POSTs to a live tts/server.py on :8091 — opt-in only)
 set -euo pipefail
+export DOTFILES_DIR=/nonexistent MY_VECTOR_OVERLAY_DIR=/nonexistent # never this host's settings layers
 here=$(cd "$(dirname "$0")" && pwd)
 fw=$(dirname "$here")
 die() { echo "FAIL: pc-voice host test: $*" >&2; exit 1; }

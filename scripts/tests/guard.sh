@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # wire-pod-guard.nft loaded in a throwaway user+net namespace: every `tcp dport` rule's port set = want.
 set -euo pipefail
+export DOTFILES_DIR=/nonexistent MY_VECTOR_OVERLAY_DIR=/nonexistent # never this host's settings layers
 dir=$(cd "$(dirname "$0")/../.." && pwd)
 want="80 443 8080 8084 8091 8093"
 nft=/usr/sbin/nft

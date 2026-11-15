@@ -3,6 +3,7 @@
 # answers status from $ETC_ROOT/ts-state and copies the key file `up` reads to $ETC_ROOT/seen-key. The session comes from FAKE_SRC
 # (default PC_LAN_IP); a tailnet source must not restart a running tailscaled.
 set -euo pipefail
+export DOTFILES_DIR=/nonexistent MY_VECTOR_OVERLAY_DIR=/nonexistent # never this host's settings layers
 here=$(cd "$(dirname "$0")" && pwd)
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")
 tmp=$(mktemp -d "$main/robot/work/tailscale-test.XXXXXX")

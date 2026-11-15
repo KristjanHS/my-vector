@@ -27,7 +27,7 @@ setup() { echo "SETUP: $*" >&2; exit 2; }
 botinfo_hint() {
   local stored
   stored=$(jq -r --arg e "${2,,}" '.robots[]? | select((.esn // "" | ascii_downcase) == $e) | .ip_address // empty' "$1" 2>/dev/null | head -n 1) || return 0
-  [[ -z $stored || $stored == "$3" ]] || echo "wire-pod has $2 at $stored, robot.env ROBOT_IP=$3: set ip_address in $1 to $3, then make start"
+  [[ -z $stored || $stored == "$3" ]] || echo "wire-pod has $2 at $stored, ROBOT_IP=$3: set ip_address in $1 to $3, then make start"
 }
 ok() { echo "ok: $* (+$SECONDS s)"; }
 step_n=0

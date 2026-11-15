@@ -4,6 +4,7 @@
 # An absent layer is skipped. Run as `bash scripts/lib/settings.sh --dump [--no-defaults]` to print the resolved keys.
 settings_layers() {
   local lib main
+  [[ $# == 0 || $* == --no-defaults ]] || { echo "settings.sh: unknown arg $*" >&2; return 2; }
   lib=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   main=$(git -C "$lib" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && main=$(dirname "$main") ||
     main=$(cd "$lib/../.." && pwd) # git refused (root on a user-owned repo, no safe.directory): this checkout
@@ -12,12 +13,13 @@ settings_layers() {
   echo "${MY_VECTOR_OVERLAY_DIR:-$main/../<overlay>}/settings.env"
 }
 settings_load() {
-  local - f
+  local - f layers
+  layers=$(settings_layers "$@") || return
   set -a
   while IFS= read -r f; do
     # shellcheck source=/dev/null
     if [[ -f $f ]]; then . "$f"; fi
-  done < <(settings_layers "$@")
+  done <<<"$layers"
 }
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
   set -euo pipefail

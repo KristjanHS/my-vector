@@ -13,9 +13,14 @@ dump=$(bash "$dir/scripts/lib/settings.sh" --dump)
 for want in PC_LAN_IP=10.0.0.1 ROBOT_IP=10.0.0.3 ROBOT_ESN=0000abcd PHONE_TAILNET_IP=192.0.2.53; do
   grep -qx "$want" <<<"$dump" || fail "--dump lacks $want: $dump"
 done
-grep -q '^PHONE_TAILNET_IP=' <<<"$(bash "$dir/scripts/lib/settings.sh" --dump --no-defaults)" && fail "--no-defaults leaked a public default"
+nd=$(bash "$dir/scripts/lib/settings.sh" --dump --no-defaults)
+grep -qx ROBOT_IP=10.0.0.3 <<<"$nd" || fail "--no-defaults dropped the companion layer: $nd"
+if grep -q '^PHONE_TAILNET_IP=' <<<"$nd"; then fail "--no-defaults leaked a public default"; fi
+rc=0; bash "$dir/scripts/lib/settings.sh" --dump --no-default >/dev/null 2>&1 || rc=$?
+[[ $rc == 2 ]] || fail "settings.sh accepted a mistyped --no-defaults (rc=$rc)"
 grep -qx 'define ROBOT_IP = 10.0.0.3' <<<"$("$dir/scripts/guard-nft.sh" </dev/null)" || fail "guard-nft.sh ignores the companion layer"
-envsh() { ROBOT_ENV=$1 bash -c 'silent=1; . "$0/robot/env.sh"; echo "$ip $esn $tts_url"' "$dir"; }
+# shellcheck disable=SC2016 # the inner bash expands them
+envsh() { env -u ESN -u SERVER -u ROBOT_TTS_URL -u ROBOT_IP -u MYVECTOR_EPOD_DIR ROBOT_ENV="$1" bash -c 'silent=1; . "$0/robot/env.sh"; echo "$ip $esn $tts_url"' "$dir"; }
 [[ $(envsh "$t/robot.env") == "10.0.0.3 0000abcd http://10.0.0.4:8091" ]] || fail "env.sh layering: $(envsh "$t/robot.env" 2>&1)"
 echo ROBOT_IP=10.0.0.9 >>"$t/robot.env"
 [[ $(envsh "$t/robot.env") == "10.0.0.9 "* ]] || fail "robot.env does not override the settings layers"

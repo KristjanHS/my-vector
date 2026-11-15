@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # Fakes for robot/netguard/tests/{hosts,apply}.sh: ssh runs the robot half locally (SSH_CLIENT=$FAKE_SRC) against ETC_ROOT; iptables keeps
 # the hooked chain's tcp 22 -s; LAN ssh obeys it, LAN :8888 is 000 while hooked, tailnet ssh/:8888 pass; escapepod.local by /etc/hosts.
+export DOTFILES_DIR=/nonexistent MY_VECTOR_OVERLAY_DIR=/nonexistent # never this host's settings layers
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 robot=$(cd "$here/../.." && pwd)
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$robot/../.git")")

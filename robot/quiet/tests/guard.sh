@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Host test of the robot sound lock (make check): env.sh's guard, the sound scripts, quiet.sh — fake robot.env, fake curl/ssh.
 set -euo pipefail
+export DOTFILES_DIR=/nonexistent MY_VECTOR_OVERLAY_DIR=/nonexistent # never this host's settings layers
 here=$(cd "$(dirname "$0")" && pwd)
 robot=$(cd "$here/../.." && pwd)
 main=$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$robot/../.git")")
