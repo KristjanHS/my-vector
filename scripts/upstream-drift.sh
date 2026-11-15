@@ -25,12 +25,15 @@ allowed_edits=(
   chipper/pkg/wirepod/sdkapp/server.go   # ListenAndServe(":80", forkWebHandler()) (fork_webauth.go, webauth); whole file gofmt-ed 2026-11-11
   chipper/pkg/wirepod/ttr/intentparam.go # names_username_extend face hint dials via robotconn.Get (myvector/robotconn), was vector.New per use
   setup.sh                               # certs dir ./certs -> ./secrets/server/certs (fork_paths.go)
+  README.md                              # the fork's own README; upstream wire-pod credited in it
 )
 
 to=(); [[ ${1:-} == --head ]] && to=("$(git rev-parse --verify "${2:-HEAD}^{commit}")")
 ref=${UPSTREAM_REF:-upstream/main}
 git rev-parse -q --verify "$ref^{commit}" >/dev/null || { echo "missing $ref: git fetch upstream" >&2; exit 2; }
-base=$(git merge-base "${to[0]:-HEAD}" "$ref")
+# shellcheck source=scripts/lib/upstream-base.sh
+. scripts/lib/upstream-base.sh
+base=$(upstream_base . "${to[0]:-HEAD}")
 roots=$(git ls-tree --name-only "$base")
 
 is_allowed() {
