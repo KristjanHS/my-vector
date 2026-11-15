@@ -42,7 +42,13 @@ echo "log: $SHIP_LOG"
 
 dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
-cleanup() { rm -rf "$head"; rm -f "$src/myvector_sshkey"; if declare -F mux_close >/dev/null; then mux_close; fi; }
+# Ship window (prod-evidence ledger): "<start> <end>" epochs from the first robot-touching step to exit, any outcome —
+# wire-pod's usage poll exempts vic-* restarts inside one.
+ship_start=''
+cleanup() {
+  rm -rf "$head"; rm -f "$src/myvector_sshkey"; if declare -F mux_close >/dev/null; then mux_close; fi
+  [[ -z $ship_start ]] || echo "$ship_start $(date +%s)" >>"$repo/robot/work/ship-windows.tsv"
+}
 trap cleanup EXIT
 # fork_smoke.go + myvector/voice too: check-static.sh S5 reads them repo-relative and fails if smoke.sh is there without them.
 # robot/env.sh: settings.sh + smoke.sh source it from $pd/.. (robot/quiet: its guard.sh; robot/lib: the installers' etc.sh); ls-tree drops what an older sha lacks.
@@ -179,6 +185,7 @@ fi
 
 # Before the deploy: a server that won't start stops the ship with the robot untouched, and the robot
 # reboots straight onto the new server; smoke.sh's wire-pod link check then covers both.
+ship_start=$(date +%s)
 server_check # again: the server may have been restarted during the build
 if ((restart)); then
   step "server: ${srv[*]} changed since ${running:-none (not running)} -> pin $sha, restart wire-pod"
@@ -233,11 +240,21 @@ else
   "$pd/smoke.sh" --server || die "robot smoke test (--server) failed — wire-pod ALREADY runs $sha, NOT pushed; fix and ship again, or ship the previous sha"
 fi
 
+# Receipt only after a green smoke (every failure above died first). A tag that cannot be made warns, never stops the push.
+step "receipt: ship/* tag on $sha"
+# shellcheck source=robot/firmware/receipt.sh
+. "$here/receipt.sh"
+srv_now=$(server_sha)
+tag=$(receipt_tag "$repo" "$full" "${srv_now:-$full}" "$( ((fw)) && echo "$fw_tree" || echo unchanged)" "$( ((fw)) && echo full || echo server)" "$ip") ||
+  { tag=''; add_warns "WARN receipt: no ship/* tag for $sha (above); the push goes on without it"; }
+[[ -z $tag ]] || echo "tagged $tag"
+
 # Push the pinned sha, not the branch tip: a parallel session may have committed during the build,
 # and pushing the tip would publish commits the robot is not running. Keeps origin == robot.
-step "push: $sha to origin main"
-git -C "$repo" push origin "$full:refs/heads/main" ||
-  die "git push failed — the robot is ALREADY running $sha; push it by hand so origin == robot (rejected? origin may already have it, git fetch to check)"
+# The receipt by explicit refspec, never --follow-tags (that would also push fetched upstream annotated tags).
+step "push: $sha${tag:+ + $tag} to origin main"
+git -C "$repo" push --atomic origin "$full:refs/heads/main" ${tag:+"refs/tags/$tag"} ||
+  die "git push failed — the robot is ALREADY running $sha; push it by hand so origin == robot: git push origin $full:refs/heads/main${tag:+ refs/tags/$tag} (rejected? origin may already have it, git fetch to check)"
 echo
 echo "shipped $sha at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z") (log: $SHIP_LOG)"
 show_warns
