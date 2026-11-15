@@ -57,7 +57,7 @@ elif [[ -f $dir/scripts/wire-pod-guard.nft ]]; then echo "nft guard check skippe
 export DOTFILES_DIR=/nonexistent MY_VECTOR_OVERLAY_DIR=/nonexistent # jobs never read this host's settings layers
 opt settings "$dir"/scripts/tests/settings.sh
 job check-static "$dir"/robot/firmware/check-static.sh
-for t in pc-voice nap silent-start mic-stream night-check logcheck receipt; do opt "$t" "$dir/robot/firmware/tests/$t.sh"; done # each SKIPs itself without g++/clone
+for t in pc-voice nap silent-start mic-stream night-check logcheck receipt static-feed; do opt "$t" "$dir/robot/firmware/tests/$t.sh"; done # each SKIPs itself without g++/clone
 opt lib-etc "$dir"/robot/lib/tests/etc.sh
 opt sshkey "$dir"/robot/sshkey/tests/apply.sh
 opt hostkey "$dir"/robot/hostkey/tests/apply.sh

@@ -58,19 +58,21 @@ check_stt() {
 }
 
 check_picker() {
-  local api=${WIREPOD_URL:-http://127.0.0.1:8080} v models l p m r body
+  local api=${WIREPOD_URL:-http://127.0.0.1:8080} v models feed l p m r body
   v=$(curl -fsS --max-time 5 "$api/myvector/api/voice") || setup "wire-pod not up at $api"
   models=$(curl -fsS --max-time 30 "$api/myvector/api/llm/models")
   [[ $(jq -r '.ollama.error // empty' <<<"$models") == "" ]] && pass "ollama list reachable" || fail "ollama list: $(jq -r .ollama.error <<<"$models")"
   # saved + default profiles, plus Claude Haiku in both languages: listed, and Test answers OK
-  while read -r l p m; do
+  feed=$({ jq -r '(.llm, .defaults) | to_entries[] | "\(.key) \(.value.provider) \(.value.model)"' <<<"$v" &&
+    printf '%s claude claude-haiku-5-5\n' en-US et-EE; } | sort -u) || fail "voice API: saved profiles unreadable: ${v:0:80}"
+  [[ -z $feed ]] || while read -r l p m; do
     if [[ $p == ollama ]]; then jq -e --arg m "$m" '.ollama.models | index($m)' <<<"$models" >/dev/null || fail "$l $m not in ollama list"
     else jq -e --arg m "$m" '[.claude.models[].id] | index($m)' <<<"$models" >/dev/null || fail "$l $m not in claude list"; fi
     r=$(jq -nc --arg l "$l" --arg p "$p" --arg m "$m" '{lang: $l, provider: $p, model: $m}' |
       curl -sS --max-time 120 -H 'Content-Type: application/json' -d @- "$api/myvector/api/llm/test")
     if jq -e '.reply | test("ok"; "i")' <<<"$r" >/dev/null 2>&1; then pass "test $l $p $m: $(jq -r '"\(.reply) \(.ms) ms"' <<<"$r")"
     else fail "test $l $p $m: $r"; fi
-  done < <({ jq -r '(.llm, .defaults) | to_entries[] | "\(.key) \(.value.provider) \(.value.model)"' <<<"$v"; printf '%s claude claude-haiku-5-5\n' en-US et-EE; } | sort -u)
+  done <<<"$feed"
   # key hygiene: no full key outside the gitignored fork config
   [[ $(grep -c sk-ant "$repo/secrets/server/apiConfig.json" 2>/dev/null || true) == 0 ]] && pass "apiConfig.json holds no Claude key" || fail "apiConfig.json holds a Claude key"
   for r in /api/get_kg_api /myvector/api/voice; do
@@ -134,11 +136,11 @@ check_clock() {
 check_ttsdown() {
   # shellcheck source=robot/quiet/guard.sh
   . "$repo/robot/quiet/guard.sh" && quiet_guard # Vector speaks: obeys the sound lock (G4)
-  local api=${WIREPOD_URL:-http://127.0.0.1:8080} esn lang t1 r one="Test one." two="Test two."
+  local api=${WIREPOD_URL:-http://127.0.0.1:8080} esn v lang t1 r one="Test one." two="Test two."
   esn=$(jq -r '.robots[0].esn // empty' "$repo/secrets/server/jdocs/botSdkInfo.json" 2>/dev/null) || true
   [[ -n $esn ]] || setup "no robot in secrets/server/jdocs/botSdkInfo.json"
-  read -r lang t1 < <(curl -fsS --max-time 5 "$api/myvector/api/voice" | jq -r '"\(.lang) \(if .lang == "et-EE" then .t1_et else .t1 end)"') &&
-    [[ -n ${t1:-} ]] || setup "wire-pod not up"
+  v=$(curl -fsS --max-time 5 "$api/myvector/api/voice" | jq -r '"\(.lang) \(if .lang == "et-EE" then .t1_et else .t1 end)"') &&
+    read -r lang t1 <<<"$v" && [[ -n ${t1:-} ]] || setup "wire-pod not up"
   [[ $t1 != stock ]] || setup "T1 is stock for the saved lang: nothing to fall back from"
   [[ $lang != et-EE ]] || one="Proov üks." two="Proov kaks." # the saved lang's voice reads its own language
   say() { curl -sS --max-time 35 "$api/api-sdk/fork_say?serial=$esn" --data-urlencode "text=$1"; }

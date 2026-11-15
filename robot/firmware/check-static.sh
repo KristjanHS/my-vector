@@ -10,14 +10,16 @@ built=0
 case ${1:-} in '') ;; --built) built=1 ;; *) die "unknown arg: $1 (only --built)" ;; esac
 
 # S1: series lines are existing patches, every patch is in series once, manifest rows cover exactly the series.
-mapfile -t series < <(grep -v '^[[:space:]]*$' "$here/series")
+feed=$(grep -v '^[[:space:]]*$' "$here/series") || die "cannot read $here/series (missing or empty)"
+mapfile -t series <<<"$feed"
 for p in "${series[@]}"; do [[ $p == *.patch && -f $here/$p ]] || die "series names a missing patch: $p"; done
 dup=$(printf '%s\n' "${series[@]}" | sort | uniq -d)
 [[ -z $dup ]] || die "series lists twice: $dup"
 for f in "$here"/*.patch; do
   grep -qxF "${f##*/}" <<<"$(printf '%s\n' "${series[@]}")" || die "${f##*/} is not in series"
 done
-mapfile -t rows < <(grep -v '^#' "$here/markers.tsv" | grep -v '^[[:space:]]*$')
+feed=$(grep -v '^#' "$here/markers.tsv" | grep -v '^[[:space:]]*$') || die "cannot read $here/markers.tsv (missing or no rows)"
+mapfile -t rows <<<"$feed"
 for r in "${rows[@]}"; do
   IFS=$'\t' read -r p kind path marker extra <<<"$r"
   [[ -n $marker && -z ${extra:-} && $kind =~ ^(src|bin)$ && -n $path ]] || die "markers.tsv: bad row: $r"
@@ -176,9 +178,10 @@ for r in "${rows[@]}"; do
   n=$((n + 1))
 done
 m=0
+feed=$(git -C "$src" diff --name-only "$pin" "$tip") || die "git diff ${pin:0:12}..${tip:0:12} failed in $src"
 while read -r f; do
   [[ $f == *.json ]] || continue
   cmp -s <(git -C "$src" show "$tip:$f") "$build/data/assets/cozmo_$f" || die "stale in _build: $f"
   m=$((m + 1))
-done < <(git -C "$src" diff --name-only "$pin" "$tip")
+done <<<"$feed"
 echo "built markers OK ($n), built JSON = patched ($m)"
