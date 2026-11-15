@@ -119,7 +119,9 @@ func (st *Store) Guard(snap Snapshot, lost []string, judged bool, now time.Time)
 		}
 	}
 	var old []Fact
-	json.Unmarshal(snap.Facts, &old)
+	if err := json.Unmarshal(snap.Facts, &old); err != nil {
+		logf("myvector: memory guard "+snap.ESN+" bad snapshot facts:", err)
+	}
 	for _, f := range old {
 		if at, ok := removed[f.ID]; ok {
 			f.Status, f.RemovedAt = Removed, at

@@ -390,3 +390,36 @@ func TestForkAIReqMemory(t *testing.T) {
 		t.Errorf("memory blocks missing from the system prompt: %q", c)
 	}
 }
+
+// useForkLog captures forkLogf lines.
+func useForkLog(t *testing.T) *[]string {
+	t.Helper()
+	old := forkLogf
+	t.Cleanup(func() { forkLogf = old })
+	logs := &[]string{}
+	forkLogf = func(a ...any) { *logs = append(*logs, fmt.Sprint(a...)) }
+	return logs
+}
+
+func TestForkBotZoneBadJdoc(t *testing.T) {
+	for _, c := range []struct{ doc, want string }{
+		{`{"time_zone": "Europe/Tallinn"}`, "Europe/Tallinn"},
+		{`{`, "Local"},
+		{``, "Local"},
+		{`{"time_zone": 5}`, "Local"},
+	} {
+		useBotClock(t, "")
+		vars.AddJdoc("vic:esn", "vic.RobotSettings", vars.AJdoc{JsonDoc: c.doc})
+		logs := useForkLog(t)
+		if got := forkBotZone("esn").String(); got != c.want {
+			t.Errorf("%q: zone %q, want %q", c.doc, got, c.want)
+		}
+		wantLogs := 1
+		if c.want != "Local" {
+			wantLogs = 0
+		}
+		if len(*logs) != wantLogs || wantLogs == 1 && !strings.HasPrefix((*logs)[0], "myvector: bad time_zone jdoc:") {
+			t.Errorf("%q: logs %q, want %d time_zone line", c.doc, *logs, wantLogs)
+		}
+	}
+}

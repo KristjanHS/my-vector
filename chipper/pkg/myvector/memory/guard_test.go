@@ -140,3 +140,42 @@ func TestGuardDropsProfileOfRemovedFact(t *testing.T) {
 		t.Fatal("a profile built from a fact removed meanwhile must not be stored")
 	}
 }
+
+func TestGuardBadSnapshotFacts(t *testing.T) {
+	for _, c := range []struct {
+		facts string
+		want  []string
+	}{
+		{"", []string{"o1", "e1"}},
+		{"{", []string{"o1"}},
+		{`{"id":"e1"}`, []string{"o1"}},
+	} {
+		logs := useModel(t, `{}`)
+		st := (&Store{Facts: []Fact{mfact("e1", "pets", Active, "a"), {ID: "o1", ESN: "other", Category: "pets", Text: "x", Status: Active}}}).init()
+		snap := st.Snapshot(esn)
+		if c.facts != "" {
+			snap.Facts = []byte(c.facts)
+		}
+		st.Guard(snap, []string{"pets"}, false, t0)
+		var ids []string
+		for _, f := range st.Facts {
+			ids = append(ids, f.ID)
+		}
+		if strings.Join(ids, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%q: facts %v, want %v", c.facts, ids, c.want)
+		}
+		bad := 0
+		for _, l := range *logs {
+			if strings.HasPrefix(l, "myvector: memory guard "+esn+" bad snapshot facts:") {
+				bad++
+			}
+		}
+		want := 0
+		if c.facts != "" {
+			want = 1
+		}
+		if bad != want || len(*logs) != 1+want {
+			t.Errorf("%q: logs %q, want %d bad-facts line", c.facts, *logs, want)
+		}
+	}
+}

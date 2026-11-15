@@ -28,13 +28,18 @@ var forkNow = time.Now
 // forkSearch fills {search} from the last user message; a var so tests fake it.
 var forkSearch = search.Fill
 
+// forkLogf logs the fork's parse guards; a var so tests capture it.
+var forkLogf = logger.Println
+
 // forkBotZone is the robot's vic.RobotSettings time_zone (what its clock shows), else time.Local.
 func forkBotZone(esn string) *time.Location {
 	var s struct {
 		TimeZone string `json:"time_zone"`
 	}
 	if j, ok := vars.GetJdoc("vic:"+esn, "vic.RobotSettings"); ok {
-		json.Unmarshal([]byte(j.JsonDoc), &s)
+		if err := json.Unmarshal([]byte(j.JsonDoc), &s); err != nil {
+			forkLogf("myvector: bad time_zone jdoc:", err)
+		}
 	}
 	return prompt.Zone(s.TimeZone)
 }
