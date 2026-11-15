@@ -10,9 +10,56 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 )
 
 var mu sync.Mutex
+
+// Read unmarshals the JSON file at path into v. A missing file returns its error unlogged; any other read or parse
+// failure is returned and logged once per file mtime (Parse). v keeps the keys that did decode.
+func Read(path string, v any) error {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err != nil {
+		logBad(path, err)
+		return err
+	}
+	return Parse(path, b, v)
+}
+
+// Parse unmarshals b, the content of path, into v; a failure is logged once per mtime of path.
+func Parse(path string, b []byte, v any) error {
+	err := json.Unmarshal(b, v)
+	if err != nil {
+		logBad(path, err)
+	}
+	return err
+}
+
+var logf = func(s string) { logger.Println(s) } // tests capture it
+
+var (
+	badMu   sync.Mutex
+	badSeen = map[string]time.Time{} // path → mtime of its last logged failure
+)
+
+func logBad(path string, err error) {
+	var mt time.Time
+	if st, e := os.Stat(path); e == nil {
+		mt = st.ModTime()
+	}
+	badMu.Lock()
+	defer badMu.Unlock()
+	if seen, ok := badSeen[path]; ok && seen.Equal(mt) {
+		return
+	}
+	badSeen[path] = mt
+	logf(fmt.Sprintf("myvector: bad config: %s: %v", path, err))
+}
 
 // Update sets kv in the JSON object at path, keeps every other key, and replaces the file atomically.
 // A missing or unparsable file starts from an empty object; any other read error returns without writing.

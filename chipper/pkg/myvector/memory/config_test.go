@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -22,6 +23,24 @@ func useModel(t *testing.T, cfg string) *[]string {
 	logf = func(a ...any) { logs = append(logs, fmt.Sprint(a...)) }
 	t.Cleanup(func() { configBytes, logf = oldCfg, oldLog })
 	return &logs
+}
+
+func TestModelBadFile(t *testing.T) {
+	def := "ollama:" + llm.DefaultETModel
+	for _, cfg := range []string{``, `{`, `{"memory_model":5}`} {
+		useModel(t, cfg)
+		if m := Model(); m != def {
+			t.Errorf("%q: Model = %q, want %q", cfg, m, def)
+		}
+	}
+	useModel(t, `{"memory_model":"off"}`)
+	if m := Model(); m != "off" {
+		t.Errorf("valid: Model = %q", m)
+	}
+	configBytes = func() ([]byte, error) { return nil, os.ErrNotExist }
+	if m := Model(); m != def {
+		t.Errorf("missing: Model = %q", m)
+	}
 }
 
 func TestTarget(t *testing.T) {

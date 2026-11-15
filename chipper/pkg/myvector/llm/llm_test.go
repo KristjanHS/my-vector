@@ -96,6 +96,18 @@ func TestLLMLoad(t *testing.T) {
 	}
 }
 
+func TestLLMLoadBadFile(t *testing.T) {
+	path := tempPath(t)
+	for _, body := range []string{"missing", ``, `{`, `{"llm":"x","claude_key":"k"}`} {
+		if body != "missing" {
+			os.WriteFile(path, []byte(body), 0644)
+		}
+		if c := Load(); c.Profiles != nil || c.ClaudeKey != "" || c.OllamaURL != "" || c.Vision != nil {
+			t.Errorf("%q: Load = %+v, want legacy Config{}", body, c)
+		}
+	}
+}
+
 func TestLLMResolveSaved(t *testing.T) {
 	old := AnthropicBase
 	AnthropicBase = "https://claude.test"

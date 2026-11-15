@@ -103,7 +103,7 @@ Not asked, so held at report-only: Python `test-smells`, `unused-knobs`, `ineffi
   the file changes.
 - Gate: refactor gate. Characterize `llm.Load`, `memory.Model`, `search.LoadConfig` on missing, empty, corrupt
   and valid files before the edit.
-- Done when: `grep -n 'os.ReadFile(lang.Path())' chipper/pkg/myvector` shows only probe sandboxes; tests green.
+- Done when: `grep -rn 'os.ReadFile(lang.Path())' chipper/pkg/myvector --include=*.go --exclude=*_test.go` shows only probe sandboxes and the `memory.configBytes` seam (which feeds `conf.Parse`); tests green.
 
 ### Stage 1.3 — remaining unchecked parses
 
