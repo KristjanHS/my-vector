@@ -12,6 +12,9 @@ var (
 	WebAuthHeaderPath = "../secrets/wirepod-auth.header"
 )
 
+// UsageLedgerPath is the prod-evidence usage ledger (myvector/usage): the main checkout's gitignored robot/work, relative to cwd chipper/.
+var UsageLedgerPath = "../robot/work/usage.tsv"
+
 func init() {
 	if Packaged { // Init joins these onto UserConfigDir: keep upstream's relative names there
 		return
