@@ -256,7 +256,7 @@ tag=$(receipt_tag "$repo" "$full" "${srv_now:-$full}" "$( ((fw)) && echo "$fw_tr
 # The receipt by explicit refspec, never --follow-tags (that would also push fetched upstream annotated tags).
 step "push: $sha${tag:+ + $tag} to origin main"
 git -C "$repo" push --atomic origin "$full:refs/heads/main" ${tag:+"refs/tags/$tag"} ||
-  die "git push failed — the robot is ALREADY running $sha; push it by hand so origin == robot: git push origin $full:refs/heads/main${tag:+ refs/tags/$tag} (rejected? origin may already have it, git fetch to check)"
+  die "git push failed${tag:+ (receipt $tag kept locally — delete it with git tag -d $tag if you ship again instead)} — the robot is ALREADY running $sha; push it by hand so origin == robot: git push origin $full:refs/heads/main${tag:+ refs/tags/$tag} (rejected? origin may already have it, git fetch to check)"
 echo
 echo "shipped $sha at $(TZ=Europe/Tallinn date "+%Y-%m-%d %H:%M %Z") (log: $SHIP_LOG)"
 show_warns
