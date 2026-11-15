@@ -1,7 +1,7 @@
 #!/usr/sbin/nft -f
 # Loaded by scripts/load-guard.sh (the pinned commit's copy, after scripts/guard-nft.sh prepends the $KEY defines) for wire-pod + myvector-tts; an nft error stops the service. :80/:8080 serve the same
 # unauthenticated API (LLM key included), :8091 the TTS service, :443/:8084 chipper (STT, jdocs, SDK), :8093 the robot mic stream (raw PCM, no token): only this PC and the allowed*/tailnet* sets reach them. Add a device, then commit + `make server-pin`:
-# LAN devices -> allowed4/6; Tailscale devices -> tailnet4/6 as a $KEY define (scripts/guard-nft.sh) (tailscale0 only; re-check `tailscale status` after a device re-auths — its address can change).
+# LAN devices -> allowed4/6, Tailscale devices -> tailnet4/6, each as a $KEY define, never an IP literal (scripts/guard-nft.sh) (tailscale0 only; re-check `tailscale status` after a device re-auths — its address can change).
 # Never `tailscale serve`/`funnel` these ports: that proxy connects via lo and so bypasses every address check.
 # The ports are hardcoded in `guarded`: a WEBSERVER_PORT override in source.sh needs the same change here.
 table inet wirepod_guard
