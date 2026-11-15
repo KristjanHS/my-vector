@@ -9,7 +9,9 @@ g=(git -C "$repo" -c core.quotePath=false) # non-ASCII paths unquoted for gofmt
 gofmt=$(command -v gofmt || echo "$(go env GOROOT)/bin/gofmt")
 rev='' dir=$repo
 if [[ ${2:-} == --head ]]; then rev=$3 dir=$4; fi
-base=$("${g[@]}" merge-base "${rev:-HEAD}" "${UPSTREAM_REF:-upstream/main}")
+# shellcheck source=scripts/lib/upstream-base.sh
+. "$(dirname "$0")/../lib/upstream-base.sh"
+base=$(upstream_base "$repo" "${rev:-HEAD}")
 files=$("${g[@]}" diff --name-only --no-renames --diff-filter=AM "$base" ${rev:+"$rev"} -- '*.go')
 if [[ -z $rev ]]; then files+=$'\n'$("${g[@]}" ls-files --others --exclude-standard -- '*.go'); fi
 mapfile -t list < <(grep -v '^$' <<<"$files" | sort -u)
