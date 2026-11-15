@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
 )
@@ -42,23 +41,31 @@ func Parse(path string, b []byte, v any) error {
 
 var logf = func(s string) { logger.Println(s) } // tests capture it
 
+func logBad(path string, err error) {
+	mt := ""
+	if st, e := os.Stat(path); e == nil {
+		mt = st.ModTime().String()
+	}
+	if Changed("bad config "+path, mt) {
+		logf(fmt.Sprintf("myvector: bad config: %s: %v", path, err))
+	}
+}
+
 var (
-	badMu   sync.Mutex
-	badSeen = map[string]time.Time{} // path → mtime of its last logged failure
+	lastMu sync.Mutex
+	last   = map[string]string{} // key → msg of its last Changed call
 )
 
-func logBad(path string, err error) {
-	var mt time.Time
-	if st, e := os.Stat(path); e == nil {
-		mt = st.ModTime()
+// Changed reports whether msg differs from the msg last recorded for key, and records it: a caller logs only when
+// it returns true, so a repeated identical failure logs once and a different one logs again.
+func Changed(key, msg string) bool {
+	lastMu.Lock()
+	defer lastMu.Unlock()
+	if m, ok := last[key]; ok && m == msg {
+		return false
 	}
-	badMu.Lock()
-	defer badMu.Unlock()
-	if seen, ok := badSeen[path]; ok && seen.Equal(mt) {
-		return
-	}
-	badSeen[path] = mt
-	logf(fmt.Sprintf("myvector: bad config: %s: %v", path, err))
+	last[key] = msg
+	return true
 }
 
 // Update sets kv in the JSON object at path, keeps every other key, and replaces the file atomically.

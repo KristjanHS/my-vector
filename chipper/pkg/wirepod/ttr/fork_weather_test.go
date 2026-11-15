@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
@@ -230,11 +231,14 @@ func TestForkCladTypeBadMap(t *testing.T) {
 		}
 		return p
 	}
-	for _, c := range []struct{ path, want, log string }{
+	conf.Changed("weather-map", "test reset") // an earlier run's last failure must not mute this one
+	bad := write("bad.json", `[{`)
+	for _, c := range []struct{ path, want, log string }{ // log "" = no line
 		{write("ok.json", `[{"APIValue":"Sunny","CladType":"sunny"}]`), "sunny", ""},
-		{filepath.Join(dir, "missing.json"), "Sunny", "myvector: weather-map read:"},
-		{write("bad.json", `[{`), "Sunny", "myvector: bad weather-map json:"},
-		{write("obj.json", `{"APIValue":"Sunny"}`), "Sunny", "myvector: bad weather-map json:"},
+		{filepath.Join(dir, "missing.json"), "Sunny", "myvector: weather-map read: "},
+		{bad, "Sunny", "myvector: bad weather-map json: "},
+		{bad, "Sunny", ""}, // the same failure again: already logged
+		{write("obj.json", `{"APIValue":"Sunny"}`), "Sunny", "myvector: bad weather-map json: "},
 	} {
 		old := forkWeatherMapPath
 		forkWeatherMapPath = c.path

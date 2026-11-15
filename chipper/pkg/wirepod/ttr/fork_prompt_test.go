@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/prompt"
@@ -401,12 +402,18 @@ func useForkLog(t *testing.T) *[]string {
 	return logs
 }
 
+// A bad jdoc logs once per distinct failure: the empty doc repeats {'s error and logs nothing; a new error logs again.
 func TestForkBotZoneBadJdoc(t *testing.T) {
-	for _, c := range []struct{ doc, want string }{
-		{`{"time_zone": "Europe/Tallinn"}`, "Europe/Tallinn"},
-		{`{`, "Local"},
-		{``, "Local"},
-		{`{"time_zone": 5}`, "Local"},
+	conf.Changed("time_zone jdoc esn", "test reset") // an earlier run's last failure must not mute this one
+	for _, c := range []struct {
+		doc, want string
+		logs      int
+	}{
+		{`{"time_zone": "Europe/Tallinn"}`, "Europe/Tallinn", 0},
+		{`{`, "Local", 1},
+		{``, "Local", 0},
+		{`{"time_zone": 5}`, "Local", 1},
+		{`{`, "Local", 1},
 	} {
 		useBotClock(t, "")
 		vars.AddJdoc("vic:esn", "vic.RobotSettings", vars.AJdoc{JsonDoc: c.doc})
@@ -414,12 +421,8 @@ func TestForkBotZoneBadJdoc(t *testing.T) {
 		if got := forkBotZone("esn").String(); got != c.want {
 			t.Errorf("%q: zone %q, want %q", c.doc, got, c.want)
 		}
-		wantLogs := 1
-		if c.want != "Local" {
-			wantLogs = 0
-		}
-		if len(*logs) != wantLogs || wantLogs == 1 && !strings.HasPrefix((*logs)[0], "myvector: bad time_zone jdoc:") {
-			t.Errorf("%q: logs %q, want %d time_zone line", c.doc, *logs, wantLogs)
+		if len(*logs) != c.logs || c.logs == 1 && !strings.HasPrefix((*logs)[0], "myvector: bad time_zone jdoc: ") {
+			t.Errorf("%q: logs %q, want %d time_zone line", c.doc, *logs, c.logs)
 		}
 	}
 }

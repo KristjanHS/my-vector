@@ -81,3 +81,25 @@ func TestUpdateUnreadableKeepsFile(t *testing.T) {
 		t.Fatalf("unreadable file rewritten: %q", b)
 	}
 }
+
+// Changed is true on a key's first msg and each new one, false on a repeat; keys are independent.
+func TestChanged(t *testing.T) {
+	key := "test " + t.Name()
+	Changed(key, "reset") // -count=N: the previous run's last msgs must not leak in
+	Changed(key+" other", "reset")
+	for i, c := range []struct {
+		key, msg string
+		want     bool
+	}{
+		{key, "a", true},
+		{key, "a", false},
+		{key, "b", true},
+		{key, "a", true},
+		{key + " other", "a", true},
+		{key, "a", false},
+	} {
+		if got := Changed(c.key, c.msg); got != c.want {
+			t.Errorf("%d: Changed(%q, %q) = %v, want %v", i, c.key, c.msg, got, c.want)
+		}
+	}
+}
