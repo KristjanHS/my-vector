@@ -43,11 +43,12 @@ echo "log: $SHIP_LOG"
 dirty=$(git -C "$repo" status --porcelain | wc -l)
 head=$(mktemp -d "$repo/robot/work/ship-head.XXXXXX")
 # Ship window (prod-evidence ledger): "<start> <end>" epochs from the first robot-touching step to exit, any outcome —
-# wire-pod's usage poll exempts vic-* restarts inside one.
+# wire-pod's usage poll exempts vic-* restarts inside one. robot/work/ship-active (= the start) marks a ship in progress:
+# the poll holds its diff while it exists, so it is removed only after the window line is appended.
 ship_start=''
 cleanup() {
   rm -rf "$head"; rm -f "$src/myvector_sshkey"; if declare -F mux_close >/dev/null; then mux_close; fi
-  [[ -z $ship_start ]] || echo "$ship_start $(date +%s)" >>"$repo/robot/work/ship-windows.tsv"
+  [[ -z $ship_start ]] || { echo "$ship_start $(date +%s)" >>"$repo/robot/work/ship-windows.tsv"; rm -f "$repo/robot/work/ship-active"; }
 }
 trap cleanup EXIT
 # fork_smoke.go + myvector/voice too: check-static.sh S5 reads them repo-relative and fails if smoke.sh is there without them.
@@ -186,6 +187,7 @@ fi
 # Before the deploy: a server that won't start stops the ship with the robot untouched, and the robot
 # reboots straight onto the new server; smoke.sh's wire-pod link check then covers both.
 ship_start=$(date +%s)
+echo "$ship_start" >"$repo/robot/work/ship-active"
 server_check # again: the server may have been restarted during the build
 if ((restart)); then
   step "server: ${srv[*]} changed since ${running:-none (not running)} -> pin $sha, restart wire-pod"
