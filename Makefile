@@ -1,4 +1,4 @@
-.PHONY: help start server-pin daemon-enable daemon-disable tts-setup tts-enable tts-disable stt-setup stt-enable stt-disable check robot-test ship quiet unquiet quiet-status
+.PHONY: help start server-pin daemon-enable daemon-disable tts-setup tts-enable tts-disable stt-setup stt-enable stt-disable check robot-test ship quiet unquiet quiet-status prod-check
 # Run from anywhere: make -C ~/projects/my-vector <target>
 # robot/work of the main checkout (venvs + models live there, also when make runs in a worktree)
 WORK := $(shell dirname "$$(git -C $(CURDIR) rev-parse --path-format=absolute --git-common-dir)")/robot/work
@@ -87,6 +87,9 @@ robot-test: ## On-robot smoke test (~45 s, needs wire-pod + the docked robot); e
 
 ship: ## Ship committed HEAD: check (skipped if make check passed this tree), patch, build + deploy + full robot smoke only if the firmware tree differs from the robot's (else smoke --server; FIRMWARE=1 forces), git push; NO_DEPLOY=1 stops after the build; log in robot/work/ship-logs/
 	$(CURDIR)/robot/firmware/ship.sh $(if $(NO_DEPLOY),--no-deploy) $(if $(FIRMWARE),--firmware)
+
+prod-check: ## Seal prod/start once: first 7 consecutive completed days in robot/work/usage.tsv with real >= 5, 0 unplanned restarts, tailnet up; tags HEAD + pushes; exit 3 = no window yet (manual only)
+	$(CURDIR)/scripts/prod-check.sh
 
 # Shared worktree/commit targets (syncwt, commit, commitwt) from dotfiles. At the bottom so
 # the include can't steal the default goal; `-include` so a clone without dotfiles still runs.
