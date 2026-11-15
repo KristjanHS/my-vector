@@ -2,7 +2,6 @@ package memory
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -25,7 +24,7 @@ func Model() string {
 		Model string `json:"memory_model"`
 	}
 	if b, err := configBytes(); err == nil {
-		json.Unmarshal(b, &f)
+		conf.Parse(lang.Path(), b, &f)
 	}
 	if m := strings.TrimSpace(f.Model); m != "" {
 		return m

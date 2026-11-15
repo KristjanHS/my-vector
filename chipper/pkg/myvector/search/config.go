@@ -1,11 +1,9 @@
 package search
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -34,9 +32,7 @@ func LoadConfig() Config {
 	var f struct {
 		Search Config `json:"search"`
 	}
-	if b, err := os.ReadFile(lang.Path()); err == nil {
-		json.Unmarshal(b, &f)
-	}
+	conf.Read(lang.Path(), &f) // a type error keeps the keys that decoded
 	c := f.Search
 	if !slices.Contains(Providers, c.Provider) {
 		c.Provider = "" // a removed provider (ollama) or junk reads as auto

@@ -2,11 +2,9 @@
 package llm
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"path"
 	"strings"
 	"unicode"
@@ -83,8 +81,7 @@ func Load() Config {
 		ETModel   any                `json:"et_model"`
 		Think     any                `json:"think"` // any: a hand-edited non-object must not drop the profiles
 	}
-	b, err := os.ReadFile(lang.Path())
-	if err != nil || json.Unmarshal(b, &f) != nil {
+	if conf.Read(lang.Path(), &f) != nil {
 		return Config{}
 	}
 	c := Config{Profiles: f.LLM, Vision: f.Vision, OllamaURL: f.OllamaURL, ClaudeKey: f.ClaudeKey}
