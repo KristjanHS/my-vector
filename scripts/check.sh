@@ -45,7 +45,8 @@ echo "shell syntax OK"
 opt() { if [[ -f $2 ]]; then job "$@"; fi; } # a test an older --head commit lacks is skipped
 gotest() { cd "$dir/chipper" && go test "$@"; }
 if [[ -f $dir/scripts/wire-pod-guard.nft ]] && unshare -rn true 2>/dev/null; then
-  unshare -rn /usr/sbin/nft -c -f "$dir/scripts/wire-pod-guard.nft" || { echo "nft syntax: scripts/wire-pod-guard.nft" >&2; exit 1; }
+  if [[ -f $dir/scripts/guard-nft.sh ]]; then "$dir"/scripts/guard-nft.sh; else cat; fi <"$dir/scripts/wire-pod-guard.nft" | unshare -rn /usr/sbin/nft -c -f - ||
+    { echo "nft syntax: scripts/wire-pod-guard.nft" >&2; exit 1; }
   echo "nft guard syntax OK"
   job nft-guard "$dir"/scripts/tests/guard.sh
 elif [[ -f $dir/scripts/wire-pod-guard.nft ]]; then echo "nft guard check skipped: no unprivileged unshare"; fi
