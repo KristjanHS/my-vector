@@ -3,6 +3,8 @@ package wirepod_ttr
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -216,5 +218,34 @@ func TestForkGetWeatherLeavesOWM(t *testing.T) {
 	fakeGeo(t, "openweathermap.org", "[]")
 	if _, ok := forkGetWeather("Tallinn", "C", 0); ok {
 		t.Error("openweathermap.org with a key: forkGetWeather took it, want upstream's branch")
+	}
+}
+
+func TestForkCladTypeBadMap(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	for _, c := range []struct{ path, want, log string }{
+		{write("ok.json", `[{"APIValue":"Sunny","CladType":"sunny"}]`), "sunny", ""},
+		{filepath.Join(dir, "missing.json"), "Sunny", "myvector: weather-map read:"},
+		{write("bad.json", `[{`), "Sunny", "myvector: bad weather-map json:"},
+		{write("obj.json", `{"APIValue":"Sunny"}`), "Sunny", "myvector: bad weather-map json:"},
+	} {
+		old := forkWeatherMapPath
+		forkWeatherMapPath = c.path
+		logs := useForkLog(t)
+		got := forkCladType("Sunny")
+		forkWeatherMapPath = old
+		if got != c.want {
+			t.Errorf("%s: clad %q, want %q", c.path, got, c.want)
+		}
+		if c.log == "" && len(*logs) != 0 || c.log != "" && (len(*logs) != 1 || !strings.HasPrefix((*logs)[0], c.log)) {
+			t.Errorf("%s: logs %q, want one %q line", c.path, *logs, c.log)
+		}
 	}
 }

@@ -245,8 +245,11 @@ func forkCladType(text string) string {
 		path = vars.AndroidPath + "/static/weather-map.json"
 	}
 	var m weatherAPICladStruct
-	b, _ := os.ReadFile(path)
-	json.Unmarshal(b, &m)
+	if b, err := os.ReadFile(path); err != nil {
+		forkLogf("myvector: weather-map read:", err)
+	} else if err := json.Unmarshal(b, &m); err != nil {
+		forkLogf("myvector: bad weather-map json:", err)
+	}
 	for _, e := range m {
 		if strings.EqualFold(e.APIValue, strings.TrimSpace(text)) {
 			return e.CladType
