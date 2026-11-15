@@ -113,7 +113,7 @@ if ((deploy)); then
   else echo "robot marker '${robot_fw%|*}' != tip tree ${fw_tree:0:12} + current /anki fingerprint: build + deploy + full smoke"; fi
 
   # Server inputs: the Go tree, the firewall and the launchers that build + run the pinned commit on each (re)start.
-  srv=(chipper scripts/wire-pod-guard.nft scripts/run-server.sh scripts/load-guard.sh scripts/guard-nft.sh scripts/settings.defaults.env)
+  srv=(chipper scripts/wire-pod-guard.nft scripts/run-server.sh scripts/load-guard.sh scripts/guard-nft.sh scripts/lib/settings.sh scripts/settings.defaults.env)
   # Tracked data the server still reads from the tree at runtime (cwd chipper/), not from the pinned build.
   data=(chipper/intent-data chipper/webroot chipper/weather-map.json chipper/stttest.pcm chipper/epod)
   # run-server.sh execs robot/work/server-build/<full sha>/chipper as the service's main pid; empty = no server (or still building).
@@ -137,8 +137,8 @@ if ((deploy)); then
   server_unit_ok() {
     grep -q 'ExecStart=.*/scripts/run-server\.sh' /etc/systemd/system/wire-pod.service 2>/dev/null ||
       die "installed wire-pod.service does not run scripts/run-server.sh (a restart would go run the working tree): make daemon-enable"
-    git -C "$repo" diff --quiet "$full" -- scripts/run-server.sh scripts/load-guard.sh scripts/guard-nft.sh scripts/settings.defaults.env ||
-      die "the tree's scripts/{run-server.sh,load-guard.sh,guard-nft.sh,settings.defaults.env} differ from $sha's, and systemd runs the tree's copy: commit or restore them"
+    git -C "$repo" diff --quiet "$full" -- scripts/run-server.sh scripts/load-guard.sh scripts/guard-nft.sh scripts/lib/settings.sh scripts/settings.defaults.env ||
+      die "the tree's scripts/{run-server.sh,load-guard.sh,guard-nft.sh,lib/settings.sh,settings.defaults.env} differ from $sha's, and systemd runs the tree's copy: commit or restore them"
     local d; d=$(git -C "$repo" diff --name-only "$full" -- "${data[@]}"; git -C "$repo" status --porcelain --untracked-files=normal -- "${data[@]}")
     [[ -z $d ]] || die "server data the restarted wire-pod reads from the tree differs from $sha's: $d"
   }

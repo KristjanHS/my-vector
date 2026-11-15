@@ -47,6 +47,7 @@ timeout 30 "$tmp/t" "$here/tts-urls.txt" || rc=$?
 vp=$tmp/vp
 mkdir -p "$vp/robot/firmware" "$vp/robot/diskguard" "$vp/robot/logkeep" "$vp/robot/sshkey" "$vp/robot/hostkey" "$vp/robot/epod" "$vp/robot/tailscale" "$vp/robot/netguard" "$vp/bin" "$vp/secrets/server/jdocs"
 mkdir -p "$vp/robot/quiet" && cp "$fw/../env.sh" "$vp/robot/" && cp "$fw/../quiet/guard.sh" "$vp/robot/quiet/"
+mkdir -p "$vp/scripts/lib" && cp "$fw/../../scripts/lib/settings.sh" "$vp/scripts/lib/"
 cp "$fw/voice-push.sh" "$fw/settings.sh" "$vp/robot/firmware/"
 printf '#!/bin/sh\necho diskguard stub\n' >"$vp/robot/diskguard/apply.sh"
 printf '#!/bin/sh\necho logkeep stub\n' >"$vp/robot/logkeep/apply.sh"
