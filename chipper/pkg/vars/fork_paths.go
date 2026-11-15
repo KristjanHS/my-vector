@@ -15,6 +15,15 @@ var (
 // UsageLedgerPath is the prod-evidence usage ledger (myvector/usage): the main checkout's gitignored robot/work, relative to cwd chipper/.
 var UsageLedgerPath = "../robot/work/usage.tsv"
 
+// The robot usage poll (myvector/usagepoll), relative to cwd chipper/: the ssh lane every robot/ script sources, the
+// poll's last snapshot, and ship.sh's ship windows ("start end" epochs) + in-progress marker (content = start epoch).
+var (
+	RobotEnvPath       = "../robot/env.sh"
+	UsagePollStatePath = "../robot/work/usage-poll.state"
+	ShipWindowsPath    = "../robot/work/ship-windows.tsv"
+	ShipActivePath     = "../robot/work/ship-active"
+)
+
 func init() {
 	if Packaged { // Init joins these onto UserConfigDir: keep upstream's relative names there
 		return

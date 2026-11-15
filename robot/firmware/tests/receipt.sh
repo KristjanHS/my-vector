@@ -42,4 +42,15 @@ push_ln=$(ln_of 'git -C "\$repo" push ')
 [[ -n $tag_ln && -n $smoke_ln && -n $push_ln ]] || die "ship.sh lacks receipt_tag, a smoke die or the push"
 ((smoke_ln < tag_ln && tag_ln < push_ln)) || die "receipt_tag at $tag_ln is not between the last smoke die ($smoke_ln) and the push ($push_ln)"
 grep -q "refs/tags/\$tag" <<<"$(sed -n "${push_ln}p" "$ship")" || die "the push does not carry the receipt tag"
-echo "ok: receipt (link, no address, annotated tag, after smoke + before push)"
+
+# Ship-window wiring (wire-pod's usage poll): ship-active is written right where ship_start is set, and removed only
+# by cleanup, after the window line is appended (the poll holds its diff while the marker exists).
+start_ln=$(ln_of '^ship_start=\$\(date')
+# shellcheck disable=SC2016 # a literal $repo in the pattern
+active_ln=$(ln_of '>"\$repo/robot/work/ship-active"')
+[[ -n $start_ln && $active_ln == "$((start_ln + 1))" ]] || die "ship.sh does not write ship-active right after ship_start (lines $start_ln/$active_ln)"
+[[ $(ln_of 'rm -f[^;]*ship-active' | wc -l) == 1 ]] || die "ship.sh removes ship-active other than once"
+# shellcheck disable=SC2016 # a literal $repo in the pattern
+grep -qE 'ship-windows\.tsv";[[:space:]]*rm -f "\$repo/robot/work/ship-active"' <<<"$(sed -n "$(ln_of 'rm -f[^;]*ship-active')p" "$ship")" ||
+  die "cleanup does not remove ship-active right after appending the ship window"
+echo "ok: receipt (link, no address, annotated tag, after smoke + before push; ship-active around the window)"
