@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/usage"
+	"github.com/kercre123/wire-pod/chipper/pkg/vars"
 )
 
 var loc = time.FixedZone("EET", 2*3600)
@@ -141,25 +142,33 @@ func TestDiffRules(t *testing.T) {
 	}
 }
 
-// fixture is a Poller on temp files with a scripted probe and a settable clock.
+// fixture is a Poller on temp files with scripted tailnet and LAN probes and a settable clock. The LAN probe fails
+// (no ROBOT_LAN_IP) unless a test sets lanOut/lanErr; lanCalls counts its runs.
 type fixture struct {
 	*Poller
-	dir string
-	out string
-	err error
-	now time.Time
+	dir      string
+	out      string
+	err      error
+	lanOut   string
+	lanErr   error
+	lanCalls int
+	now      time.Time
 }
 
 func newFixture(t *testing.T) *fixture {
 	dir := t.TempDir()
-	f := &fixture{dir: dir}
+	f := &fixture{dir: dir, lanErr: errors.New("robot probe (lan): exit 2: no ROBOT_LAN_IP distinct from ROBOT_IP")}
 	f.Poller = &Poller{
 		Ledger:      usage.Open(filepath.Join(dir, "usage.tsv")),
 		StatePath:   filepath.Join(dir, "usage-poll.state"),
 		WindowsPath: filepath.Join(dir, "ship-windows.tsv"),
 		ActivePath:  filepath.Join(dir, "ship-active"),
 		Probe:       func(context.Context) (string, error) { return f.out, f.err },
-		Now:         func() time.Time { return f.now },
+		LANProbe: func(context.Context) (string, error) {
+			f.lanCalls++
+			return f.lanOut, f.lanErr
+		},
+		Now: func() time.Time { return f.now },
 	}
 	return f
 }
@@ -253,6 +262,52 @@ func TestPollShipActiveHoldsTheDiff(t *testing.T) {
 	}
 }
 
+// A ship restarts wire-pod, so its first poll can run mid-deploy with tailscale0 not up yet: during the ship nothing is
+// written, so that poll cannot mark the ship's day tailnet=down.
+func TestPollShipActiveLeavesTailnet(t *testing.T) {
+	f := newFixture(t)
+	t0 := time.Date(2026, 11, 15, 10, 0, 0, 0, loc)
+	f.poll(t, t0, probe(bootA, t0.Unix(), "36000", 1, unit("vic-anim", 100, 0)))
+	ledger0, _ := os.ReadFile(f.Ledger.Path)
+	state0, _ := os.ReadFile(f.StatePath)
+	f.write(t, "ship-active", fmt.Sprintf("%d\n", t0.Add(55*time.Minute).Unix()))
+	t1 := t0.Add(time.Hour)
+	f.poll(t, t1, probe(bootA, t1.Unix(), "39600", 0, unit("vic-anim", 39300, 0)))
+	if r := f.row(t, "2026-11-15"); r.Tailnet != usage.TailnetUp {
+		t.Fatalf("tailnet 0 during the ship: %+v", r)
+	}
+	ledger1, _ := os.ReadFile(f.Ledger.Path)
+	state1, _ := os.ReadFile(f.StatePath)
+	if string(ledger1) != string(ledger0) || string(state1) != string(state0) {
+		t.Fatalf("wrote during the ship:\n%s\n%s", ledger1, state1)
+	}
+}
+
+// The tailnet probe fails and the LAN one answers: the day is tailnet=down even though the robot's tailscale0 is up
+// (the PC could not reach it over the tailnet), and the restart diff and snapshot apply as usual.
+func TestPollLANFallback(t *testing.T) {
+	f := newFixture(t)
+	t0 := time.Date(2026, 11, 15, 10, 0, 0, 0, loc)
+	f.poll(t, t0, probe(bootA, t0.Unix(), "36000", 1, unit("vic-anim", 100, 0)))
+	if f.lanCalls != 0 {
+		t.Fatalf("LAN probed after a tailnet answer: %d", f.lanCalls)
+	}
+	t1 := t0.Add(time.Hour)
+	f.now, f.out, f.err = t1, "", errors.New("robot probe (tailnet): exit 255: Connection timed out")
+	f.lanOut, f.lanErr = probe(bootA, t1.Unix(), "39600", 1, unit("vic-anim", 39300, 0)), nil // vic-anim restarted 10:55
+	if err := f.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.row(t, "2026-11-15"); r.Tailnet != usage.TailnetDown || r.UnplannedRestarts != 1 || f.lanCalls != 1 {
+		t.Fatalf("LAN answer: %+v, LAN probes %d", r, f.lanCalls)
+	}
+	b, _ := os.ReadFile(f.StatePath)
+	want := fmt.Sprintf(`{"boot_id":"%s","now":%d,"uptime_us":39600000000,"units":{"vic-anim":{"enter_us":39300000000,"n_restarts":0}}}`+"\n", bootA, t1.Unix())
+	if string(b) != want {
+		t.Fatalf("state\n%s\nwant\n%s", b, want)
+	}
+}
+
 // A marker older than ActiveMaxAge (a ship killed before its trap) no longer holds the diff.
 func TestPollStaleShipActiveIgnored(t *testing.T) {
 	f := newFixture(t)
@@ -293,10 +348,15 @@ func TestPollFailureWritesNothing(t *testing.T) {
 	state0, _ := os.ReadFile(f.StatePath)
 	t1 := t0.Add(time.Hour)
 	for name, set := range map[string]func(){
-		"ssh failed": func() { f.out, f.err = "", errors.New("robot probe: exit 255") },
-		"truncated":  func() { f.out = strings.TrimSuffix(probe(bootB, t1.Unix(), "60", 0, unit("vic-anim", 5, 0)), "end\n") },
+		"tailnet and LAN ssh failed": func() { f.out, f.err = "", errors.New("robot probe (tailnet): exit 255") },
+		"LAN answer truncated": func() {
+			f.err = errors.New("robot probe (tailnet): exit 255")
+			f.lanOut, f.lanErr = strings.TrimSuffix(probe(bootB, t1.Unix(), "60", 0, unit("vic-anim", 5, 0)), "end\n"), nil
+		},
+		"truncated": func() { f.out = strings.TrimSuffix(probe(bootB, t1.Unix(), "60", 0, unit("vic-anim", 5, 0)), "end\n") },
 	} {
 		f.now, f.out, f.err = t1, "", nil
+		f.lanOut, f.lanErr, f.lanCalls = "", errors.New("robot probe (lan): exit 255"), 0
 		set()
 		if err := f.Poll(context.Background()); err == nil {
 			t.Fatalf("%s: no error", name)
@@ -305,6 +365,46 @@ func TestPollFailureWritesNothing(t *testing.T) {
 		state1, _ := os.ReadFile(f.StatePath)
 		if string(ledger1) != string(ledger0) || string(state1) != string(state0) {
 			t.Fatalf("%s: wrote\n%s\n%s", name, ledger1, state1)
+		}
+		if want := map[bool]int{true: 1, false: 0}[f.err != nil]; f.lanCalls != want {
+			t.Fatalf("%s: %d LAN probes, want %d (only after a failed tailnet probe)", name, f.lanCalls, want)
+		}
+	}
+}
+
+// The ssh command line per lane, through a stand-in env.sh whose ssh prints its arguments (no network).
+func TestSSHProbeLanes(t *testing.T) {
+	dir := t.TempDir()
+	envsh := filepath.Join(dir, "env.sh")
+	saved := vars.RobotEnvPath
+	t.Cleanup(func() { vars.RobotEnvPath = saved })
+	vars.RobotEnvPath = envsh
+	setEnv := func(lan string) {
+		t.Helper()
+		body := "ip=100.64.0.9 ssh_opts=(-i k)\n" + lan + "\nssh() { echo \"$@\"; }\n"
+		if err := os.WriteFile(envsh, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	keep := func(out string) string { // the 7 args before Script
+		if f := strings.Fields(out); len(f) >= 7 {
+			return strings.Join(f[:7], " ")
+		}
+		return out
+	}
+	setEnv("ROBOT_LAN_IP=192.0.2.9")
+	opts := "-i k -o ServerAliveInterval=5 -o ServerAliveCountMax=2 "
+	for probe, want := range map[string]string{"tailnet": opts + "root@100.64.0.9", "lan": opts + "root@192.0.2.9"} {
+		fn := map[string]func(context.Context) (string, error){"tailnet": SSHProbe, "lan": SSHProbeLAN}[probe]
+		out, err := fn(context.Background())
+		if err != nil || keep(out) != want {
+			t.Errorf("%s: got %q (%v), want %q", probe, keep(out), err, want)
+		}
+	}
+	for name, lan := range map[string]string{"unset": "", "same as ip": "ROBOT_LAN_IP=100.64.0.9"} {
+		setEnv(lan)
+		if out, err := SSHProbeLAN(context.Background()); err == nil || !strings.Contains(err.Error(), "no ROBOT_LAN_IP") {
+			t.Errorf("LAN %s: got %q, %v; want the no-ROBOT_LAN_IP error", name, out, err)
 		}
 	}
 }
