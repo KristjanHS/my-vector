@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 )
 
 func TestGuardRevert(t *testing.T) {
@@ -142,13 +144,16 @@ func TestGuardDropsProfileOfRemovedFact(t *testing.T) {
 }
 
 func TestGuardBadSnapshotFacts(t *testing.T) {
+	conf.Changed("memory guard "+esn, "test reset") // an earlier run's last failure must not mute this one
 	for _, c := range []struct {
 		facts string
 		want  []string
+		bad   int // bad-facts lines: a repeat of the previous failure logs none
 	}{
-		{"", []string{"o1", "e1"}},
-		{"{", []string{"o1"}},
-		{`{"id":"e1"}`, []string{"o1"}},
+		{"", []string{"o1", "e1"}, 0},
+		{"{", []string{"o1"}, 1},
+		{"{", []string{"o1"}, 0},
+		{`{"id":"e1"}`, []string{"o1"}, 1},
 	} {
 		logs := useModel(t, `{}`)
 		st := (&Store{Facts: []Fact{mfact("e1", "pets", Active, "a"), {ID: "o1", ESN: "other", Category: "pets", Text: "x", Status: Active}}}).init()
@@ -166,16 +171,12 @@ func TestGuardBadSnapshotFacts(t *testing.T) {
 		}
 		bad := 0
 		for _, l := range *logs {
-			if strings.HasPrefix(l, "myvector: memory guard "+esn+" bad snapshot facts:") {
+			if strings.HasPrefix(l, "myvector: memory guard "+esn+" bad snapshot facts: ") {
 				bad++
 			}
 		}
-		want := 0
-		if c.facts != "" {
-			want = 1
-		}
-		if bad != want || len(*logs) != 1+want {
-			t.Errorf("%q: logs %q, want %d bad-facts line", c.facts, *logs, want)
+		if bad != c.bad || len(*logs) != 1+c.bad {
+			t.Errorf("%q: logs %q, want %d bad-facts line", c.facts, *logs, c.bad)
 		}
 	}
 }

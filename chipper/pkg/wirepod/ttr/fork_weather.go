@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/search"
 	"github.com/kercre123/wire-pod/chipper/pkg/vars"
@@ -245,10 +246,14 @@ func forkCladType(text string) string {
 		path = vars.AndroidPath + "/static/weather-map.json"
 	}
 	var m weatherAPICladStruct
+	msg := ""
 	if b, err := os.ReadFile(path); err != nil {
-		forkLogf("myvector: weather-map read:", err)
+		msg = "myvector: weather-map read: " + err.Error()
 	} else if err := json.Unmarshal(b, &m); err != nil {
-		forkLogf("myvector: bad weather-map json:", err)
+		msg = "myvector: bad weather-map json: " + err.Error()
+	}
+	if msg != "" && conf.Changed("weather-map", msg) {
+		forkLogf(msg)
 	}
 	for _, e := range m {
 		if strings.EqualFold(e.APIValue, strings.TrimSpace(text)) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 )
 
@@ -120,7 +121,9 @@ func (st *Store) Guard(snap Snapshot, lost []string, judged bool, now time.Time)
 	}
 	var old []Fact
 	if err := json.Unmarshal(snap.Facts, &old); err != nil {
-		logf("myvector: memory guard "+snap.ESN+" bad snapshot facts:", err)
+		if msg := "myvector: memory guard " + snap.ESN + " bad snapshot facts: " + err.Error(); conf.Changed("memory guard "+snap.ESN, msg) {
+			logf(msg)
+		}
 	}
 	for _, f := range old {
 		if at, ok := removed[f.ID]; ok {

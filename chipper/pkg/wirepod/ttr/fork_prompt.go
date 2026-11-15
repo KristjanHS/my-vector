@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kercre123/wire-pod/chipper/pkg/logger"
+	"github.com/kercre123/wire-pod/chipper/pkg/myvector/conf"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/lang"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/llm"
 	"github.com/kercre123/wire-pod/chipper/pkg/myvector/memory"
@@ -38,7 +39,9 @@ func forkBotZone(esn string) *time.Location {
 	}
 	if j, ok := vars.GetJdoc("vic:"+esn, "vic.RobotSettings"); ok {
 		if err := json.Unmarshal([]byte(j.JsonDoc), &s); err != nil {
-			forkLogf("myvector: bad time_zone jdoc:", err)
+			if msg := "myvector: bad time_zone jdoc: " + err.Error(); conf.Changed("time_zone jdoc "+esn, msg) {
+				forkLogf(msg) // once per distinct failure: forkBotZone runs ~3× per voice turn
+			}
 		}
 	}
 	return prompt.Zone(s.TimeZone)
