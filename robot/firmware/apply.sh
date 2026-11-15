@@ -43,7 +43,8 @@ if [[ $mode == --export ]]; then
   echo "OK: exported $n patches from $br to $here"
   exit 0
 fi
-mapfile -t series < <(grep -v '^[[:space:]]*$' "$here/series")
+feed=$(grep -v '^[[:space:]]*$' "$here/series") || die "cannot read $here/series (missing or empty)"
+mapfile -t series <<<"$feed"
 field() { sed -n "s/^$1: //p" "$tmp/info"; }
 # Sets tip = pin + one commit per series patch, built off a temp index (no ref, index or file touched).
 build_tip() {
