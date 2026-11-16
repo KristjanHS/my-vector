@@ -11,6 +11,8 @@ endpoint, key and model), so you see the answer and its latency without talking 
 ⚠ Once the **Language, brain & voice** page (`/myvector/voice`) is saved, its per-language LLM (Ollama or
 Claude) wins: `scripts/llm.sh use` no longer changes the brain. Delete `"llm"` from `secrets/server/myvectorConfig.json` to go back.
 
+Estonian brain, STT and voices: TartuNLP and TalTech models — names, links and setup in [estonian-models.md](estonian-models.md).
+
 | # | option | cost | what it adds |
 |---|--------|------|--------------|
 | 1 | Local Ollama (your Windows Ollama) | free | plain Q&A, private — same setup as the dev.to "WirePod + Gemma" write-up |

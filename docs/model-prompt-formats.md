@@ -3,7 +3,8 @@
 How each LLM in use wants its prompt formatted, and what this fork sends. Researched 2026-11-08 against
 Ollama 0.40.14 (Windows), the Hugging Face model cards and chat templates, and Ollama's `model/renderers/`.
 
-Models in use: `gemma4:e4b-it-qat` (en-US + et-EE chat default, `listen.Model`, vision fallback); `qwen3.5:4b` (vision bench candidate only).
+Models in use: `gemma4:e4b-it-qat` (en-US chat, et-EE default when unsaved, `listen.Model`); `qwen3.5:4b` (camera, `DefaultVisionEN`/`DefaultVisionET`);
+`apertus-estllm:8b` (the saved et-EE brain — names, links and setup in [estonian-models.md](estonian-models.md)).
 Claude is optional per language.
 
 ## Main rule: same prompt text for every model, per-model request fields
