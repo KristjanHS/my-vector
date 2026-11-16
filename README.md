@@ -6,15 +6,26 @@ my-vector gives the Anki (now Digital Dream Labs) [Vector](https://web.archive.o
 
 ## What my-vector adds
 
-- **LLM answers** — each language picks its own brain, a local Ollama model or Claude, configured from the web UI (`chipper/pkg/myvector/llm`, trial notes in [docs/llm-trials.md](docs/llm-trials.md)).
-- **PC voices** — Vector speaks LLM answers and its built-in lines through a local TTS service (Kokoro and Piper voices, Estonian voices included), falling back to the robot's own voice when the service is down (`tts/`, `chipper/pkg/myvector/voice`).
-- **Estonian speech recognition** — a faster-whisper STT service runs TalTech's Estonian model on the GPU, with an English model for English; the language is switched from the web UI (`et-stt/`, `chipper/pkg/myvector/lang`).
+- **LLM answers** — each language picks its own brain, a local Ollama model or Claude, configured from the web UI (`chipper/pkg/myvector/llm`, trial notes in [docs/llm-trials.md](docs/llm-trials.md)). Estonian answers come from TartuNLP's Estonian LLMs on Ollama — see [Estonian models](#estonian-models).
+- **PC voices** — Vector speaks LLM answers and its built-in lines through a local TTS service (Kokoro and Piper voices, Estonian Piper voices included — see [Estonian models](#estonian-models)), falling back to the robot's own voice when the service is down (`tts/`, `chipper/pkg/myvector/voice`).
+- **Estonian speech recognition** — a faster-whisper STT service runs TalTech's Estonian Whisper model on the GPU ([Estonian models](#estonian-models)), with an English model for English; the language is switched from the web UI (`et-stt/`, `chipper/pkg/myvector/lang`).
 - **Live answers** — weather, news and other current questions are routed to web search (Tavily, or a local SearXNG) and a weather forecast before the LLM answers (`chipper/pkg/myvector/search`).
 - **Picture questions** — ask "what is in this picture?" and Vector describes what its camera sees; follow-up questions reuse the last photo (`chipper/pkg/myvector/photo`).
 
 ## Quickstart
 
 The PC side runs from the [Makefile](Makefile); `make help` lists every target. In short: set up and enable the TTS and STT services (`make tts-setup`, `make tts-enable`, `make stt-setup`, `make stt-enable`), then install wire-pod as a service with `make daemon-enable` and start it with `make start`. The robot still needs wire-pod's own setup first — see [Base: wire-pod](#base-wire-pod).
+
+## Estonian models
+
+In Estonian mode Vector hears, thinks and speaks with local Estonian models, each picked on the **Language, brain & voice** page (`/myvector/voice`); English keeps its own. Setup steps and scores: [docs/estonian-models.md](docs/estonian-models.md).
+
+| step | model | name in my-vector | get it |
+|---|---|---|---|
+| hear (STT) | [TalTechNLP/whisper-large-v3-turbo-et-verbatim](https://huggingface.co/TalTechNLP/whisper-large-v3-turbo-et-verbatim) | `et-stt/` service | `make stt-setup && make stt-enable` |
+| think (LLM, in use) | [tartuNLP/Apertus-EstLLM-8B-Instruct-0326](https://huggingface.co/tartuNLP/Apertus-EstLLM-8B-Instruct-0326), [GGUF](https://huggingface.co/mradermacher/Apertus-EstLLM-8B-Instruct-0326-i1-GGUF) `i1-Q4_K_M` | Ollama `apertus-estllm:8b` | pull, then rebuild with a fixed chat template ([steps](docs/estonian-models.md#apertus-estllm--pull-then-build-a-fixed-copy)) |
+| think (LLM, alternative) | [tartuNLP/Llama-3.1-EstLLM-8B-Instruct-1125](https://huggingface.co/tartuNLP/Llama-3.1-EstLLM-8B-Instruct-1125), [GGUF](https://huggingface.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF) `i1-Q4_K_M` | Ollama `hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M` | `ollama pull` that name |
+| speak (TTS) | Piper [`et_EE-news-medium`](https://huggingface.co/rhasspy/piper-voices/tree/main/et/et_EE/news/medium) | voices `mari`, `albert`, `kalev` | download the voice ([steps](docs/estonian-models.md#estonian-voices-tts)), then `make tts-setup && make tts-enable` |
 
 ## How it was built
 
