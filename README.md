@@ -23,7 +23,7 @@ In Estonian mode Vector hears, thinks and speaks with local Estonian models, eac
 | step | model | name in my-vector | get it |
 |---|---|---|---|
 | hear (STT) | [TalTechNLP/whisper-large-v3-turbo-et-verbatim](https://huggingface.co/TalTechNLP/whisper-large-v3-turbo-et-verbatim) | `et-stt/` service | `make stt-setup && make stt-enable` |
-| think (LLM, in use) | [tartuNLP/Apertus-EstLLM-8B-Instruct-0326](https://huggingface.co/tartuNLP/Apertus-EstLLM-8B-Instruct-0326), [GGUF](https://huggingface.co/mradermacher/Apertus-EstLLM-8B-Instruct-0326-i1-GGUF) `i1-Q4_K_M` | Ollama `apertus-estllm:8b` | pull, then rebuild with a fixed chat template ([steps](docs/estonian-models.md#apertus-estllm--pull-then-build-a-fixed-copy)) |
+| think (LLM, in use) | [tartuNLP/Apertus-EstLLM-8B-Instruct-0326](https://huggingface.co/tartuNLP/Apertus-EstLLM-8B-Instruct-0326), [GGUF](https://huggingface.co/mradermacher/Apertus-EstLLM-8B-Instruct-0326-i1-GGUF) `i1-Q4_K_M` | Ollama `apertus-estllm:8b` | download, swap in a fixed chat template, `ollama create` ([steps](docs/estonian-models.md#apertus-estllm--download-swap-the-chat-template-create)) |
 | think (LLM, alternative) | [tartuNLP/Llama-3.1-EstLLM-8B-Instruct-1125](https://huggingface.co/tartuNLP/Llama-3.1-EstLLM-8B-Instruct-1125), [GGUF](https://huggingface.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF) `i1-Q4_K_M` | Ollama `hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M` | `ollama pull` that name |
 | speak (TTS) | Piper [`et_EE-news-medium`](https://huggingface.co/rhasspy/piper-voices/tree/main/et/et_EE/news/medium) | voices `mari`, `albert`, `kalev` | download the voice ([steps](docs/estonian-models.md#estonian-voices-tts)), then `make tts-setup && make tts-enable` |
 

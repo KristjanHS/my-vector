@@ -59,26 +59,26 @@ EstLLM-1125 matches no family and gets wire-pod's defaults.
 ollama pull hf.co/mradermacher/Llama-3.1-EstLLM-8B-Instruct-1125-i1-GGUF:i1-Q4_K_M
 ```
 
-#### Apertus-EstLLM — pull, then build a fixed copy
+#### Apertus-EstLLM — download, swap the chat template, create
 
-The GGUF's own chat template has tool-call macros that Ollama's template parser rejects (HTTP 500 on every chat), so
-the hf.co tag can't be used as-is. `apertus-estllm:8b` is the same weights with a short chat template that keeps
-Apertus's turn tokens and turns deliberation and tools off:
-[`robot/et-llm/apertus-chat_template.jinja`](../robot/et-llm/apertus-chat_template.jinja).
-Steps as run on 2026-11-08 against Ollama 0.40.14 (`gguf` is the llama.cpp metadata tool from PyPI):
+Don't `ollama pull` the hf.co tag: its GGUF's chat template has tool-call macros Ollama's llama-server can't parse, and
+every chat fails with HTTP 500 `Unable to generate parser for this template`. `apertus-estllm:8b` is the same weights
+with a short template that keeps Apertus's turn tokens and turns deliberation and tools off,
+[`robot/et-llm/apertus-chat_template.jinja`](../robot/et-llm/apertus-chat_template.jinja). From the repo root
+(re-run 2026-11-16 on Ollama 0.40.14: same GGUF sha and Ollama model ID as the live copy, a few minutes, ~10 GB disk):
 
 ```bash
-ollama pull hf.co/mradermacher/Apertus-EstLLM-8B-Instruct-0326-i1-GGUF:i1-Q4_K_M
-# the FROM line of this names the downloaded GGUF blob — copy it out as apertus.gguf
-ollama show --modelfile hf.co/mradermacher/Apertus-EstLLM-8B-Instruct-0326-i1-GGUF:i1-Q4_K_M
+d=robot/work/apertus && mkdir -p $d   # gitignored scratch
+curl -fL -o $d/apertus.gguf https://huggingface.co/mradermacher/Apertus-EstLLM-8B-Instruct-0326-i1-GGUF/resolve/main/Apertus-EstLLM-8B-Instruct-0326.i1-Q4_K_M.gguf
 
-python3 -m venv venv && venv/bin/pip install gguf
-venv/bin/gguf-new-metadata --chat-template-file robot/et-llm/apertus-chat_template.jinja \
-  apertus.gguf apertus-estllm-8b-i1-Q4_K_M-notools.gguf
+uv venv $d/venv && uv pip install -p $d/venv/bin/python gguf   # llama.cpp's GGUF tools (0.19.0 used)
+$d/venv/bin/gguf-new-metadata --chat-template-file robot/et-llm/apertus-chat_template.jinja \
+  $d/apertus.gguf $d/apertus-estllm-8b-notools.gguf
+sha256sum $d/apertus-estllm-8b-notools.gguf   # 49792d6721363f28c78fda74d8ce59b5685843c61074b10b0dea60bafd412e48
 
-f=apertus-estllm-8b-i1-Q4_K_M-notools.gguf; sha=$(sha256sum "$f" | cut -d' ' -f1)
-curl -T "$f" -X POST "http://localhost:11434/api/blobs/sha256:$sha"
-curl http://localhost:11434/api/create -d "{\"model\":\"apertus-estllm:8b\",\"files\":{\"$f\":\"sha256:$sha\"}}"
+printf 'FROM ./apertus-estllm-8b-notools.gguf\nPARAMETER stop <|assistant_end|>\nPARAMETER stop <|user_start|>\n' > $d/Modelfile
+ollama create apertus-estllm:8b -f $d/Modelfile   # the CLI uploads the GGUF, also to Ollama on another host (OLLAMA_HOST)
 ```
 
-Check it: `ollama run apertus-estllm:8b "Kes kirjutas Tõe ja õiguse?"` should answer in Estonian (Tammsaare).
+Check it: `ollama run apertus-estllm:8b "Kes kirjutas Tõe ja õiguse?"` answers in Estonian (Tammsaare); `ollama list`
+shows ID `f5ceaf6f3823`. Then `rm -r robot/work/apertus` — Ollama keeps its own copy.
