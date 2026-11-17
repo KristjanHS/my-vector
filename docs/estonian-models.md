@@ -80,5 +80,5 @@ printf 'FROM ./apertus-estllm-8b-notools.gguf\nPARAMETER stop <|assistant_end|>\
 ollama create apertus-estllm:8b -f $d/Modelfile   # the CLI uploads the GGUF, also to Ollama on another host (OLLAMA_HOST)
 ```
 
-Check it: `ollama run apertus-estllm:8b "Kes kirjutas Tõe ja õiguse?"` answers in Estonian (Tammsaare); `ollama list`
-shows ID `f5ceaf6f3823`. Then `rm -r robot/work/apertus` — Ollama keeps its own copy.
+Check it: `ollama run apertus-estllm:8b "Kes kirjutas raamatu Tõde ja Õigus?"` should answer in Estonian (Tammsaare);
+`ollama list` shows ID `f5ceaf6f3823`. Then `rm -r robot/work/apertus` — Ollama keeps its own copy.
