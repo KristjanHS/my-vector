@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace), then in parallel (scripts/lib/check-runner.sh: first failure stops the rest) scripts/tests/{guard,check-runner,settings}.sh, firmware static checks (check-static.sh), patch 0010 + 0011 + 0016 + 0017 host tests (tests/pc-voice.sh, tests/nap.sh, tests/mic-stream.sh, tests/silent-start.sh) + smoke logcheck (tests/logcheck.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey,logkeep}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + robot/netguard/tests/{rules,hosts,apply}.sh + robot/tailscale/tests/{fetch,soak,apply}.sh + scripts/tests/secrets.sh + scripts/tests/gofmt.sh (fork Go files gofmt-clean) + gofmt-host.sh, go vet + Fork tests of the patched sdkapp,
+# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace), then in parallel (scripts/lib/check-runner.sh: first failure stops the rest) scripts/tests/{guard,check-runner,settings,cites}.sh, firmware static checks (check-static.sh), patch 0010 + 0011 + 0016 + 0017 host tests (tests/pc-voice.sh, tests/nap.sh, tests/mic-stream.sh, tests/silent-start.sh) + smoke logcheck (tests/logcheck.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey,logkeep}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + robot/netguard/tests/{rules,hosts,apply}.sh + robot/tailscale/tests/{fetch,soak,apply}.sh + scripts/tests/secrets.sh + scripts/tests/gofmt.sh (fork Go files gofmt-clean) + gofmt-host.sh, go vet + Fork tests of the patched sdkapp,
 # chipper myvector + vars + localization fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir), tts + stt pytest (when each venv exists).
 # Usage: check.sh [--head [rev]]   --head checks only that commit (default HEAD) via a git archive copy;
 #   make ship passes its pinned sha so the checked commit is the one it ships.
@@ -9,6 +9,7 @@ repo=$(cd "$(dirname "$0")/.." && pwd)
 main=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")
 tts_py=$main/robot/work/tts/venv/bin/python stt_py=$main/robot/work/et-stt/venv/bin/python
 stamps=$main/robot/work/check-pass
+. "$repo/scripts/lib/settings.sh" # settings_layers: the live layers stamp_key hashes
 # The working tree's content as a tree id (untracked non-ignored files included): equals HEAD^{tree} once all of it is committed.
 wt_tree() {
   local idx; idx=$(mktemp "$main/robot/work/check-index.XXXXXX")
@@ -17,10 +18,11 @@ wt_tree() {
 }
 # stamp_key <tree>: the tree plus what the checks read from outside it (toolchain, venvs, userns, the victor clone).
 stamp_key() {
+  local lay
   { echo "$1"; go version || echo "no go"; { g++ --version || echo "no g++"; } | head -1; unshare -rn true && echo userns
     for py in "$tts_py" "$stt_py"; do [[ -x $py ]] && "$py" --version && stat -c %Y "${py%/bin/python}"/lib/python*/site-packages || echo "no $py"; done
     echo "${VICTOR_SRC:-}"; git -C "${VICTOR_SRC:-$main/robot/work/wire-os-victor}" rev-parse HEAD || echo "no clone"
-    cat "${DOTFILES_DIR:-$main/../dotfiles}/shared-settings/settings.env" "${MY_VECTOR_OVERLAY_DIR:-$main/../<overlay>}/settings.env" || true # live nft -c input; an absent layer is fine
+    mapfile -t lay < <(settings_layers --no-defaults); cat "${lay[@]}" || true # live nft -c input; an absent layer is fine
   } 2>&1 | sha1sum | cut -c1-40
 }
 dir=$repo head=() tmp=()
@@ -56,6 +58,7 @@ if [[ -f $dir/scripts/wire-pod-guard.nft ]] && unshare -rn true 2>/dev/null; the
 elif [[ -f $dir/scripts/wire-pod-guard.nft ]]; then echo "nft guard check skipped: no unprivileged unshare"; fi
 export DOTFILES_DIR=/nonexistent MY_VECTOR_OVERLAY_DIR=/nonexistent # jobs never read this host's settings layers
 opt settings "$dir"/scripts/tests/settings.sh
+opt cites "$dir"/scripts/tests/cites.sh "$repo" # a git checkout: the --head archive copy is none
 job check-static "$dir"/robot/firmware/check-static.sh
 for t in pc-voice nap silent-start mic-stream night-check logcheck receipt static-feed; do opt "$t" "$dir/robot/firmware/tests/$t.sh"; done # each SKIPs itself without g++/clone
 opt lib-etc "$dir"/robot/lib/tests/etc.sh

@@ -1,24 +1,39 @@
 #!/usr/bin/env bash
-# scripts/lib/settings.sh layer precedence (defaults < dotfiles < companion < robot.env) and robot/env.sh's --no-defaults SETUP.
+# scripts/lib/settings.sh layer precedence (defaults < dotfiles < overlay < robot.env), the overlay dir's resolution (env, else the
+# dotfiles layer's pointer, else none) and robot/env.sh's --no-defaults SETUP.
 set -euo pipefail
 dir=$(cd "$(dirname "$0")/../.." && pwd)
 t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
-mkdir -p "$t/dot/shared-settings" "$t/priv"
-printf '# c\nPC_LAN_IP=10.0.0.1\nPC_TAILNET_IP=10.0.0.4\nROBOT_IP=10.0.0.2\n' >"$t/dot/shared-settings/settings.env"
+mkdir -p "$t/dot/shared-settings" "$t/nokey/shared-settings" "$t/priv" "$t/alt"
+printf '# c\nPC_LAN_IP=10.0.0.1\nPC_TAILNET_IP=10.0.0.4\nROBOT_IP=10.0.0.2\n' >"$t/nokey/shared-settings/settings.env"
+{ cat "$t/nokey/shared-settings/settings.env"; echo "MY_VECTOR_OVERLAY_DIR=$t/priv"; } >"$t/dot/shared-settings/settings.env" # the pointer
+printf 'ROBOT_IP=10.0.0.5\n' >"$t/alt/settings.env"
 printf 'ROBOT_IP=10.0.0.3\nROBOT_ESN=0000abcd\nROBOT_SERVER=http://localhost:1\n' >"$t/priv/settings.env"
 touch "$t/key"; printf 'ROBOT_KEY=%s\n' "$t/key" >"$t/robot.env"
 nbad=0; fail() { echo "FAIL settings: $*" >&2; nbad=$((nbad + 1)); } # report every failing case, exit 1 at the end
-export DOTFILES_DIR=$t/dot MY_VECTOR_OVERLAY_DIR=$t/priv
+export DOTFILES_DIR=$t/dot; unset MY_VECTOR_OVERLAY_DIR # the overlay via the dotfiles pointer, as on this host
+# Overlay resolution, one case per branch: robot() = the ROBOT_ESN/ROBOT_IP keys --dump --no-defaults resolves.
+robot() { bash "$dir/scripts/lib/settings.sh" --dump --no-defaults | sed -n 's/^\(ROBOT_ESN\|ROBOT_IP\)=//p' | tr '\n' ' '; }
+[[ $(robot) == "0000abcd 10.0.0.3 " ]] || fail "env unset: the dotfiles pointer's overlay must load, got: $(robot)"
+[[ $(MY_VECTOR_OVERLAY_DIR=$t/alt robot) == "10.0.0.5 " ]] || fail "env set: it must win over the dotfiles pointer, got: $(MY_VECTOR_OVERLAY_DIR=$t/alt robot)"
+[[ $(MY_VECTOR_OVERLAY_DIR='' robot) == "10.0.0.2 " ]] || fail "env set empty: no overlay, got: $(MY_VECTOR_OVERLAY_DIR='' robot)"
+[[ $(DOTFILES_DIR=$t/nokey robot) == "10.0.0.2 " ]] || fail "env unset, no pointer: no overlay, got: $(DOTFILES_DIR=$t/nokey robot)"
+# shellcheck disable=SC2016 # the inner bash expands them
+nl=$(DOTFILES_DIR=/nonexistent bash -c '. "$0/scripts/lib/settings.sh"; settings_layers --no-defaults' "$dir")
+[[ $nl == /nonexistent/shared-settings/settings.env ]] || fail "neither env nor pointer: want the dotfiles layer alone (no default overlay path), got: $nl"
+# shellcheck disable=SC2016 # the inner bash expands them
+got=$(MY_VECTOR_OVERLAY_DIR=$t/alt bash -c '. "$0/scripts/lib/settings.sh"; settings_load --no-defaults; echo "$MY_VECTOR_OVERLAY_DIR"' "$dir")
+[[ $got == "$t/alt" ]] || fail "settings_load let the dotfiles pointer overwrite the caller's MY_VECTOR_OVERLAY_DIR: $got"
 dump=$(bash "$dir/scripts/lib/settings.sh" --dump)
 for want in PC_LAN_IP=10.0.0.1 ROBOT_IP=10.0.0.3 ROBOT_ESN=0000abcd PHONE_TAILNET_IP=192.0.2.53; do
   grep -qx "$want" <<<"$dump" || fail "--dump lacks $want: $dump"
 done
 nd=$(bash "$dir/scripts/lib/settings.sh" --dump --no-defaults)
-grep -qx ROBOT_IP=10.0.0.3 <<<"$nd" || fail "--no-defaults dropped the companion layer: $nd"
+grep -qx ROBOT_IP=10.0.0.3 <<<"$nd" || fail "--no-defaults dropped the overlay layer: $nd"
 if grep -q '^PHONE_TAILNET_IP=' <<<"$nd"; then fail "--no-defaults leaked a public default"; fi
 rc=0; bash "$dir/scripts/lib/settings.sh" --dump --no-default >/dev/null 2>&1 || rc=$?
 [[ $rc == 2 ]] || fail "settings.sh accepted a mistyped --no-defaults (rc=$rc)"
-grep -qx 'define ROBOT_IP = 10.0.0.3' <<<"$("$dir/scripts/guard-nft.sh" </dev/null)" || fail "guard-nft.sh ignores the companion layer"
+grep -qx 'define ROBOT_IP = 10.0.0.3' <<<"$("$dir/scripts/guard-nft.sh" </dev/null)" || fail "guard-nft.sh ignores the overlay layer"
 # shellcheck disable=SC2016 # the inner bash expands them
 envsh() { env -u ESN -u SERVER -u ROBOT_TTS_URL -u ROBOT_IP -u MYVECTOR_EPOD_DIR ROBOT_ENV="$1" bash -c 'silent=1; . "$0/robot/env.sh"; echo "$ip $esn $tts_url"' "$dir"; }
 [[ $(envsh "$t/robot.env") == "10.0.0.3 0000abcd http://10.0.0.4:8091" ]] || fail "env.sh layering: $(envsh "$t/robot.env" 2>&1)"
@@ -72,4 +87,4 @@ printf 'ROBOT_KEY=%s\nROBOT_ESN=0000abcd\nROBOT_SERVER=http://localhost:1\nROBOT
 rc=0; out=$(DOTFILES_DIR=$t/okdot MY_VECTOR_OVERLAY_DIR=$t/priv envsh "$t/full.env" 2>&1) || rc=$?
 [[ $rc == 2 && $out == "settings: $t/priv/settings.env:2: invalid line" ]] || fail "env.sh must exit 2 on an invalid layer, got rc=$rc: $out"
 ((nbad == 0)) || exit 1
-echo "settings OK: layer precedence, robot.env override, env.sh skips public defaults, parser contract (CRLF/BOM/rejects/last-wins/no exec)"
+echo "settings OK: layer precedence, overlay dir resolution (env/pointer/none), robot.env override, env.sh skips public defaults, parser contract (CRLF/BOM/rejects/last-wins/no exec)"
