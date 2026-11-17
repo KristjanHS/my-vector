@@ -1,6 +1,6 @@
 # Robot Tailscale (option D: spike, then productise)
 
-Status: ✅ SHIPPED 2026-11-10 (0a9df86 shipped; Stage 5 green: selftest, 5.2 e2e + voice turn + 30-min soak, review fixes 51ef66c e38e9d7 feea361). Recovery runbook: `docs/tailscale-recovery.md`. Executes item 3 of §Recommended plan in `2026-11-07-public-wifi-security.md (docs/plans/)`
+Status: ✅ SHIPPED 2026-11-10 (0a9df86 shipped; Stage 5 green: selftest, 5.2 e2e + voice turn + 30-min soak, review fixes 51ef66c e38e9d7 feea361). Executes item 3 of §Recommended plan in `2026-11-07-public-wifi-security.md (docs/plans/)`
 (§D. Tunnel on the robot itself) and extends the netguard shipped by `2026-11-07-wifi-baseline-hardening.md (docs/plans/)`.
 `[USER]` = a live run on the robot, server or admin console: Claude asks first, never runs it unasked. `[SOUND]` = makes
 robot sound: `robot/quiet/quiet.sh status` ≠ 3 right before it, ask, note the start time, then `robot/quiet/scan.sh '<start>'`
@@ -19,7 +19,7 @@ rewrite of the lines it supersedes inside Stage 4, not a seam move ahead of it.
 | D1 | Target = Tailscale on the robot. Spike (Stages 1–2) gates productise (3–5). Spike NO-GO → stop here, fall back to option C; no C work in this plan. | — |
 | D2 | `tailscaled` kernel TUN (`tailscale0`), official static `arm` tgz from pkgs.tailscale.com, `TS_VERSION`/`TS_SHA256` pinned in source; `fetch.sh` refuses a sha mismatch. Binaries + statedir in `/data` (survives OTA). Flags: `tailscaled --statedir=<TS_STATEDIR> --socket=<TS_SOCK> --port=<TS_PORT> --tun=tailscale0`; `tailscale up --hostname=<TS_HOSTNAME> --advertise-tags=<TS_TAG> --accept-dns=false --netfilter-mode=off` (netguard stays the only iptables writer). | `robot/tailscale/fetch.sh` |
 | D3 | Node identity `[USER]` in the admin console: ACL `tagOwners` for `TS_TAG`; the default allow-all grant is replaced by `autogroup:member` → `autogroup:self:*`, `autogroup:member` → `TS_TAG:*` and `TS_TAG` → `wsl-ubuntu` tcp `80,443,8084,8091,8093` only; one-off pre-approved tagged auth key; key expiry disabled; revoke the node if the robot is lost. Never `tailscale serve`/`funnel`. | admin console |
-| D4 | Auth key lives at `TS_AUTHKEY` (mode 600); it reaches the robot only on ssh stdin into `/run`, is used as `--auth-key=file:<run path>` and deleted in the same phase; never in laptop argv. | `secrets/README.md` row; `scripts/tests/secrets.sh` check-ignore list |
+| D4 | Auth key lives at `TS_AUTHKEY` (mode 600); it reaches the robot only on ssh stdin into `/run`, is used as `--auth-key=file:<run path>` and deleted in the same phase; never in laptop argv. | `scripts/tests/secrets.sh` check-ignore list |
 | D5 | Boot unit `TS_UNIT` via `etc_put` + daemon-reload + enable: `After=network-pre.target myvector-netguard.service`, `RequiresMountsFor=/data`, `Wants=`+`After=mount-data.service` (dm-0 `/data` lands after `data.mount`), `Restart=on-failure`, `RestartSec=5`, `WantedBy=multi-user.target`. `apply.sh` runs `tailscale up` only on a settled `NeedsLogin` and `TS_AUTHKEY` exists, else `WARN:`. | `robot/tailscale/apply.sh` |
 | D6 | Extends K6: `settings.sh` order … → epod → **tailscale** → netguard (tailnet path exists before wlan0 closes); `ship.sh` `ls-tree` list gains `robot/tailscale`. | `robot/firmware/{settings.sh,ship.sh}` |
 | D7 | Supersedes N1 (address split): hosts pin = host of `ROBOT_TTS_URL`, which moves to the laptop tailnet IP (the robot's TTS fetch goes over the tunnel too); wlan0 SSH allow = `PC_LAN_IP`; `ROBOT_IP` = robot tailnet IP, `ROBOT_LAN_IP` = its wlan0 address (reach checks). All four in `robot/robot.env`; missing or non-IPv4 → SETUP 2. The docker deploy reaches `ROBOT_IP` `:22`/`:1873` over WSL `tailscale0` (1.3 probe, D13 egress live). | `robot/netguard/apply.sh`; `robot/robot.env.example` |
@@ -74,7 +74,7 @@ Precondition (a robot reboot drops both): `pidof tailscaled` and `iptables -S OU
 
 ## Stage 3 — productise install
 
-Focus: `robot/tailscale/{apply.sh,tests/apply.sh}`; `robot/firmware/{settings.sh,ship.sh}`; `scripts/check.sh`; `secrets/README.md`; `scripts/tests/secrets.sh`.
+Focus: `robot/tailscale/{apply.sh,tests/apply.sh}`; `robot/firmware/{settings.sh,ship.sh}`; `scripts/check.sh`; `scripts/tests/secrets.sh`.
 
 | slice | edit sites | falsifier (red demo first) | verify |
 |---|---|---|---|
