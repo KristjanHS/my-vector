@@ -2,8 +2,6 @@
 
 my-vector gives the Anki (now Digital Dream Labs) [Vector](https://web.archive.org/web/20190417120536if_/https://www.anki.com/en-us/vector) robot a large-language-model brain, PC-generated voices and Estonian speech recognition. It is built on top of [wire-pod](https://github.com/kercre123/wire-pod), the open-source Vector server.
 
-<!-- TODO: 30-second robot video -->
-
 ## What my-vector adds
 
 - **LLM answers** — each language picks its own brain, a local Ollama model or Claude, configured from the web UI (`chipper/pkg/myvector/llm`, trial notes in [docs/llm-trials.md](docs/llm-trials.md)). Estonian answers come from TartuNLP's Estonian LLMs on Ollama — see [Estonian models](#estonian-models).
@@ -28,8 +26,6 @@ In Estonian mode Vector hears, thinks and speaks with local Estonian models, eac
 | speak (TTS) | Piper [`et_EE-news-medium`](https://huggingface.co/rhasspy/piper-voices/tree/main/et/et_EE/news/medium) | voices `mari`, `albert`, `kalev` | download the voice ([steps](docs/estonian-models.md#estonian-voices-tts)), then `make tts-setup && make tts-enable` |
 
 ## How it was built
-
-<!-- TODO: stats block (slot 4 generator) + one hand-written paragraph -->
 
 Method and agent configuration: [claudeconf](https://github.com/KristjanHS/claudeconf).
 
