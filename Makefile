@@ -70,7 +70,8 @@ stt-disable: ## Stop + remove myvector-stt.service
 	sudo rm -f /etc/systemd/system/myvector-stt.service
 	sudo systemctl daemon-reload
 
-check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector + vars fork Go tests
+check: ## Fast checks (syncwt gate): upstream drift, robot/scripts shell syntax, go vet sdkapp, chipper myvector + vars fork Go tests; dated doc cites resolve (scripts/tests/cites.sh)
+	$(CURDIR)/scripts/tests/cites.sh
 	$(CURDIR)/scripts/check.sh
 
 quiet: ## Robot sound lock on for MIN minutes (default 120): blocks robot sound scripts, naps Vector, volume 1 (robot/quiet/quiet.sh)
