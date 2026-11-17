@@ -1,17 +1,24 @@
 # shellcheck shell=bash
 # settings_load [--no-defaults]: exports the KEY=value layers, later wins: scripts/settings.defaults.env (skipped by --no-defaults)
-# < ${DOTFILES_DIR:-<main>/../dotfiles}/shared-settings/settings.env < ${MY_VECTOR_OVERLAY_DIR:-<main>/../<overlay>}/settings.env.
-# An absent layer is skipped. Run as `bash scripts/lib/settings.sh --dump [--no-defaults]` to print the resolved keys.
+# < ${DOTFILES_DIR:-<main>/../dotfiles}/shared-settings/settings.env < <overlay>/settings.env. The overlay dir: MY_VECTOR_OVERLAY_DIR
+# from the environment when set (empty = none), else the last MY_VECTOR_OVERLAY_DIR= line of the dotfiles layer, else no overlay
+# (no default path: it works under root load-guard.sh, whose environment lacks the caller's). An absent layer is skipped.
+# Run as `bash scripts/lib/settings.sh --dump [--no-defaults]` to print the resolved keys.
 # The layers are parsed, never sourced (load-guard.sh runs this as root over user-owned files): see settings_parse.
 settings_layers() {
-  local lib main
+  local lib main dot ov=
   [[ $# == 0 || $* == --no-defaults ]] || { echo "settings.sh: unknown arg $*" >&2; return 2; }
   lib=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   main=$(git -C "$lib" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && main=$(dirname "$main") ||
     main=$(cd "$lib/../.." && pwd) # git refused (root on a user-owned repo, no safe.directory): this checkout
   [[ ${1:-} == --no-defaults ]] || echo "$lib/../settings.defaults.env"
-  echo "${DOTFILES_DIR:-$main/../dotfiles}/shared-settings/settings.env"
-  echo "${MY_VECTOR_OVERLAY_DIR:-$main/../<overlay>}/settings.env"
+  dot=${DOTFILES_DIR:-$main/../dotfiles}/shared-settings/settings.env
+  echo "$dot"
+  if [[ -n ${MY_VECTOR_OVERLAY_DIR+set} ]]; then ov=$MY_VECTOR_OVERLAY_DIR
+  elif [[ -f $dot ]]; then # an invalid dotfiles layer means no pointer here; settings_load then fails on that layer itself
+    ov=$(settings_parse "$dot" 2>/dev/null | sed -n 's/^MY_VECTOR_OVERLAY_DIR=//p' | tail -1) || ov=
+  fi
+  if [[ -n $ov ]]; then echo "$ov/settings.env"; fi
 }
 # settings_parse <file>: its KEY=value lines on stdout, in file order. Strips a line-1 UTF-8 BOM and each line's trailing CR;
 # skips empty and ^# lines; any other line must be KEY=value with no whitespace, quote, $, backtick, # or backslash in the
@@ -34,8 +41,8 @@ settings_load() { # every layer is parsed before any key is exported: an invalid
   while IFS= read -r _sl_f; do
     if [[ -f $_sl_f ]]; then _sl_kv=$(settings_parse "$_sl_f") || return; _sl_all+=$_sl_kv$'\n'; fi
   done <<<"$_sl_layers"
-  while IFS= read -r _sl_kv; do # later lines win
-    if [[ -n $_sl_kv ]]; then printf -v "${_sl_kv%%=*}" '%s' "${_sl_kv#*=}"; export "${_sl_kv%%=*}"; fi
+  while IFS= read -r _sl_kv; do # later lines win; the pointer is never exported: the caller's env keeps winning in children
+    if [[ -n $_sl_kv && ${_sl_kv%%=*} != MY_VECTOR_OVERLAY_DIR ]]; then printf -v "${_sl_kv%%=*}" '%s' "${_sl_kv#*=}"; export "${_sl_kv%%=*}"; fi
   done <<<"$_sl_all"
 }
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
@@ -45,5 +52,5 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
   settings_load "$@"
   while IFS= read -r f; do
     if [[ -f $f ]]; then settings_parse "$f"; fi
-  done < <(settings_layers "$@") | sed 's/=.*//' | sort -u | while IFS= read -r k; do echo "$k=${!k}"; done
+  done < <(settings_layers "$@") | sed -e '/^MY_VECTOR_OVERLAY_DIR=/d' -e 's/=.*//' | sort -u | while IFS= read -r k; do echo "$k=${!k}"; done
 fi
