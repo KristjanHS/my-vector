@@ -109,7 +109,7 @@ echo "${out%state=*}" | sed '/^$/d'
 state=${out##*state=}
 if [[ $state == Running ]]; then echo "tailscale: logged in ($state)"; exit 0; fi
 [[ $state == NeedsLogin ]] || { echo "WARN: tailscale: BackendState '${state}' (not Running, not NeedsLogin): key not used"; exit 0; }
-[[ -f $authkey ]] || { echo "WARN: tailscale: not logged in (state ${state:-unknown}) and no $authkey — see secrets/README.md"; exit 0; }
+[[ -f $authkey ]] || { echo "WARN: tailscale: not logged in (state ${state:-unknown}) and no $authkey — put a one-off pre-approved auth key there (mode 600)"; exit 0; }
 # shellcheck disable=SC2016 # expands on the robot
 ssh "${ssh_opts[@]}" "root@$ip" 'umask 077; k=${ETC_ROOT:-}'"$run_key"'; mkdir -p "${k%/*}" && cat >"$k"' <"$authkey" || die "key push failed"
 out=$(remote up) || { ssh "${ssh_opts[@]}" "root@$ip" "rm -f \${ETC_ROOT:-}$run_key" || :; die "${out:-up phase failed}"; }
