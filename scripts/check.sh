@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace), then in parallel (scripts/lib/check-runner.sh: first failure stops the rest) scripts/tests/{guard,check-runner,settings,cites}.sh, firmware static checks (check-static.sh), patch 0010 + 0011 + 0016 + 0017 host tests (tests/pc-voice.sh, tests/nap.sh, tests/mic-stream.sh, tests/silent-start.sh) + smoke logcheck (tests/logcheck.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey,logkeep}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + robot/netguard/tests/{rules,hosts,apply}.sh + robot/tailscale/tests/{fetch,soak,apply}.sh + scripts/tests/secrets.sh + scripts/tests/gofmt.sh (fork Go files gofmt-clean) + gofmt-host.sh, go vet + Fork tests of the patched sdkapp,
+# Fast checks (make check, syncwt's gate): upstream drift, robot/scripts shell syntax, wire-pod-guard.nft syntax (nft -c in a user+net namespace), then in parallel (scripts/lib/check-runner.sh: first failure stops the rest) scripts/tests/{guard,check-runner,settings,cites,cites-rev}.sh, firmware static checks (check-static.sh), patch 0010 + 0011 + 0016 + 0017 host tests (tests/pc-voice.sh, tests/nap.sh, tests/mic-stream.sh, tests/silent-start.sh) + smoke logcheck (tests/logcheck.sh), robot/lib/tests/etc.sh + robot/{sshkey,hostkey,logkeep}/tests/apply.sh + robot/epod/tests/{mkcert,apply,interlock}.sh + robot/netguard/tests/{rules,hosts,apply}.sh + robot/tailscale/tests/{fetch,soak,apply}.sh + scripts/tests/secrets.sh + scripts/tests/gofmt.sh (fork Go files gofmt-clean) + gofmt-host.sh, go vet + Fork tests of the patched sdkapp,
 # chipper myvector + vars + localization fork Go tests (when that dir exists: go test exits 1 on a missing pattern dir), tts + stt pytest (when each venv exists).
 # Usage: check.sh [--head [rev]]   --head checks only that commit (default HEAD) via a git archive copy;
 #   make ship passes its pinned sha so the checked commit is the one it ships.
@@ -58,7 +58,8 @@ if [[ -f $dir/scripts/wire-pod-guard.nft ]] && unshare -rn true 2>/dev/null; the
 elif [[ -f $dir/scripts/wire-pod-guard.nft ]]; then echo "nft guard check skipped: no unprivileged unshare"; fi
 export DOTFILES_DIR=/nonexistent MY_VECTOR_OVERLAY_DIR=/nonexistent # jobs never read this host's settings layers
 opt settings "$dir"/scripts/tests/settings.sh
-opt cites "$dir"/scripts/tests/cites.sh "$repo" # a git checkout: the --head archive copy is none
+opt cites "$dir"/scripts/tests/cites.sh "$repo" "${head[@]}" # git reads --head's rev itself: the archive copy is no checkout
+opt cites-rev "$dir"/scripts/tests/cites-rev.sh
 job check-static "$dir"/robot/firmware/check-static.sh
 for t in pc-voice nap silent-start mic-stream night-check logcheck receipt static-feed; do opt "$t" "$dir/robot/firmware/tests/$t.sh"; done # each SKIPs itself without g++/clone
 opt lib-etc "$dir"/robot/lib/tests/etc.sh

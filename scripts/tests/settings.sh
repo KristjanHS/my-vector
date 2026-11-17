@@ -6,7 +6,7 @@ dir=$(cd "$(dirname "$0")/../.." && pwd)
 t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
 mkdir -p "$t/dot/shared-settings" "$t/nokey/shared-settings" "$t/priv" "$t/alt"
 printf '# c\nPC_LAN_IP=10.0.0.1\nPC_TAILNET_IP=10.0.0.4\nROBOT_IP=10.0.0.2\n' >"$t/nokey/shared-settings/settings.env"
-{ cat "$t/nokey/shared-settings/settings.env"; echo "MY_VECTOR_OVERLAY_DIR=$t/priv"; } >"$t/dot/shared-settings/settings.env" # the pointer
+{ cat "$t/nokey/shared-settings/settings.env"; echo "MY_VECTOR_OVERLAY_DIR=$t/priv"; echo "OTHER_PROJECT_OVERLAY_DIR=$t/alt"; } >"$t/dot/shared-settings/settings.env" # the pointer + another project's
 printf 'ROBOT_IP=10.0.0.5\n' >"$t/alt/settings.env"
 printf 'ROBOT_IP=10.0.0.3\nROBOT_ESN=0000abcd\nROBOT_SERVER=http://localhost:1\n' >"$t/priv/settings.env"
 touch "$t/key"; printf 'ROBOT_KEY=%s\n' "$t/key" >"$t/robot.env"
@@ -25,6 +25,11 @@ nl=$(DOTFILES_DIR=/nonexistent bash -c '. "$0/scripts/lib/settings.sh"; settings
 got=$(MY_VECTOR_OVERLAY_DIR=$t/alt bash -c '. "$0/scripts/lib/settings.sh"; settings_load --no-defaults; echo "$MY_VECTOR_OVERLAY_DIR"' "$dir")
 [[ $got == "$t/alt" ]] || fail "settings_load let the dotfiles pointer overwrite the caller's MY_VECTOR_OVERLAY_DIR: $got"
 dump=$(bash "$dir/scripts/lib/settings.sh" --dump)
+ptr=$(grep -E '^[A-Za-z0-9_]*_OVERLAY_DIR=' <<<"$dump" || true)
+[[ -z $ptr ]] || fail "--dump printed an *_OVERLAY_DIR pointer (a child would see it as env set): $ptr"
+# shellcheck disable=SC2016 # the inner bash expands them
+got=$(env -u OTHER_PROJECT_OVERLAY_DIR bash -c '. "$0/scripts/lib/settings.sh"; settings_load; env | grep -E "^(MY_VECTOR|OTHER_PROJECT)_OVERLAY_DIR=" || true' "$dir")
+[[ -z $got ]] || fail "settings_load exported an *_OVERLAY_DIR pointer: $got"
 for want in PC_LAN_IP=10.0.0.1 ROBOT_IP=10.0.0.3 ROBOT_ESN=0000abcd PHONE_TAILNET_IP=192.0.2.53; do
   grep -qx "$want" <<<"$dump" || fail "--dump lacks $want: $dump"
 done

@@ -3,7 +3,7 @@
 # < ${DOTFILES_DIR:-<main>/../dotfiles}/shared-settings/settings.env < <overlay>/settings.env. The overlay dir: MY_VECTOR_OVERLAY_DIR
 # from the environment when set (empty = none), else the last MY_VECTOR_OVERLAY_DIR= line of the dotfiles layer, else no overlay
 # (no default path: it works under root load-guard.sh, whose environment lacks the caller's). An absent layer is skipped.
-# Run as `bash scripts/lib/settings.sh --dump [--no-defaults]` to print the resolved keys.
+# Run as `bash scripts/lib/settings.sh --dump [--no-defaults]` to print the resolved keys (no *_OVERLAY_DIR pointer: never exported).
 # The layers are parsed, never sourced (load-guard.sh runs this as root over user-owned files): see settings_parse.
 settings_layers() {
   local lib main dot ov=
@@ -41,8 +41,8 @@ settings_load() { # every layer is parsed before any key is exported: an invalid
   while IFS= read -r _sl_f; do
     if [[ -f $_sl_f ]]; then _sl_kv=$(settings_parse "$_sl_f") || return; _sl_all+=$_sl_kv$'\n'; fi
   done <<<"$_sl_layers"
-  while IFS= read -r _sl_kv; do # later lines win; the pointer is never exported: the caller's env keeps winning in children
-    if [[ -n $_sl_kv && ${_sl_kv%%=*} != MY_VECTOR_OVERLAY_DIR ]]; then printf -v "${_sl_kv%%=*}" '%s' "${_sl_kv#*=}"; export "${_sl_kv%%=*}"; fi
+  while IFS= read -r _sl_kv; do # later lines win; no *_OVERLAY_DIR pointer (any project's) is exported: the caller's env keeps winning in children
+    if [[ -n $_sl_kv && ${_sl_kv%%=*} != *_OVERLAY_DIR ]]; then printf -v "${_sl_kv%%=*}" '%s' "${_sl_kv#*=}"; export "${_sl_kv%%=*}"; fi
   done <<<"$_sl_all"
 }
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
@@ -52,5 +52,5 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
   settings_load "$@"
   while IFS= read -r f; do
     if [[ -f $f ]]; then settings_parse "$f"; fi
-  done < <(settings_layers "$@") | sed -e '/^MY_VECTOR_OVERLAY_DIR=/d' -e 's/=.*//' | sort -u | while IFS= read -r k; do echo "$k=${!k}"; done
+  done < <(settings_layers "$@") | sed -e '/^[A-Za-z0-9_]*_OVERLAY_DIR=/d' -e 's/=.*//' | sort -u | while IFS= read -r k; do echo "$k=${!k}"; done
 fi
