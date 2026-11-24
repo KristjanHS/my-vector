@@ -1,6 +1,6 @@
 # README rewrite, worked trails, docs map
 
-Status: ACTIVE — 1.1 next.
+Status: ACTIVE — 1.1–3.2 done (0efd38a..03d56de); next 5.1 (review range 5290595..03d56de) + [USER] 4 video.
 Out of scope: pushes, docker files (another session).
 
 ## Rulings (USER 2026-11-24)
