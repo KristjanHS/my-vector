@@ -1,6 +1,16 @@
 # my-vector
 
-my-vector gives the Anki (now Digital Dream Labs) [Vector](https://web.archive.org/web/20190417120536if_/https://www.anki.com/en-us/vector) robot a large-language-model brain, PC-generated voices and Estonian speech recognition. It is built on top of [wire-pod](https://github.com/kercre123/wire-pod), the open-source Vector server.
+my-vector gives the Anki (now Digital Dream Labs) [Vector](https://web.archive.org/web/20190417120536if_/https://www.anki.com/en-us/vector) robot a large-language-model brain, PC-generated voices, Estonian speech recognition and a long-term memory. It is built on top of [wire-pod](https://github.com/kercre123/wire-pod), the open-source Vector server.
+
+## Demo
+
+The two screenshots below are from upstream wire-pod: its custom-intent editor, which my-vector keeps unchanged. They show the web UI my-vector builds on, not a my-vector feature; my-vector's own additions are listed in [What my-vector adds](#what-my-vector-adds).
+
+![wire-pod custom-intent editor (upstream wire-pod screenshot)](images/custom-intent-1.png)
+
+![wire-pod custom-intent editor, continued (upstream wire-pod screenshot)](images/custom-intent-2.png)
+
+<!-- robot-video -->
 
 ## What my-vector adds
 
@@ -9,10 +19,28 @@ my-vector gives the Anki (now Digital Dream Labs) [Vector](https://web.archive.o
 - **Estonian speech recognition** — a faster-whisper STT service runs TalTech's Estonian Whisper model on the GPU ([Estonian models](#estonian-models)), with an English model for English; the language is switched from the web UI (`et-stt/`, `chipper/pkg/myvector/lang`).
 - **Live answers** — weather, news and other current questions are routed to web search (Tavily, or a local SearXNG) and a weather forecast before the LLM answers (`chipper/pkg/myvector/search`).
 - **Picture questions** — ask "what is in this picture?" and Vector describes what its camera sees; follow-up questions reuse the last photo (`chipper/pkg/myvector/photo`).
+- **Long-term memory** — conversations are captured per robot; a nightly pass pulls facts out of finished sessions, merges them with the ones already held, rebuilds a short profile and keeps a diary. A guard asks fixed questions before and after each merge and reverts the pass if an answer is lost. Facts can be reviewed and removed from the web UI; the memory model is local Ollama or Claude, picked separately (`chipper/pkg/myvector/memory`).
+- **Follow-up listening** — after each answer a quick yes/no call decides whether Vector should listen again, so a conversation can go on without repeating the wake word, up to a capped chain (`chipper/pkg/myvector/followup`).
+- **Prompt templates** — the system prompt is an editable template per brain (Ollama, Claude) with blocks such as `{facts}`, `{diary}`, `{search}` and `{lang}`, a preview, and the last few saves kept for restore, on the `/myvector/prompt` page (`chipper/pkg/myvector/prompt`).
+- **Sound lock** — saying "shut up", or running `make quiet`, locks every robot sound path for a while: robot sound scripts are blocked, Vector naps and the volume drops (`chipper/pkg/myvector/quiet`, `robot/quiet/`).
+- **WireOS unlock and Tailscale** — the robot is unlocked and runs WireOS with a patch series that lets it live on the charger and still answer "Hey Vector" (`robot/unlock/`, [`robot/firmware/`](robot/firmware)); a Tailscale tunnel on the robot itself carries its traffic to the server, so it also works on WiFi networks I do not control (`robot/tailscale/`).
+- **WiFi hardening** — the robot's public root SSH key is replaced by a new one, each robot gets its own sshd host keys, and the server's TLS certificate comes from its own CA instead of the public escapepod one, and a firewall on the robot limits who can reach it (`robot/netguard/`); a WiFi page tests, switches and roams between the robot's saved networks (`robot/sshkey/`, `robot/hostkey/`, `chipper/pkg/myvector/wifi`).
 
 ## Quickstart
 
 The PC side runs from the [Makefile](Makefile); `make help` lists every target. In short: set up and enable the TTS and STT services (`make tts-setup`, `make tts-enable`, `make stt-setup`, `make stt-enable`), then install wire-pod as a service with `make daemon-enable` and start it with `make start`. The robot still needs wire-pod's own setup first — see [Base: wire-pod](#base-wire-pod).
+
+## Architecture
+
+```text
+ Vector robot (WireOS)                      PC: chipper (wire-pod server, Go)
+ robot/firmware patches   <-- voice -->     upstream wire-pod + chipper/pkg/myvector
+ robot/quiet, wifi, tailscale                          |
+              +--------------+-------------------------+----------------+
+              |              |                         |                |
+        STT: et-stt/    TTS: tts/                 LLM: Ollama      search: Tavily or
+        faster-whisper  Kokoro + Piper            or Claude        SearXNG, + weather
+```
 
 ## Estonian models
 
@@ -27,7 +55,17 @@ In Estonian mode Vector hears, thinks and speaks with local Estonian models, eac
 
 ## How it was built
 
-Method and agent configuration: [claudeconf](https://github.com/KristjanHS/claudeconf).
+I built my-vector with coding agents. Every change starts as a written plan with my rulings in it, is built in small committed stages with tests, and is checked by a separate reviewer agent before the plan is archived. What went well: the plans made long work resumable from one session to the next, and the reviewer, reading a whole stage range cold, caught what green stage tests could not — a memory fact I had removed on the settings page could still reach the model during the nightly pass. What the agents got wrong was mostly settling too early. One blamed an animation crash on memory corruption and archived the hunt as "no repro"; when the crash came back, a re-read of the call site found a soft-float library calling a hard-float libc function with no bridge. Another picked a news-answer opener because it won the replay, accepting that it credited items to the wrong outlet; I rejected it and asked for new arms. And a one-language helper for the camera model would have stayed beside the general setting if I had not ruled it deleted.
+
+- [Hard debugging: the crash the agent blamed on memory corruption](docs/how-it-was-built.md#hard-debugging-the-crash-the-agent-blamed-on-memory-corruption)
+- [Design rejected: the agent's winning opener credited the wrong source](docs/how-it-was-built.md#design-rejected-the-agents-winning-opener-credited-the-wrong-source)
+- [Agent bug caught: a removed memory fact could still reach the model](docs/how-it-was-built.md#agent-bug-caught-a-removed-memory-fact-could-still-reach-the-model)
+- [Agent debt deleted: the one-off vision helper the setting replaced](docs/how-it-was-built.md#agent-debt-deleted-the-one-off-vision-helper-the-setting-replaced)
+
+Map of the docs, plans and archived plans: [docs/README.md](docs/README.md). Method and agent configuration: [claudeconf](https://github.com/KristjanHS/claudeconf).
+
+<!-- agentic-stats:start -->
+<!-- agentic-stats:end -->
 
 ## Base: wire-pod
 
@@ -48,4 +86,4 @@ my-vector is a fork of `wire-pod`, fully-featured server software for Vector cre
 
 ## License
 
-MIT — see [LICENSE](LICENSE) (upstream wire-pod copyright retained).
+MIT, under three upstream notices that are kept as they are: [LICENSE](LICENSE) (Copyright (c) 2022 Kerigan Creighton, wire-pod), [chipper/LICENSE](chipper/LICENSE) and [vector-cloud/LICENSE](vector-cloud/LICENSE) (both Copyright (c) 2021 Digital Dream Labs).
