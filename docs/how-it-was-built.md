@@ -153,8 +153,8 @@ shipped ([1de75bd](https://github.com/KristjanHS/my-vector/commit/1de75bd),
 ```
 
 **Review fixes.** The first review
-([c73ba1b](https://github.com/KristjanHS/my-vector/commit/c73ba1b)) found that the benchmark's query arms
-skipped the relevance gate production runs, so they scored results the robot would have thrown away; the arms now
+([c73ba1b](https://github.com/KristjanHS/my-vector/commit/c73ba1b)) found that the search benchmark's query-rewrite arms
+(a separate measurement in 1de75bd, not the opener replay arms above) skipped the relevance gate production runs, so they scored results the robot would have thrown away; the arms now
 score what the gate keeps. The second review
 ([bafcb6b](https://github.com/KristjanHS/my-vector/commit/bafcb6b)), after news asks got a longer search deadline
 and a keyword fallback, fixed a data race in a test, restored the check that every news query carries the topic,

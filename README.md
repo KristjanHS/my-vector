@@ -14,7 +14,7 @@ The two screenshots below are from upstream wire-pod: its custom-intent editor, 
 
 ## What my-vector adds
 
-- **LLM answers** — each language picks its own brain, a local Ollama model or Claude, configured from the web UI (`chipper/pkg/myvector/llm`, trial notes in [docs/llm-trials.md](docs/llm-trials.md)). Estonian answers come from TartuNLP's Estonian LLMs on Ollama — see [Estonian models](#estonian-models).
+- **LLM answers** — each language picks its own brain, a local Ollama model or Claude, configured from the web UI (`chipper/pkg/myvector/llm`, trial notes in [docs/llm-trials.md](docs/llm-trials.md)). Estonian answers come from TartuNLP's Apertus-EstLLM on Ollama once it is picked on the voice page (unset, Estonian falls back to gemma4) — see [Estonian models](#estonian-models).
 - **PC voices** — Vector speaks LLM answers and its built-in lines through a local TTS service (Kokoro and Piper voices, Estonian Piper voices included — see [Estonian models](#estonian-models)), falling back to the robot's own voice when the service is down (`tts/`, `chipper/pkg/myvector/voice`).
 - **Estonian speech recognition** — a faster-whisper STT service runs TalTech's Estonian Whisper model on the GPU ([Estonian models](#estonian-models)), with an English model for English; the language is switched from the web UI (`et-stt/`, `chipper/pkg/myvector/lang`).
 - **Live answers** — weather, news and other current questions are routed to web search (Tavily, or a local SearXNG) and a weather forecast before the LLM answers (`chipper/pkg/myvector/search`).
@@ -28,7 +28,7 @@ The two screenshots below are from upstream wire-pod: its custom-intent editor, 
 
 ## Quickstart
 
-The PC side runs from the [Makefile](Makefile); `make help` lists every target. In short: set up and enable the TTS and STT services (`make tts-setup`, `make tts-enable`, `make stt-setup`, `make stt-enable`), then install wire-pod as a service with `make daemon-enable` and start it with `make start`. The robot still needs wire-pod's own setup first — see [Base: wire-pod](#base-wire-pod).
+The PC side runs from the [Makefile](Makefile); `make help` lists every target. In short: install [Ollama](https://ollama.com) and pull a model (see [Estonian models](#estonian-models)), set up and enable the TTS and STT services (`make tts-setup`, `make tts-enable`, `make stt-setup`, `make stt-enable`), then install and start wire-pod as a service with `make daemon-enable` (`make start` restarts it after later changes). The robot still needs wire-pod's own setup first — see [Base: wire-pod](#base-wire-pod).
 
 ## Architecture
 

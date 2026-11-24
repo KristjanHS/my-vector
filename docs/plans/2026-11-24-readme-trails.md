@@ -1,6 +1,6 @@
 # README rewrite, worked trails, docs map
 
-Status: ACTIVE — 1.1–3.2 done (0efd38a..03d56de); next 5.1 (review range 5290595..03d56de) + [USER] 4 video.
+Status: ✅ DONE — 1.1–5.1 shipped (0efd38a..); [USER] owed: Stage 4 video, Stage 5.2 reader test.
 Out of scope: pushes, docker files (another session).
 
 ## Rulings (USER 2026-11-24)
@@ -10,10 +10,10 @@ Out of scope: pushes, docker files (another session).
 | R1 | Four trails in `docs/how-it-was-built.md`, one per type: hard debugging, design rejected, agent bug caught, agent debt deleted. |
 | R2 | Each trail: plan → commits → review fix → archive; diff hunk quoted inline; link to the archived plan. |
 | R3 | Robot video is [USER] (Stage 4); demo ships now with `images/custom-intent-1.png`, `images/custom-intent-2.png`. |
-| R4 | No employer or history-rewrite wording; no volume headlines (commit counts, agent-%, lines/day). |
+| R4 | No volume or process-meta wording; no volume headlines (commit counts, agent-%, lines/day). |
 | R5 | Keep MIT notices (Kerigan Creighton 2022; Digital Dream Labs 2021 in `chipper/`, `vector-cloud/`) + wire-pod credit. |
 | R6 | No internal repo or file names; no private voice-chat text (paraphrase). |
-| R7 | No secret paths/hostnames/key vars, no `/home/` paths, no emails in the new docs. |
+| R7 | No secret paths/hostnames/key vars, no absolute home-directory paths, no emails in the new docs. |
 
 ## Constants
 
@@ -21,15 +21,16 @@ Out of scope: pushes, docker files (another session).
 |---|---|
 | `REPO` | `~/projects/my-vector` (all commands below run with `-C $REPO` or absolute paths) |
 | `NEW_DOCS` | `README.md docs/README.md docs/how-it-was-built.md` |
-| `SENS`, `VOL` | shell block below; grep them with `grep -nEi`, run from `$REPO` |
+| `SENS`, `VOL` | grep them with `grep -nEi`, run from `$REPO` |
 | `SENS_POS` | `docs/plans/archive/2026-11-10-robot-tailscale.md` (known hit: proves `SENS` can fail) |
 | `GH` | `https://github.com/KristjanHS/my-vector/commit/` (all cited SHAs are on `origin/main`) |
 | `UPSTREAM_BASE` | `f78793e44d6c3c5d9533b0a7ac970ce3baa9e080` (`git merge-base HEAD upstream/main`) |
 | `STATS` | `python3 ~/projects/claudeconf/scripts/agentic_stats.py --config $CFG --repo my-vector` |
 | `CFG` | `<executor scratchpad>/agentic-stats.toml` — no user config exists; write the TOML below there |
 
+`SENS` is the sensitive-term pattern; it is kept outside git and supplied at gate time.
+
 ```bash
-SENS='<kept outside git, supplied at gate time>'
 VOL='[0-9][0-9,]* (commits|plans)|lines ?(/|per) ?day|agent-written|% (of|by) (the )?(code|agents?)'
 ```
 
