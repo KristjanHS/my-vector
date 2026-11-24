@@ -6,6 +6,7 @@
 *.swp
 *.swo
 Dockerfile
+dockerfile
 docker-compose.yml
 docker-compose.yaml
 compose.yml
@@ -28,3 +29,9 @@ chipper/source.sh
 .env
 secrets
 certs
+docs
+# robot/ stays in the image: wire-pod runs robot/firmware/voice-push.sh and robot/wifi/wifi.sh
+# via conf.FindUp. Only the untracked bulk is excluded (robot/work alone was ~58 GB locally).
+robot/work
+robot/backup
+robot/ota
