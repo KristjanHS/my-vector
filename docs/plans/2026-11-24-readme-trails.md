@@ -67,7 +67,7 @@ Skip — docs-only plan, no code touched.
 - Focus: new `docs/how-it-was-built.md` (`git check-ignore -v` returned nothing: trackable).
 - Change: 1-line intro + `## <type>: <title>` per trail with Plan · Commits (`$GH<sha>` links) · Review fix · Archive · quoted ```diff.
 - Verify: `git -C ~/projects/my-vector add docs/how-it-was-built.md && ~/projects/my-vector/scripts/tests/cites.sh 2>&1 | tail -20`
-- Falsifier: `git -C ~/projects/my-vector show 97812eb | grep -F '__se_isinff(float x)' | head -1` line also in the doc (`grep -cF`) ≥1; same for `forkNewsOpener = ` vs 1de75bd.
+- Falsifier: `git -C ~/projects/my-vector show --format= 97812eb | grep -F '__se_isinff(float x)' | head -1` line (`--format=`: patch only, never the commit message) also in the doc (`grep -cF`) ≥1; same for `forkNewsOpener = ` vs 1de75bd.
 - Falsifier: `grep -nEi "$SENS|$VOL" docs/how-it-was-built.md` → 0 hits; `grep -cEi "$SENS" $SENS_POS` ≥1 first.
 - Commit: `docs: how it was built — debugging + rejected-design trails`.
 
@@ -76,7 +76,7 @@ Skip — docs-only plan, no code touched.
 - Focus: `docs/how-it-was-built.md`.
 - Change: append T3 and T4 in the 1.1 shape; end with a link to [claudeconf](https://github.com/KristjanHS/claudeconf) for the method.
 - Verify: `~/projects/my-vector/scripts/tests/cites.sh 2>&1 | tail -20`
-- Falsifier: `pre.DropRemoved(esn)` (ef30b91) and `-func VisionModel(c Config, kg KG) string {` (bef54f0) each found in commit AND doc.
+- Falsifier: `pre.DropRemoved(esn)` (ef30b91) and `-func VisionModel(c Config, kg KG) string {` (bef54f0) each found in commit AND doc: `l=$(git -C ~/projects/my-vector show --format= <sha> | grep -F -- '<str>' | head -1)` non-empty, then `grep -cxF -- "$l" docs/how-it-was-built.md` ≥1 (`--format=`: patch only, never the commit message).
 - Falsifier: `grep -c '^## ' docs/how-it-was-built.md` = 4; `SENS`/`VOL` grep → 0 hits.
 - Commit: `docs: how it was built — review-catch + debt-deletion trails`.
 

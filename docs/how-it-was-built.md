@@ -161,3 +161,174 @@ and a keyword fallback, fixed a data race in a test, restored the check that eve
 and pinned the news provider to a single call in the fallback test. It also found a gap in the opener itself: when
 the news provider is late and only undated fallback hits arrive, the reply still opens with "according to the latest news". That went to the
 backlog as an open item rather than into a quick patch, and the plan was archived in the same commit.
+
+## Agent bug caught: a removed memory fact could still reach the model
+
+**Plan:** [memory M2](plans/archive/2026-11-08-memory-m2.md) ·
+**Commits:** [cb8b4fb](https://github.com/KristjanHS/my-vector/commit/cb8b4fb) …
+[6cb9136](https://github.com/KristjanHS/my-vector/commit/6cb9136) build stages →
+[a544c07](https://github.com/KristjanHS/my-vector/commit/a544c07) review findings into the plan ·
+**Review fixes:** [ef30b91](https://github.com/KristjanHS/my-vector/commit/ef30b91),
+[2d1401b](https://github.com/KristjanHS/my-vector/commit/2d1401b) ·
+**Archive:** [2026-11-08-memory-m2.md](plans/archive/2026-11-08-memory-m2.md)
+([72ae47d](https://github.com/KristjanHS/my-vector/commit/72ae47d))
+
+**What the agent did.** The robot got a long-term memory. Chat turns are captured as they happen; a nightly pass
+pulls candidate facts out of finished sessions, merges them with the facts it already holds, rebuilds a short
+profile, and runs a guard: ten fixed questions answered before and after the merge, and if an answer is lost the
+pass reverts. A Memory card on the settings page lists the facts and lets me remove one. The agent built this in
+stages, each with its own tests, and every stage was green.
+
+**What was wrong.** A review by a separate reviewer agent over the whole stage range found what the stage tests
+could not: the pass works from a snapshot (`pre`) read at its start, and the model calls take a while. A fact I
+removed on the card during a pass was still in that snapshot, so it was sent to the model in the later merge
+batches and in the guard's baseline, and a guard revert could put back a profile built from it. A second finding
+was about time zones: pruning of already-extracted sessions used the wrong day boundary, so a session after
+midnight in the robot's zone could be extracted twice. The findings went into the plan as two new rulings (M26:
+a fact removed mid-pass never reaches a model or a profile; M27: the prune boundary) and a fix stage. The first fix
+re-reads the removals before every merge batch and before the guard
+([ef30b91](https://github.com/KristjanHS/my-vector/commit/ef30b91), `chipper/pkg/myvector/memory/run.go`):
+
+```diff
+@@ -82,7 +82,14 @@ func runESN(ctx context.Context, t llm.Target, esn string, zone *time.Location)
+ 		return err
+ 	}
+ 	changed := false
+-	for _, b := range pre.Batches(esn) {
++	for _, c := range Categories {
++		if err := pre.DropRemoved(esn); err != nil {
++			return err
++		}
++		b := pre.Batch(esn, c)
++		if len(b.Cands) == 0 {
++			continue
++		}
+ 		ops, err := Merge(ctx, t, b)
+```
+
+```diff
+ 	guard := "-"
++	if err := pre.DropRemoved(esn); err != nil {
++		return err
++	}
+```
+
+**Review fix.** The fix got its own review, and it found the same hole one level down: the guard asks its ten
+questions one call at a time, so a removal that lands between two of them still reached the model, and the
+removal alone could make an answer disappear and trigger a revert. Now every guard call syncs the removals first,
+and when an answer is lost after a removal, only those questions are asked again against the synced baseline
+before anything reverts. The same commit stopped a failed model call from counting as a merge try
+([2d1401b](https://github.com/KristjanHS/my-vector/commit/2d1401b), `chipper/pkg/myvector/memory/run.go`):
+
+```diff
++	gone := removedN(pre, esn)
+ 	before, err := Answers(ctx, t, pre, esn)
+ 	var after map[string]bool
+ 	if err == nil {
+ 		after, err = Answers(ctx, t, mid, esn)
+ 	}
+ 	lost := Lost(before, after)
++	if err == nil && len(lost) > 0 {
++		if err = pre.DropRemoved(esn); err == nil && removedN(pre, esn) > gone {
++			var again map[string]bool
++			if again, err = answers(ctx, t, pre, esn, lost); err == nil {
++				for _, c := range lost {
++					before[c] = again[c]
++				}
++				lost = Lost(before, after)
++			}
++		}
++	}
+```
+
+Each fix commit lists its red demos: the guarding line mutated, the test failing with the message it prints, the
+line restored. The plan was archived with the next batch of work.
+
+## Agent debt deleted: the one-off vision helper the setting replaced
+
+**Plan:** [vision setting](plans/archive/2026-11-08-vision-setting.md) ·
+**Commits:** [bef54f0](https://github.com/KristjanHS/my-vector/commit/bef54f0) `VisionModel` deleted, camera
+target resolved like the brain's ·
+**Review fix:** [d765cf3](https://github.com/KristjanHS/my-vector/commit/d765cf3) ·
+**Archive:** [2026-11-08-vision-setting.md](plans/archive/2026-11-08-vision-setting.md)
+([94119b1](https://github.com/KristjanHS/my-vector/commit/94119b1))
+
+**What the agent did.** When Estonian mode arrived, a photo question asked in Estonian needed a different local
+model than the Estonian chat model. The agent solved it with a small helper, `llm.VisionModel`, that returned a
+model name for that one case, plus model swapping and unloading inline in the camera request. It worked, and it
+was the kind of code that stays forever: a special case keyed on one language, returning a bare string where every
+other path resolved a full target (provider, address, model).
+
+**What I decided.** When the camera got its own per-language setting, I ruled `VisionModel` deleted (V3) rather
+than keeping the special case beside the new setting. The first stage was a behaviour-preserving refactor:
+the camera now resolves a full target the same way the brain does, and the request swaps its client to it
+([bef54f0](https://github.com/KristjanHS/my-vector/commit/bef54f0), `chipper/pkg/myvector/llm/llm.go`):
+
+```diff
+@@ -175,12 +175,18 @@ func ResolveOllama(c Config, l string, kg KG, model string) (Target, bool) {
+ 	return Target{Ollama, u + "/v1", "ollama", model}, true
+ }
+ 
+-// VisionModel is the Ollama model an et-EE photo question uses (E26): the en-US one when that is Ollama.
+-func VisionModel(c Config, kg KG) string {
++// ResolveVision is language l's camera Target: Resolve's, but et-EE on Ollama asks (same base) the en-US Ollama
++// model, else DefaultENModel (E26); false leaves the photo question on wire-pod's Knowledge.
++func ResolveVision(c Config, l string, kg KG) (Target, bool) {
++	t, ok := Resolve(c, l, kg)
++	if !ok || !t.Ollama() || l != lang.Estonian {
++		return t, ok
++	}
++	t.Model = DefaultENModel
+ 	if p, _ := Effective(c, kg); p[lang.English].Provider == Ollama && p[lang.English].Model != "" {
+-		return p[lang.English].Model
++		t.Model = p[lang.English].Model
+ 	}
+-	return DefaultENModel
++	return t, true
+ }
+```
+
+An earlier review the same day had already deleted another leftover of the same kind: `forkTopP`, a per-model
+`top_p` patch that a new per-model sampling table had made dead
+([267307c](https://github.com/KristjanHS/my-vector/commit/267307c)).
+
+**Review fix.** The review found that the refactor had copied one problem into the new code. The camera path read
+"is a robot listening right now?" a second time, separately from the brain's read, so if listening changed in
+between, the request, its reply cap, the model unloads and the client could each follow a different target. And a
+failed vision resolve would have produced a client with an empty address. The fix derives the camera target from
+the brain target that was already resolved, so one read decides both, and falls back to the brain with a log line
+([d765cf3](https://github.com/KristjanHS/my-vector/commit/d765cf3), `chipper/pkg/wirepod/ttr/fork_prompt.go`):
+
+```diff
+-	v, _ := forkResolveVision(c, l, kg)
++	v, vok := forkVision(c, l, kg, t)
++	if !vok {
++		logger.Println("myvector llm: camera " + l + " has no vision target — asking the brain " + t.Model)
++		v = t
++	}
+```
+
+```diff
+-// forkResolveVision is llm.ResolveVision; while any robot listens l's brain is listen.Model on Ollama, as in
+-// forkResolve (a copied profile map: the saved one is untouched).
+-func forkResolveVision(c llm.Config, l string, kg llm.KG) (llm.Target, bool) {
+-	if forkListening.Any(time.Now()) {
+-		ps := map[string]llm.Profile{l: {Provider: llm.Ollama, Model: listen.Model}}
+-		for k, p := range c.Profiles {
+-			if k != l {
+-				ps[k] = p
+-			}
++// forkVision is llm.ResolveVision on the already-resolved brain t (one listening read decides both): et-EE on Ollama
++// keeps t's base and takes the vision model; false = no vision target (a copied profile map: the saved one is untouched).
++func forkVision(c llm.Config, l string, kg llm.KG, t llm.Target) (llm.Target, bool) {
++	if !t.Ollama() || l != lang.Estonian {
++		return t, true
++	}
+```
+
+The rest of the plan (the setting itself, a local vision benchmark, the settings page) built on that target.
+
+---
+
+The working method behind these trails (plans with rulings, a fresh reviewer agent after each change, red demos
+before a test counts) is written up in [claudeconf](https://github.com/KristjanHS/claudeconf).
