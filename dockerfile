@@ -54,10 +54,14 @@ RUN set -eux; \
 WORKDIR /src
 
 COPY chipper/go.mod chipper/go.sum ./chipper/
+COPY --chmod=0755 docker/go-mod-download.sh /usr/local/bin/go-mod-download
 
+# Download modules one at a time with per-module retries: proxy.golang.org
+# resets HTTP/2 streams mid-download often enough to fail ~half of CI runs
+# when everything goes in one `go mod download` (see the script header).
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    cd chipper && go mod download
+    go-mod-download /src/chipper
 
 COPY . .
 
@@ -80,6 +84,10 @@ RUN set -eux; \
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     set -eux; \
+    # No-op when the cache mount is warm; refills it piecewise when the download
+    # layer above was a cache hit but the mount is empty (CI: type=gha exports
+    # layers, not cache mounts), so `go build` never fetches modules itself.
+    go-mod-download /src/chipper; \
     BUILD_COMMIT="${COMMIT_SHA}"; \
     if [ "${BUILD_COMMIT}" = "unknown" ] || [ -z "${BUILD_COMMIT}" ]; then \
         BUILD_COMMIT=$(git rev-parse --short HEAD || echo "dev"); \
