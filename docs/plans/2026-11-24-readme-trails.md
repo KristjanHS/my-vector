@@ -99,13 +99,13 @@ Skip — docs-only plan, no code touched.
 - License: MIT; name all three notices (R5); wire-pod credit + Credits list unchanged.
 - Verify: `cd ~/projects/my-vector && grep -n '^## \|agentic-stats' README.md 2>&1 | tail -20`
 - Falsifier: `grep -c '^## How it was built' README.md` = 1; each marker count = 1; `grep -c 'Kerigan Creighton' README.md LICENSE` ≥1 each.
-- Falsifier: `grep -oE '\]\([^)#:]+' README.md | cut -c3- | while read p; do [ -e "$p" ] || echo "BROKEN $p"; done` prints nothing; `SENS`/`VOL` → 0.
+- Falsifier: `cd ~/projects/my-vector && grep -oE '\]\([^)#]+' README.md | cut -c3- | grep -v '://' | while read p; do [ -e "$p" ] || echo "BROKEN $p"; done` prints nothing (`scheme://` links skipped; the old `[^)#:]+` cut every https link to `https` → 19 false `BROKEN`); `SENS`/`VOL` → 0.
 - Commit: `docs(readme): replace upstream README — demo, architecture, how it was built`.
 
 ### Stage 3.2 — stats block
 
 - Focus: `README.md` between the markers. Precondition: 3.1 committed (`STATS` reads HEAD); `python3 -c 'import yaml'` ok; `scc` on PATH.
-- Change: write `CFG` from the TOML constant; paste `$STATS | tail -n +3` (table only, no `### my-vector`) between the markers.
+- Change: write `CFG` from the TOML constant; paste `$STATS | tail -n +3 | sed '/^$/d'` (table only, no `### my-vector`, no trailing blank line — it makes `--check` stale) between the markers.
 - Verify: `$STATS --check 2>&1 | tail -20; echo "rc=${PIPESTATUS[0]}"` → `rc=0`.
 - Falsifier: run `--check` BEFORE pasting → `rc=1` (`stale: …README.md`); after → `rc=0`. Rows hold no SHA, path or email.
 - Commit: `docs(readme): agentic-stats block`.

@@ -65,6 +65,14 @@ I built my-vector with coding agents. Every change starts as a written plan with
 Map of the docs, plans and archived plans: [docs/README.md](docs/README.md). Method and agent configuration: [claudeconf](https://github.com/KristjanHS/claudeconf).
 
 <!-- agentic-stats:start -->
+| Metric | Value | Definition |
+|---|---|---|
+| Tests | +609 over wire-pod | static count: lines matching `^func Test\w*\(` in `*_test.go`; `^\s*(async\s+)?def test_` in `test_*.py`, `*/test_*.py`, `*_test.py` at HEAD, excl. `.claude`; `.each`/parametrized cases count once (delta vs wire-pod) |
+| CI gates | 1 | workflows triggered on push / pull_request / merge_group; schedule- or dispatch-only ops jobs excluded |
+| Releases | — | not tracked |
+| ADRs | — | not tracked |
+| Lines | +59125 over wire-pod | scc code lines (no blanks/comments) at HEAD, excl. docs/data formats, `.claude` (delta vs wire-pod) |
+| In prod since | — | first production deploy (manual) |
 <!-- agentic-stats:end -->
 
 ## Base: wire-pod
