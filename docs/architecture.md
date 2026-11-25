@@ -30,9 +30,9 @@ flowchart LR
 
 1. "Hey Vector" wakes the robot, and it streams the mic audio to chipper over gRPC. The robot reaches the PC through its Tailscale tunnel.
 2. chipper collects the audio and posts it to the STT service at `/stt?lang=<current language>`. If STT fails, the ask fails. wire-pod's Vosk is not used as a fallback.
-3. wire-pod's intent matcher gets the text first. Text that matches no intent goes to the LLM path in `chipper/pkg/wirepod/ttr/fork_*.go`.
+3. wire-pod's intent matcher gets the text first. Text that matches no intent goes to upstream's LLM path in `chipper/pkg/wirepod/ttr/kgsim.go`, which calls into the fork through hooks in the `fork_*.go` files beside it.
 4. When the question needs current facts, chipper first adds web search results or a weather forecast to the prompt (`chipper/pkg/myvector/search`). The LLM picked for the current language then writes the answer.
-5. chipper posts the answer to the TTS service at `/tts` and streams the audio to the robot through the SDK's external audio stream, paced to real time. If TTS fails before any audio has played, the robot says the answer in its own voice (`chipper/pkg/myvector/voice`).
+5. chipper posts the answer to the TTS service at `/tts` and streams the audio to the robot through the SDK's external audio stream, paced to real time. If TTS fails before any audio has played, the robot says the answer with its built-in text-to-speech (`chipper/pkg/myvector/voice`).
 
 ## Decisions
 

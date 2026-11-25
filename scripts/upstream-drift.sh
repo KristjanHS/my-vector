@@ -26,6 +26,7 @@ allowed_edits=(
   chipper/pkg/wirepod/ttr/intentparam.go # names_username_extend face hint dials via robotconn.Get (myvector/robotconn), was vector.New per use
   setup.sh                               # certs dir ./certs -> ./secrets/server/certs (fork_paths.go)
   README.md                              # the fork's own README; upstream wire-pod credited in it
+  dockerfile                             # go mod download -> go-mod-download (docker/go-mod-download.sh): one module at a time with retries, also run before go build
 )
 
 to=(); [[ ${1:-} == --head ]] && to=("$(git rev-parse --verify "${2:-HEAD}^{commit}")")
@@ -53,7 +54,8 @@ while IFS= read -r -d '' status && IFS= read -r -d '' path; do
   grep -qxF -- "${path%%/*}" <<<"$roots" || continue # fork-only top level (docs/, robot/, scripts/, ...)
   if [[ $status == A ]]; then
     # et-EE.json: upstream's LoadIntents reads intent-data/<lang>.json, so the fork's table must sit there
-    [[ $path == chipper/pkg/myvector/* || $(basename "$path") == fork_*.go || $path == chipper/intent-data/et-EE.json ]] && continue
+    # docker/go-mod-download.sh: the dockerfile COPYs it from docker/, next to upstream's entrypoint scripts
+    [[ $path == chipper/pkg/myvector/* || $(basename "$path") == fork_*.go || $path == chipper/intent-data/et-EE.json || $path == docker/go-mod-download.sh ]] && continue
     echo "new fork file inside the upstream tree: $path (move it to chipper/pkg/myvector/ or name it fork_*.go)"
   else
     is_allowed "$path" && continue

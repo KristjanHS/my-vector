@@ -9,7 +9,9 @@ my-vector is a fork of [wire-pod](https://github.com/kercre123/wire-pod), the op
 
 ## Quick start
 
-Prerequisites: Linux or WSL2 with systemd, Go (version in `chipper/go.mod`; `setup.sh` installs one if none is found), an NVIDIA GPU, [Ollama](https://ollama.com), and a robot already set up on wire-pod ([docs/upstream.md](docs/upstream.md)).
+Prerequisites: Linux or WSL2 with systemd, Go 1.22 (on Debian and Fedora `setup.sh` installs it to `/usr/local/go` when missing), an NVIDIA GPU, [Ollama](https://ollama.com), and a robot already set up on wire-pod ([docs/upstream.md](docs/upstream.md)).
+
+When `setup.sh` asks for a speech-to-text service, keep the default (VOSK). `make daemon-enable` needs the Vosk library it installs.
 
 ```bash
 git clone https://github.com/KristjanHS/my-vector.git && cd my-vector
@@ -26,7 +28,7 @@ make daemon-enable
 | Feature | Where |
 |---|---|
 | Each language picks its own LLM (local Ollama or Claude) behind an editable prompt template. Current questions go to web search and a weather forecast first, and Vector can describe what its camera sees ([trial notes](docs/llm-trials.md)) | `chipper/pkg/myvector/llm`, `prompt`, `search`, `photo` |
-| Speech in and out: Kokoro and Piper voices from a local TTS service, falling back to the robot's own voice, and faster-whisper STT with TalTech's Estonian Whisper model on the GPU ([Estonian models](docs/estonian-models.md)) | `tts/`, `et-stt/`, `chipper/pkg/myvector/voice`, `lang` |
+| Speech in and out: Kokoro and Piper voices from a local TTS service, falling back to the robot's built-in text-to-speech, and faster-whisper STT with TalTech's Estonian Whisper model on the GPU ([Estonian models](docs/estonian-models.md)) | `tts/`, `et-stt/`, `chipper/pkg/myvector/voice`, `lang` |
 | Long-term memory: a nightly pass pulls facts from finished conversations, merges them, rebuilds a short profile and keeps a diary. A guard reverts the pass if a fixed question loses its answer | `chipper/pkg/myvector/memory` |
 | Follow-up listening: after each answer a yes/no call decides whether Vector listens again without the wake word, up to a capped chain | `chipper/pkg/myvector/followup` |
 | Robot firmware: WireOS plus a patch series that keeps Vector on the charger and still answering "Hey Vector". Saying "shut up" or `make quiet` locks every robot sound path | `robot/unlock/`, `robot/firmware/`, `robot/quiet/` |
