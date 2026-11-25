@@ -28,7 +28,7 @@ The two screenshots below are from upstream wire-pod: its custom-intent editor, 
 
 ## Quickstart
 
-The PC side runs from the [Makefile](Makefile); `make help` lists every target. In short: install [Ollama](https://ollama.com) and pull a model (see [Estonian models](#estonian-models)), set up and enable the TTS and STT services (`make tts-setup`, `make tts-enable`, `make stt-setup`, `make stt-enable`), then install and start wire-pod as a service with `make daemon-enable` (`make start` restarts it after later changes). The robot still needs wire-pod's own setup first — see [Base: wire-pod](#base-wire-pod).
+The PC side runs from the [Makefile](Makefile); `make help` lists every target. In short: install [Ollama](https://ollama.com) and pull a model (see [Estonian models](#estonian-models)), set up and enable the TTS and STT services (`make tts-setup`, `make tts-enable`, `make stt-setup`, `make stt-enable`), then install and start wire-pod as a service with `make daemon-enable` (`make start` restarts it after later changes). The robot still needs wire-pod's own setup first — see [docs/upstream.md](docs/upstream.md).
 
 ## Architecture
 
@@ -75,22 +75,9 @@ Map of the docs, plans and archived plans: [docs/README.md](docs/README.md). Met
 | In prod since | — | first production deploy (manual) |
 <!-- agentic-stats:end -->
 
-## Base: wire-pod
-
-my-vector is a fork of `wire-pod`, fully-featured server software for Vector created thanks to Digital Dream Labs' [open-sourced code](https://github.com/digital-dream-labs/chipper). wire-pod lets voice commands work with any Vector 1.0 or 2.0 for no fee, including regular production robots.
-
-- Installation: wire-pod's [installation guide](https://github.com/kercre123/wire-pod/wiki/Installation)
-- Wiki: the [wire-pod wiki](https://github.com/kercre123/wire-pod/wiki) covers what wire-pod is, installing it, troubleshooting, developing for it, and general tips
-
 ## Credits
 
-- [wire-pod](https://github.com/kercre123/wire-pod) by [Kerigan Creighton (kercre123)](https://github.com/kercre123) — the server my-vector is built on
-- [Digital Dream Labs](https://github.com/digital-dream-labs) for open sourcing chipper and creating escape pod (which made wire-pod possible)
-- [bliteknight](https://github.com/bliteknight) for making wire-pod more accessible with his easy-to-use pre-setup Linux boxes
-- [dietb](https://github.com/dietb) for rewriting chipper and giving tips
-- [fforchino](https://github.com/fforchino) for adding many features such as localization and multilanguage, and for helping out
-- [xanathon](https://github.com/xanathon) for the publicity and web interface help
-- Anyone who has opened an issue and/or created a pull request for wire-pod
+Built on [wire-pod](https://github.com/kercre123/wire-pod) by Kerigan Creighton. Its overview, install links and full credits list are in [docs/upstream.md](docs/upstream.md).
 
 ## License
 
