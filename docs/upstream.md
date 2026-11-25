@@ -1,7 +1,5 @@
 # Upstream: wire-pod
 
-wire-pod's overview and credits, moved here word for word from the my-vector README.
-
 ## Base: wire-pod
 
 my-vector is a fork of `wire-pod`, fully-featured server software for Vector created thanks to Digital Dream Labs' [open-sourced code](https://github.com/digital-dream-labs/chipper). wire-pod lets voice commands work with any Vector 1.0 or 2.0 for no fee, including regular production robots.
