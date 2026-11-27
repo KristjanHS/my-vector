@@ -32,7 +32,7 @@ journalctl -u wire-pod -f    # optional, second terminal: watch requests ("Using
 ```
 
 Keys live in `~/.config/my-vector/keys.env` (outside the repo, chmod 600). `ANTHROPIC_API_KEY` is already in it
-(copied from private-app's workspace key). Add other keys as you reach their step:
+(copied from crash-dash's workspace key). Add other keys as you reach their step:
 
 ```bash
 echo 'OPENAI_API_KEY=sk-...' >> ~/.config/my-vector/keys.env
@@ -113,7 +113,7 @@ wire-pod reaches Claude through Anthropic's OpenAI-compatible endpoint. Two thin
 - **The fork fix.** wire-pod always sent `top_p: 1`, and Claude rejects it
   (`400 "top_p is deprecated for this model"`). `chipper/pkg/wirepod/ttr/fork_llm.go` drops it for
   `claude*` models. Run `make server-pin` once (step 0) so the server picks it up.
-- **The key must be workspace-scoped** (same rule as private-app). An org-level key fails every call.
+- **The key must be workspace-scoped** (same rule as crash-dash). An org-level key fails every call.
 
 ```bash
 scripts/llm.sh use claude                   # claude-haiku-5-5, cheapest; expect ~0.6 s to first words
