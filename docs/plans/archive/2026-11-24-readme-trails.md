@@ -1,6 +1,6 @@
 # README rewrite, worked trails, docs map
 
-Status: ✅ DONE — 1.1–5.1 shipped (0efd38a..); [USER] owed: Stage 4 video, Stage 5.2 reader test.
+Status: ✅ DONE — 1.1–5.1 shipped (251f1dc..); [USER] owed: Stage 4 video, Stage 5.2 reader test.
 Out of scope: pushes, docker files (another session).
 
 ## Rulings (USER 2026-11-24)
@@ -22,7 +22,6 @@ Out of scope: pushes, docker files (another session).
 | `REPO` | `~/projects/my-vector` (all commands below run with `-C $REPO` or absolute paths) |
 | `NEW_DOCS` | `README.md docs/README.md docs/how-it-was-built.md` |
 | `SENS`, `VOL` | grep them with `grep -nEi`, run from `$REPO` |
-| `SENS_POS` | `docs/plans/archive/2026-11-10-robot-tailscale.md` (known hit: proves `SENS` can fail) |
 | `GH` | `https://github.com/KristjanHS/my-vector/commit/` (all cited SHAs are on `origin/main`) |
 | `UPSTREAM_BASE` | `f78793e44d6c3c5d9533b0a7ac970ce3baa9e080` (`git merge-base HEAD upstream/main`) |
 | `STATS` | `python3 ~/projects/claudeconf/scripts/agentic_stats.py --config $CFG --repo my-vector` |
@@ -50,9 +49,9 @@ url = "https://github.com/KristjanHS/my-vector"
 |---|---|---|---|---|
 | T1 hard debugging | `archive/2026-11-07-vic-anim-seassert.md` L35-37, L41-44 | 52759a3 hunt → 09da0bb archived "no repro" → 323f20b root cause, reopened → 97812eb fix → 63bc3aa review + archive | 323f20b · plan · removed `runtime memory corruption` / `register/VFP-state corruption` lines + `+ ⇒ Wrong (19:30)`; 97812eb · `robot/firmware/0012-se-isinff-bridge.patch` L169-170 (`__se_isinff`, `__se_sin`) | robot crash-dump path, `robot/work/` paths, ship SHAs eaf543d/1fb54ab/4e74538/44a8b57/cfec485a (dangling), md5s |
 | T1 review fix | — | 63bc3aa | 63bc3aa · `robot/firmware/check-static.sh` hunk `@@ -113,16 +113,33 @@`: `-math_re=` hand regex → `+float_fns=` SDK exports (trim ≤15 lines) | — |
-| T2 design rejected | `archive/2026-11-11-search-news-quality.md` L117 (source arm, wrong credit), L120 Q9, L122-129 table, L131 verdict | 1de75bd opener + replay arms → c73ba1b review → 65d96a0 Q16 → bafcb6b review + archive | 1de75bd · `chipper/pkg/wirepod/ttr/fork_prefill.go` L14-26 (`forkNewsOpener` + `forkPrefillSet`); Q9 table rows quoted from the plan | incident spoken asks (L15-16, L110 Estonian ask text), `robot/work/search-trigger/` paths |
-| T3 agent bug caught | `archive/2026-11-08-memory-m2.md` L61 (6.2 review), L62 (6.3) | cb8b4fb..6cb9136 stages → a544c07 findings → M26/M27 rulings → ef30b91 + 2d1401b fixes → 72ae47d archive | ef30b91 · `chipper/pkg/myvector/memory/run.go` runESN hunk (`pre.DropRemoved` before each Merge batch + before guard); 2d1401b · same file, `check` re-ask hunk (`removedN`, `again`) | commit-message test facts (Estonian fixture sentence, pets), real robot serial in `<esn>` paths, 2d1401b's dangling e6b0a08 |
-| T4 agent debt deleted | `archive/2026-11-08-vision-setting.md` L3 status, L11 V3 | bef54f0 VisionModel deleted → d765cf3 review fix (+ 267307c drops dead `forkTopP`) → 94119b1 archive | bef54f0 · `chipper/pkg/myvector/llm/llm.go` `@@ -175,12 +175,18 @@` (`-func VisionModel` → `+func ResolveVision`); d765cf3 · `chipper/pkg/wirepod/ttr/fork_prompt.go` `-func forkResolveVision` → `+func forkVision(…, t llm.Target)` | V12 config path, `claude_key`, photo/bench paths, L3's dangling 699fed0 |
+| T2 design rejected | `archive/2026-11-11-search-news-quality.md` L117 (source arm, wrong credit), L120 Q9, L122-129 table, L131 verdict | 0c5b2d0 opener + replay arms → 79ce09b review → e187702 Q16 → ba580f9 review + archive | 0c5b2d0 · `chipper/pkg/wirepod/ttr/fork_prefill.go` L14-26 (`forkNewsOpener` + `forkPrefillSet`); Q9 table rows quoted from the plan | incident spoken asks (L15-16, L110 Estonian ask text), `robot/work/search-trigger/` paths |
+| T3 agent bug caught | `archive/2026-11-08-memory-m2.md` L61 (6.2 review), L62 (6.3) | 9d59701..01dddbd stages → f6cdbd4 findings → M26/M27 rulings → a68b590 + 2f8db93 fixes → 28f8211 archive | a68b590 · `chipper/pkg/myvector/memory/run.go` runESN hunk (`pre.DropRemoved` before each Merge batch + before guard); 2f8db93 · same file, `check` re-ask hunk (`removedN`, `again`) | commit-message test facts (Estonian fixture sentence, pets), real robot serial in `<esn>` paths, 2f8db93's dangling e6b0a08 |
+| T4 agent debt deleted | `archive/2026-11-08-vision-setting.md` L3 status, L11 V3 | fba3499 VisionModel deleted → 516c1b1 review fix (+ fd28127 drops dead `forkTopP`) → 7829a54 archive | fba3499 · `chipper/pkg/myvector/llm/llm.go` `@@ -175,12 +175,18 @@` (`-func VisionModel` → `+func ResolveVision`); 516c1b1 · `chipper/pkg/wirepod/ttr/fork_prompt.go` `-func forkResolveVision` → `+func forkVision(…, t llm.Target)` | V12 config path, `claude_key`, photo/bench paths, L3's dangling 699fed0 |
 
 - T1 framing: L35's `⇒ Wrong` marks the `.data`/VFP-corruption hypotheses wrong; the isinf line after it is the real mechanism.
 - Extract a hunk: `git -C $REPO show <SHA> -- <file> | sed -n '/<selector>/,+N p'`; quote as a ```diff block, trimmed, never retyped.
@@ -68,8 +67,8 @@ Skip — docs-only plan, no code touched.
 - Focus: new `docs/how-it-was-built.md` (`git check-ignore -v` returned nothing: trackable).
 - Change: 1-line intro + `## <type>: <title>` per trail with Plan · Commits (`$GH<sha>` links) · Review fix · Archive · quoted ```diff.
 - Verify: `git -C ~/projects/my-vector add docs/how-it-was-built.md && ~/projects/my-vector/scripts/tests/cites.sh 2>&1 | tail -20`
-- Falsifier: `git -C ~/projects/my-vector show --format= 97812eb | grep -F '__se_isinff(float x)' | head -1` line (`--format=`: patch only, never the commit message) also in the doc (`grep -cF`) ≥1; same for `forkNewsOpener = ` vs 1de75bd.
-- Falsifier: `grep -nEi "$SENS|$VOL" docs/how-it-was-built.md` → 0 hits; `grep -cEi "$SENS" $SENS_POS` ≥1 first.
+- Falsifier: `git -C ~/projects/my-vector show --format= 97812eb | grep -F '__se_isinff(float x)' | head -1` line (`--format=`: patch only, never the commit message) also in the doc (`grep -cF`) ≥1; same for `forkNewsOpener = ` vs 0c5b2d0.
+- Falsifier: `grep -nEi "$SENS|$VOL" docs/how-it-was-built.md` → 0 hits, after a known-hit file returns ≥1 (proves `SENS` can fail).
 - Commit: `docs: how it was built — debugging + rejected-design trails`.
 
 ### Stage 1.2 — T3 + T4
@@ -77,7 +76,7 @@ Skip — docs-only plan, no code touched.
 - Focus: `docs/how-it-was-built.md`.
 - Change: append T3 and T4 in the 1.1 shape; end with a link to [claudeconf](https://github.com/KristjanHS/claudeconf) for the method.
 - Verify: `~/projects/my-vector/scripts/tests/cites.sh 2>&1 | tail -20`
-- Falsifier: `pre.DropRemoved(esn)` (ef30b91) and `-func VisionModel(c Config, kg KG) string {` (bef54f0) each found in commit AND doc: `l=$(git -C ~/projects/my-vector show --format= <sha> | grep -F -- '<str>' | head -1)` non-empty, then `grep -cxF -- "$l" docs/how-it-was-built.md` ≥1 (`--format=`: patch only, never the commit message).
+- Falsifier: `pre.DropRemoved(esn)` (a68b590) and `-func VisionModel(c Config, kg KG) string {` (fba3499) each found in commit AND doc: `l=$(git -C ~/projects/my-vector show --format= <sha> | grep -F -- '<str>' | head -1)` non-empty, then `grep -cxF -- "$l" docs/how-it-was-built.md` ≥1 (`--format=`: patch only, never the commit message).
 - Falsifier: `grep -c '^## ' docs/how-it-was-built.md` = 4; `SENS`/`VOL` grep → 0 hits.
 - Commit: `docs: how it was built — review-catch + debt-deletion trails`.
 
@@ -122,7 +121,7 @@ Skip — docs-only plan, no code touched.
 ### Stage 5.1 — gates + review
 
 - Verify: `make -C ~/projects/my-vector check 2>&1 | tail -20` (my-vector has no `test` target; `check` runs cites + secrets + Go tests).
-- Falsifier: `grep -nEi "$SENS|$VOL" $NEW_DOCS` → 0 hits, after `grep -cEi "$SENS" $SENS_POS` ≥1.
+- Falsifier: `grep -nEi "$SENS|$VOL" $NEW_DOCS` → 0 hits, after a known-hit file returns ≥1.
 - Review: `Agent(subagent_type="code-reviewer")` over 1.1..3.2 — check each quoted hunk against `git show <SHA>`, R4-R7, link targets.
 - Commit review fixes as `fix(docs): review of <range> — …`; then set Status ✅ DONE and `git mv` this plan to `docs/plans/archive/`.
 

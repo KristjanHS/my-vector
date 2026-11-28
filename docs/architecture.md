@@ -54,4 +54,4 @@ The tunnel has its own costs. Behind a captive portal the robot still needs a ho
 
 Search providers sit behind one Go interface, and each has a monthly call cap. The default order is Tavily, then a self-hosted SearXNG (`scripts/searxng.sh`). On the bench of 10 Estonian queries the two scored about the same on relevance (2.20 and 2.30 out of 3), and Tavily answered about 4 times faster.
 
-Brave was never added because it has no free tier. Ollama's web search was the third provider until [dbff49a](https://github.com/KristjanHS/my-vector/commit/dbff49a) removed it. It is paid only (HTTP 402) and never made the default order. Ollama itself is still the local LLM backend.
+Brave was never added because it has no free tier. Ollama's web search was the third provider until [23a7fcd](https://github.com/KristjanHS/my-vector/commit/23a7fcd) removed it. It is paid only (HTTP 402) and never made the default order. Ollama itself is still the local LLM backend.

@@ -31,7 +31,7 @@
 - Memory M2 live (`2026-11-08-memory-m2.md` (docs/plans/) 6.1, volume 1, after `make ship`): chat turn → line in `chipper/myvectorMemory/<esn>/`; tell a fact, "Run pass now" → `active` + evidence + diary; ask it back; `journalctl -u wire-pod | grep 'memory pass'` shows `guard=ok`.
 - Listen-switch prompt line (same plan, H6): "never claim you switched active listening" breaks `TestPromptArmsLongAbout` (arm X 611 > `prompt.Budget(Ollama)` 600; ollama-et is 700) — raise the budget, drop arm X, trim a line, or skip it.
 - ⚠ routeprobe arm P (`lengthRe`) dies on the Estonian persona; chainprobe dies on every arm (startup `lineQ` count check; P/C/L anchor on `lineQ`); `prompt.Store.seed` still seeds English+`WithSing`. Falsifier: a `TestPromptArms` case with `Templates[OllamaEt] = prompt.Default(prompt.OllamaEt)`.
-- syncwt speed live (stop rule): next `make syncwt` report — no-rebase ≤ 3 s, rebased gate ≤ 20 s; a re-gate seen in practice → reopen the syncwt speed work.
+- Worktree gate timing (stop rule): next `make syncwt` report — no-rebase ≤ 3 s, rebased gate ≤ 20 s; a re-gate seen in practice → reopen the gate-timing work.
 - Shut-up-sleep live (`2026-11-07-shut-up-sleep.md` (docs/plans/) 6.4, volume 1, after `make ship`): its 6.4 row; then `robot/openmic/probe.sh -m` et-EE + en-US → Stage 1 verdict, which re-cuts Stage 5.
 - Ship speed rung 2 live (`2026-11-08-ship-speed.md` (docs/plans/) 2.3 + Target): 3 server-lane `make ship` → its settings-gap awk ≤ 6 s per log and the Target one-liner (median push ≤ 33 s) exit 0; missed → pick rung 3 from that plan.
 

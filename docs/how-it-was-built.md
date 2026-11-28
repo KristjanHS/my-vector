@@ -106,10 +106,10 @@ The same commit trimmed the plan to its rulings and archived it.
 ## Design rejected: the agent's winning opener credited the wrong source
 
 Plan: [search news quality](plans/archive/2026-11-11-search-news-quality.md) ·
-Commits: [1de75bd](https://github.com/KristjanHS/my-vector/commit/1de75bd) opener + replay arms →
-[65d96a0](https://github.com/KristjanHS/my-vector/commit/65d96a0) news-ask timeout and fallback (ruling Q16) ·
-Review fixes: [c73ba1b](https://github.com/KristjanHS/my-vector/commit/c73ba1b),
-[bafcb6b](https://github.com/KristjanHS/my-vector/commit/bafcb6b) ·
+Commits: [0c5b2d0](https://github.com/KristjanHS/my-vector/commit/0c5b2d0) opener + replay arms →
+[e187702](https://github.com/KristjanHS/my-vector/commit/e187702) news-ask timeout and fallback (ruling Q16) ·
+Review fixes: [79ce09b](https://github.com/KristjanHS/my-vector/commit/79ce09b),
+[ba580f9](https://github.com/KristjanHS/my-vector/commit/ba580f9) ·
 Archive: [2026-11-11-search-news-quality.md](plans/archive/2026-11-11-search-news-quality.md)
 
 ### What the agent did
@@ -142,7 +142,7 @@ The sentence-shaped opener won: 2, against 3 for the generic and 4 for all sourc
 margin is fragile (one hand call flips it) and that this opener never names a source. Crediting every source needs
 a rule for Estonian genitive forms of host names, and the simple one got half of the hosts wrong, which counted
 against the all-sources arm as well. The opener that
-shipped ([1de75bd](https://github.com/KristjanHS/my-vector/commit/1de75bd),
+shipped ([0c5b2d0](https://github.com/KristjanHS/my-vector/commit/0c5b2d0),
 `chipper/pkg/wirepod/ttr/fork_prefill.go`):
 
 ```diff
@@ -165,10 +165,10 @@ shipped ([1de75bd](https://github.com/KristjanHS/my-vector/commit/1de75bd),
 ### Review fixes
 
 The first review
-([c73ba1b](https://github.com/KristjanHS/my-vector/commit/c73ba1b)) found that the search benchmark's query-rewrite arms
-(a separate measurement in 1de75bd, not the opener replay arms above) skipped the relevance gate production runs, so they scored results the robot would have thrown away; the arms now
+([79ce09b](https://github.com/KristjanHS/my-vector/commit/79ce09b)) found that the search benchmark's query-rewrite arms
+(a separate measurement in 0c5b2d0, not the opener replay arms above) skipped the relevance gate production runs, so they scored results the robot would have thrown away; the arms now
 score what the gate keeps. The second review
-([bafcb6b](https://github.com/KristjanHS/my-vector/commit/bafcb6b)), after news asks got a longer search deadline
+([ba580f9](https://github.com/KristjanHS/my-vector/commit/ba580f9)), after news asks got a longer search deadline
 and a keyword fallback, fixed a data race in a test, restored the check that every news query carries the topic,
 and pinned the news provider to a single call in the fallback test. It also found a gap in the opener itself: when
 the news provider is late and only undated fallback hits arrive, the reply still opens with "according to the latest news". That went to the
@@ -177,13 +177,13 @@ backlog as an open item rather than into a quick patch, and the plan was archive
 ## Agent bug caught: a removed memory fact could still reach the model
 
 Plan: [memory M2](plans/archive/2026-11-08-memory-m2.md) ·
-Commits: [cb8b4fb](https://github.com/KristjanHS/my-vector/commit/cb8b4fb) …
-[6cb9136](https://github.com/KristjanHS/my-vector/commit/6cb9136) build stages →
-[a544c07](https://github.com/KristjanHS/my-vector/commit/a544c07) review findings into the plan ·
-Review fixes: [ef30b91](https://github.com/KristjanHS/my-vector/commit/ef30b91),
-[2d1401b](https://github.com/KristjanHS/my-vector/commit/2d1401b) ·
+Commits: [9d59701](https://github.com/KristjanHS/my-vector/commit/9d59701) …
+[01dddbd](https://github.com/KristjanHS/my-vector/commit/01dddbd) build stages →
+[f6cdbd4](https://github.com/KristjanHS/my-vector/commit/f6cdbd4) review findings into the plan ·
+Review fixes: [a68b590](https://github.com/KristjanHS/my-vector/commit/a68b590),
+[2f8db93](https://github.com/KristjanHS/my-vector/commit/2f8db93) ·
 Archive: [2026-11-08-memory-m2.md](plans/archive/2026-11-08-memory-m2.md)
-([72ae47d](https://github.com/KristjanHS/my-vector/commit/72ae47d))
+([28f8211](https://github.com/KristjanHS/my-vector/commit/28f8211))
 
 ### What the agent did
 
@@ -203,7 +203,7 @@ was about time zones: pruning of already-extracted sessions used the wrong day b
 midnight in the robot's zone could be extracted twice. The findings went into the plan as two new rulings (M26:
 a fact removed mid-pass never reaches a model or a profile; M27: the prune boundary) and a fix stage. The first fix
 re-reads the removals before every merge batch and before the guard
-([ef30b91](https://github.com/KristjanHS/my-vector/commit/ef30b91), `chipper/pkg/myvector/memory/run.go`):
+([a68b590](https://github.com/KristjanHS/my-vector/commit/a68b590), `chipper/pkg/myvector/memory/run.go`):
 
 ```diff
 @@ -82,7 +82,14 @@ func runESN(ctx context.Context, t llm.Target, esn string, zone *time.Location)
@@ -236,7 +236,7 @@ questions one call at a time, so a removal that lands between two of them still 
 removal alone could make an answer disappear and trigger a revert. Now every guard call syncs the removals first,
 and when an answer is lost after a removal, only those questions are asked again against the synced baseline
 before anything reverts. The same commit stopped a failed model call from counting as a merge try
-([2d1401b](https://github.com/KristjanHS/my-vector/commit/2d1401b), `chipper/pkg/myvector/memory/run.go`):
+([2f8db93](https://github.com/KristjanHS/my-vector/commit/2f8db93), `chipper/pkg/myvector/memory/run.go`):
 
 ```diff
 +	gone := removedN(pre, esn)
@@ -265,11 +265,11 @@ line restored. The plan was archived with the next batch of work.
 ## Agent debt deleted: the one-off vision helper the setting replaced
 
 Plan: [vision setting](plans/archive/2026-11-08-vision-setting.md) ·
-Commits: [bef54f0](https://github.com/KristjanHS/my-vector/commit/bef54f0) `VisionModel` deleted, camera
+Commits: [fba3499](https://github.com/KristjanHS/my-vector/commit/fba3499) `VisionModel` deleted, camera
 target resolved like the brain's ·
-Review fix: [d765cf3](https://github.com/KristjanHS/my-vector/commit/d765cf3) ·
+Review fix: [516c1b1](https://github.com/KristjanHS/my-vector/commit/516c1b1) ·
 Archive: [2026-11-08-vision-setting.md](plans/archive/2026-11-08-vision-setting.md)
-([94119b1](https://github.com/KristjanHS/my-vector/commit/94119b1))
+([7829a54](https://github.com/KristjanHS/my-vector/commit/7829a54))
 
 ### What the agent did
 
@@ -284,7 +284,7 @@ other path resolved a full target (provider, address, model).
 When the camera got its own per-language setting, I ruled `VisionModel` deleted (V3) rather
 than keeping the special case beside the new setting. The first stage was a behaviour-preserving refactor:
 the camera now resolves a full target the same way the brain does, and the request swaps its client to it
-([bef54f0](https://github.com/KristjanHS/my-vector/commit/bef54f0), `chipper/pkg/myvector/llm/llm.go`):
+([fba3499](https://github.com/KristjanHS/my-vector/commit/fba3499), `chipper/pkg/myvector/llm/llm.go`):
 
 ```diff
 @@ -175,12 +175,18 @@ func ResolveOllama(c Config, l string, kg KG, model string) (Target, bool) {
@@ -312,7 +312,7 @@ the camera now resolves a full target the same way the brain does, and the reque
 
 An earlier review the same day had already deleted another leftover of the same kind: `forkTopP`, a per-model
 `top_p` patch that a new per-model sampling table had made dead
-([267307c](https://github.com/KristjanHS/my-vector/commit/267307c)).
+([fd28127](https://github.com/KristjanHS/my-vector/commit/fd28127)).
 
 ### Review fix
 
@@ -321,7 +321,7 @@ The review found that the refactor had copied one problem into the new code. The
 between, the request, its reply cap, the model unloads and the client could each follow a different target. And a
 failed vision resolve would have produced a client with an empty address. The fix derives the camera target from
 the brain target that was already resolved, so one read decides both, and falls back to the brain with a log line
-([d765cf3](https://github.com/KristjanHS/my-vector/commit/d765cf3), `chipper/pkg/wirepod/ttr/fork_prompt.go`):
+([516c1b1](https://github.com/KristjanHS/my-vector/commit/516c1b1), `chipper/pkg/wirepod/ttr/fork_prompt.go`):
 
 ```diff
 -	v, _ := forkResolveVision(c, l, kg)
